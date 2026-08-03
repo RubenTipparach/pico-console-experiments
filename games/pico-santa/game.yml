@@ -1,0 +1,21 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: pico-santa
+title: Pico Santa
+blurb: Chunked 3D city on one core. Grab the gems.
+target: pico-santa
+sdk: 32blit
+web: true
+
+controls:
+  - "left/right: turn"
+  - "up: drive"
+
+models:
+  - gem.obj
+  - sleigh.obj
+
+depends_on:
+  - engine
+  - cmake
+  - tools/obj2cpp.py

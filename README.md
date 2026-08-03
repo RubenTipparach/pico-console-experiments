@@ -1,204 +1,142 @@
-# Pico Santa!
+# pico-stanta
 
-I'm prepping for christmas with my own little picosystem game.
+PicoSystem games, built and published automatically.
 
-https://rubentipparach.github.io/pico-stanta/
+Push a change, and CI rebuilds only the games that actually changed, publishes
+each one to its own URL, and leaves everything else alone.
 
-Thanks to Santa Claude, I finally got around to getting the boiler plate setup and working. :D
+**Gallery:** https://rubentipparach.github.io/pico-stanta/
 
-
-# PicoSystem 32blit Boilerplate <!-- omit in toc -->
-
-![Build](https://github.com/32blit/32blit-boilerplate/workflows/Build/badge.svg)
-
-This is a basic template for starting 32blit projects for the Pimoroni PicoSystem.
-
-It shows a minimal code layout and asset pipeline, giving you a starting point
-for a new project.
-
-It's based on the original `template` project from the 
-[32blit beta](https://github.com/pimoroni/32blit-beta), with added asset
-handling, and some tidying up to fit in with how I do things.
-
-- [Why use 32blit SDK on PicoSystem?](#why-use-32blit-sdk-on-picosystem)
-- [How to use this template](#how-to-use-this-template)
-  - [Documentation](#documentation)
-  - [Examples](#examples)
-- [Requirements](#requirements)
-  - [Compilers & Libraries](#compilers--libraries)
-  - [32blit Tools](#32blit-tools)
-  - [32blit & Pico SDKs](#32blit--pico-sdks)
-- [Building](#building)
-- [Copying your game to your PicoSystem](#copying-your-game-to-your-picosystem)
-- [Extra configuration](#extra-configuration)
-- [API Limitations & Board Details](#api-limitations--board-details)
-  - [Unsupported Features](#unsupported-features)
-  - [Limitations](#limitations)
-
-## Why use 32blit SDK on PicoSystem?
-
-The number 1 reason is portability! 32blit SDK will build for:
-
-* Windows
-* macOS
-* Linux
-* Emscripten (Web assembly)
-* PicoSystem
-* 32blit
-
-And is portable to any platform supporting SDL2.
-
-This means you can ship your game to more people on more platforms, share it online to play, and reach a little further than the confines of PicoSystem!
-
-Additionally the 32blit SDK has some conveniences:
-
-* Tiled editor .tmx support for levels
-* An asset pipeline for converting fonts & spritesheets for use on device
-* A boilerplate project with GitHub Actions
-
-## How to use this template
-
-[Use this template](https://github.com/32blit/picosystem-boilerplate/generate) to
-generate your own project.
-
-1. Edit the CMakeList.txt file to set the name of your project
-2. Edit the metadata.yml file to set the information for your project
-3. Edit the LICENSE file to set your name on the license
-4. Delete the contents of this README.md and tell us about your game!
-5. Write lots of super cool code!
-
-### Documentation
-
-Consult the [32blit wiki](https://github.com/32blit/32blit-sdk/wiki) for guides on various parts of the SDK:
-
-* [Drawing Sprites](https://github.com/32blit/32blit-sdk/wiki/Sprites)
-* [Drawing Text](https://github.com/32blit/32blit-sdk/wiki/Text)
-* [Playing Sounds](https://github.com/32blit/32blit-sdk/wiki/Audio) - Note, PicoSystem is a mono buzzer only!
-* [Timers & Tweens](https://github.com/32blit/32blit-sdk/wiki/Timers-&-Tweens)
-* [Working With Files](https://github.com/32blit/32blit-sdk/wiki/File) - 4MB of PicoSystem's flash is reserved as a filesystem
-* [Adding Metadata](https://github.com/32blit/32blit-sdk/wiki/Metadata)
-
-### Examples
-
-* [Snake](https://github.com/32blit/snake/)
-* [Rocks & Diamonds](https://github.com/32blit/rocks-and-diamonds)
-* [Dots](https://github.com/gadgetoid/32blit-dots)
-* [SDK Examples](https://github.com/32blit/32blit-sdk/tree/master/examples)
-
-## Requirements
-
-We recommend using Linux to work with PicoSystem/Pico SDK. It's the path of least resistance!
-
-This guide was tested with Ubuntu 21.04, and most of these instructions will work in its WSL
-(Windows Subsystem for Linux) equivalent.
-
-### Compilers & Libraries
-
-You'll need a compiler and a few other dependencies to get started building C++ for PicoSystem:
+## What is here
 
 ```
-sudo apt install git gcc g++ gcc-arm-none-eabi cmake make \
-python3 python3-pip python3-setuptools \
-libsdl2-dev libsdl2-image-dev libsdl2-net-dev unzip
+engine/            shared renderer, no SDK dependency except one adapter file
+games/<slug>/      one game: game.yml, CMakeLists.txt, src/, assets/, models/
+cmake/             reusable CMake helpers (game registration, obj packaging)
+tools/             build tooling, gallery generator, flasher utility
+web/               gallery stylesheet and the Emscripten page shell
+.github/workflows/ the build and publish pipeline
 ```
 
-### 32blit Tools
+Two games ship today:
 
-And the 32blit tools:
+| Game | URL | What it is |
+| --- | --- | --- |
+| Chicken | `/chicken/` | Endless side scroller, chunked infinite level |
+| Pico Santa | `/pico-santa/` | Chunked 3D city, software rasterizer, .obj models |
 
-```
-pip3 install 32blit
-```
+## How the pipeline works
 
-If pip gives you warnings about 32blit being installed in a directory not on PATH, make sure you add it, eg:
+1. **`engine-tests`** builds and runs the host test suite. No SDK, no cross
+   compile, fails in seconds if the renderer is broken.
+2. **`detect`** hashes each game directory plus everything it declares a
+   dependency on, and compares that against the hashes recorded on the live
+   site. Only games whose hash moved get built.
+3. **`build`** runs once per stale game: a `.uf2` for the PicoSystem and an
+   Emscripten build for the browser.
+4. **`publish`** overlays the rebuilt games onto the `gh-pages` branch,
+   regenerates the gallery, and pushes. Games that were not rebuilt keep the
+   binaries they already had.
 
-```
-export PATH=$PATH:~/.local/bin
-```
+Change detection is content based rather than git-diff based, so it stays
+correct across force pushes, re-runs, and reverts. Reverting a change restores
+the old hash, so nothing rebuilds, which is the right answer.
 
-You might also want to add this to the bottom of your `~/.bashrc`.
+To force a rebuild, run the workflow manually and pass slugs (or `all`) to the
+`force` input. To force everything permanently, bump `.build-epoch`.
 
-### 32blit & Pico SDKs
+## Adding a game
 
-You'll also need the various SDKs for PicoSystem and 32blit.
+Create `games/<slug>/` with a `game.yml` and a `CMakeLists.txt`, and commit. CI
+discovers it, builds it, publishes it at `/<slug>/`, and captures its first
+thumbnail. You never edit the top level build, the workflow, or the gallery.
 
-It's recommended you keep all of the SDKs in a directory alongside your project,
-this makes it easier for CMake to find them:
+See [`games/README.md`](games/README.md) for the field reference.
 
-* 32blit SDK - `git clone https://github.com/32blit/32blit-sdk`
-* Pico SDK - `git clone https://github.com/raspberrypi/pico-sdk`
-* Pico Extras - `git clone https://github.com/raspberrypi/pico-extras`
+## Thumbnails
 
-## Building
+CI screenshots a game once, the first time it is published, and then never
+touches it again. Rebuilding a game does not refresh its thumbnail, so the
+gallery does not churn.
 
-If you've got local copies of the Pico SDK, Pico Extras and 32blit SDK alongside your project,
-then you can configure and build your .uf2 like so:
+To refresh one deliberately, run the **Capture thumbnails** workflow and name
+the game, or commit a PNG at `games/<slug>/thumbnail.png`.
 
-```
-mkdir build.pico
-cd build.pico
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../../32blit-sdk/pico.toolchain -DPICO_BOARD=pimoroni_picosystem
-```
+## Models
 
-If you'd like the Pico SDK to handle grabbing Pico SDK and Pico Extras for you, you can use:
-
-```
-mkdir build.pico
-cd build.pico
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../../32blit-sdk/pico.toolchain -DPICO_BOARD=pimoroni_picosystem -DPICO_SDK_FETCH_FROM_GIT=true -DPICO_EXTRAS_FETCH_FROM_GIT=true ..
-```
-
-:warning: Note: This approach is not recommended, since you might be reconfiguring a few times during
-your project and re-downloading things unecessarily!
-
-## Copying your game to your PicoSystem
-
-Connect your PicoSystem to your computer using a USB Type-C cable.
-
-From a power-off state, hold down X (the top face button) and press Power (the button at the top left, next to the USB Type-C port).
-
-Your PicoSystem should mount as "RPI-RP2". On Linux this might be `/media/<username>/RPI-RP2`:
+Models are `.obj` files under `games/<slug>/models/`, editable in Blender or
+anything else. `tools/obj2cpp.py` converts them to a `const` C++ table at build
+time, so they live in flash and cost no RAM. Nothing generated is committed.
 
 ```
-cp your-project-name.uf2 /media/`whoami`/RPI-RP2
+models/gem.obj      6 vertices, 8 triangles, 144 bytes of flash
+models/sleigh.obj  16 vertices, 16 triangles, 300 bytes of flash
 ```
 
-The file should copy over, and your PicoSystem should automatically reboot into your game.
+Materials come from the sidecar `.mtl`. A `usemtl` with no matching entry gets a
+colour derived from its name, so a multi part model never silently flattens to
+one grey.
 
-## Extra configuration
+## Getting a game onto the device
 
-If you're not using `hires` mode and need some more RAM, it can be disabled:
-```cmake
-...
+Download [`PicoFlasher.exe`](tools/flasher/README.md) from the latest release,
+put the board in BOOTSEL (hold **X**, press power), pick a `.uf2`, press Flash.
 
-blit_executable(amazing-lores-game ...)
+By hand: drop the `.uf2` onto the `RPI-RP2` drive. Windows may report an error
+at the end of the copy. That is expected and means it worked, see the flasher
+README for why.
 
-...
+## Building locally
 
-target_compile_definitions(amazing-lores-game PRIVATE ALLOW_HIRES=0)
+You need the 32blit SDK and the Pico SDK checked out next to this repo.
+
+```
+git clone https://github.com/32blit/32blit-sdk
+git clone https://github.com/raspberrypi/pico-sdk
+git -C pico-sdk submodule update --init lib/tinyusb
 ```
 
-## API Limitations & Board Details
+Host tests, which need nothing else:
 
-### Unsupported Features
+```
+cmake -S . -B build.test -DBUILD_ENGINE_TESTS=ON
+cmake --build build.test
+ctest --test-dir build.test --output-on-failure
+```
 
-These features of the 32blit API are currently unsupported on any pico-based device:
+A `.uf2` for the device:
 
-- Joystick
-- `HOME` and `MENU` buttons
-- Accelerometer
-- Vibration
-- Paletted screen mode
-- JPEG decoding
-- `OpenMode::cached`
+```
+cmake -S . -B build.pico -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=../32blit-sdk/pico.toolchain \
+  -DPICO_BOARD=pimoroni_picosystem \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build.pico
+```
 
-### Limitations
+The browser build, with the Emscripten SDK active. `32BLIT_DIR` must be an
+absolute path here:
 
-Additionally some supported features have limitations:
+```
+emcmake cmake -S . -B build.web -D32BLIT_DIR="$PWD/../32blit-sdk"
+cmake --build build.web
+```
 
-- The `screen` surface is RGB565 instead of RGB888
-- `hires` screen mode is not double-buffered, usually resulting in a lower framerate
-- `get_metadata` is missing the `author` and `category` fields
-- `blit::random` is not a hardware generator
-- Multiplayer has no host support
-- Using the MP3 decoder is probably not a good idea
+Add `-DPICO_STANTA_ONLY_GAME=<slug>` to any of these to build a single game.
+
+## Repository settings this depends on
+
+The site is published from a branch, not from the Pages action. In
+**Settings > Pages**, set the source to **Deploy from a branch**, branch
+`gh-pages`, folder `/`.
+
+This is deliberate. `actions/deploy-pages` replaces the entire site on every
+deploy, which would delete every game that was not rebuilt that run. Keeping the
+built site on a branch makes git itself the durable state, so an incremental
+overlay is possible and a bad publish can be reverted.
+
+## Conventions
+
+Project rules live in [`CLAUDE.md`](CLAUDE.md): no em dashes, SOLID, one SDK,
+never rebuild an unchanged game, respect how small this device is, keep the
+on-screen UI sparse, models come from `.obj` files.

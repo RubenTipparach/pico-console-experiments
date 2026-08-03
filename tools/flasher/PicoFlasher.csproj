@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe, not Exe. Exe attaches a console window behind the form. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PicoFlasher</AssemblyName>
+    <RootNamespace>PicoFlasher</RootNamespace>
+    <Version>0.1.0</Version>
+
+    <!-- Single self contained .exe so it can be handed to someone who has no
+         .NET installed. Deliberately not trimmed: trimming is unsupported for
+         WinForms and produces an app that fails at runtime rather than at
+         build time. The cost of that is a large binary, which is the right
+         trade for a tool nobody installs. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+title: Pico Santa
+description: Chunked 3D city on one core. Grab the gems.
+author: rubentipparach
+splash:
+  file: assets/no-image.png
+icon:
+  file: assets/no-icon.png
+version: v0.1.0
+category: game
+url: https://github.com/rubentipparach/pico-stanta

@@ -1,44 +1,44 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.20)
 
-# Pull in PICO SDK (must be before project)
-include(pico_sdk_import.cmake)
+# 3.20 rather than the 3.12 this repo started on: pico-sdk 2.x needs 3.13, and
+# CMP0118 (cross directory GENERATED properties) needs 3.20. The generated
+# model sources depend on that policy behaving predictably.
 
-project(pico-santa C CXX ASM)
+project(pico-stanta C CXX ASM)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Initialize the Pico SDK
-pico_sdk_init()
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
-# Include the PicoSystem library
-# PICOSYSTEM_DIR must be set via -DPICOSYSTEM_DIR=... or environment variable
-if(NOT PICOSYSTEM_DIR AND DEFINED ENV{PICOSYSTEM_DIR})
-    set(PICOSYSTEM_DIR $ENV{PICOSYSTEM_DIR})
+# BUILD_ENGINE_TESTS builds only the host test binary, with no SDK at all. CI
+# runs this first so a broken renderer fails in seconds rather than after a
+# full cross compile.
+option(BUILD_ENGINE_TESTS "Build host tests for the SDK free engine" OFF)
+
+add_subdirectory(engine)
+
+if(BUILD_ENGINE_TESTS)
+    enable_testing()
+    add_executable(engine_tests engine/tests/test_engine.cpp)
+    target_link_libraries(engine_tests pico-stanta-engine-core)
+    add_test(NAME engine_tests COMMAND engine_tests)
+    return()
 endif()
-if(NOT PICOSYSTEM_DIR)
-    message(FATAL_ERROR "PICOSYSTEM_DIR must be set to the picosystem SDK directory")
-endif()
-include(${PICOSYSTEM_DIR}/libraries/picosystem.cmake REQUIRED)
 
-# Add compile options
-add_compile_options("-Wall" "-Wextra" "-Wno-unused-parameter")
+find_package(32BLIT CONFIG REQUIRED PATHS ../32blit-sdk $ENV{PATH_32BLIT_SDK})
 
-# Build the executable
-picosystem_executable(
-    pico-santa
-    src/game.cpp
-    src/render3d.cpp
-    src/rasterizer.cpp
-    src/city.cpp
-)
+include(picosystem_game)
 
-# PicoSystem specific settings
-pixel_double(pico-santa)
-disable_startup_logo(pico-santa)
-no_spritesheet(pico-santa)
-
-# Link multicore library for dual-core rendering
-target_link_libraries(pico-santa pico_multicore)
-
-# Optimize divider in RAM for performance
-target_compile_definitions(pico-santa PUBLIC PICO_DIVIDER_IN_RAM=1)
+# Games are discovered, never listed. Adding a directory with a game.yml and a
+# CMakeLists.txt is the whole procedure for adding a game.
+file(GLOB game_dirs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/games
+     ${CMAKE_CURRENT_SOURCE_DIR}/games/*)
+foreach(game ${game_dirs})
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/games/${game}/CMakeLists.txt)
+        if(NOT DEFINED PICO_STANTA_ONLY_GAME OR PICO_STANTA_ONLY_GAME STREQUAL game)
+            add_subdirectory(games/${game})
+        endif()
+    endif()
+endforeach()

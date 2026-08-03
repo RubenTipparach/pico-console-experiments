@@ -1,0 +1,10 @@
+title: Chicken
+description: Endless side scroller. Collect gems, do not fall.
+author: rubentipparach
+splash:
+  file: ../pico-santa/assets/no-image.png
+icon:
+  file: ../pico-santa/assets/no-icon.png
+version: v0.1.0
+category: game
+url: https://github.com/rubentipparach/pico-stanta

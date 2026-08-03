@@ -1,0 +1,15 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: chicken
+title: Chicken
+blurb: Endless side scroller. Collect gems, do not fall.
+target: chicken
+sdk: 32blit
+web: true
+
+controls:
+  - "left/right: move"
+  - "A: jump"
+
+depends_on:
+  - cmake
