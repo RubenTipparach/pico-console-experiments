@@ -1,0 +1,92 @@
+name: Capture thumbnails
+
+# Deliberately manual. CI takes a game's first screenshot automatically and then
+# never touches it again, so the gallery does not churn every time a game is
+# rebuilt. Refreshing one is an explicit decision, made here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: "Slugs to recapture, comma separated, or 'all'"
+        required: true
+        default: "all"
+      settle_ms:
+        description: "Milliseconds to let the game run before the shot"
+        required: false
+        default: "3500"
+
+concurrency:
+  group: pico-console-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the live site
+        run: |
+          if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "::error::no gh-pages branch yet, publish the site first"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --depth 1 origin gh-pages
+          git worktree add site FETCH_HEAD --detach
+          mkdir -p site/thumbs
+
+      - name: Install Playwright
+        run: |
+          pip3 install --user playwright
+          python3 -m playwright install --with-deps chromium
+
+      - name: Recapture
+        env:
+          GAMES: ${{ github.event.inputs.games }}
+          SETTLE_MS: ${{ github.event.inputs.settle_ms }}
+        run: |
+          set -euo pipefail
+          # Inputs arrive through the environment, never spliced into the
+          # script, so a crafted dispatch value cannot inject shell.
+          if [ "$GAMES" = "all" ]; then
+            slugs=$(python3 tools/fingerprint.py list | awk '{print $1}')
+          else
+            slugs=$(echo "$GAMES" | tr ',' ' ')
+          fi
+
+          captured=0
+          for slug in $slugs; do
+            [ -n "$slug" ] || continue
+            if [ ! -f "site/$slug/index.html" ]; then
+              echo "::warning::$slug has no published web build, skipping"
+              continue
+            fi
+            python3 tools/capture_thumbnail.py \
+              --site site --slug "$slug" \
+              --out "site/thumbs/$slug.png" \
+              --settle-ms "${SETTLE_MS:-3500}"
+            captured=$((captured + 1))
+          done
+          echo "recaptured $captured thumbnail(s)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rebuild the gallery and push
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          python3 tools/gen_gallery.py \
+            --site site --manifest site/builds.json \
+            --repo "$GITHUB_REPOSITORY" --timestamp "$stamp"
+          cd site
+          git add --all
+          if git diff --cached --quiet; then
+            echo "thumbnails are unchanged"
+            exit 0
+          fi
+          git commit -m "Recapture thumbnails"
+          git push origin HEAD:gh-pages

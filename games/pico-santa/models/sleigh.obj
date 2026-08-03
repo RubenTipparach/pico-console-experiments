@@ -1,0 +1,58 @@
+# Santa's sleigh. Low poly on purpose: this is drawn every frame on a chip with
+# no FPU, so the triangle count is the frame budget.
+#
+# Faces are wound counter clockwise when viewed from outside. If the model
+# renders inside out, fix the winding here rather than flipping the rasterizer's
+# backface test, which every other model depends on.
+#
+# Local axes: +X right, +Y up, +Z forward (the direction of travel).
+
+mtllib sleigh.mtl
+
+# body, a wedge that rises toward the back
+v -0.45  0.15  0.85
+v  0.45  0.15  0.85
+v  0.45  0.15 -0.75
+v -0.45  0.15 -0.75
+v -0.45  0.62 -0.75
+v  0.45  0.62 -0.75
+v -0.45  0.40  0.55
+v  0.45  0.40  0.55
+
+# runners
+v -0.50  0.00  0.95
+v -0.50  0.00 -0.85
+v  0.50  0.00  0.95
+v  0.50  0.00 -0.85
+v -0.50  0.15  0.95
+v -0.50  0.15 -0.85
+v  0.50  0.15  0.95
+v  0.50  0.15 -0.85
+
+usemtl sleigh_body
+# floor
+f 1 2 3
+f 1 3 4
+# left side
+f 1 4 7
+f 4 5 7
+# right side
+f 2 8 3
+f 3 8 6
+# back
+f 4 3 5
+f 3 6 5
+# seat back top
+f 5 6 8
+f 5 8 7
+# front lip
+f 1 7 2
+f 7 8 2
+
+usemtl sleigh_runner
+# left runner
+f 9 10 14
+f 9 14 13
+# right runner
+f 11 15 16
+f 11 16 12
