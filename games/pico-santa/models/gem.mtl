@@ -1,0 +1,5 @@
+# Diffuse colour is read as the face colour. Kept near white so the per gem
+# tint in City::render_gems has full range to work with.
+
+newmtl gem_body
+Kd 0.90 0.90 0.95

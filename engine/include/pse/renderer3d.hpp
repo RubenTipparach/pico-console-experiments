@@ -1,0 +1,82 @@
+#pragma once
+
+#include <cstdint>
+
+#include "pse/config.hpp"
+#include "pse/mesh.hpp"
+#include "pse/raster.hpp"
+
+namespace pse {
+
+// Transforms world space geometry into screen triangles and hands them to a
+// Rasterizer. It does the projection and nothing else: it does not own pixels,
+// it does not know what an SDK is, and it holds no game state.
+//
+// Float maths appears only in the per frame camera setup, which happens once.
+// Everything per vertex is fixed point, because the RP2040 has no FPU.
+class Renderer3D {
+public:
+    explicit Renderer3D(Rasterizer& rasterizer) : rasterizer_(rasterizer) {}
+
+    Renderer3D(const Renderer3D&) = delete;
+    Renderer3D& operator=(const Renderer3D&) = delete;
+
+    // Place the camera behind and above a target, looking at it.
+    void set_orbit_camera(float target_x, float target_y, float target_z,
+                          float yaw, float distance, float height);
+
+    // Place the camera explicitly.
+    void set_camera(float x, float y, float z, float yaw, float pitch);
+
+    // World point to screen. Returns false when the point is behind the near
+    // plane or beyond the far plane.
+    bool project(float wx, float wy, float wz,
+                 int& out_x, int& out_y, int& out_depth) const;
+
+    // Axis aligned box, with a distinct top colour and simple face shading.
+    void draw_box(float x, float y, float z,
+                  float size_x, float size_y, float size_z,
+                  uint8_t top_r, uint8_t top_g, uint8_t top_b,
+                  uint8_t side_r, uint8_t side_g, uint8_t side_b);
+
+    // A model from tools/obj2cpp.py, rotated about Y and uniformly scaled.
+    // Faces are lit flat from a fixed direction using the baked normal.
+    //
+    // The tint multiplies the model's own face colours, so one mesh in flash
+    // can serve every colour variant a game needs. 255 leaves a channel alone.
+    void draw_mesh(const MeshData& mesh,
+                   float x, float y, float z,
+                   float yaw, float scale,
+                   uint8_t tint_r = 255, uint8_t tint_g = 255,
+                   uint8_t tint_b = 255);
+
+    // Screen position and pixel size for a camera facing sprite. Returns false
+    // when the point is off screen or behind the camera. The caller draws the
+    // sprite itself, which keeps sprite styles out of the engine.
+    bool project_billboard(float wx, float wy, float wz, float world_size,
+                           int& out_x, int& out_y, float& out_scale,
+                           uint8_t& out_depth) const;
+
+    Rasterizer& rasterizer() { return rasterizer_; }
+
+    void camera_position(float& x, float& y, float& z) const {
+        x = camera_x_; y = camera_y_; z = camera_z_;
+    }
+
+private:
+    void rebuild_view_projection();
+
+    void emit_quad(const int sx[8], const int sy[8], const int sz[8],
+                   const bool visible[8], const uint8_t face[4],
+                   uint8_t r, uint8_t g, uint8_t b, bool highlight_edge);
+
+    Rasterizer& rasterizer_;
+
+    float camera_x_ = 0.0f, camera_y_ = 0.0f, camera_z_ = 0.0f;
+    float camera_yaw_ = 0.0f, camera_pitch_ = 0.0f;
+
+    // View projection in fixed point, rebuilt once per camera change.
+    int32_t view_projection_[4][4] = {};
+};
+
+}  // namespace pse

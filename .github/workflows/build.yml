@@ -1,0 +1,355 @@
+name: Build and publish
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Slugs to rebuild even if unchanged, comma separated, or 'all'"
+        required: false
+        default: ""
+
+# One publish at a time. Two runs overlaying the gh-pages tree concurrently will
+# race and one push gets rejected. cancel-in-progress is deliberately false: a
+# half applied overlay is worse than a slow queue.
+concurrency:
+  group: pico-console-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # The 32blit SDK and the `32blit` python tool are versioned separately and the
+  # numbers look confusingly similar. The SDK's latest tag is v0.3.3; the tool is
+  # at 0.7.x, and 32blit-config.cmake requires tool >= 0.7.3. Do not pin the SDK
+  # to a tool version.
+  BLIT_SDK_TAG: v0.3.3
+  PICO_SDK_TAG: 2.0.0
+  EMSDK_VERSION: 3.1.61
+
+jobs:
+  # Fails in seconds if the renderer is broken, before any cross compile starts.
+  engine-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run host tests
+        run: |
+          cmake -S . -B build.test -DBUILD_ENGINE_TESTS=ON
+          cmake --build build.test --parallel
+          ctest --test-dir build.test --output-on-failure
+
+  # Works out which games actually changed, by comparing a content hash of each
+  # game plus its declared dependencies against the hashes recorded on the live
+  # site. Content based rather than git-diff based, so it stays correct across
+  # force pushes, re-runs, and reverts.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+      built: ${{ steps.plan.outputs.built }}
+      skipped: ${{ steps.plan.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the published manifest
+        run: |
+          # Absent branch, absent file and malformed JSON all mean the same
+          # thing here: nothing is published, so everything is stale.
+          if git fetch --depth 1 origin gh-pages 2>/dev/null; then
+            git show FETCH_HEAD:builds.json > published.json 2>/dev/null || echo '{}' > published.json
+          else
+            echo '{}' > published.json
+          fi
+
+      - name: Plan the build
+        id: plan
+        env:
+          FORCE_INPUT: ${{ github.event.inputs.force }}
+        run: |
+          # FORCE_INPUT goes through the environment, never spliced into the
+          # script text, so a dispatch input cannot inject shell.
+          python3 tools/fingerprint.py plan \
+            --published published.json \
+            --force "${FORCE_INPUT:-}"
+
+  build:
+    needs: [detect, engine-tests]
+    # An empty matrix vector is a hard workflow failure, not a skip, so the
+    # guard is mandatory. It is a separate boolean rather than a comparison
+    # against '[]' because that string coercion is not reliable.
+    if: needs.detect.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 python3-pip \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          pip3 install --user 32blit
+
+      - name: Cache SDKs
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/../32blit-sdk
+            ${{ github.workspace }}/../pico-sdk
+          key: sdks-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}
+
+      - name: Check out the SDKs
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          git clone --depth 1 --branch "$BLIT_SDK_TAG" \
+            https://github.com/32blit/32blit-sdk
+          git clone --depth 1 --branch "$PICO_SDK_TAG" \
+            https://github.com/raspberrypi/pico-sdk
+          # Only tinyusb is needed. `--recursive` would also drag in btstack,
+          # cyw43-driver, lwip and mbedtls and roughly triple the cache.
+          git -C pico-sdk submodule update --init lib/tinyusb
+
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+
+      - name: Install Emscripten
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk
+          cd emsdk
+          ./emsdk install "$EMSDK_VERSION"
+          ./emsdk activate "$EMSDK_VERSION"
+
+      - name: Build the .uf2 for PicoSystem
+        env:
+          GAME: ${{ matrix.slug }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake -S . -B build.pico -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
+            -DPICO_BOARD=pimoroni_picosystem \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_ONLY_GAME="$GAME"
+          cmake --build build.pico --parallel
+
+      - name: Build for the browser
+        if: matrix.web
+        env:
+          GAME: ${{ matrix.slug }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          source "$GITHUB_WORKSPACE/../emsdk/emsdk_env.sh"
+          # 32BLIT_DIR must be absolute for Emscripten builds.
+          emcmake cmake -S . -B build.web \
+            -D32BLIT_DIR="$GITHUB_WORKSPACE/../32blit-sdk" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_ONLY_GAME="$GAME"
+          cmake --build build.web --parallel
+
+      - name: Collect the outputs
+        env:
+          GAME: ${{ matrix.slug }}
+          TARGET: ${{ matrix.target }}
+          WANTS_WEB: ${{ matrix.web }}
+        run: |
+          set -euo pipefail
+          mkdir -p "out/web/$GAME" out/uf2
+
+          uf2=$(find build.pico -name "$TARGET.uf2" -print -quit)
+          if [ -z "$uf2" ]; then
+            echo "::error::no .uf2 produced for $GAME"
+            exit 1
+          fi
+          cp "$uf2" "out/uf2/$GAME.uf2"
+
+          if [ "$WANTS_WEB" = "true" ]; then
+            # add_picosystem_game renames the Emscripten target to `index`,
+            # because GitHub Pages has no directory listing and only
+            # /<slug>/index.html is reachable.
+            src=$(dirname "$(find build.web -name 'index.wasm' -print -quit)")
+            if [ -z "$src" ] || [ ! -f "$src/index.html" ]; then
+              echo "::error::no web build produced for $GAME"
+              exit 1
+            fi
+            cp "$src/index.html" "$src/index.js" "$src/index.wasm" "out/web/$GAME/"
+            # .data only exists when the game ships packaged assets.
+            cp "$src/index.data" "out/web/$GAME/" 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-${{ matrix.slug }}
+          path: out
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: [detect, build]
+    # Runs even when `build` was skipped, because a run where nothing changed
+    # still has to republish the site with the previous content intact.
+    if: ${{ !cancelled() && needs.detect.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the live site
+        run: |
+          # actions/checkout hard fails on a missing ref and has no
+          # create-if-missing, so the orphan branch is bootstrapped by hand.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch --depth 1 origin gh-pages
+            git worktree add site FETCH_HEAD --detach
+          else
+            git worktree add --detach site
+            git -C site checkout --orphan gh-pages
+            git -C site rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p site/uf2 site/thumbs
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: game-*
+          path: incoming
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Overlay the rebuilt games
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+        run: |
+          set -euo pipefail
+          [ -d incoming ] || { echo "nothing rebuilt this run"; exit 0; }
+
+          for slug in $(echo "$BUILT" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            if [ -d "incoming/web/$slug" ]; then
+              mkdir -p "site/$slug"
+              # --delete removes files a previous build left behind, and the
+              # exclude keeps a captured thumbnail from being swept up with
+              # them. Without the exclude, republishing a game silently
+              # destroys its screenshot.
+              rsync -a --delete --exclude 'thumbnail.png' \
+                "incoming/web/$slug/" "site/$slug/"
+              echo "published site/$slug/"
+            fi
+            if [ -f "incoming/uf2/$slug.uf2" ]; then
+              cp "incoming/uf2/$slug.uf2" "site/uf2/$slug.uf2"
+            fi
+          done
+
+      - name: Capture a thumbnail for anything that has never had one
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+        run: |
+          set -euo pipefail
+          needed=""
+          for slug in $(echo "$BUILT" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            # First capture only. An existing thumbnail is never replaced here:
+            # refreshing one is a deliberate act, done through the
+            # "Capture thumbnails" workflow.
+            if [ -f "site/$slug/index.html" ] && [ ! -f "site/thumbs/$slug.png" ]; then
+              needed="$needed $slug"
+            fi
+          done
+          if [ -z "$needed" ]; then
+            echo "every published game already has a thumbnail"
+            exit 0
+          fi
+          pip3 install --user playwright
+          python3 -m playwright install --with-deps chromium
+          for slug in $needed; do
+            python3 tools/capture_thumbnail.py \
+              --site site --slug "$slug" --out "site/thumbs/$slug.png"
+          done
+
+      - name: Prefer a thumbnail committed in the repo
+        run: |
+          set -euo pipefail
+          for dir in games/*/; do
+            slug=$(python3 -c "import sys,os;sys.path.insert(0,'tools');from fingerprint import Game;print(Game(os.path.abspath('$dir')).slug)")
+            if [ -f "$dir/thumbnail.png" ]; then
+              cp "$dir/thumbnail.png" "site/thumbs/$slug.png"
+            fi
+          done
+
+      - name: Write the manifest and the gallery
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          python3 tools/fingerprint.py manifest \
+            --published site/builds.json \
+            --built "$BUILT" \
+            --out site/builds.json \
+            --timestamp "$stamp" \
+            --commit "${GITHUB_SHA::7}"
+          python3 tools/gen_gallery.py \
+            --site site \
+            --manifest site/builds.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --timestamp "$stamp"
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          cd site
+          git add --all
+          # Content comparison, not mtime. Emscripten rewrites every output file
+          # on every build, so mtimes always change, but a byte identical
+          # rebuild correctly produces no commit.
+          if git diff --cached --quiet; then
+            echo "site is unchanged, nothing to push"
+            exit 0
+          fi
+          git commit -m "Publish site for ${GITHUB_SHA::7}"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:gh-pages; then
+              exit 0
+            fi
+            echo "push rejected, refetching (attempt $attempt)"
+            git fetch origin gh-pages && git rebase FETCH_HEAD || true
+            sleep $((attempt * 4))
+          done
+          echo "::error::could not push the site after 3 attempts"
+          exit 1
+
+  # A terminal job so a run where nothing changed still reports success. A
+  # skipped matrix job never reports, which silently blocks branch protection if
+  # `build` is the required check. Make this the required check instead.
+  gate:
+    needs: [engine-tests, detect, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+          SKIPPED: ${{ needs.detect.outputs.skipped }}
+        run: |
+          echo "rebuilt: ${BUILT:-none}"
+          echo "reused:  ${SKIPPED:-none}"
+          if [ "${{ needs.engine-tests.result }}" != "success" ]; then exit 1; fi
+          if [ "${{ needs.detect.result }}" != "success" ]; then exit 1; fi
+          if [ "${{ needs.build.result }}" = "failure" ]; then exit 1; fi

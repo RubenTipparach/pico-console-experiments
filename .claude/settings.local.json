@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "Bash(cmake --version:*)",
+      "Bash(arm-none-eabi-gcc:*)",
+      "Bash(pip show:*)",
+      "Bash(pip3 show:*)",
+      "Bash(ninja:*)",
+      "Bash(where:*)",
+      "Bash(choco search:*)",
+      "Bash(\"C:/ProgramData/chocolatey/bin/arm-none-eabi-gcc.exe\" --version)",
+      "Bash(cmd //c build.bat)",
+      "Bash(git submodule update:*)",
+      "Bash(ls:*)",
+      "Bash(./emsdk install:*)",
+      "Bash(python emsdk.py:*)",
+      "Bash(python:*)",
+      "Bash(cmd //c build-web.bat:*)",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\santi\\\\repos\\\\pico-santa && build-web.bat\")",
+      "Bash(start:*)",
+      "Bash(grep:*)",
+      "Bash(cmd /c:*)",
+      "Bash(cd:*)",
+      "Bash(cmake --build:*)",
+      "Bash(PATH=\"C:/ProgramData/mingw64/mingw64/bin:$PATH\" ninja:*)",
+      "Bash(bash:*)",
+      "Bash(PATH=\"C:/ProgramData/mingw64/mingw64/bin:$PATH\" c:/Users/santi/repos/pico-santa/build.pico/pioasm-install/pioasm/pioasm.exe:*)",
+      "Bash(c:/Users/santi/repos/pico-santa/build.pico/pioasm-install/pioasm/pioasm.exe:*)",
+      "Bash(C:/ProgramData/chocolatey/bin/ninja.exe)"
+    ]
+  }
+}

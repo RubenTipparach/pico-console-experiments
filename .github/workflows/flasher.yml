@@ -1,0 +1,52 @@
+name: Build flasher
+
+# The desktop utility changes far less often than the games, so it is not part
+# of the per push pipeline. It builds when its own sources change, and publishes
+# a release asset on a tag.
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "tools/flasher/**"
+      - ".github/workflows/flasher.yml"
+  pull_request:
+    paths:
+      - "tools/flasher/**"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish a single file exe
+        working-directory: tools/flasher
+        run: >
+          dotnet publish PicoFlasher.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PicoFlasher
+          path: tools/flasher/publish/PicoFlasher.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tools/flasher/publish/PicoFlasher.exe
