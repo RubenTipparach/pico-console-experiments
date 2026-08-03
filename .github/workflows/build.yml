@@ -10,6 +10,11 @@ on:
         description: "Slugs to rebuild even if unchanged, comma separated, or 'all'"
         required: false
         default: ""
+      publish:
+        description: "Publish to the live site. Leave off to test build a branch."
+        type: boolean
+        required: false
+        default: false
 
 # One publish at a time. Two runs overlaying the gh-pages tree concurrently will
 # race and one push gets rejected. cancel-in-progress is deliberately false: a
@@ -205,7 +210,17 @@ jobs:
     needs: [detect, build]
     # Runs even when `build` was skipped, because a run where nothing changed
     # still has to republish the site with the previous content intact.
-    if: ${{ !cancelled() && needs.detect.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') && github.event_name != 'pull_request' }}
+    #
+    # The ref check is what stops a branch build from taking over the live site.
+    # A manual run on a feature branch builds and uploads artifacts but does not
+    # publish, unless it is dispatched with publish=true on purpose.
+    if: >-
+      ${{ !cancelled()
+          && needs.detect.result == 'success'
+          && (needs.build.result == 'success' || needs.build.result == 'skipped')
+          && github.event_name != 'pull_request'
+          && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+              || github.event.inputs.publish == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

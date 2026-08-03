@@ -1,152 +1,539 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Pico Santa</title>
-    <style>
-      body {
-        background-color: #1a1a2e;
-        margin: 0;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-      .emscripten { padding-right: 0; margin-left: auto; margin-right: auto; display: block; }
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<!-- viewport-fit=cover so the pad can sit in the safe area on a notched phone -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#110011">
+<title>PicoSystem</title>
+<style>
+  /* Same console palette as the gallery: every hex pair is a repeated nibble,
+     so all of it is representable in the device's own ARGB4444 framebuffer. */
+  :root {
+    --ground: #110011;
+    --panel: #221133;
+    --panel-lit: #332255;
+    --ink: #ffffee;
+    --muted: #9988bb;
+    --line: #553377;
+    --accent: #ff2266;
+    --play: #22ffaa;
+    --pad-size: min(38vw, 190px);
+    --btn: min(15vw, 66px);
+  }
 
-      div.emscripten { text-align: center; color: #eee; font-family: sans-serif; }
-      /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
-      canvas.emscripten {
-        border: 0px none;
-        background-color: black;
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
-        width: 480px;
-        height: 480px;
-      }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-      .spinner {
-        height: 50px;
-        width: 50px;
-        margin: 0px auto;
-        animation: rotation 0.8s linear infinite;
-        border-left: 10px solid #333;
-        border-right: 10px solid #333;
-        border-bottom: 10px solid #333;
-        border-top: 10px solid #c41e3a;
-        border-radius: 100%;
-      }
-      @keyframes rotation {
-        from {transform: rotate(0deg);}
-        to {transform: rotate(360deg);}
-      }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    /* Touch must never scroll, pinch, or pull to refresh: every one of those
+       turns a D-pad press into a page gesture. */
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+  }
 
-      .controls {
-        color: #aaa;
-        font-family: sans-serif;
-        margin-top: 15px;
-        text-align: center;
-      }
+  #app {
+    height: 100%;
+    height: 100dvh;              /* dvh so browser chrome does not crop the pad */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
 
-    </style>
-  </head>
-  <body>
-    <figure style="overflow:visible;" id="spinner"><div class="spinner"></div></figure>
-    <div class="emscripten" id="status">Downloading...</div>
-    <div class="emscripten">
-      <progress value="0" max="100" id="progress" hidden=1></progress>
+  /* ---- screen ---- */
+
+  #stage {
+    position: relative;
+    flex: 0 1 auto;
+    display: grid;
+    place-items: center;
+    min-height: 0;
+  }
+
+  canvas.emscripten {
+    display: block;
+    border: 0 none;
+    background: #000011;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    /* Square, because the console is. Sized off whichever axis runs out first,
+       so it never overflows and never needs a scrollbar. */
+    width: min(100vw - 1rem, calc(100dvh - var(--pad-size) - 5rem));
+    height: min(100vw - 1rem, calc(100dvh - var(--pad-size) - 5rem));
+    max-width: 92vmin;
+    max-height: 92vmin;
+    outline: 3px solid var(--line);
+  }
+
+  /* ---- loading ---- */
+
+  #boot {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.75rem;
+    background: var(--ground);
+    pointer-events: none;
+    transition: opacity 200ms;
+  }
+  #boot.done { opacity: 0; }
+
+  .spinner {
+    height: 44px; width: 44px;
+    animation: rotation 0.8s linear infinite;
+    border: 8px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 100%;
+  }
+  @keyframes rotation { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  #status { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; }
+  progress { width: 60vw; max-width: 260px; }
+
+  /* ---- top bar ---- */
+
+  #bar {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  #bar a, #bar button {
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 2px solid var(--line);
+    padding: 0.3rem 0.6rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #bar button:active { background: var(--line); }
+  #bar :focus-visible { outline: 2px solid var(--play); outline-offset: 2px; }
+
+  /* ---- gamepad ---- */
+
+  #pad {
+    display: none;                 /* shown for touch devices, or forced on */
+    width: 100%;
+    max-width: 560px;
+    padding: 0 0.75rem;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex: 0 0 auto;
+  }
+  body.show-pad #pad { display: flex; }
+
+  .dpad {
+    position: relative;
+    width: var(--pad-size);
+    height: var(--pad-size);
+    flex: 0 0 auto;
+  }
+
+  .dpad button {
+    position: absolute;
+    width: 33.4%;
+    height: 33.4%;
+    background: var(--panel-lit);
+    border: 2px solid var(--line);
+    color: var(--muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+  .dpad button[data-dir="up"]    { left: 33.3%; top: 0; }
+  .dpad button[data-dir="down"]  { left: 33.3%; bottom: 0; }
+  .dpad button[data-dir="left"]  { left: 0; top: 33.3%; }
+  .dpad button[data-dir="right"] { right: 0; top: 33.3%; }
+
+  .face {
+    position: relative;
+    width: calc(var(--btn) * 2.9);
+    height: calc(var(--btn) * 2.9);
+    flex: 0 0 auto;
+  }
+
+  .face button {
+    position: absolute;
+    width: var(--btn);
+    height: var(--btn);
+    border-radius: 50%;
+    background: var(--panel-lit);
+    border: 2px solid var(--line);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+    display: grid;
+    place-items: center;
+  }
+  /* PicoSystem face layout: X top, Y left, A right, B bottom. */
+  .face button[data-btn="x"] { left: 50%; top: 0; transform: translateX(-50%); }
+  .face button[data-btn="y"] { left: 0; top: 50%; transform: translateY(-50%); }
+  .face button[data-btn="a"] { right: 0; top: 50%; transform: translateY(-50%); }
+  .face button[data-btn="b"] { left: 50%; bottom: 0; transform: translateX(-50%); }
+
+  .face button[data-btn="a"] { border-color: var(--accent); color: var(--accent); }
+  .face button[data-btn="b"] { border-color: var(--play); color: var(--play); }
+
+  /* .held is set by the pointer handling, not :active, because a finger that
+     slides off a button must keep it lit until it is actually released. */
+  #pad button.held {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--ground);
+  }
+
+  #hint { color: var(--muted); font-size: 0.625rem; letter-spacing: 0.06em; }
+  body.show-pad #hint { display: none; }
+
+  /* In landscape the pad flanks the screen instead of sitting under it. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    #app { flex-direction: row; gap: 0.75rem; }
+    #pad {
+      position: fixed;
+      inset: 0;
+      max-width: none;
+      pointer-events: none;
+      align-items: center;
+    }
+    #pad > * { pointer-events: auto; }
+    :root { --pad-size: min(30vh, 150px); --btn: min(11vh, 54px); }
+    canvas.emscripten { width: auto; height: 92dvh; max-width: 92dvh; }
+    #bar { position: fixed; top: 0.4rem; right: 0.4rem; z-index: 5; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="bar">
+    <a href="../" title="Back to the gallery">&larr;</a>
+    <button id="fullscreen" type="button">Fullscreen</button>
+    <button id="togglepad" type="button">Controls</button>
+  </div>
+
+  <div id="stage">
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <div id="boot">
+      <div class="spinner" id="spinner"></div>
+      <div id="status">Downloading...</div>
+      <progress value="0" max="100" id="progress" hidden></progress>
     </div>
+  </div>
 
-    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=0></canvas>
-    <div class="controls">
-      Arrow Keys: Move | Z: Jump
+  <div id="hint">Arrows or WASD &middot; Z X C V</div>
+
+  <div id="pad">
+    <div class="dpad">
+      <button type="button" data-dir="up"    data-key="ArrowUp"    aria-label="Up">&#9650;</button>
+      <button type="button" data-dir="left"  data-key="ArrowLeft"  aria-label="Left">&#9664;</button>
+      <button type="button" data-dir="right" data-key="ArrowRight" aria-label="Right">&#9654;</button>
+      <button type="button" data-dir="down"  data-key="ArrowDown"  aria-label="Down">&#9660;</button>
     </div>
+    <div class="face">
+      <button type="button" data-btn="x" data-key="KeyC" aria-label="X">X</button>
+      <button type="button" data-btn="y" data-key="KeyV" aria-label="Y">Y</button>
+      <button type="button" data-btn="a" data-key="KeyZ" aria-label="A">A</button>
+      <button type="button" data-btn="b" data-key="KeyX" aria-label="B">B</button>
+    </div>
+  </div>
+</div>
 
-    <script type='text/javascript'>
-      var statusElement = document.getElementById('status');
-      var progressElement = document.getElementById('progress');
-      var spinnerElement = document.getElementById('spinner');
+<script type="text/javascript">
+(function () {
+  "use strict";
 
-      function mountIDBFS() {
-        // mount a persistent filesystem over the directory used for saves
-        FS.mkdir("/libsdl");
-        FS.mount(IDBFS, {}, '/libsdl');
+  var statusElement = document.getElementById('status');
+  var progressElement = document.getElementById('progress');
+  var spinnerElement = document.getElementById('spinner');
+  var bootElement = document.getElementById('boot');
+  var canvasElement = document.getElementById('canvas');
 
-        // sync before starting game
-        Module['addRunDependency']("SYNC_DATA");
-        FS.syncfs(true, function(err) {
-          Module['removeRunDependency']("SYNC_DATA");
-        });
+  // ---- touch controls -----------------------------------------------------
+  //
+  // The 32blit SDL build reads the keyboard, so the on-screen pad synthesises
+  // keyboard events rather than reaching into the engine. That keeps this shell
+  // a presentation layer: it needs no knowledge of any game, and it keeps
+  // working if the button mapping changes on the C++ side.
+  //
+  // 32blit-sdl/Input.cpp maps arrows and WASD to the D-pad, and z/x/c/v to
+  // A/B/X/Y. Emscripten's SDL2 port registers its key listeners on `document`,
+  // so that is where these are dispatched. keyCode is set alongside code and
+  // key because the port still consults it.
+
+  var KEYS = {
+    ArrowUp:    { key: 'ArrowUp',    keyCode: 38 },
+    ArrowDown:  { key: 'ArrowDown',  keyCode: 40 },
+    ArrowLeft:  { key: 'ArrowLeft',  keyCode: 37 },
+    ArrowRight: { key: 'ArrowRight', keyCode: 39 },
+    KeyZ:       { key: 'z',          keyCode: 90 },
+    KeyX:       { key: 'x',          keyCode: 88 },
+    KeyC:       { key: 'c',          keyCode: 67 },
+    KeyV:       { key: 'v',          keyCode: 86 }
+  };
+
+  var held = Object.create(null);
+
+  function sendKey(type, code) {
+    var spec = KEYS[code];
+    if (!spec) return;
+    var event = new KeyboardEvent(type, {
+      key: spec.key,
+      code: code,
+      keyCode: spec.keyCode,
+      which: spec.keyCode,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+    // Some browsers ignore keyCode from the init dict. Force it, otherwise the
+    // SDL port sees keyCode 0 and drops the press.
+    if (event.keyCode !== spec.keyCode) {
+      try {
+        Object.defineProperty(event, 'keyCode', { get: function () { return spec.keyCode; } });
+        Object.defineProperty(event, 'which', { get: function () { return spec.keyCode; } });
+      } catch (ignored) { /* nothing else to try */ }
+    }
+    document.dispatchEvent(event);
+  }
+
+  function press(code, button) {
+    if (held[code]) return;         // no key repeat: the game polls button state
+    held[code] = true;
+    if (button) button.classList.add('held');
+    sendKey('keydown', code);
+  }
+
+  function release(code, button) {
+    if (!held[code]) return;
+    held[code] = false;
+    if (button) button.classList.remove('held');
+    sendKey('keyup', code);
+  }
+
+  var buttons = Array.prototype.slice.call(
+    document.querySelectorAll('#pad button[data-key]'));
+
+  var activePointers = Object.create(null);
+
+  buttons.forEach(function (button) {
+    var code = button.getAttribute('data-key');
+
+    button.addEventListener('pointerdown', function (event) {
+      event.preventDefault();
+      // Deliberately no setPointerCapture: capture keeps every later move event
+      // on the original button, which breaks sliding between D-pad arrows.
+      activePointers[event.pointerId] = button;
+      press(code, button);
+    });
+
+    button.addEventListener('pointerenter', function (event) {
+      // Sliding a finger onto a button presses it, so diagonals and thumb rolls
+      // work the way they do on a real pad.
+      if (activePointers[event.pointerId] === undefined) return;
+      var previous = activePointers[event.pointerId];
+      if (previous && previous !== button) {
+        release(previous.getAttribute('data-key'), previous);
       }
+      activePointers[event.pointerId] = button;
+      press(code, button);
+    });
+  });
 
-      var Module = {
-        arguments: ['--size', '240,240'],
-        preRun: [mountIDBFS],
-        postRun: [],
-        print: (function() {
-          return function(text) {
-            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-            console.log(text);
-          };
-        })(),
-        printErr: function(text) {
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          console.error(text);
-        },
-        canvas: (function() {
-          var canvas = document.getElementById('canvas');
-          // Set native canvas size to 240x240 (CSS will scale to 480x480)
-          canvas.width = 240;
-          canvas.height = 240;
+  function endPointer(event) {
+    var button = activePointers[event.pointerId];
+    if (!button) return;
+    release(button.getAttribute('data-key'), button);
+    delete activePointers[event.pointerId];
+  }
 
-          // As a default initial behavior, pop up an alert when webgl context is lost. To make your
-          // application robust, you may want to override this behavior before shipping!
-          // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
-          canvas.addEventListener("webglcontextlost", function(e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+  // Listen on the window so a finger released off the pad still ends the press.
+  // Without pointercancel a browser gesture can strand a key in the down state
+  // and the player walks into a wall forever.
+  window.addEventListener('pointerup', endPointer);
+  window.addEventListener('pointercancel', endPointer);
 
-          // Focus the canvas for keyboard input
-          canvas.focus();
+  // Losing focus or visibility must release everything, for the same reason.
+  function releaseAll() {
+    buttons.forEach(function (button) {
+      release(button.getAttribute('data-key'), button);
+    });
+    activePointers = Object.create(null);
+  }
+  window.addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) releaseAll();
+  });
 
-          return canvas;
-        })(),
-        setStatus: function(text) {
-          if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
-          if (text === Module.setStatus.last.text) return;
-          var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
-          var now = Date.now();
-          if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
-          Module.setStatus.last.time = now;
-          Module.setStatus.last.text = text;
-          if (m) {
-            text = m[1];
-            progressElement.value = parseInt(m[2])*100;
-            progressElement.max = parseInt(m[4])*100;
-            progressElement.hidden = false;
-            spinnerElement.hidden = false;
-          } else {
-            progressElement.value = null;
-            progressElement.max = null;
-            progressElement.hidden = true;
-            if (!text) spinnerElement.hidden = true;
-          }
-          statusElement.innerHTML = text;
-        },
-        totalDependencies: 0,
-        monitorRunDependencies: function(left) {
-          this.totalDependencies = Math.max(this.totalDependencies, left);
-          Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
-        }
-      };
-      Module.setStatus('Downloading...');
-      window.onerror = function() {
-        Module.setStatus('Exception thrown, see JavaScript console');
-        spinnerElement.style.display = 'none';
-        Module.setStatus = function(text) {
-          if (text) Module.printErr('[post-exception status] ' + text);
-        };
-      };
-    </script>
-    {{{ SCRIPT }}}
-  </body>
+  var padElement = document.getElementById('pad');
+  // Block the double-tap-to-zoom and long-press-select gestures that otherwise
+  // fire on top of the pad.
+  padElement.addEventListener('touchstart',
+    function (e) { e.preventDefault(); }, { passive: false });
+  padElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // ---- pad visibility -----------------------------------------------------
+
+  var STORAGE_KEY = 'picosystem-pad';
+  var isTouch = window.matchMedia('(pointer: coarse)').matches ||
+                'ontouchstart' in window;
+
+  function setPad(on) {
+    document.body.classList.toggle('show-pad', on);
+    try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (ignored) {}
+  }
+
+  var stored = null;
+  try { stored = localStorage.getItem(STORAGE_KEY); } catch (ignored) {}
+  setPad(stored === null ? isTouch : stored === '1');
+
+  document.getElementById('togglepad').addEventListener('click', function () {
+    setPad(!document.body.classList.contains('show-pad'));
+  });
+
+  // ---- fullscreen ---------------------------------------------------------
+  //
+  // The whole app goes fullscreen, not the canvas: requesting it on the canvas
+  // alone would take the gamepad off screen, which on a phone would make
+  // fullscreen and playable mutually exclusive.
+
+  var fullscreenButton = document.getElementById('fullscreen');
+
+  fullscreenButton.addEventListener('click', function () {
+    var target = document.getElementById('app');
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    var request = target.requestFullscreen || target.webkitRequestFullscreen;
+    if (request) {
+      var result = request.call(target);
+      if (result && result.catch) result.catch(function () { /* denied */ });
+    }
+    // iPhone Safari has no Fullscreen API at all. The viewport meta and the dvh
+    // sizing above are what make it usable there instead.
+    if (screen.orientation && screen.orientation.lock) {
+      var lock = screen.orientation.lock('landscape');
+      if (lock && lock.catch) lock.catch(function () { /* not permitted */ });
+    }
+  });
+
+  function syncFullscreenLabel() {
+    var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    fullscreenButton.textContent = on ? 'Exit' : 'Fullscreen';
+  }
+  document.addEventListener('fullscreenchange', syncFullscreenLabel);
+  document.addEventListener('webkitfullscreenchange', syncFullscreenLabel);
+
+  // Keep arrow keys and space from scrolling the page behind the canvas.
+  window.addEventListener('keydown', function (event) {
+    if (KEYS[event.code] || event.code === 'Space') event.preventDefault();
+  }, { passive: false });
+
+  // ---- emscripten module --------------------------------------------------
+
+  function mountIDBFS() {
+    // Persistent filesystem over the save directory, as the SDK's own shell
+    // does. Removing this loses saves between sessions.
+    FS.mkdir("/libsdl");
+    FS.mount(IDBFS, {}, '/libsdl');
+    Module['addRunDependency']("SYNC_DATA");
+    FS.syncfs(true, function (err) {
+      Module['removeRunDependency']("SYNC_DATA");
+    });
+  }
+
+  window.Module = {
+    preRun: [mountIDBFS],
+    postRun: [function () {
+      bootElement.classList.add('done');
+      setTimeout(function () { bootElement.style.display = 'none'; }, 250);
+      canvasElement.focus();
+    }],
+    print: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.log(text);
+    },
+    printErr: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.error(text);
+    },
+    canvas: (function () {
+      canvasElement.addEventListener("webglcontextlost", function (e) {
+        alert('WebGL context lost. You will need to reload the page.');
+        e.preventDefault();
+      }, false);
+      return canvasElement;
+    })(),
+    setStatus: function (text) {
+      if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+      if (text === Module.setStatus.last.text) return;
+      var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+      var now = Date.now();
+      if (m && now - Module.setStatus.last.time < 30) return;
+      Module.setStatus.last.time = now;
+      Module.setStatus.last.text = text;
+      if (m) {
+        text = m[1];
+        progressElement.value = parseInt(m[2]) * 100;
+        progressElement.max = parseInt(m[4]) * 100;
+        progressElement.hidden = false;
+        spinnerElement.hidden = false;
+      } else {
+        progressElement.value = null;
+        progressElement.max = null;
+        progressElement.hidden = true;
+        if (!text) spinnerElement.hidden = true;
+      }
+      statusElement.innerHTML = text;
+    },
+    totalDependencies: 0,
+    monitorRunDependencies: function (left) {
+      this.totalDependencies = Math.max(this.totalDependencies, left);
+      Module.setStatus(left
+        ? 'Preparing... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')'
+        : 'All downloads complete.');
+    }
+  };
+
+  Module.setStatus('Downloading...');
+  window.onerror = function () {
+    Module.setStatus('Exception thrown, see JavaScript console');
+    spinnerElement.style.display = 'none';
+    Module.setStatus = function (text) {
+      if (text) Module.printErr('[post-exception status] ' + text);
+    };
+  };
+})();
+</script>
+{{{ SCRIPT }}}
+</body>
 </html>

@@ -18,4 +18,5 @@ models:
 depends_on:
   - engine
   - cmake
+  - web
   - tools/obj2cpp.py

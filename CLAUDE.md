@@ -23,6 +23,11 @@ person's machine, it is not done. Local scripts exist for convenience, but the
 workflow in `.github/workflows/` is the source of truth. When you change how a
 game builds, change the workflow, not just the local script.
 
+Publishing is limited to the default branch. A manual run on any other branch
+builds and uploads artifacts but leaves the live site alone unless it is
+dispatched with `publish` ticked on purpose. Never widen that: a branch build
+quietly replacing the gallery is very hard to notice.
+
 ### 3. Never rebuild or republish an unchanged game
 
 CI minutes are the scarce resource here. A game is rebuilt only when its own
@@ -144,12 +149,20 @@ source when a real model would do.
 - The exception is trivial primitives (a cube, a quad) that the engine already
   generates parametrically. Those stay in code.
 
-### 10. Every game gets its own URL, and a gallery entry
+### 10. Every game gets its own URL, a gallery entry, and touch controls
 
 - The gallery lives at the Pages root and lists every game.
 - Each game is published at `/<slug>/`, where `slug` comes from `game.yml`.
 - Games buildable for web get a "Play" link. Games that are device only get a
   "Download .uf2" link and say so on the card.
+- Every web build uses `web/shell.html`, which carries the on-screen gamepad
+  and the fullscreen button. Games must stay playable on a phone with nothing
+  installed. Do not fall back to the SDK's stock shell: it is keyboard only,
+  so a phone can load the game and then not play it.
+- The shell synthesises keyboard events rather than calling into the engine.
+  Keep it that way: it means the page needs no per game knowledge, and a change
+  to the C++ button mapping does not break it. `web` is in every game's
+  `depends_on` so editing the shell actually rebuilds the games.
 - **Thumbnails are manual.** CI captures a screenshot only the first time a game
   is published, when `games/<slug>/thumbnail.png` does not exist yet. After that
   the committed thumbnail is left alone forever, even when the game changes.

@@ -13,3 +13,4 @@ controls:
 
 depends_on:
   - cmake
+  - web
