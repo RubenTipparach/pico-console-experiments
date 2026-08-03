@@ -34,9 +34,10 @@ Two games ship today:
    site. Only games whose hash moved get built.
 3. **`build`** runs once per stale game: a `.uf2` for the PicoSystem and an
    Emscripten build for the browser.
-4. **`publish`** overlays the rebuilt games onto the `gh-pages` branch,
-   regenerates the gallery, and pushes. Games that were not rebuilt keep the
-   binaries they already had.
+4. **`publish`** overlays the rebuilt games onto the site state held on the
+   `gh-pages` branch, regenerates the gallery, then uploads the complete tree
+   and deploys it to Pages. Games that were not rebuilt keep the binaries they
+   already had.
 
 Change detection is content based rather than git-diff based, so it stays
 correct across force pushes, re-runs, and reverts. Reverting a change restores
@@ -171,14 +172,24 @@ Add `-DPICO_ONLY_GAME=<slug>` to any of these to build a single game.
 
 ## Repository settings this depends on
 
-The site is published from a branch, not from the Pages action. In
-**Settings > Pages**, set the source to **Deploy from a branch**, branch
-`gh-pages`, folder `/`.
+The Pages source is **GitHub Actions**, not "Deploy from a branch". The workflow
+uploads the site with `actions/upload-pages-artifact` and deploys it with
+`actions/deploy-pages`.
 
-This is deliberate. `actions/deploy-pages` replaces the entire site on every
-deploy, which would delete every game that was not rebuilt that run. Keeping the
-built site on a branch makes git itself the durable state, so an incremental
-overlay is possible and a bad publish can be reverted.
+Nothing else needs configuring. If the site ever 404s, check that the Pages
+source is still set to GitHub Actions: with it set to "Deploy from a branch"
+instead, `deploy-pages` is unavailable and the deployment step fails.
+
+### Why there is still a gh-pages branch
+
+`deploy-pages` replaces the entire site on every deployment, so a run that
+rebuilt one game would wipe every other game if it uploaded only what it built.
+
+The `gh-pages` branch is the durable state that prevents that. It holds the last
+published site, so each run can assemble the complete tree from it plus whatever
+was just rebuilt, and upload the whole thing.
+
+It is state, not the served site. Pushing to it publishes nothing on its own.
 
 ## Conventions
 
