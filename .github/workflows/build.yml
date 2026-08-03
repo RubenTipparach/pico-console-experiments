@@ -22,7 +22,11 @@ permissions:
   contents: write
 
 env:
-  BLIT_SDK_TAG: v0.7.3
+  # The 32blit SDK and the `32blit` python tool are versioned separately and the
+  # numbers look confusingly similar. The SDK's latest tag is v0.3.3; the tool is
+  # at 0.7.x, and 32blit-config.cmake requires tool >= 0.7.3. Do not pin the SDK
+  # to a tool version.
+  BLIT_SDK_TAG: v0.3.3
   PICO_SDK_TAG: 2.0.0
   EMSDK_VERSION: 3.1.61
 
