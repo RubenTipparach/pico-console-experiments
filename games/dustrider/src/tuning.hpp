@@ -96,7 +96,7 @@ constexpr int32_t k_start_grace = 100;
 // that worst case depth, reads the span the real projection gives it, and
 // fails if any of it is still on screen, or if a nudge back inside the
 // window is not.
-constexpr int32_t k_window_half = 1900;
+constexpr int32_t k_window_half = 2760;
 
 // ---- track generation ----
 

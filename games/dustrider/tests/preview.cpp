@@ -194,6 +194,24 @@ int main(int argc, char** argv) {
                         visible ? "visible" : "ALREADY GONE");
             if (!visible) g_window_fail = true;
         }
+
+        // The rider moves up and down the road by design, so both extremes
+        // of that travel have to stay in frame vertically. Losing the bike
+        // off the top or the bottom is a framing bug, not a death.
+        for (int side = -1; side <= 1; side += 2) {
+            probe.x = 60 << 8;
+            probe.screen_x = 60 << 8;
+            probe.z = side * dr::k_offroad_max;
+            for (int f = 0; f < 30; f++) draw(probe, scratch);
+            const drr::FrameStats s = drr::last_frame_stats();
+            const bool framed = s.bike_y0 >= 0 && s.bike_y1 <= k_h - 1 &&
+                                s.bike_x0 >= 0 && s.bike_x1 <= k_w - 1;
+            std::printf("framing %s shoulder: bike x %d..%d y %d..%d -> %s\n",
+                        side < 0 ? "south" : "north",
+                        s.bike_x0, s.bike_x1, s.bike_y0, s.bike_y1,
+                        framed ? "fully in frame" : "CLIPPED");
+            if (!framed) g_window_fail = true;
+        }
     }
 
     std::remove((out + "/tmp.ppm").c_str());

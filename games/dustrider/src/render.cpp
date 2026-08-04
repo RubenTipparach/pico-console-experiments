@@ -33,9 +33,9 @@ constexpr float k_pi = 3.14159265f;
 // lens rather than across a field of sand. The camera sits this far south
 // of the bike, and the road's south edge is k_road_half nearer still, so
 // the foreground sand band is only what is left over.
-constexpr float k_cam_dist = 3.4f;
-constexpr float k_cam_up = 1.7f;
-constexpr float k_cam_pitch = -0.30f;
+constexpr float k_cam_dist = 5.2f;
+constexpr float k_cam_up = 3.4f;
+constexpr float k_cam_pitch = -0.56f;
 
 // How near and far the bike is ever allowed to sit from the lens. The
 // camera is road locked, so the bike's depth is the road distance plus
@@ -43,8 +43,8 @@ constexpr float k_cam_pitch = -0.30f;
 // k_bike_depth_max is also what the survival window is derived against,
 // because the bike is smallest, and so leaves the frame latest, when it is
 // as far from the camera as it can get.
-constexpr float k_bike_depth_min = 1.7f;
-constexpr float k_bike_depth_max = 5.6f;
+constexpr float k_bike_depth_min = 2.2f;
+constexpr float k_bike_depth_max = 9.0f;
 
 // How many 1 m columns of ground are drawn, and where they start relative
 // to the camera.
@@ -405,6 +405,7 @@ void measure_bike_span(float x, float y, float z, float yaw, float pitch) {
     const float sin_yaw = std::sin(yaw), cos_yaw = std::cos(yaw);
     const float sin_p = std::sin(pitch), cos_p = std::cos(pitch);
     int lo = 32767, hi = -32768;
+    int ylo = 32767, yhi = -32768;
     for (int corner = 0; corner < 8; corner++) {
         const float lx = (corner & 1) ? bx1 : bx0;
         const float ry = (corner & 2) ? by1 : by0;
@@ -417,9 +418,13 @@ void measure_bike_span(float x, float y, float z, float yaw, float pitch) {
         if (!g_renderer.project(wx, y + ly, wz, sx, sy, sz)) continue;
         if (sx < lo) lo = sx;
         if (sx > hi) hi = sx;
+        if (sy < ylo) ylo = sy;
+        if (sy > yhi) yhi = sy;
     }
     g_stats.bike_x0 = static_cast<int16_t>(lo);
     g_stats.bike_x1 = static_cast<int16_t>(hi);
+    g_stats.bike_y0 = static_cast<int16_t>(ylo);
+    g_stats.bike_y1 = static_cast<int16_t>(yhi);
 }
 
 // A soft dark patch under the bike, which is what sells a flat ground.
