@@ -19,11 +19,22 @@ on:
         default: false
 
 # One publish at a time. Two runs overlaying the gh-pages tree concurrently will
-# race and one push gets rejected. cancel-in-progress is deliberately false: a
+# race and one push gets rejected. cancel-in-progress stays false for those: a
 # half applied overlay is worse than a slow queue.
+#
+# Pull request runs get their own queue, one per PR. The publish job excludes
+# pull requests by design, so they never touch gh-pages and have nothing to
+# race over. Sharing the publish lock only let one stall a deploy: a PR job
+# that hung in apt for over an hour kept a merge to main from reaching the
+# site, with the six hour job timeout as the only way out. They cancel in
+# progress instead, because a new push to a PR makes the previous run's answer
+# stale anyway.
 concurrency:
-  group: pico-console-publish
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'pull_request'
+        && format('pico-console-pr-{0}', github.ref)
+        || 'pico-console-publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   # contents: write is for the gh-pages state branch, which is how a game that

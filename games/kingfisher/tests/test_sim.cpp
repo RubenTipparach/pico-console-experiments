@@ -474,8 +474,8 @@ void test_b_recalls_instantly() {
 }
 
 // Towing the lure ramps up over about two seconds and cruises at about
-// half a meter per second, no faster.
-void test_retrieve_ramps_to_half_meter() {
+// two meters per second, no faster.
+void test_retrieve_ramps_to_cruise() {
     kf::World world;
     kf::world_init(world, 95);
     world.mode = kf::Mode::Sinking;
@@ -500,7 +500,7 @@ void test_retrieve_ramps_to_half_meter() {
     }
     const int32_t cruise = late_start - world.lure_z;   // one second at max
     CHECK(early < cruise);
-    CHECK(cruise >= 110 && cruise <= 140);   // ~0.5 m in one second
+    CHECK(cruise >= 480 && cruise <= 545);   // ~2 m in one second
     (void)mid_mark;
 }
 
@@ -685,7 +685,7 @@ int main() {
     test_distance_zero_means_collected();
     test_cast_range();
     test_b_recalls_instantly();
-    test_retrieve_ramps_to_half_meter();
+    test_retrieve_ramps_to_cruise();
     test_fight_terminates_without_input();
     test_fleeing_fish_despawn();
     test_curious_fish_reaches_the_lure();

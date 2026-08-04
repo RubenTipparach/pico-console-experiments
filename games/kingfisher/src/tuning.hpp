@@ -99,10 +99,10 @@ constexpr int k_cast_vz_per255 = 102;  // added by full power (~50 m)
 // ---- the retrieve: dragging the lure home ----
 //
 // Holding A tows the lure toward the boat, ramping over about two seconds
-// to half a meter per second: a slow entice, not a transport. B recalls
-// the lure instantly instead, from the air or the water.
+// to two meters per second, so a full 50 m cast winds back in under half a
+// minute. B recalls the lure instantly instead, from the air or the water.
 constexpr int k_retrieve_ramp_ticks = 200;
-constexpr int k_retrieve_max_fp256 = 328;   // fp<<8 per tick, ~0.5 m/s
+constexpr int k_retrieve_max_fp256 = 1311;  // fp<<8 per tick, ~2 m/s
 
 // ---- phases: the fight's rhythm ----
 //
