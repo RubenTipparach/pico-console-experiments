@@ -72,6 +72,11 @@ Each preview carries its own `builds.json`, so a branch tracks its own state.
 That is why the first push to a new branch rebuilds everything, and it is
 correct rather than a bug in the skip logic.
 
+A pull request run never publishes, so it has no state of its own. Its
+baseline is the manifest its BASE branch last published, which means a PR
+only builds the games its diff actually touches. A game whose fingerprint
+matches what the base already built green proves nothing by building again.
+
 ### 5. Never rebuild or republish an unchanged game
 
 CI minutes are the scarce resource here. A game is rebuilt only when its own
@@ -87,6 +92,9 @@ build tooling, the workflow itself) changes.
   in `game.yml`, otherwise the game will silently go stale.
 - Never "just rebuild everything to be safe". If you think a rebuild is needed,
   fix the fingerprint inputs so the tool agrees with you.
+- The builds that do run reuse objects through ccache (cached per game) and a
+  persistent Emscripten system library cache. Keep compiler flags stable
+  unless a change needs them: flag churn empties both.
 
 ### 6. One SDK: 32blit
 

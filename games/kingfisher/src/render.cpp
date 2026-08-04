@@ -44,6 +44,20 @@ Ripple g_ripples[k_max_ripples];
 uint8_t g_dip_timer = 0;   // bobber dip after a nibble
 float g_hook_depth = 0.6f; // eased render depth of the hook underwater
 
+// Underwater motes: a persistent pool of slow drifters in band screen space,
+// 8.8 fixed point. They rise gently on their own, and the camera's travel
+// pushes them the opposite way so the water reads as something moved
+// through, not a static backdrop. Purely cosmetic, never touches the sim.
+struct Mote {
+    int32_t x, y;      // 8.8 fixed, band pixels
+    uint8_t layer;     // 1 far .. 3 near; near motes move and shine more
+    uint8_t phase;     // per mote wander offset
+};
+constexpr int k_max_motes = 12;
+Mote g_motes[k_max_motes];
+bool g_motes_seeded = false;
+float g_mote_cam_x = 0.0f, g_mote_cam_z = 0.0f, g_mote_hook = 0.6f;
+
 // Quarter resolution sine, s8 amplitude 127, 64 entries per turn.
 const int8_t k_sin[64] = {
     0, 12, 24, 36, 48, 59, 70, 80, 89, 98, 105, 112, 117, 121, 124, 126,
@@ -391,6 +405,80 @@ void draw_fight_meters(const World& world) {
     }
 }
 
+// Advance and draw the mote pool. Call with the underwater camera bound:
+// the camera's frame to frame travel becomes an opposing screen space push,
+// scaled per layer, so near specks stream past faster than far ones. The
+// hook sinking tilts the view down, which reads as the water sliding up.
+void draw_motes(const SkyKey& sky, uint32_t t) {
+    constexpr int k_band_top = (k_split + 3) << 8;
+    constexpr int k_band_bottom = 119 << 8;
+    constexpr int k_band_h = k_band_bottom - k_band_top;
+
+    float cam_x, cam_y, cam_z;
+    g_renderer.camera_position(cam_x, cam_y, cam_z);
+
+    if (!g_motes_seeded) {
+        for (int i = 0; i < k_max_motes; i++) {
+            const uint32_t h = (i + 1) * 2246822519u;
+            g_motes[i].x = static_cast<int32_t>(h % (120 << 8));
+            g_motes[i].y = k_band_top + static_cast<int32_t>((h >> 9) % k_band_h);
+            g_motes[i].layer = static_cast<uint8_t>(1 + (h >> 21) % 3);
+            g_motes[i].phase = static_cast<uint8_t>(h >> 24);
+        }
+        g_motes_seeded = true;
+        g_mote_cam_x = cam_x;
+        g_mote_cam_z = cam_z;
+        g_mote_hook = g_hook_depth;
+    }
+
+    // Camera travel since the last frame, clamped so a camera cut (cast,
+    // catch, menu) does not slingshot the pool across the band.
+    float dx = cam_x - g_mote_cam_x;
+    float dz = cam_z - g_mote_cam_z;
+    float dh = g_hook_depth - g_mote_hook;
+    g_mote_cam_x = cam_x;
+    g_mote_cam_z = cam_z;
+    g_mote_hook = g_hook_depth;
+    if (dx > 0.5f || dx < -0.5f || dz > 0.5f || dz < -0.5f) {
+        dx = 0.0f; dz = 0.0f; dh = 0.0f;
+    }
+
+    // World travel to 8.8 screen push, opposing the motion. The gains are
+    // sized so a fish dragging the camera streams the pool at about half a
+    // pixel per frame: clearly flowing, nowhere near noise.
+    const int push_x = static_cast<int>(-dx * 1400.0f);
+    const int push_y = static_cast<int>(-dh * 1200.0f);
+    // Moving toward the hook parts the water: motes ease outward from the
+    // centre line, faster the closer they are.
+    const int part = static_cast<int>(dz * 500.0f);
+
+    for (int i = 0; i < k_max_motes; i++) {
+        Mote& m = g_motes[i];
+        const int scale = m.layer;   // 1..3, near layers move more
+
+        // Gentle ambient rise with a sideways wander, a fraction of a pixel
+        // per frame, so an undisturbed pool still feels like open water.
+        const int amb_x = sin64(t / 6 + m.phase) / 10;
+        const int amb_y = -14 - 4 * scale;
+
+        const int outward = m.x >= (60 << 8) ? 1 : -1;
+        m.x += amb_x + (push_x + outward * part) * scale / 3;
+        m.y += amb_y + push_y * scale / 3;
+
+        // Wrap within the band so the pool never thins out.
+        if (m.x < 0) m.x += 120 << 8;
+        if (m.x >= (120 << 8)) m.x -= 120 << 8;
+        if (m.y < k_band_top) m.y += k_band_h;
+        if (m.y >= k_band_bottom) m.y -= k_band_h;
+
+        const int lift = 40 + scale * 12;
+        g_raster.plot(m.x >> 8, m.y >> 8,
+                      shade8(sky.wat_r + lift, sky.light),
+                      shade8(sky.wat_g + lift, sky.light),
+                      shade8(sky.wat_b + lift + 10, sky.light));
+    }
+}
+
 void set_top_camera(const World& world, uint32_t t) {
     g_renderer.set_viewport(0, k_split);
     float cam_tx = 0.0f, cam_ty = 0.0f, cam_tz = 5.6f;
@@ -679,14 +767,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     }
 
     // Drifting motes give the water body without geometry.
-    for (int i = 0; i < 10; i++) {
-        uint32_t h = (i * 2246822519u) ^ (((t / 3) + i * 7) * 68601u);
-        const int x = static_cast<int>(h % 120);
-        const int y = k_split + 4 + static_cast<int>((h >> 9) % 52);
-        g_raster.plot(x, y, shade8(sky.wat_r + 60, sky.light),
-                      shade8(sky.wat_g + 60, sky.light),
-                      shade8(sky.wat_b + 70, sky.light));
-    }
+    draw_motes(sky, t);
 
     if (world.mode == kf::Mode::Fight) draw_fight_meters(world);
 

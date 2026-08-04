@@ -74,6 +74,7 @@ jobs:
         id: where
         env:
           FORCE_ROOT: ${{ github.event.inputs.publish }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           flag=""
@@ -83,15 +84,28 @@ jobs:
             --default-branch "${{ github.event.repository.default_branch }}" \
             $flag)
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
-          echo "publishing to '${prefix:-<root>}'"
+          # A pull request never publishes, so its own prefix has no state
+          # behind it. Its baseline is what the BASE branch last published:
+          # the root manifest when the base is the default branch, that
+          # branch's preview manifest otherwise. Without this, every PR run
+          # would find an empty manifest and rebuild every game every time.
+          state_prefix="$prefix"
+          if [ -n "${BASE_REF:-}" ]; then
+            state_prefix=$(python3 tools/site_prefix.py \
+              --ref-name "$BASE_REF" \
+              --default-branch "${{ github.event.repository.default_branch }}")
+          fi
+          echo "state_prefix=$state_prefix" >> "$GITHUB_OUTPUT"
+          echo "publishing to '${prefix:-<root>}', baseline '${state_prefix:-<root>}'"
 
       - name: Fetch the published manifest
         env:
-          PREFIX: ${{ steps.where.outputs.prefix }}
+          PREFIX: ${{ steps.where.outputs.state_prefix }}
         run: |
-          # A branch tracks its own preview's fingerprints, not the root's.
-          # Reading the root's here would make the first push to a branch think
-          # everything was already published and skip the whole build.
+          # A branch push tracks its own preview's fingerprints; a pull
+          # request tracks its base branch's. A game whose fingerprint matches
+          # what the baseline already built and published green needs no
+          # rebuild to prove anything, on either kind of run.
           #
           # Absent branch, absent file and malformed JSON all mean the same
           # thing: nothing is published there, so everything is stale.
@@ -130,7 +144,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build python3 python3-pip \
+            cmake ninja-build ccache python3 python3-pip \
             gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           pip3 install --user 32blit
 
@@ -155,6 +169,30 @@ jobs:
           # cyw43-driver, lwip and mbedtls and roughly triple the cache.
           git -C pico-sdk submodule update --init lib/tinyusb
 
+      # Object level reuse for the compiles that do have to run: a game whose
+      # dependencies changed still shares almost every SDK object with its
+      # previous build. Keyed per game so concurrent matrix jobs never fight
+      # over one entry; the sha suffix makes every run save, and restore-keys
+      # pull the newest previous entry.
+      - name: Cache compiler output
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ matrix.slug }}-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.slug }}-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-
+
+      # Emscripten rebuilds its system libraries into EM_CACHE on first use.
+      # The emsdk cache below cannot carry them: its key is static, so it was
+      # saved before any build populated it. This entry's first miss happens
+      # on a run that does build them, so it is saved populated.
+      - name: Cache Emscripten system libraries
+        if: matrix.web
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../em-cache
+          key: emlibs-${{ env.EMSDK_VERSION }}
+
       - name: Cache emsdk
         id: emsdk-cache
         uses: actions/cache@v4
@@ -177,13 +215,17 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
+          ccache --max-size=150M --zero-stats
           cmake -S . -B build.pico -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
             -DPICO_BOARD=pimoroni_picosystem \
             -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPICO_ONLY_GAME="$GAME"
           cmake --build build.pico --parallel
+          ccache --show-stats
 
       - name: Build for the browser
         if: matrix.web
@@ -192,12 +234,16 @@ jobs:
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           source "$GITHUB_WORKSPACE/../emsdk/emsdk_env.sh"
+          export EM_CACHE="$GITHUB_WORKSPACE/../em-cache"
           # 32BLIT_DIR must be absolute for Emscripten builds.
           emcmake cmake -S . -B build.web \
             -D32BLIT_DIR="$GITHUB_WORKSPACE/../32blit-sdk" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPICO_ONLY_GAME="$GAME"
           cmake --build build.web --parallel
+          ccache --show-stats
 
       - name: Collect the outputs
         env:
