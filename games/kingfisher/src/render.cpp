@@ -173,27 +173,28 @@ void draw_shore(const SkyKey& sky) {
     const int light = sky.light;
 
     // Water between the animated grid and the shore, matched to the grid's
-    // farthest row so the seam vanishes.
+    // farthest row so the seam vanishes. The lake now runs 50 meters out,
+    // so the land starts beyond the longest cast.
     const int wshade = 256 - (8 * 130) / 10;
-    draw_ground_quad(60.0f, 14.5f, 26.0f, 0.0f,
+    draw_ground_quad(70.0f, 44.0f, 58.0f, 0.0f,
                      shade8(sky.wat_r * wshade / 256, light),
                      shade8(sky.wat_g * wshade / 256, light),
                      shade8(sky.wat_b * wshade / 256, light));
 
     // Sand, then grass climbing gently away from the water.
-    draw_ground_quad(70.0f, 26.0f, 31.0f, 0.02f,
+    draw_ground_quad(80.0f, 58.0f, 64.0f, 0.02f,
                      shade8(205, light), shade8(180, light), shade8(126, light));
-    draw_ground_quad(85.0f, 31.0f, 48.0f, 0.05f,
+    draw_ground_quad(100.0f, 64.0f, 82.0f, 0.05f,
                      shade8(66, light), shade8(132, light), shade8(64, light));
-    draw_ground_quad(100.0f, 48.0f, 80.0f, 0.4f,
+    draw_ground_quad(130.0f, 82.0f, 130.0f, 0.4f,
                      shade8(44, light), shade8(96, light), shade8(52, light));
 
     // The treeline. A handful of trees at mixed depths and sizes reads as a
     // wooded shore without costing more than one fish worth of triangles.
     struct TreeSpot { float x, z, scale; };
     static const TreeSpot k_trees[] = {
-        {-26.0f, 36.0f, 4.2f}, {-11.0f, 40.0f, 5.2f}, {2.0f, 37.0f, 4.0f},
-        {15.0f, 42.0f, 5.6f},  {30.0f, 38.0f, 4.6f},  {44.0f, 44.0f, 5.0f},
+        {-46.0f, 66.0f, 5.8f}, {-22.0f, 72.0f, 7.0f}, {2.0f, 67.0f, 5.6f},
+        {24.0f, 74.0f, 7.4f}, {44.0f, 68.0f, 6.2f},  {64.0f, 76.0f, 6.6f},
     };
     for (const auto& spot : k_trees) {
         g_renderer.draw_mesh(models::tree, spot.x, 0.05f, spot.z, 0.0f,
@@ -215,13 +216,19 @@ void draw_water(const World& world, const SkyKey& sky, uint32_t t) {
     bool ok[k_wx * k_wz];
     uint8_t cr[k_wx * k_wz], cg[k_wx * k_wz], cb[k_wx * k_wz];
 
+    // Row depths grow toward the horizon so nine rows can span fifty
+    // meters of water without starving the near field of vertices.
+    static const int32_t k_row_z_fp[k_wz] = {
+        -256, 256, 896, 1792, 3072, 4864, 7168, 9984, 11520,   // -1 .. 45
+    };
+
     for (int j = 0; j < k_wz; j++) {
         for (int i = 0; i < k_wx; i++) {
             const int idx = j * k_wx + i;
-            // Widen with distance so the far edge spans the frustum rather
-            // than pinching into a dome on the horizon.
-            const int32_t wx_fp = (2 * i - (k_wx - 1)) * (320 + j * 60);
-            const int32_t wz_fp = -256 + j * 512;               // -1 .. 15
+            // Widen with distance so the far edge spans the 90 degree
+            // frustum rather than pinching into a dome on the horizon.
+            const int32_t wx_fp = (2 * i - (k_wx - 1)) * (320 + j * 300);
+            const int32_t wz_fp = k_row_z_fp[j];
             const int h = wave_fp(i, j, t, world.raining != 0);
             ok[idx] = g_renderer.project(fp_to_f(wx_fp), fp_to_f(h),
                                          fp_to_f(wz_fp),
@@ -728,7 +735,8 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     if (bite_open && world.bite_timer > 0 && world.mode == kf::Mode::Sinking) {
         int bx, by, bz;
         if (g_renderer.project(fp_to_f(world.lure_x), 0.9f,
-                               fp_to_f(world.lure_z), bx, by, bz)) {
+                               fp_to_f(world.lure_z), bx, by, bz) &&
+            by - 9 >= 0 && by < k_split) {
             for (int y = 0; y < 5; y++) {
                 g_raster.plot(bx, by + y - 9, 255, 60, 60);
                 g_raster.plot(bx + 1, by + y - 9, 255, 60, 60);
@@ -763,6 +771,22 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                 lb = 90;
             }
             draw_line_band(ex, ey, hx, hy, k_split + 1, 120, lr, lg, lb);
+        }
+    }
+
+    // The bite mark again, beside the hook itself, so the alert reads in
+    // whichever half of the screen the player is watching.
+    if (bite_open && world.bite_timer > 0 && world.mode == kf::Mode::Sinking) {
+        int bx, by, bz;
+        if (g_renderer.project(fp_to_f(world.lure_x), -g_hook_depth + 0.35f,
+                               fp_to_f(world.lure_z), bx, by, bz) &&
+            by - 9 >= k_split && by < 120) {
+            for (int y = 0; y < 5; y++) {
+                g_raster.plot(bx, by + y - 9, 255, 60, 60);
+                g_raster.plot(bx + 1, by + y - 9, 255, 60, 60);
+            }
+            g_raster.plot(bx, by - 2, 255, 60, 60);
+            g_raster.plot(bx + 1, by - 2, 255, 60, 60);
         }
     }
 

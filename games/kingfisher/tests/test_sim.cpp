@@ -54,8 +54,10 @@ void check_invariants(const kf::World& world) {
             check(false, "fish species valid");
         }
     }
-    if (world.lure_x < -12 * kf::k_one || world.lure_x > 12 * kf::k_one ||
-        world.lure_z < -2 * kf::k_one || world.lure_z > 18 * kf::k_one) {
+    if (world.lure_x < -kf::k_lake_half_width_fp - 2 * kf::k_one ||
+        world.lure_x > kf::k_lake_half_width_fp + 2 * kf::k_one ||
+        world.lure_z < -2 * kf::k_one ||
+        world.lure_z > kf::k_lake_far_fp + 2 * kf::k_one) {
         check(false, "lure inside the lake");
     }
 }
@@ -77,6 +79,7 @@ void test_monkey() {
         input.right = (r & 48) == 32;
         input.left_pressed = (r & 192) == 64;
         input.right_pressed = (r & 192) == 128;
+        input.b_pressed = (r & 1536) == 512;
         kf::world_tick(world, input);
         check_invariants(world);
         if (i > 100000) {
@@ -408,6 +411,99 @@ void test_distance_zero_means_collected() {
     CHECK(kf::hook_distance_dm(world) == 0);
 }
 
+
+// A full power cast reaches about fifty meters; a limp one stays in the
+// shallows. The power meter is the whole difficulty dial, so its range is
+// pinned here.
+void test_cast_range() {
+    kf::World world;
+    kf::world_init(world, 91);
+    world.mode = kf::Mode::Aiming;
+    world.power = 255;
+    kf::Input release{};
+    release.a_released = true;
+    kf::world_tick(world, release);
+    CHECK(world.mode == kf::Mode::Flying);
+    for (int t = 0; t < 1000 && world.mode == kf::Mode::Flying; t++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.mode == kf::Mode::Sinking);
+    CHECK(world.lure_z > 44 * kf::k_one);
+    CHECK(world.lure_z <= kf::k_lake_far_fp);
+
+    kf::World weak;
+    kf::world_init(weak, 92);
+    weak.mode = kf::Mode::Aiming;
+    weak.power = 0;
+    kf::world_tick(weak, release);
+    for (int t = 0; t < 1000 && weak.mode == kf::Mode::Flying; t++) {
+        kf::world_tick(weak, kf::Input{});
+    }
+    CHECK(weak.mode == kf::Mode::Sinking);
+    CHECK(weak.lure_z <= kf::k_shallow_max_fp);
+}
+
+// B is the instant recall: from the air or the water, one press brings the
+// lure home and stands the rod down, and anything mouthing the lure flees
+// rather than being left holding a bite window forever.
+void test_b_recalls_instantly() {
+    kf::World world;
+    kf::world_init(world, 93);
+    world.mode = kf::Mode::Aiming;
+    world.power = 200;
+    kf::Input release{};
+    release.a_released = true;
+    kf::world_tick(world, release);
+    CHECK(world.mode == kf::Mode::Flying);
+    kf::Input recall{};
+    recall.b_pressed = true;
+    kf::world_tick(world, recall);
+    CHECK(world.mode == kf::Mode::Idle);
+    CHECK(world.lure_z == kf::k_one);
+
+    kf::World pond;
+    kf::world_init(pond, 94);
+    kf::world_test_hook(pond, 3, 30);   // leaves a fish Biting at the lure
+    CHECK(pond.mode == kf::Mode::Sinking);
+    kf::world_tick(pond, recall);
+    CHECK(pond.mode == kf::Mode::Idle);
+    for (const auto& fish : pond.fish) {
+        CHECK(fish.state != kf::FishState::Biting);
+        CHECK(fish.state != kf::FishState::Nibbling);
+    }
+}
+
+// Towing the lure ramps up over about two seconds and cruises at about
+// half a meter per second, no faster.
+void test_retrieve_ramps_to_half_meter() {
+    kf::World world;
+    kf::world_init(world, 95);
+    world.mode = kf::Mode::Sinking;
+    world.lure_z = 40 * kf::k_one;
+    world.lure_y = kf::k_one;
+
+    kf::Input tow{};
+    tow.a = true;
+    const int32_t start = world.lure_z;
+    for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
+        kf::world_tick(world, tow);
+    }
+    const int32_t early = start - world.lure_z;   // ramping: below cruise
+    const int32_t mid_mark = world.lure_z;
+    for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
+        kf::world_tick(world, tow);
+    }
+    CHECK(world.mode == kf::Mode::Sinking);
+    const int32_t late_start = world.lure_z;
+    for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
+        kf::world_tick(world, tow);
+    }
+    const int32_t cruise = late_start - world.lure_z;   // one second at max
+    CHECK(early < cruise);
+    CHECK(cruise >= 110 && cruise <= 140);   // ~0.5 m in one second
+    (void)mid_mark;
+}
+
 // Doing nothing after the hook must end the fight too: the fish takes all the
 // line and escapes. No fight lasts forever.
 void test_fight_terminates_without_input() {
@@ -587,6 +683,9 @@ int main() {
     test_fresh_fish_resists_the_reel();
     test_tension_builds_gradually();
     test_distance_zero_means_collected();
+    test_cast_range();
+    test_b_recalls_instantly();
+    test_retrieve_ramps_to_half_meter();
     test_fight_terminates_without_input();
     test_fleeing_fish_despawn();
     test_curious_fish_reaches_the_lure();

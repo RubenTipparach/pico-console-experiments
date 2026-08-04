@@ -95,6 +95,7 @@ struct Input {
     bool a;
     bool a_pressed;
     bool a_released;
+    bool b_pressed;
     bool left;
     bool right;
     bool left_pressed;
@@ -132,6 +133,8 @@ struct World {
     int32_t lure_x, lure_y, lure_z;   // y positive down, 0 at the surface
     int32_t lure_vx, lure_vy, lure_vz;
     uint16_t twitch_timer;
+    uint16_t retrieve_hold;   // ticks A has been held towing the lure
+    uint16_t retrieve_frac;   // sub fp remainder of the tow speed
 
     int8_t hooked_fish;    // index into fish[], -1 when none
     uint16_t tension;      // 0..1023; the red zone starts at k_tension_danger
