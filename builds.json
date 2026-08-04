@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T22:51:48Z",
-      "commit": "0cb06a3",
+      "built_at": "2026-08-04T23:04:48Z",
+      "commit": "c2a28cc",
       "dir": "games/dustrider",
       "has_thumbnail": false,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T22:51:48Z",
-      "commit": "0cb06a3",
+      "built_at": "2026-08-04T23:04:48Z",
+      "commit": "c2a28cc",
       "dir": "games/kingfisher",
       "has_thumbnail": false,
       "sdk": "32blit",
@@ -45,6 +45,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-04T22:51:48Z",
+  "generated_at": "2026-08-04T23:04:48Z",
   "schema": 2
 }
