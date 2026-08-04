@@ -73,18 +73,29 @@
     min-height: 0;
   }
 
+  /* The frame is the space the screen may occupy. The pad's area is reserved
+     first, so the controls can never be pushed off the bottom. */
+  #frame {
+    width: min(100vw - 0.75rem, calc(100dvh - var(--pad-area) - 4rem));
+    height: min(100vw - 0.75rem, calc(100dvh - var(--pad-area) - 4rem));
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    outline: 3px solid var(--line);
+    background: #000011;
+  }
+
   canvas.emscripten {
     display: block;
     border: 0 none;
     background: #000011;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
-    /* Square, because the console is. The pad's area is reserved first, so the
-       screen takes whatever is left and the controls can never be pushed off
-       the bottom. */
-    width: min(100vw - 0.75rem, calc(100dvh - var(--pad-area) - 4rem));
-    height: min(100vw - 0.75rem, calc(100dvh - var(--pad-area) - 4rem));
-    outline: 3px solid var(--line);
+    /* Pinned to the console's resolution and zoomed with a transform.
+       See setZoom() for why the size is fixed here rather than responsive. */
+    width: 240px;
+    height: 240px;
+    transform-origin: center center;
   }
 
   /* ---- loading ---- */
@@ -258,7 +269,9 @@
     }
     #pad > * { pointer-events: auto; }
     :root { --pad-size: min(34vh, 170px); --btn: min(13vh, 62px); }
-    canvas.emscripten { width: auto; height: 92dvh; max-width: 92dvh; }
+    /* Resize the frame, never the canvas. The canvas stays pinned at 240x240
+       because its CSS box is what sets the render buffer. */
+    #frame { width: 92dvh; height: 92dvh; }
     #pad { margin-top: 0; }
     #bar { position: fixed; top: 0.4rem; right: 0.4rem; z-index: 5; }
   }
@@ -274,7 +287,9 @@
   </div>
 
   <div id="stage">
-    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <div id="frame">
+      <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    </div>
     <div id="boot">
       <div class="spinner" id="spinner"></div>
       <div id="status">Downloading...</div>
@@ -487,6 +502,44 @@
   document.addEventListener('fullscreenchange', syncFullscreenLabel);
   document.addEventListener('webkitfullscreenchange', syncFullscreenLabel);
 
+  // Zoom the canvas with a transform rather than by sizing it in CSS.
+  //
+  // Two SDK behaviours make the obvious approach fail:
+  //
+  // 1. The SDL window is created SDL_WINDOW_RESIZABLE, so Emscripten keeps the
+  //    canvas backing store in step with the element's CSS box. Setting a CSS
+  //    size therefore changes the render buffer, not just how it is displayed.
+  //
+  // 2. Renderer.cpp hardcodes `Mode mode = KeepPixels`, which turns on
+  //    SDL_RenderSetIntegerScale, and there is no command line switch for it.
+  //    Integer scaling means a 240 pixel surface in a 378 pixel buffer scales
+  //    by floor(378 / 240) = 1 and sits in the middle with a black border.
+  //
+  // Together those produced a small game marooned in a large black frame.
+  //
+  // So the CSS pins the element to a fixed 240x240, which pins the buffer to
+  // 240x240 through (1). The console's surface is 240 in hires and 120 in
+  // lores, so the integer scale lands on exactly 1x or 2x and fills the buffer
+  // completely either way. A responsive CSS size cannot do this: it produces
+  // arbitrary buffer sizes like 358, where floor(358 / 240) is 1 and the black
+  // border comes back.
+  //
+  // The transform then magnifies to whatever space is going. It does not touch
+  // the layout box, so it cannot feed back into the buffer, and
+  // `image-rendering: pixelated` keeps the upscale sharp.
+  var k_native = 240;
+
+  function setZoom() {
+    var frame = document.getElementById('frame');
+    var box = frame.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    var zoom = Math.min(box.width / k_native, box.height / k_native);
+    if (zoom > 0) canvasElement.style.transform = 'scale(' + zoom + ')';
+  }
+  window.addEventListener('resize', setZoom);
+  window.addEventListener('orientationchange', setZoom);
+  document.addEventListener('fullscreenchange', setZoom);
+
   // Keep arrow keys and space from scrolling the page behind the canvas.
   window.addEventListener('keydown', function (event) {
     if (KEYS[event.code] || event.code === 'Space') event.preventDefault();
@@ -506,10 +559,23 @@
   }
 
   window.Module = {
+    // Match the device exactly.
+    //
+    // The SDL backend defaults to 320x240 (System::max_width/max_height), so
+    // `hires` is 320x240 and `lores` is 160x120 in the browser. On the
+    // PicoSystem the board config overrides the width to 240, giving 240x240
+    // and 120x120. Without this the browser hands a game a wider surface than
+    // it has on hardware, and a game that draws to its own fixed bounds leaves
+    // black margins down the side.
+    //
+    // Passing --size makes the web surface identical to the device, so what you
+    // test in a browser is what runs on the console.
+    arguments: ["--size", "240,240"],
     preRun: [mountIDBFS],
     postRun: [function () {
       bootElement.classList.add('done');
       setTimeout(function () { bootElement.style.display = 'none'; }, 250);
+      setZoom();
       canvasElement.focus();
     }],
     print: function (text) {

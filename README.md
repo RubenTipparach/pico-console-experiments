@@ -72,6 +72,31 @@ and keeps working if the C++ button mapping changes.
 iPhone Safari has no Fullscreen API, so the button does nothing there. The
 layout is sized with `dvh` and the safe-area insets so it fits anyway.
 
+## Branch previews
+
+Every push, on every branch, builds and deploys. The default branch owns the
+site root; every other branch gets its own preview URL:
+
+```
+main            -> /
+my-branch       -> /preview/my-branch/
+feature/pad     -> /preview/feature-pad/
+```
+
+So you can push and reload on your phone without opening a PR, and a branch can
+never overwrite the live gallery.
+
+Each preview keeps its own `builds.json`, so a branch tracks its own build
+state. The first push to a new branch rebuilds everything, because that preview
+has nothing published yet; pushes after that only rebuild what changed.
+
+To deploy a non default branch to the **root**, run the workflow manually with
+`publish` ticked. That is the only way a branch reaches the live gallery, and it
+is off by default because a branch silently replacing the site is hard to spot.
+
+Pull requests build but never deploy: a PR from a fork would otherwise get write
+access to the site.
+
 ## Building a branch without publishing
 
 `workflow_dispatch` runs the pipeline on any branch you pick in the Actions UI.
