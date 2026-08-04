@@ -139,7 +139,12 @@ struct World {
     uint16_t reel_click_acc;  // fp of line wound since the last ratchet click
 
     int8_t hooked_fish;    // index into fish[], -1 when none
-    uint16_t tension;      // 0..1023; the red zone starts at k_tension_danger
+    uint16_t tension;      // 0..1023, line stress against the rod's limit
+    uint16_t line_stress;  // the truth the meter slews toward
+    uint16_t line_frac;    // sub fp remainder of this tick's line movement
+    uint8_t fish_effort;   // 0..255, how hard the fish is working
+    int8_t fish_dir;       // 1 away, 0 holding, -1 back toward the boat
+    uint16_t dir_timer;    // ticks until the fish picks a direction again
     uint16_t danger;       // ticks spent in the red zone, break at k_danger_ticks
     int32_t line_len;      // fp8 world units of line out
     int32_t line_max;
