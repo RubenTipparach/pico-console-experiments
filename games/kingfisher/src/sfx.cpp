@@ -36,11 +36,23 @@ void sfx_init() {
     channel.sustain = 0x6fff;
     channel.release_ms = 30;
     channel.volume = 0x5fff;
+
+    // The reel ratchet lives on its own channel: a low triangle thump whose
+    // envelope decays to silence on its own, so it can tick away under a
+    // bite jingle without either interrupting the other.
+    auto& click = blit::channels[1];
+    click.waveforms = blit::Waveform::TRIANGLE;
+    click.attack_ms = 2;
+    click.decay_ms = 45;
+    click.sustain = 0;
+    click.release_ms = 10;
+    click.volume = 0x42ff;
 }
 
 void sfx_set_enabled(bool enabled) {
     if (g_enabled && !enabled) {
         blit::channels[0].trigger_release();
+        blit::channels[1].trigger_release();
         g_step_count = 0;
     }
     g_enabled = enabled;
@@ -50,6 +62,15 @@ bool sfx_enabled() { return g_enabled; }
 
 void sfx_handle(const kf::Events& ev) {
     if (!g_enabled) return;
+
+    // The ratchet is independent of the priority chain below: it is texture,
+    // not an announcement, and it plays alongside whatever else fires.
+    if (ev.reel_click) {
+        auto& click = blit::channels[1];
+        click.frequency = 72;
+        click.trigger_attack();
+    }
+
     // Order matters: the most important sound of the tick wins.
     if (ev.new_record) {
         const Step s[] = {{523, 6}, {659, 6}, {784, 6}, {1046, 14}};

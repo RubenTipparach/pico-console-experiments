@@ -98,11 +98,16 @@ constexpr int k_cast_vz_per255 = 102;  // added by full power (~50 m)
 
 // ---- the retrieve: dragging the lure home ----
 //
-// Holding A tows the lure toward the boat, ramping over about two seconds
-// to two meters per second, so a full 50 m cast winds back in under half a
+// Holding A tows the lure toward the boat, ramping over about a second to
+// two meters per second, so a full 50 m cast winds back in under half a
 // minute. B recalls the lure instantly instead, from the air or the water.
-constexpr int k_retrieve_ramp_ticks = 200;
+constexpr int k_retrieve_ramp_ticks = 100;
 constexpr int k_retrieve_max_fp256 = 1311;  // fp<<8 per tick, ~2 m/s
+
+// The reel ratchet: one low bump for every this much line wound in, during
+// the tow and the fight both. Cadence tracks reel speed for free: a spent
+// fish coming in at full crank clicks fast, a stalled crank is silent.
+constexpr int k_reel_click_fp = 128;        // half a meter per click
 
 // ---- phases: the fight's rhythm ----
 //

@@ -132,6 +132,7 @@ void reset_lure(World& world) {
     world.twitch_timer = 0;
     world.retrieve_hold = 0;
     world.retrieve_frac = 0;
+    world.reel_click_acc = 0;
     world.hooked_fish = -1;
     // Whatever was mouthing the lure has nothing to mouth now. Without this
     // a fish left Biting after a recall would hold that state forever, since
@@ -532,6 +533,14 @@ void update_fight(World& world, const Input& input) {
                                           : k_resist_run_mul);
         const int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
         world.line_len -= gain;
+        if (gain > 0) {
+            world.reel_click_acc =
+                static_cast<uint16_t>(world.reel_click_acc + gain);
+            if (world.reel_click_acc >= k_reel_click_fp) {
+                world.reel_click_acc -= k_reel_click_fp;
+                world.ev.reel_click = true;
+            }
+        }
         if (gain < 0 && world.line_len >= world.line_max) {
             world.ev.escape = true;
             end_fight(world, false);
@@ -712,6 +721,12 @@ void update_lure(World& world, const Input& input) {
                     world.lure_z -= move;
                     world.lure_x -= world.lure_x / 64;
                     world.twitch_timer = 60;   // a moving lure draws eyes
+                    world.reel_click_acc =
+                        static_cast<uint16_t>(world.reel_click_acc + move);
+                    if (world.reel_click_acc >= k_reel_click_fp) {
+                        world.reel_click_acc -= k_reel_click_fp;
+                        world.ev.reel_click = true;
+                    }
                 }
                 if (world.lure_z <= k_one) reset_lure(world);
             } else {

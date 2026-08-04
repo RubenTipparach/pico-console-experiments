@@ -23,10 +23,10 @@ person's machine, it is not done. Local scripts exist for convenience, but the
 workflow in `.github/workflows/` is the source of truth. When you change how a
 game builds, change the workflow, not just the local script.
 
-Publishing is limited to the default branch. A manual run on any other branch
-builds and uploads artifacts but leaves the live site alone unless it is
-dispatched with `publish` ticked on purpose. Never widen that: a branch build
-quietly replacing the gallery is very hard to notice.
+A push to main builds and publishes; any other branch builds only when it is
+dispatched by hand, and then it deploys under `preview/<branch>/` unless the
+run is dispatched with `publish` ticked on purpose. Never widen that: a branch
+build quietly replacing the gallery is very hard to notice.
 
 ### 3. Pages is deployed by GitHub Actions, never from a branch
 
@@ -37,16 +37,14 @@ pipeline that assumes a branch is being served: pushing to `gh-pages` publishes
 nothing here.
 
 The `gh-pages` branch still exists, but it is **state, not the served site**. It
-carries the previous build forward so a game that did not change keeps the
-binaries it already had. Every run assembles the complete site from that branch
-plus whatever was just rebuilt, then uploads the whole tree as the Pages
-artifact. That full upload is required, because `deploy-pages` replaces the
+carries the previous build forward so a held game keeps the binaries it
+already had. Every run assembles the complete site from that branch plus
+whatever it just built, then uploads the whole tree as the Pages artifact. That full upload is required, because `deploy-pages` replaces the
 entire site on every deployment.
 
 So both halves are load bearing:
 
-- Drop the state branch and every game that was not rebuilt disappears from the
-  site.
+- Drop the state branch and every held game disappears from the site.
 - Drop the artifact upload and nothing reaches the web at all.
 
 Any job that changes what the site should look like has to end in an upload and
@@ -56,26 +54,21 @@ would sit in the state branch and never be seen.
 Jobs that deploy need `pages: write` and `id-token: write`, plus
 `environment: github-pages`.
 
-### 4. Branches deploy to previews, never to the root
+### 4. main builds on every push; every other branch is manual
 
-Every push deploys. The default branch owns the site root; every other branch
-publishes under `preview/<branch>/`. `tools/site_prefix.py` is the single place
-that decides which, and both the detect job and the publish job must ask it,
-because if they disagree a branch reads one set of fingerprints and writes
-another and the build plan quietly stops meaning anything.
+A push to main builds and publishes, always. No other branch builds by
+itself: pushing to a branch does nothing, and a branch build is a deliberate
+`workflow_dispatch`. Pull requests do not build either, so a PR carries no CI
+signal of its own and the merge to main is what proves the tree.
+
+Building is publishing. Any run that builds also deploys what it built, so
+there is no such thing as a green build that never reached a site. The
+default branch owns the site root; a dispatched branch publishes under
+`preview/<branch>/`. `tools/site_prefix.py` is the single place that decides
+which, and both the detect job and the publish job must ask it.
 
 A branch reaching the site root takes an explicit `publish` dispatch. Do not
-loosen that. Pull requests must never deploy at all, because a PR from a fork
-would then have write access to the site.
-
-Each preview carries its own `builds.json`, so a branch tracks its own state.
-That is why the first push to a new branch rebuilds everything, and it is
-correct rather than a bug in the skip logic.
-
-A pull request run never publishes, so it has no state of its own. Its
-baseline is the manifest its BASE branch last published, which means a PR
-only builds the games its diff actually touches. A game whose fingerprint
-matches what the base already built green proves nothing by building again.
+loosen that: a branch quietly replacing the gallery is very hard to notice.
 
 Pages caches every file for ten minutes under unchanging names, which used to
 make a fresh deploy look stale on a device that had just loaded the previous
@@ -88,22 +81,28 @@ window lookup on purpose: Emscripten minifies the shell, and any compile
 time constant in there gets folded and the whole mechanism dead code
 eliminated. Publish time data must never travel through the minifier.
 
-### 5. Never rebuild or republish an unchanged game
+### 5. What builds is a decision in `build.yaml`, not an inference
 
-CI minutes are the scarce resource here. A game is rebuilt only when its own
-content hash changes, or when something it depends on (the shared engine, the
-build tooling, the workflow itself) changes.
+Every enabled game is built on every run, whether or not anything under it
+changed. There is no change detection: the build list is written down, so a
+build is reproducible from the config alone and no game is ever skipped for a
+reason nobody can see.
 
-- Change detection lives in `.github/workflows/build.yml`, job `detect`.
-- Each game's fingerprint is a hash of its directory plus its declared
-  dependencies. See `tools/fingerprint.py`.
-- Games that did not change keep their previously published web build and their
-  previously published `.uf2`. They are copied forward, not rebuilt.
-- When you add a new shared dependency, add it to the game's `depends_on` list
-  in `game.yml`, otherwise the game will silently go stale.
-- Never "just rebuild everything to be safe". If you think a rebuild is needed,
-  fix the fingerprint inputs so the tool agrees with you.
-- The pico builds that do run reuse objects through ccache, cached per game.
+- `build.yaml` at the repo root is the switchboard. `build:` is the rotation,
+  `hold:` takes a game out of it, and a game in neither list is built, so
+  adding a game is still just adding a directory.
+- A held game is not built and not touched. Its last published build stays on
+  the site and in the gallery, carried forward from the gh-pages state
+  branch, with the commit it was published from. Holding a game hides nothing
+  from players.
+- A slug in either list that no longer exists is a hard error. A typo under
+  `hold` would otherwise read as "unlisted", which means the opposite.
+- `tools/build_plan.py` turns that file into the matrix, and the run summary
+  names what was built, what was held, and anything the config never
+  mentioned.
+- A manual run can name games explicitly, which overrides both lists. That is
+  how to rebuild one held game without editing the config.
+- The pico builds reuse objects through ccache, cached per game.
   The Emscripten builds use NO compile cache, deliberately: a warm ccache
   once shipped a wasm whose EM_ASM addresses no longer matched its JS, so
   the game compiled green and died on its first frame. Web correctness
@@ -113,6 +112,12 @@ build tooling, the workflow itself) changes.
   deploy on any page error, so a dead game cannot replace a live one. The
   shell also shows any runtime crash on the page with a copy button, so a
   phone can report exactly what broke and from which build.
+- That browser comes from `tools/setup_browser.sh`, which never touches apt.
+  `playwright install --with-deps chromium` pulls Chromium's whole system
+  dependency set, 21 MB of it CJK fonts that a canvas game has no use for,
+  and that apt run hung a publish job on the archive mirror. Prefer the
+  browser the runner already ships, fall back to Playwright's download, and
+  do not add `--with-deps` back.
 
 ### 6. One SDK: 32blit
 
@@ -124,7 +129,7 @@ Do not reach for the raw Pimoroni picosystem SDK. It is device only: no SDL
 target, no Emscripten target, and its single SDL wrapper pull request was closed
 unmerged in 2021 with the branch deleted. A game written against it can ship a
 `.uf2` and can never have a playable page in the gallery, which breaks rule 12.
-`tools/fingerprint.py` rejects `sdk: picosystem` rather than letting a game
+`tools/build_plan.py` rejects `sdk: picosystem` rather than letting a game
 publish a dead URL.
 
 Game code should not call the SDK where the engine already abstracts it.
@@ -269,8 +274,8 @@ source when a real model would do.
   so a phone can load the game and then not play it.
 - The shell synthesises keyboard events rather than calling into the engine.
   Keep it that way: it means the page needs no per game knowledge, and a change
-  to the C++ button mapping does not break it. `web` is in every game's
-  `depends_on` so editing the shell actually rebuilds the games.
+  to the C++ button mapping does not break it. Editing the shell reaches every
+  game on the next build, since every enabled game is rebuilt every run.
 - **Thumbnails are manual.** CI captures a screenshot only the first time a game
   is published, when `games/<slug>/thumbnail.png` does not exist yet. After that
   the committed thumbnail is left alone forever, even when the game changes.
@@ -288,6 +293,7 @@ product.
 ## Repository layout
 
 ```
+build.yaml         which games CI builds, and which are held
 engine/            shared library, SDK facing code, no game rules
 games/<slug>/      one game: game.yml, CMakeLists.txt, src/, assets/, models/
 cmake/             reusable CMake helpers (game registration, obj packaging)

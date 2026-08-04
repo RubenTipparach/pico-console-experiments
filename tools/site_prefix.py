@@ -5,10 +5,9 @@ The default branch owns the site root. Every other branch gets its own preview
 subdirectory, so a branch can deploy on every push without ever overwriting the
 live gallery.
 
-Both the detect job and the publish job need this answer and they must agree: if
-they disagree, a branch reads one branch's fingerprints and writes another's,
-and the build plan silently stops making sense. Hence one implementation rather
-than the same `if` written twice in YAML.
+Both the detect job and the publish job need this answer and they must agree:
+if they disagree, a run plans against one location and deploys to another.
+Hence one implementation rather than the same `if` written twice in YAML.
 
 Prints the prefix with a trailing slash, or an empty line for the root.
 

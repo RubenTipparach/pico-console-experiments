@@ -473,8 +473,9 @@ void test_b_recalls_instantly() {
     }
 }
 
-// Towing the lure ramps up over about two seconds and cruises at about
-// two meters per second, no faster.
+// Towing the lure ramps up over about a second and cruises at about two
+// meters per second, no faster. The reel ratchet clicks while line comes in
+// at roughly one click per half meter, and never once the tow stops.
 void test_retrieve_ramps_to_cruise() {
     kf::World world;
     kf::world_init(world, 95);
@@ -485,23 +486,36 @@ void test_retrieve_ramps_to_cruise() {
     kf::Input tow{};
     tow.a = true;
     const int32_t start = world.lure_z;
-    for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
+    int clicks = 0;
+    for (int t = 0; t < 50 && world.mode == kf::Mode::Sinking; t++) {
         kf::world_tick(world, tow);
+        if (world.ev.reel_click) clicks++;
     }
     const int32_t early = start - world.lure_z;   // ramping: below cruise
-    const int32_t mid_mark = world.lure_z;
-    for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
+    for (int t = 0; t < 150 && world.mode == kf::Mode::Sinking; t++) {
         kf::world_tick(world, tow);
+        if (world.ev.reel_click) clicks++;
     }
     CHECK(world.mode == kf::Mode::Sinking);
     const int32_t late_start = world.lure_z;
     for (int t = 0; t < 100 && world.mode == kf::Mode::Sinking; t++) {
         kf::world_tick(world, tow);
+        if (world.ev.reel_click) clicks++;
     }
     const int32_t cruise = late_start - world.lure_z;   // one second at max
-    CHECK(early < cruise);
+    // Half the old ramp: the first half second averages well under cruise.
+    CHECK(early < cruise / 2 + 40);
     CHECK(cruise >= 480 && cruise <= 545);   // ~2 m in one second
-    (void)mid_mark;
+    // 3 seconds of tow covers ~5 m: one click per half meter, give or take
+    // the ramp.
+    CHECK(clicks >= 7 && clicks <= 13);
+
+    // Ease off: no line moving, no ratchet.
+    kf::Input rest{};
+    for (int t = 0; t < 50 && world.mode == kf::Mode::Sinking; t++) {
+        kf::world_tick(world, rest);
+        CHECK(!world.ev.reel_click);
+    }
 }
 
 // Doing nothing after the hook must end the fight too: the fish takes all the
