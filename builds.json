@@ -1,10 +1,10 @@
 {
   "games": [
     {
-      "built_at": "2026-08-04T00:38:44Z",
-      "commit": "e2c339f",
+      "built_at": "2026-08-04T11:53:18Z",
+      "commit": "e7a3ae9",
       "dir": "games/chicken",
-      "fingerprint": "e14c7247bc45de29",
+      "fingerprint": "2b61b44b24d54925",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "chicken",
@@ -13,10 +13,22 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T00:38:44Z",
-      "commit": "e2c339f",
+      "built_at": "2026-08-04T11:53:18Z",
+      "commit": "e7a3ae9",
+      "dir": "games/kingfisher",
+      "fingerprint": "c7b9136dbb51455f",
+      "has_thumbnail": false,
+      "sdk": "32blit",
+      "slug": "kingfisher",
+      "target": "kingfisher",
+      "title": "Kingfisher",
+      "web": true
+    },
+    {
+      "built_at": "2026-08-04T11:53:18Z",
+      "commit": "e7a3ae9",
       "dir": "games/pico-santa",
-      "fingerprint": "0e3e2cba15c76e61",
+      "fingerprint": "277943ef3876193b",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "pico-santa",
@@ -25,6 +37,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-04T00:38:44Z",
+  "generated_at": "2026-08-04T11:53:18Z",
   "schema": 1
 }
