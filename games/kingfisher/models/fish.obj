@@ -1,0 +1,43 @@
+# Generic fish, tinted per species at draw time so one mesh in flash serves
+# all twelve. Low poly on purpose: it is drawn up to eight times per frame on a
+# chip with no FPU.
+#
+# Local axes: +z is the nose, +y up. Faces are wound counter clockwise viewed
+# from outside. Fins are thin double sided pairs.
+
+mtllib fish.mtl
+
+# nose
+v  0.00  0.05  1.00
+# mid ring: top, bottom, left, right
+v  0.00  0.28  0.25
+v  0.00 -0.22  0.25
+v -0.18  0.02  0.30
+v  0.18  0.02  0.30
+# tail base
+v  0.00  0.02 -0.55
+# tail fin tips
+v  0.00  0.34 -1.00
+v  0.00 -0.30 -1.00
+# dorsal tip
+v  0.00  0.50 -0.20
+
+usemtl fish_body
+# nose to mid ring
+f 1 2 5
+f 1 4 2
+f 1 3 4
+f 1 5 3
+# mid ring to tail base
+f 6 5 2
+f 6 2 4
+f 6 4 3
+f 6 3 5
+
+usemtl fish_fin
+# tail fin, double sided
+f 6 8 7
+f 6 7 8
+# dorsal fin, double sided
+f 2 6 9
+f 2 9 6

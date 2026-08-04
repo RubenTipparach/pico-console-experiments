@@ -26,6 +26,7 @@ inline int max3(int a, int b, int c) {
 void Rasterizer::begin_frame(const RenderTarget& target) {
     target_ = target;
     triangles_drawn_ = 0;
+    queue_ = nullptr;
 
     // Refuse to draw outside the statically sized depth buffer rather than
     // corrupting RAM if a caller hands over a bigger surface than the build was
@@ -36,6 +37,31 @@ void Rasterizer::begin_frame(const RenderTarget& target) {
     const int pixels = clamp_int(target_.width * target_.height, 0,
                                  k_render_width * k_render_height);
     std::memset(depth_, 0xFF, static_cast<size_t>(pixels));
+}
+
+void Rasterizer::begin_frame_collect(const RenderTarget& target,
+                                     FrameQueue& queue) {
+    target_ = target;
+    triangles_drawn_ = 0;
+
+    if (target_.width > k_render_width) target_.width = k_render_width;
+    if (target_.height > k_render_height) target_.height = k_render_height;
+
+    queue.reset();
+    queue_ = &queue;
+    // No depth clear here. The split workers clear their own rows, so the
+    // clear itself runs on both cores.
+}
+
+void Rasterizer::end_collect() {
+    queue_ = nullptr;
+}
+
+void Rasterizer::clear_depth_rows(int row_begin, int row_end) {
+    row_begin = clamp_int(row_begin, 0, target_.height);
+    row_end = clamp_int(row_end, row_begin, target_.height);
+    std::memset(depth_ + static_cast<size_t>(row_begin) * target_.width, 0xFF,
+                static_cast<size_t>(row_end - row_begin) * target_.width);
 }
 
 uint8_t* Rasterizer::pixel_at(int x, int y) const {
@@ -63,36 +89,78 @@ void Rasterizer::plot(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     }
 }
 
+bool Rasterizer::rejected(const ScreenTriangle& tri) const {
+    // The signed area doubles as the backface test. World space winding is
+    // counter clockwise and the projector flips Y, so a front face is positive.
+    const int area = (tri.x2 - tri.x0) * (tri.y1 - tri.y0) -
+                     (tri.y2 - tri.y0) * (tri.x1 - tri.x0);
+    if (area <= 0) return true;
+
+    if (max3(tri.x0, tri.x1, tri.x2) < 0) return true;
+    if (min3(tri.x0, tri.x1, tri.x2) >= target_.width) return true;
+    if (max3(tri.y0, tri.y1, tri.y2) < 0) return true;
+    if (min3(tri.y0, tri.y1, tri.y2) >= target_.height) return true;
+    return false;
+}
+
 void Rasterizer::draw(const ScreenTriangle& tri) {
     if (target_.pixels == nullptr) return;
+    if (rejected(tri)) return;
+
+    if (queue_ != nullptr) {
+        if (queue_->push(tri)) triangles_drawn_++;
+        return;
+    }
+
+    triangles_drawn_++;
+    draw_rows(tri, 0, target_.height);
+}
+
+void Rasterizer::draw_rows(const ScreenTriangle& tri, int row_begin,
+                           int row_end) {
+    if (target_.pixels == nullptr) return;
     switch (target_.format) {
-        case PixelFormat::rgb565: draw_typed<Rgb565>(tri); break;
-        case PixelFormat::bgr555: draw_typed<Bgr555>(tri); break;
-        case PixelFormat::rgb888: draw_typed<Rgb888>(tri); break;
-        default: draw_typed<Rgba8888>(tri); break;
+        case PixelFormat::rgb565: draw_typed<Rgb565>(tri, row_begin, row_end); break;
+        case PixelFormat::bgr555: draw_typed<Bgr555>(tri, row_begin, row_end); break;
+        case PixelFormat::rgb888: draw_typed<Rgb888>(tri, row_begin, row_end); break;
+        default: draw_typed<Rgba8888>(tri, row_begin, row_end); break;
     }
 }
 
 void Rasterizer::clear_gradient(uint8_t top_r, uint8_t top_g, uint8_t top_b,
                                 uint8_t bottom_r, uint8_t bottom_g,
                                 uint8_t bottom_b) {
+    clear_gradient_rows(top_r, top_g, top_b, bottom_r, bottom_g, bottom_b,
+                        0, target_.height);
+}
+
+void Rasterizer::clear_gradient_rows(uint8_t top_r, uint8_t top_g,
+                                     uint8_t top_b, uint8_t bottom_r,
+                                     uint8_t bottom_g, uint8_t bottom_b,
+                                     int row_begin, int row_end) {
     if (target_.pixels == nullptr) return;
+    row_begin = clamp_int(row_begin, 0, target_.height);
+    row_end = clamp_int(row_end, row_begin, target_.height);
     switch (target_.format) {
         case PixelFormat::rgb565:
             clear_gradient_typed<Rgb565>(top_r, top_g, top_b,
-                                         bottom_r, bottom_g, bottom_b);
+                                         bottom_r, bottom_g, bottom_b,
+                                         row_begin, row_end);
             break;
         case PixelFormat::bgr555:
             clear_gradient_typed<Bgr555>(top_r, top_g, top_b,
-                                         bottom_r, bottom_g, bottom_b);
+                                         bottom_r, bottom_g, bottom_b,
+                                         row_begin, row_end);
             break;
         case PixelFormat::rgb888:
             clear_gradient_typed<Rgb888>(top_r, top_g, top_b,
-                                         bottom_r, bottom_g, bottom_b);
+                                         bottom_r, bottom_g, bottom_b,
+                                         row_begin, row_end);
             break;
         default:
             clear_gradient_typed<Rgba8888>(top_r, top_g, top_b,
-                                           bottom_r, bottom_g, bottom_b);
+                                           bottom_r, bottom_g, bottom_b,
+                                           row_begin, row_end);
             break;
     }
 }
@@ -100,13 +168,16 @@ void Rasterizer::clear_gradient(uint8_t top_r, uint8_t top_g, uint8_t top_b,
 template <typename Format>
 void Rasterizer::clear_gradient_typed(uint8_t top_r, uint8_t top_g,
                                       uint8_t top_b, uint8_t bottom_r,
-                                      uint8_t bottom_g, uint8_t bottom_b) {
+                                      uint8_t bottom_g, uint8_t bottom_b,
+                                      int row_begin, int row_end) {
     const int width = target_.width;
     const int height = target_.height;
     if (height <= 0 || width <= 0) return;
 
-    for (int y = 0; y < height; y++) {
-        // Integer lerp down the screen: one divide per row, none per pixel.
+    for (int y = row_begin; y < row_end; y++) {
+        // Integer lerp down the full screen height, so bands rendered by
+        // different workers join seamlessly. One divide per row, none per
+        // pixel.
         const int r = top_r + (bottom_r - top_r) * y / height;
         const int g = top_g + (bottom_g - top_g) * y / height;
         const int b = top_b + (bottom_b - top_b) * y / height;
@@ -124,21 +195,24 @@ void Rasterizer::clear_gradient_typed(uint8_t top_r, uint8_t top_g,
 }
 
 template <typename Format>
-void Rasterizer::draw_typed(const ScreenTriangle& tri) {
+void Rasterizer::draw_typed(const ScreenTriangle& tri, int row_begin,
+                            int row_end) {
     const int x0 = tri.x0, y0 = tri.y0;
     const int x1 = tri.x1, y1 = tri.y1;
     const int x2 = tri.x2, y2 = tri.y2;
 
-    // The signed area doubles as the backface test. World space winding is
-    // counter clockwise and the projector flips Y, so a front face is positive.
     const int area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
     if (area <= 0) return;
 
+    row_begin = clamp_int(row_begin, 0, target_.height);
+    row_end = clamp_int(row_end, row_begin, target_.height);
+
     const int min_x = clamp_int(min3(x0, x1, x2), 0, target_.width - 1);
     const int max_x = clamp_int(max3(x0, x1, x2), 0, target_.width - 1);
-    const int min_y = clamp_int(min3(y0, y1, y2), 0, target_.height - 1);
-    const int max_y = clamp_int(max3(y0, y1, y2), 0, target_.height - 1);
+    const int min_y = clamp_int(min3(y0, y1, y2), row_begin, row_end - 1);
+    const int max_y = clamp_int(max3(y0, y1, y2), row_begin, row_end - 1);
     if (max_x < min_x || max_y < min_y) return;
+    if (row_end <= row_begin) return;
 
     // Reciprocal depth, so interpolation across a span is perspective correct.
     // Three divides per triangle rather than one per pixel.
@@ -148,8 +222,6 @@ void Rasterizer::draw_typed(const ScreenTriangle& tri) {
     const int inv_z0 = (k_fixed_one * k_fixed_one) / z0;
     const int inv_z1 = (k_fixed_one * k_fixed_one) / z1;
     const int inv_z2 = (k_fixed_one * k_fixed_one) / z2;
-
-    triangles_drawn_++;
 
     for (int y = min_y; y <= max_y; y++) {
         uint8_t* row = target_.pixels + static_cast<size_t>(y) * target_.row_stride;

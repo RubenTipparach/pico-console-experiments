@@ -24,6 +24,7 @@ Two games ship today:
 | --- | --- | --- |
 | Chicken | `/chicken/` | Endless side scroller, chunked infinite level |
 | Pico Santa | `/pico-santa/` | Chunked 3D city, software rasterizer, .obj models |
+| Kingfisher | `/kingfisher/` | 3D fishing across a day cycle, both RP2040 cores rendering |
 
 ## How the pipeline works
 

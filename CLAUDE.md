@@ -134,10 +134,19 @@ Before adding anything, ask what it costs:
 - Prefer fixed size arrays with an `active` flag over dynamic allocation. Do not
   introduce `new`, `malloc`, `std::vector`, or `std::string` into game or engine
   hot paths.
-- Core 1 is not yours to take. The 32blit pico backend claims it for display
-  and audio when built with `ENABLE_CORE1`, which is why the 3D renderer
-  rasterizes immediately on core 0 instead of queueing triangles for a second
-  core. That choice also gave back the 84 KB the old triangle lists cost.
+- Core 1 is available on the PicoSystem, and the engine uses it. The 32blit
+  pico backend only claims core 1 under `ENABLE_CORE1`, which its CMake sets
+  for scanvideo display boards alone; the PicoSystem uses the dbi driver with
+  audio on a core 0 hardware alarm, so core 1 idles. `pse::run_split()` gives
+  it the bottom half of the screen: collect triangles with
+  `begin_frame_collect`, run_split rasterizes both halves at once, each core
+  owning disjoint rows so there are no locks. The host tests prove the split
+  is byte identical to single core rendering.
+- The flash safety contract that comes with that: `write_save` disables XIP
+  while it programs flash, and core 1 survives only because its idle loop is
+  RAM resident (`__not_in_flash_func` in `parallel_pico.cpp`). Save outside
+  the render call, never during it, and never move that worker loop into
+  flash. The clock is 250 MHz on both cores (`OVERCLOCK_250` defaults on).
 - If you add a feature, state its RAM and flash cost in the PR body.
 
 ### 8. Keep on-device UI sparse

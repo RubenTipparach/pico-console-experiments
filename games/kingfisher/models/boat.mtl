@@ -1,0 +1,5 @@
+newmtl boat_hull
+Kd 0.45 0.30 0.18
+
+newmtl boat_deck
+Kd 0.62 0.46 0.28

@@ -165,16 +165,23 @@ class ObjReader:
 
 
 def face_normal(mesh, face):
-    """Unit normal of a triangle, as three floats. Degenerate faces give +Y."""
+    """Unit normal of a triangle, as three floats. Degenerate faces give +Y.
+
+    The cross order is deliberately v x u, not u x v: the engine's rasterizer
+    treats the winding these models use as front facing, and with the standard
+    cross order that winding yields inward normals, which collapses Lambert
+    lighting to pure ambient and renders every mesh dark. Verified against
+    rendered frames, not just on paper.
+    """
     a = mesh.vertices[face[0]]
     b = mesh.vertices[face[1]]
     c = mesh.vertices[face[2]]
     u = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
     v = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
     n = (
-        u[1] * v[2] - u[2] * v[1],
-        u[2] * v[0] - u[0] * v[2],
-        u[0] * v[1] - u[1] * v[0],
+        v[1] * u[2] - v[2] * u[1],
+        v[2] * u[0] - v[0] * u[2],
+        v[0] * u[1] - v[1] * u[0],
     )
     length = (n[0] ** 2 + n[1] ** 2 + n[2] ** 2) ** 0.5
     if length < 1e-9:
