@@ -294,8 +294,18 @@ Do not edit the workflow, the gallery template, or the top level CMakeLists to
 add a game. If you find yourself needing to, the discovery mechanism is broken
 and that is the bug to fix.
 
+### 14. Sync with main before every push
+
+Before each push to any branch, the branch must be synced up with main so it
+carries the latest version: fetch main and rebase the branch onto it (or
+restart the branch from main when its previous PR already merged). A push
+from a stale base ships code that was never built against what main has
+become, and the preview it deploys tests yesterday's repo with today's
+change. Never force push over commits that are not already merged into main.
+
 ## Before you open a PR
 
+- The branch is freshly synced with main (rule 14).
 - The workflow builds clean from a cold cache.
 - No game rebuilt that did not need to rebuild. Check the `detect` job summary.
 - RAM and flash deltas stated for anything touching the device build.
