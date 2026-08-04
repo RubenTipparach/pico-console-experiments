@@ -80,6 +80,30 @@ constexpr int k_tension_tire_reel_shed = -2;
 constexpr int k_tension_tire_rest_shed = -5;
 constexpr int k_wiggle_relief = 40;    // tension shed by one rod wiggle
 
+// ---- the pond and the cast ----
+//
+// The lake runs k_lake_far meters out from the boat and a full power cast
+// just about reaches it. Depth bands split it into shallow, mid, and deep
+// water; deeper bands hold the rarer fish, so the power meter is the
+// difficulty dial. Flight lasts about a second at full loft.
+constexpr int32_t k_lake_far_fp = 50 * 256;         // 50 m out
+constexpr int32_t k_shallow_max_fp = 15 * 256;
+constexpr int32_t k_mid_max_fp = 32 * 256;
+constexpr int32_t k_lake_near_fp = 3 * 256;         // fish keep off the boat
+constexpr int32_t k_lake_half_width_fp = 12 * 256;
+constexpr int k_cast_vy = -100;      // launch loft, fp per tick (y is down)
+constexpr int k_cast_gravity = 2;    // fp per tick squared
+constexpr int k_cast_vz_base = 26;   // fp per tick at zero power (~10 m)
+constexpr int k_cast_vz_per255 = 102;  // added by full power (~50 m)
+
+// ---- the retrieve: dragging the lure home ----
+//
+// Holding A tows the lure toward the boat, ramping over about two seconds
+// to half a meter per second: a slow entice, not a transport. B recalls
+// the lure instantly instead, from the air or the water.
+constexpr int k_retrieve_ramp_ticks = 200;
+constexpr int k_retrieve_max_fp256 = 328;   // fp<<8 per tick, ~0.5 m/s
+
 // ---- phases: the fight's rhythm ----
 //
 // Runs last base + rnd(vary + strength * per_strength) ticks; tires last

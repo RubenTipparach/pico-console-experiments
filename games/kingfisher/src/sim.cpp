@@ -24,15 +24,13 @@ int32_t clamp32(int32_t v, int32_t lo, int32_t hi) {
 }
 
 // Depth bands as z ranges from the boat, in fp8 world units. Farther cast
-// means deeper water means rarer fish: the power meter is the difficulty dial.
+// means deeper water means rarer fish: the power meter is the difficulty
+// dial. The ranges themselves live in tuning.hpp with the rest of the pond.
 struct Band { int32_t z_min, z_max; int32_t depth_min, depth_max; };
 const Band k_bands[3] = {
-    {static_cast<int32_t>(2.5 * k_one), 6 * k_one,
-     k_one / 4, k_one / 2},
-    {6 * k_one, static_cast<int32_t>(10.5 * k_one),
-     k_one / 2, 5 * k_one / 4},
-    {static_cast<int32_t>(10.5 * k_one), 15 * k_one,
-     5 * k_one / 4, 2 * k_one},
+    {k_lake_near_fp, k_shallow_max_fp, k_one / 4, k_one / 2},
+    {k_shallow_max_fp, k_mid_max_fp, k_one / 2, 5 * k_one / 4},
+    {k_mid_max_fp, k_lake_far_fp, 5 * k_one / 4, 2 * k_one},
 };
 
 int band_for_z(int32_t z) {
@@ -41,7 +39,7 @@ int band_for_z(int32_t z) {
     return 2;
 }
 
-constexpr int32_t k_lake_half_width = 8 * k_one;
+constexpr int32_t k_lake_half_width = k_lake_half_width_fp;
 constexpr int32_t k_boat_z = 0;
 
 // Fight tuning lives in tuning.hpp, one documented dial per behaviour. The
@@ -122,6 +120,8 @@ void world_make_save(const World& world, SaveData& out) {
 
 namespace {
 
+void fish_flee(Fish& fish);
+
 void reset_lure(World& world) {
     world.mode = Mode::Idle;
     world.bite_timer = 0;
@@ -130,7 +130,19 @@ void reset_lure(World& world) {
     world.lure_z = k_one;
     world.lure_vx = world.lure_vy = world.lure_vz = 0;
     world.twitch_timer = 0;
+    world.retrieve_hold = 0;
+    world.retrieve_frac = 0;
     world.hooked_fish = -1;
+    // Whatever was mouthing the lure has nothing to mouth now. Without this
+    // a fish left Biting after a recall would hold that state forever, since
+    // only the Sinking mode logic ticks the bite window.
+    for (auto& fish : world.fish) {
+        if (fish.state == FishState::Curious ||
+            fish.state == FishState::Nibbling ||
+            fish.state == FishState::Biting) {
+            fish_flee(fish);
+        }
+    }
 }
 
 void fish_flee(Fish& fish) {
@@ -358,7 +370,7 @@ void update_fish(World& world, Fish& fish, int index) {
             } else {
                 fish.x += (fish.x > 0 ? -1 : 1) * (speed / 2);
             }
-            fish.z = clamp32(fish.z, 2 * k_one, 16 * k_one);
+            fish.z = clamp32(fish.z, 2 * k_one, k_lake_far_fp);
             fish.x = clamp32(fish.x, -k_lake_half_width, k_lake_half_width);
             break;
         }
@@ -606,22 +618,27 @@ void update_lure(World& world, const Input& input) {
                 world.lure_x = 0;
                 world.lure_y = -k_one;          // rod tip, above the surface
                 world.lure_z = k_one;
-                world.lure_vz = 9 + (world.power * 51) / 256;
+                world.lure_vz = k_cast_vz_base +
+                                (world.power * k_cast_vz_per255) / 256;
                 world.lure_vx = world.aim * 3;
-                world.lure_vy = -20;            // upward (y is down)
+                world.lure_vy = k_cast_vy;      // upward (y is down)
                 world.ev.cast = true;
             }
             break;
         }
 
         case Mode::Flying:
-            world.lure_vy += 2;                 // gravity, y positive down
+            if (input.b_pressed) {              // recall out of the air
+                reset_lure(world);
+                break;
+            }
+            world.lure_vy += k_cast_gravity;    // y positive down
             world.lure_x += world.lure_vx;
             world.lure_y += world.lure_vy / 8;
             world.lure_z += world.lure_vz;
             world.lure_x = clamp32(world.lure_x, -k_lake_half_width,
                                    k_lake_half_width);
-            world.lure_z = clamp32(world.lure_z, k_one, 15 * k_one);
+            world.lure_z = clamp32(world.lure_z, k_one, k_lake_far_fp);
             if (world.lure_y >= 0) {
                 world.lure_y = 0;
                 world.lure_vx = world.lure_vy = world.lure_vz = 0;
@@ -631,6 +648,10 @@ void update_lure(World& world, const Input& input) {
             break;
 
         case Mode::Sinking: {
+            if (input.b_pressed) {              // instant recall
+                reset_lure(world);
+                break;
+            }
             // Settle toward the bottom of the local band.
             const Band& band = k_bands[band_for_z(world.lure_z)];
             if (world.lure_y < band.depth_max) world.lure_y += 2;
@@ -675,10 +696,27 @@ void update_lure(World& world, const Input& input) {
                     world.ev.splash = true;
                 }
             } else if (input.a) {
-                world.lure_z -= 8;
-                world.lure_x -= world.lure_x / 32;
-                world.twitch_timer = 60;   // a moving lure draws attention
+                // Towing: the reel winds up over a couple of seconds to its
+                // slow cruising speed. A sub fp accumulator carries the
+                // fraction so half a meter per second survives integer math.
+                if (world.retrieve_hold < k_retrieve_ramp_ticks) {
+                    world.retrieve_hold++;
+                }
+                const int speed = (k_retrieve_max_fp256 *
+                                   world.retrieve_hold) /
+                                  k_retrieve_ramp_ticks;
+                const int total = world.retrieve_frac + speed;
+                world.retrieve_frac = static_cast<uint16_t>(total & 0xFF);
+                const int move = total >> 8;
+                if (move > 0) {
+                    world.lure_z -= move;
+                    world.lure_x -= world.lure_x / 64;
+                    world.twitch_timer = 60;   // a moving lure draws eyes
+                }
                 if (world.lure_z <= k_one) reset_lure(world);
+            } else {
+                world.retrieve_hold = 0;
+                world.retrieve_frac = 0;
             }
             break;
         }
