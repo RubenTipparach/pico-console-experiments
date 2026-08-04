@@ -34,12 +34,30 @@ if(BUILD_ENGINE_TESTS)
             add_subdirectory(${test_dir})
         endif()
     endforeach()
+
+    # The launcher is not a game, but its library scan and its boot vector
+    # checks are the parts of this repo with the least room to be wrong.
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/launcher/tests/CMakeLists.txt)
+        add_subdirectory(launcher/tests)
+    endif()
     return()
 endif()
 
 find_package(32BLIT CONFIG REQUIRED PATHS ../32blit-sdk $ENV{PATH_32BLIT_SDK})
 
 include(picosystem_game)
+include(slot)
+
+# The launcher owns the base of flash and hands the machine to a game in a
+# slot. Device only, so it is skipped for the web and desktop builds where
+# there is nothing to hand over to. It is built on its own
+# (-DPICO_LAUNCHER_ONLY) so a game build does not drag it along.
+if(PICO_ON_DEVICE AND (NOT DEFINED PICO_ONLY_GAME OR PICO_LAUNCHER_ONLY))
+    add_subdirectory(launcher)
+endif()
+if(PICO_LAUNCHER_ONLY)
+    return()
+endif()
 
 # Games are discovered, never listed. Adding a directory with a game.yml and a
 # CMakeLists.txt is the whole procedure for adding a game.
@@ -49,6 +67,12 @@ foreach(game ${game_dirs})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/games/${game}/CMakeLists.txt)
         if(NOT DEFINED PICO_ONLY_GAME OR PICO_ONLY_GAME STREQUAL game)
             add_subdirectory(games/${game})
+            # A slot build links the game where the launcher expects to find
+            # it, for bundling. Without PICO_SLOT the game links at the base
+            # of flash and is the standalone .uf2 it has always been.
+            if(DEFINED PICO_SLOT AND PICO_ONLY_GAME STREQUAL game)
+                pico_link_at_slot(${game} ${PICO_SLOT})
+            endif()
         endif()
     endif()
 endforeach()
