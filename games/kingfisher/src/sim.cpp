@@ -46,8 +46,8 @@ constexpr int32_t k_boat_z = 0;
 
 // Fight tuning. All per tick (10 ms). The host tests assert the consequences:
 // patient reeling lands everything, greedy reeling snaps on strong fish.
-constexpr int k_reel_tire = 14;      // fp8 line per tick reeling a tired fish
-constexpr int k_reel_run = 5;        // reeling against a running fish
+constexpr int k_reel_power = 14;     // unopposed crank speed, fp line per tick
+constexpr int k_reel_run_power = 9;  // crank speed against a running fish
 constexpr int32_t k_catch_len = 340; // ~1.3 units from the boat lands it
 constexpr int k_wiggle_relief = 40;  // tension shed by one rod wiggle
 constexpr int k_wiggle_drain = 12;   // stamina cost of countering a run
@@ -446,10 +446,12 @@ void update_fight(World& world, const Input& input) {
     }
 
     // Tension. Reeling against a fish that can still pull loads the line;
-    // a spent fish coming to the boat unloads it.
+    // a spent fish coming to the boat unloads it. The build is gradual on
+    // purpose: the red zone should be something a fight climbs toward, not
+    // somewhere it teleports.
     int delta;
     if (world.fight_phase == FightPhase::Run) {
-        delta = reeling ? (pull > 0 ? 2 + pull : -1) : pull / 3;
+        delta = reeling ? (pull > 0 ? 1 + (pull * 3) / 4 : -1) : pull / 4;
     } else {
         delta = reeling ? (pull >= 5 ? 1 : -2) : -5;
     }
@@ -472,7 +474,11 @@ void update_fight(World& world, const Input& input) {
     }
 
     // Line length. A running fish takes line in proportion to what it has
-    // left in it.
+    // left in it, and it resists the reel the same way: the crank only wins
+    // what is left after the fish's pull is subtracted. A fresh fish barely
+    // comes in at all, a fresh fish mid run takes line even while the reel
+    // turns, and a spent one comes to the boat at full crank. Wearing the
+    // stamina down IS the fight; the reel just collects afterwards.
     if (world.fight_phase == FightPhase::Run && !reeling && pull > 0) {
         world.line_len += pull;
         if (world.line_len >= world.line_max) {
@@ -482,8 +488,15 @@ void update_fight(World& world, const Input& input) {
         }
     }
     if (reeling) {
-        world.line_len -= (world.fight_phase == FightPhase::Tire || pull == 0)
-                              ? k_reel_tire : k_reel_run;
+        const bool tiring = world.fight_phase == FightPhase::Tire || pull == 0;
+        const int resist = tiring ? pull : pull * 2;
+        const int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
+        world.line_len -= gain;
+        if (gain < 0 && world.line_len >= world.line_max) {
+            world.ev.escape = true;
+            end_fight(world, false);
+            return;
+        }
         // Tugging wears the fish down; that is the trade for the tension it
         // puts on the line.
         if (world.stamina > 0) {
