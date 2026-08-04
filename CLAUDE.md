@@ -77,6 +77,14 @@ baseline is the manifest its BASE branch last published, which means a PR
 only builds the games its diff actually touches. A game whose fingerprint
 matches what the base already built green proves nothing by building again.
 
+Pages caches every file for ten minutes under unchanging names, which used to
+make a fresh deploy look stale on a device that had just loaded the previous
+build. The publish step stamps each rebuilt game's page and asset URLs with
+the build version, gallery links carry that version and re-check a freshly
+fetched manifest, and the shell offers a one tap reload when a newer build
+lands. Keep the `__PSE_BUILD__` placeholder in `web/shell.html` intact:
+publishing depends on it.
+
 ### 5. Never rebuild or republish an unchanged game
 
 CI minutes are the scarce resource here. A game is rebuilt only when its own

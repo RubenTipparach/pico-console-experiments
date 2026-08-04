@@ -74,8 +74,16 @@ class Card:
     def render_actions(self):
         actions = []
         if self.game.web and self.is_published:
-            actions.append('<a class="btn play" href="%s/">Play</a>'
-                           % escape(self.game.slug))
+            # The version query gives every build a distinct page URL, which
+            # is what defeats the ten minute Pages cache: a link to the new
+            # build can never be satisfied by a cached copy of the old one.
+            version = (self.published.get("fingerprint")
+                       or self.published.get("commit") or "")
+            href = "%s/" % escape(self.game.slug)
+            if version:
+                href += "?v=%s" % escape(version)
+            actions.append('<a class="btn play" data-slug="%s" href="%s">'
+                           'Play</a>' % (escape(self.game.slug), href))
         uf2 = self.uf2_href
         if uf2:
             actions.append('<a class="btn" href="%s" download>.uf2</a>'
@@ -143,6 +151,24 @@ def render_page(cards, repo, generated_at, title):
     <span>Built %(generated_at)s</span>
   </footer>
 </main>
+<script>
+(function () {
+  // This page itself sits behind the ten minute Pages cache, so its links
+  // can lag one build behind. The manifest fetched with a unique query is
+  // always fresh; rewriting the links from it means opening a game from
+  // here always gets the newest build, however stale this page is.
+  fetch('builds.json?_=' + Date.now())
+    .then(function (r) { return r.json(); })
+    .then(function (m) {
+      (m.games || []).forEach(function (g) {
+        if (!g.fingerprint) return;
+        var a = document.querySelector('a.play[data-slug="' + g.slug + '"]');
+        if (a) a.href = g.slug + '/?v=' + g.fingerprint;
+      });
+    })
+    .catch(function () {});
+})();
+</script>
 </body>
 </html>
 """ % {

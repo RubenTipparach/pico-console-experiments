@@ -100,6 +100,22 @@
 
   /* ---- loading ---- */
 
+  #newbuild {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    background: #221133;
+    color: #ffcc22;
+    border: 1px solid #553377;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
   #boot {
     position: absolute;
     inset: 0;
@@ -558,7 +574,19 @@
     });
   }
 
+  // Stamped by the publish workflow. Local builds keep the placeholder and
+  // skip everything version related.
+  var PSE_BUILD = "__PSE_BUILD__";
+  var pseVersioned = PSE_BUILD.indexOf("__") !== 0;
+
   window.Module = {
+    // Pages serves with max-age=600 and the filenames never change, so a
+    // fresh deploy can sit behind a stale cache for ten minutes. The version
+    // query makes each build's wasm and data distinct URLs; the script tag
+    // gets the same treatment from the publish workflow.
+    locateFile: function (path, prefix) {
+      return prefix + path + (pseVersioned ? "?v=" + PSE_BUILD : "");
+    },
     // Match the device exactly.
     //
     // The SDL backend defaults to 320x240 (System::max_width/max_height), so
@@ -623,6 +651,31 @@
         : 'All downloads complete.');
     }
   };
+
+  // If a newer build than this page was published, offer a one tap reload.
+  // The manifest fetch carries a unique query so it dodges the page cache
+  // and notices within seconds of a deploy, instead of after ten minutes.
+  if (pseVersioned) {
+    fetch('../builds.json?_=' + Date.now())
+      .then(function (r) { return r.json(); })
+      .then(function (m) {
+        var slug = location.pathname.replace(/\/+$/, '').split('/').pop();
+        var mine = null;
+        (m.games || []).forEach(function (g) {
+          if (g.slug === slug) mine = g;
+        });
+        if (!mine || mine.commit === PSE_BUILD) return;
+        var pill = document.createElement('button');
+        pill.id = 'newbuild';
+        pill.textContent = 'new build ' + mine.commit + ' - tap to reload';
+        pill.addEventListener('click', function () {
+          location.replace(location.pathname + '?v='
+                           + (mine.fingerprint || mine.commit));
+        });
+        document.body.appendChild(pill);
+      })
+      .catch(function () {});
+  }
 
   Module.setStatus('Downloading...');
   window.onerror = function () {
