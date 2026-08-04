@@ -19,15 +19,51 @@ struct ScreenTriangle {
     uint8_t r2, g2, b2;
 };
 
+// A frame's worth of collected triangles, for split rasterization across two
+// cores. Fixed capacity: on a 264 KB device an unbounded queue is a crash with
+// extra steps. Overflow drops the triangle and counts it, so a scene that gets
+// too heavy degrades visibly rather than corrupting memory.
+//
+// A frame can hold either one scene or two. mark_split() ends the first
+// scene: triangles queued before it belong to the top band of the screen,
+// triangles after it to the bottom band, and run_split renders each group
+// only into its own band. Without a mark the whole queue renders into both
+// bands, which is the classic single scene split.
+struct FrameQueue {
+    static constexpr int k_capacity = PSE_MAX_QUEUE;
+    static constexpr uint16_t k_no_split = 0xFFFF;
+
+    ScreenTriangle tris[k_capacity];
+    uint16_t count = 0;
+    uint16_t dropped = 0;
+    uint16_t split = k_no_split;
+
+    void reset() { count = 0; dropped = 0; split = k_no_split; }
+
+    void mark_split() { split = count; }
+
+    bool push(const ScreenTriangle& tri) {
+        if (count >= k_capacity) {
+            dropped++;
+            return false;
+        }
+        tris[count++] = tri;
+        return true;
+    }
+};
+
 // Immediate mode, z buffered triangle rasterizer. Knows nothing about any SDK,
 // which is what makes it compile unchanged for device, desktop, and web.
 //
-// Immediate mode rather than a deferred triangle list: the picosystem SDK
-// version of this renderer queued up to 1500 triangles so a second core could
-// consume them, which cost 84 KB of RAM in list storage. Under the 32blit SDK
-// core1 is not reliably ours (the backend takes it for display and audio when
-// ENABLE_CORE1 is set), so there is no consumer to queue for. Drawing straight
-// through the depth buffer gives the same image and hands the 84 KB back.
+// Two ways to drive it:
+//
+//   Immediate: begin_frame() then draw(). Each triangle rasterizes on the
+//   calling core as it arrives.
+//
+//   Collect: begin_frame_collect() then draw(). Triangles are culled and
+//   queued instead of rasterized, and pse::run_split() later rasterizes the
+//   queue with each core owning a disjoint band of rows. Same draw() calls,
+//   same image, so game code does not change between the two.
 class Rasterizer {
 public:
     Rasterizer() = default;
@@ -38,12 +74,45 @@ public:
     // Point the rasterizer at this frame's surface and clear the depth buffer.
     void begin_frame(const RenderTarget& target);
 
-    // Draw one triangle. Backfaces are culled, coordinates are clipped to the
-    // target, and the depth test is 8 bit.
+    // Point at the surface and route draw() into the queue. The depth buffer is
+    // NOT cleared here: the split workers each clear their own rows, which
+    // parallelizes the clear as well.
+    void begin_frame_collect(const RenderTarget& target, FrameQueue& queue);
+
+    // Stop queueing. Draw() rasterizes immediately again, which is how
+    // billboards and UI are drawn on top after the split workers finish.
+    void end_collect();
+
+    // Draw one triangle: immediately, or into the queue in collect mode.
+    // Backfaces are culled and offscreen triangles rejected in both modes.
     void draw(const ScreenTriangle& tri);
 
-    // Fill every pixel with a vertical gradient. Cheaper than clearing and then
-    // drawing a sky, because it is the same single pass.
+    // Rasterize one triangle clipped to rows [row_begin, row_end). Used by the
+    // split workers. Touches only those rows of the framebuffer and depth
+    // buffer, which is the whole thread safety argument: two cores calling
+    // this with disjoint row ranges never write the same memory. Does not
+    // update the triangle counter, because two cores would race on it.
+    void draw_rows(const ScreenTriangle& tri, int row_begin, int row_end);
+
+    // Clear depth for rows [row_begin, row_end) only.
+    void clear_depth_rows(int row_begin, int row_end);
+
+    // Fill rows [row_begin, row_end) with the frame's vertical gradient. The
+    // gradient is computed against the full target height, so two workers
+    // filling adjacent bands produce one continuous gradient.
+    void clear_gradient_rows(uint8_t top_r, uint8_t top_g, uint8_t top_b,
+                             uint8_t bottom_r, uint8_t bottom_g,
+                             uint8_t bottom_b, int row_begin, int row_end);
+
+    // Same fill, but the gradient lerps across [span_begin, span_end) instead
+    // of the full height. A split screen scene uses this so its band carries
+    // a complete gradient of its own.
+    void clear_gradient_span(uint8_t top_r, uint8_t top_g, uint8_t top_b,
+                             uint8_t bottom_r, uint8_t bottom_g,
+                             uint8_t bottom_b, int row_begin, int row_end,
+                             int span_begin, int span_end);
+
+    // Fill every pixel with a vertical gradient (immediate mode convenience).
     void clear_gradient(uint8_t top_r, uint8_t top_g, uint8_t top_b,
                         uint8_t bottom_r, uint8_t bottom_g, uint8_t bottom_b);
 
@@ -60,16 +129,21 @@ public:
 
 private:
     template <typename Format>
-    void draw_typed(const ScreenTriangle& tri);
+    void draw_typed(const ScreenTriangle& tri, int row_begin, int row_end);
 
     template <typename Format>
     void clear_gradient_typed(uint8_t top_r, uint8_t top_g, uint8_t top_b,
                               uint8_t bottom_r, uint8_t bottom_g,
-                              uint8_t bottom_b);
+                              uint8_t bottom_b, int row_begin, int row_end,
+                              int span_begin, int span_end);
+
+    // True when the triangle is a backface or entirely outside the target.
+    bool rejected(const ScreenTriangle& tri) const;
 
     uint8_t* pixel_at(int x, int y) const;
 
     RenderTarget target_{nullptr, 0, 0, 0, PixelFormat::rgb565};
+    FrameQueue* queue_ = nullptr;
     uint32_t triangles_drawn_ = 0;
 
     // 14,400 bytes at the default 120x120. This is the renderer's single

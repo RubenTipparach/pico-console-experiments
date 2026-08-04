@@ -1,8 +1,10 @@
 name: Build and publish
 
 on:
+  # Every branch, so a push deploys a preview and iteration does not require a
+  # PR. Only the default branch reaches the site root: everything else lands
+  # under preview/<branch>/, so a branch can never overwrite the live gallery.
   push:
-    branches: [master, main]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -11,7 +13,7 @@ on:
         required: false
         default: ""
       publish:
-        description: "Publish to the live site. Leave off to test build a branch."
+        description: "Deploy to the site ROOT from a non default branch. Off by default; branches deploy to preview/<branch>/ regardless."
         type: boolean
         required: false
         default: false
@@ -64,15 +66,38 @@ jobs:
       has_work: ${{ steps.plan.outputs.has_work }}
       built: ${{ steps.plan.outputs.built }}
       skipped: ${{ steps.plan.outputs.skipped }}
+      prefix: ${{ steps.where.outputs.prefix }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch the published manifest
+      - name: Work out where this build publishes
+        id: where
+        env:
+          FORCE_ROOT: ${{ github.event.inputs.publish }}
         run: |
+          set -euo pipefail
+          flag=""
+          [ "${FORCE_ROOT:-}" = "true" ] && flag="--force-root"
+          prefix=$(python3 tools/site_prefix.py \
+            --ref-name "$GITHUB_REF_NAME" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            $flag)
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "publishing to '${prefix:-<root>}'"
+
+      - name: Fetch the published manifest
+        env:
+          PREFIX: ${{ steps.where.outputs.prefix }}
+        run: |
+          # A branch tracks its own preview's fingerprints, not the root's.
+          # Reading the root's here would make the first push to a branch think
+          # everything was already published and skip the whole build.
+          #
           # Absent branch, absent file and malformed JSON all mean the same
-          # thing here: nothing is published, so everything is stale.
+          # thing: nothing is published there, so everything is stale.
           if git fetch --depth 1 origin gh-pages 2>/dev/null; then
-            git show FETCH_HEAD:builds.json > published.json 2>/dev/null || echo '{}' > published.json
+            git show "FETCH_HEAD:${PREFIX}builds.json" > published.json 2>/dev/null \
+              || echo '{}' > published.json
           else
             echo '{}' > published.json
           fi
@@ -216,16 +241,17 @@ jobs:
     # Runs even when `build` was skipped, because a run where nothing changed
     # still has to republish the site with the previous content intact.
     #
-    # The ref check is what stops a branch build from taking over the live site.
-    # A manual run on a feature branch builds and uploads artifacts but does not
-    # publish, unless it is dispatched with publish=true on purpose.
+    # Any branch may deploy, because a non default branch only ever writes under
+    # preview/<branch>/. Reaching the site root still takes the default branch,
+    # or an explicit publish=true dispatch.
+    #
+    # Pull requests stay excluded: a PR from a fork would otherwise get write
+    # access to the site.
     if: >-
       ${{ !cancelled()
           && needs.detect.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped')
-          && github.event_name != 'pull_request'
-          && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-              || github.event.inputs.publish == 'true') }}
+          && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -259,30 +285,33 @@ jobs:
       - name: Overlay the rebuilt games
         env:
           BUILT: ${{ needs.detect.outputs.built }}
+          PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
+          mkdir -p "site/${PREFIX}uf2" "site/${PREFIX}thumbs"
           [ -d incoming ] || { echo "nothing rebuilt this run"; exit 0; }
 
           for slug in $(echo "$BUILT" | tr ',' ' '); do
             [ -n "$slug" ] || continue
             if [ -d "incoming/web/$slug" ]; then
-              mkdir -p "site/$slug"
+              mkdir -p "site/${PREFIX}$slug"
               # --delete removes files a previous build left behind, and the
               # exclude keeps a captured thumbnail from being swept up with
               # them. Without the exclude, republishing a game silently
               # destroys its screenshot.
               rsync -a --delete --exclude 'thumbnail.png' \
-                "incoming/web/$slug/" "site/$slug/"
-              echo "published site/$slug/"
+                "incoming/web/$slug/" "site/${PREFIX}$slug/"
+              echo "published site/${PREFIX}$slug/"
             fi
             if [ -f "incoming/uf2/$slug.uf2" ]; then
-              cp "incoming/uf2/$slug.uf2" "site/uf2/$slug.uf2"
+              cp "incoming/uf2/$slug.uf2" "site/${PREFIX}uf2/$slug.uf2"
             fi
           done
 
       - name: Capture a thumbnail for anything that has never had one
         env:
           BUILT: ${{ needs.detect.outputs.built }}
+          PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
           needed=""
@@ -291,7 +320,7 @@ jobs:
             # First capture only. An existing thumbnail is never replaced here:
             # refreshing one is a deliberate act, done through the
             # "Capture thumbnails" workflow.
-            if [ -f "site/$slug/index.html" ] && [ ! -f "site/thumbs/$slug.png" ]; then
+            if [ -f "site/${PREFIX}$slug/index.html" ] && [ ! -f "site/${PREFIX}thumbs/$slug.png" ]; then
               needed="$needed $slug"
             fi
           done
@@ -303,35 +332,42 @@ jobs:
           python3 -m playwright install --with-deps chromium
           for slug in $needed; do
             python3 tools/capture_thumbnail.py \
-              --site site --slug "$slug" --out "site/thumbs/$slug.png"
+              --site "site/${PREFIX%/}" --slug "$slug" \
+              --out "site/${PREFIX}thumbs/$slug.png"
           done
 
       - name: Prefer a thumbnail committed in the repo
+        env:
+          PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
           for dir in games/*/; do
             slug=$(python3 -c "import sys,os;sys.path.insert(0,'tools');from fingerprint import Game;print(Game(os.path.abspath('$dir')).slug)")
             if [ -f "$dir/thumbnail.png" ]; then
-              cp "$dir/thumbnail.png" "site/thumbs/$slug.png"
+              cp "$dir/thumbnail.png" "site/${PREFIX}thumbs/$slug.png"
             fi
           done
 
       - name: Write the manifest and the gallery
         env:
           BUILT: ${{ needs.detect.outputs.built }}
+          PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          title="$(basename "$GITHUB_REPOSITORY")"
+          [ -n "$PREFIX" ] && title="$GITHUB_REF_NAME (preview)"
           python3 tools/fingerprint.py manifest \
-            --published site/builds.json \
+            --published "site/${PREFIX}builds.json" \
             --built "$BUILT" \
-            --out site/builds.json \
+            --out "site/${PREFIX}builds.json" \
             --timestamp "$stamp" \
             --commit "${GITHUB_SHA::7}"
           python3 tools/gen_gallery.py \
-            --site site \
-            --manifest site/builds.json \
+            --site "site/${PREFIX%/}" \
+            --manifest "site/${PREFIX}builds.json" \
             --repo "$GITHUB_REPOSITORY" \
+            --title "$title" \
             --timestamp "$stamp"
 
       - name: Save the site state

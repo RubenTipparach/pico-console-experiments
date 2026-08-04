@@ -56,7 +56,23 @@ would sit in the state branch and never be seen.
 Jobs that deploy need `pages: write` and `id-token: write`, plus
 `environment: github-pages`.
 
-### 4. Never rebuild or republish an unchanged game
+### 4. Branches deploy to previews, never to the root
+
+Every push deploys. The default branch owns the site root; every other branch
+publishes under `preview/<branch>/`. `tools/site_prefix.py` is the single place
+that decides which, and both the detect job and the publish job must ask it,
+because if they disagree a branch reads one set of fingerprints and writes
+another and the build plan quietly stops meaning anything.
+
+A branch reaching the site root takes an explicit `publish` dispatch. Do not
+loosen that. Pull requests must never deploy at all, because a PR from a fork
+would then have write access to the site.
+
+Each preview carries its own `builds.json`, so a branch tracks its own state.
+That is why the first push to a new branch rebuilds everything, and it is
+correct rather than a bug in the skip logic.
+
+### 5. Never rebuild or republish an unchanged game
 
 CI minutes are the scarce resource here. A game is rebuilt only when its own
 content hash changes, or when something it depends on (the shared engine, the
@@ -72,7 +88,7 @@ build tooling, the workflow itself) changes.
 - Never "just rebuild everything to be safe". If you think a rebuild is needed,
   fix the fingerprint inputs so the tool agrees with you.
 
-### 5. One SDK: 32blit
+### 6. One SDK: 32blit
 
 Every game builds against the 32blit SDK, which targets the PicoSystem through
 `-DPICO_BOARD=pimoroni_picosystem` and also builds for desktop and for the
@@ -81,7 +97,7 @@ browser.
 Do not reach for the raw Pimoroni picosystem SDK. It is device only: no SDL
 target, no Emscripten target, and its single SDL wrapper pull request was closed
 unmerged in 2021 with the branch deleted. A game written against it can ship a
-`.uf2` and can never have a playable page in the gallery, which breaks rule 11.
+`.uf2` and can never have a playable page in the gallery, which breaks rule 12.
 `tools/fingerprint.py` rejects `sdk: picosystem` rather than letting a game
 publish a dead URL.
 
@@ -91,7 +107,7 @@ Game code should not call the SDK where the engine already abstracts it.
 a `pse::RenderTarget`, which is why the renderer compiles unchanged for device,
 desktop, web, and the host test binary.
 
-### 6. SOLID
+### 7. SOLID
 
 The engine is a library, the games are consumers. Keep it that way.
 
@@ -114,7 +130,7 @@ Practical consequence: no globals shared between engine and game. The city's
 buildings and gems used to be file scope arrays that the game reached into
 directly; they are owned by `santa::City` now. Keep it that way.
 
-### 7. The PicoSystem is tiny. Budget everything.
+### 8. The PicoSystem is tiny. Budget everything.
 
 Hardware: RP2040 dual core Cortex-M0+ at 133 MHz (no FPU), 264 KB SRAM, 16 MB
 flash, 240x240 LCD, 4 bit per channel colour.
@@ -134,13 +150,24 @@ Before adding anything, ask what it costs:
 - Prefer fixed size arrays with an `active` flag over dynamic allocation. Do not
   introduce `new`, `malloc`, `std::vector`, or `std::string` into game or engine
   hot paths.
-- Core 1 is not yours to take. The 32blit pico backend claims it for display
-  and audio when built with `ENABLE_CORE1`, which is why the 3D renderer
-  rasterizes immediately on core 0 instead of queueing triangles for a second
-  core. That choice also gave back the 84 KB the old triangle lists cost.
+- Core 1 is available on the PicoSystem, and the engine uses it. The 32blit
+  pico backend only claims core 1 under `ENABLE_CORE1`, which its CMake sets
+  for scanvideo display boards alone; the PicoSystem uses the dbi driver with
+  audio on a core 0 hardware alarm, so core 1 idles. `pse::run_split()` gives
+  it the bottom half of the screen: collect triangles with
+  `begin_frame_collect`, run_split rasterizes both halves at once, each core
+  owning disjoint rows so there are no locks. A queue with `mark_split()`
+  renders as two independent scenes, one per band with its own gradient,
+  which is how a split screen game gives each core a whole scene. The host
+  tests prove both forms byte identical to single core rendering.
+- The flash safety contract that comes with that: `write_save` disables XIP
+  while it programs flash, and core 1 survives only because its idle loop is
+  RAM resident (`__not_in_flash_func` in `parallel_pico.cpp`). Save outside
+  the render call, never during it, and never move that worker loop into
+  flash. The clock is 250 MHz on both cores (`OVERCLOCK_250` defaults on).
 - If you add a feature, state its RAM and flash cost in the PR body.
 
-### 8. Keep on-device UI sparse
+### 9. Keep on-device UI sparse
 
 The screen is 240x240, or 120x120 when pixel doubled. Text is expensive to read
 and expensive to draw.
@@ -153,7 +180,7 @@ and expensive to draw.
 - If the user explicitly asks for more text, give them more text. This rule is a
   default, not a veto.
 
-### 9. Mock up large UI changes before building them
+### 10. Mock up large UI changes before building them
 
 If a change materially alters the gallery, a game's title screen, or the flasher
 utility layout, produce a mockup first and get the user to confirm it. A mockup
@@ -162,7 +189,7 @@ fastest. Do not spend a long implementation on an unconfirmed design.
 
 Small changes (a label, a colour, one control) do not need a mockup.
 
-### 10. Models come from .obj files, not from code
+### 11. Models come from .obj files, not from code
 
 Do not hand write vertex tables in C++. Do not procedurally emit geometry in
 source when a real model would do.
@@ -177,7 +204,7 @@ source when a real model would do.
 - The exception is trivial primitives (a cube, a quad) that the engine already
   generates parametrically. Those stay in code.
 
-### 11. Every game gets its own URL, a gallery entry, and touch controls
+### 12. Every game gets its own URL, a gallery entry, and touch controls
 
 - The gallery lives at the Pages root and lists every game.
 - Each game is published at `/<slug>/`, where `slug` comes from `game.yml`.
@@ -185,7 +212,20 @@ source when a real model would do.
   "Download .uf2" link and say so on the card.
 - Every web build uses `web/shell.html`, which carries the on-screen gamepad
   and the fullscreen button. Games must stay playable on a phone with nothing
-  installed. Do not fall back to the SDK's stock shell: it is keyboard only,
+  installed. Two SDK behaviours govern how the screen is sized, and both have
+  bitten already, so do not "simplify" this:
+  - The shell passes `--size 240,240`, because the SDL backend defaults to
+    320x240 while the PicoSystem board config is 240x240. Without it a game
+    drawing to its own bounds gets black margins on the web it does not have on
+    hardware.
+  - The canvas is pinned to 240x240 in CSS and magnified with a `transform`,
+    never sized responsively. The SDL window is `SDL_WINDOW_RESIZABLE`, so
+    Emscripten keeps the render buffer in step with the element's CSS box, and
+    `Renderer.cpp` hardcodes `KeepPixels`, which turns on integer scaling with
+    no switch to disable it. A responsive CSS size gives an arbitrary buffer
+    like 358, `floor(358 / 240)` is 1, and the game sits small in a black
+    frame. Pinning the buffer keeps the integer scale at exactly 1x (hires) or
+    2x (lores). Media queries must resize `#frame`, never the canvas. Do not fall back to the SDK's stock shell: it is keyboard only,
   so a phone can load the game and then not play it.
 - The shell synthesises keyboard events rather than calling into the engine.
   Keep it that way: it means the page needs no per game knowledge, and a change
@@ -198,7 +238,7 @@ source when a real model would do.
   `Capture thumbnails` workflow with the game named, or by committing a new PNG.
   Never refresh thumbnails on your own initiative.
 
-### 12. Flashing to the device is a one click job
+### 13. Flashing to the device is a one click job
 
 `tools/flasher/` is a small Windows Forms utility. It watches for a PicoSystem in
 BOOTSEL mode and copies a selected `.uf2` across. Keep it quick and dirty on

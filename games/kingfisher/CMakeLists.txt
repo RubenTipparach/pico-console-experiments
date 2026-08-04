@@ -1,0 +1,12 @@
+add_picosystem_game(kingfisher
+    SOURCES
+        src/game.cpp
+        src/sim.cpp
+        src/render.cpp
+        src/sfx.cpp
+    MODELS
+        fish.obj
+        boat.obj
+        bobber.obj
+        tree.obj
+)

@@ -15,6 +15,7 @@
 
 #include "pse/mesh.hpp"
 #include "pse/pixel.hpp"
+#include "pse/parallel.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
 
@@ -58,6 +59,10 @@ public:
             g = p[1];
             b = p[2];
         }
+    }
+
+    bool bytes_equal(const TestSurface& other) const {
+        return storage_ == other.storage_;
     }
 
     bool any_pixel_set() const {
@@ -290,6 +295,137 @@ void test_mesh_rendering_and_bounds() {
     bad_renderer.draw_mesh(zero_scale, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
+
+// Split rasterization is only allowed to exist if it is invisible: collecting
+// triangles and rendering them as two disjoint row bands must reproduce the
+// immediate mode image byte for byte. Anything less and the two cores on the
+// device would produce a seam down the middle of every frame.
+void test_split_matches_immediate() {
+    const int w = pse::k_render_width, h = pse::k_render_height;
+    const pse::SkyGradient sky{30, 40, 90, 90, 120, 170};
+
+    // Deterministic pseudo random triangle soup, including degenerate,
+    // offscreen, and overlapping cases.
+    uint32_t rng = 0xC0FFEE01u;
+    auto next = [&rng]() {
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        return rng;
+    };
+
+    pse::ScreenTriangle tris[120];
+    for (auto& t : tris) {
+        t.x0 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.y0 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.x1 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.y1 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.x2 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.y2 = static_cast<int16_t>(static_cast<int>(next() % 200) - 40);
+        t.z0 = static_cast<uint16_t>(next() % 1024);
+        t.z1 = static_cast<uint16_t>(next() % 1024);
+        t.z2 = static_cast<uint16_t>(next() % 1024);
+        t.r0 = static_cast<uint8_t>(next()); t.g0 = static_cast<uint8_t>(next());
+        t.b0 = static_cast<uint8_t>(next());
+        t.r1 = static_cast<uint8_t>(next()); t.g1 = static_cast<uint8_t>(next());
+        t.b1 = static_cast<uint8_t>(next());
+        t.r2 = static_cast<uint8_t>(next()); t.g2 = static_cast<uint8_t>(next());
+        t.b2 = static_cast<uint8_t>(next());
+    }
+
+    // Immediate reference.
+    TestSurface reference(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer immediate;
+    immediate.begin_frame(reference.target());
+    immediate.clear_gradient(sky.top_r, sky.top_g, sky.top_b,
+                             sky.bottom_r, sky.bottom_g, sky.bottom_b);
+    for (const auto& t : tris) immediate.draw(t);
+
+    // Collected and rendered as two bands.
+    TestSurface split_out(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer collector;
+    static pse::FrameQueue queue;
+    collector.begin_frame_collect(split_out.target(), queue);
+    for (const auto& t : tris) collector.draw(t);
+    pse::run_split(collector, queue, sky);
+    collector.end_collect();
+
+    CHECK(queue.dropped == 0);
+    CHECK(collector.triangles_drawn() == queue.count);
+    CHECK(reference.bytes_equal(split_out));
+
+    // Post-split immediate drawing must still work (billboards and UI go on
+    // top after the workers finish).
+    collector.draw(make_triangle(2, 2, 2, 20, 20, 2, 50, 255, 255, 255));
+    int r = 0, g = 0, b = 0;
+    split_out.pixel(4, 4, r, g, b);
+    CHECK(r > 200 && g > 200);
+}
+
+// A marked queue is two scenes: the first group must render only into the top
+// band under its own gradient, the second only into the bottom band under
+// its. Verified against a reference built from the band primitives directly.
+void test_two_scene_split() {
+    const int w = pse::k_render_width, h = pse::k_render_height;
+    const int mid = h / 2;
+    const pse::SkyGradient sky_top{200, 120, 60, 240, 200, 160};
+    const pse::SkyGradient sky_bottom{40, 90, 120, 5, 10, 30};
+
+    // One triangle per scene, both crossing the split row so the clipping is
+    // actually exercised, horizontally separated so a leak of either into the
+    // other band is detectable as a lone colour in pure gradient.
+    pse::ScreenTriangle top_tri =
+        make_triangle(10, 20, 30, 100, 50, 20, 90, 250, 20, 20);
+    pse::ScreenTriangle bottom_tri =
+        make_triangle(70, 100, 110, 100, 90, 20, 90, 20, 250, 20);
+
+    // Reference: the exact band calls the split should reduce to.
+    TestSurface reference(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer ref_raster;
+    ref_raster.begin_frame(reference.target());
+    ref_raster.clear_gradient_span(sky_top.top_r, sky_top.top_g, sky_top.top_b,
+                                   sky_top.bottom_r, sky_top.bottom_g,
+                                   sky_top.bottom_b, 0, mid, 0, mid);
+    ref_raster.clear_gradient_span(sky_bottom.top_r, sky_bottom.top_g,
+                                   sky_bottom.top_b, sky_bottom.bottom_r,
+                                   sky_bottom.bottom_g, sky_bottom.bottom_b,
+                                   mid, h, mid, h);
+    ref_raster.draw_rows(top_tri, 0, mid);
+    ref_raster.draw_rows(bottom_tri, mid, h);
+
+    TestSurface split_out(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer collector;
+    static pse::FrameQueue queue;
+    collector.begin_frame_collect(split_out.target(), queue);
+    collector.draw(top_tri);
+    queue.mark_split();
+    collector.draw(bottom_tri);
+    pse::run_split(collector, queue, sky_top, sky_bottom);
+    collector.end_collect();
+
+    CHECK(queue.split == 1);
+    CHECK(queue.count == 2);
+    CHECK(reference.bytes_equal(split_out));
+
+    // The top scene's red triangle continues below the split row
+    // geometrically, but those rows belong to the bottom scene: they must
+    // show only the bottom gradient. Same for the bottom scene's green
+    // triangle above the split.
+    int r = 0, g = 0, b = 0;
+    split_out.pixel(30, 80, r, g, b);
+    CHECK(r < 100);
+    split_out.pixel(90, 40, r, g, b);
+    CHECK(b > 60 && g < 220);
+}
+
+// Queue overflow must drop and count, never write out of bounds.
+void test_queue_overflow() {
+    static pse::FrameQueue queue;
+    queue.reset();
+    pse::ScreenTriangle t = make_triangle(0, 0, 0, 10, 10, 0, 100, 1, 2, 3);
+    for (int i = 0; i < pse::FrameQueue::k_capacity + 25; i++) queue.push(t);
+    CHECK(queue.count == pse::FrameQueue::k_capacity);
+    CHECK(queue.dropped == 25);
+}
+
 // Guard the documented memory budget. If someone raises the render size this
 // test is the thing that tells them what it just cost.
 void test_memory_budget() {
@@ -311,6 +447,9 @@ int main() {
     test_renderer_projects_and_culls();
     test_mesh_rendering_and_bounds();
     test_memory_budget();
+    test_split_matches_immediate();
+    test_two_scene_split();
+    test_queue_overflow();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

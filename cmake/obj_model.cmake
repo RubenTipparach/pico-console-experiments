@@ -23,9 +23,10 @@ function(add_obj_model TARGET MODEL OUT_SOURCES)
     # The .mtl sidecar is a real input: changing a colour must rebuild. It is
     # listed under DEPENDS rather than as the command's argument because
     # obj2cpp.py finds it through the model's own mtllib line.
+    get_filename_component(model_dir ${model_path} DIRECTORY)
     set(material_path "")
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/models/${model_name}.mtl)
-        set(material_path ${CMAKE_CURRENT_SOURCE_DIR}/models/${model_name}.mtl)
+    if(EXISTS ${model_dir}/${model_name}.mtl)
+        set(material_path ${model_dir}/${model_name}.mtl)
     endif()
 
     # Both generated files are listed in OUTPUT. Putting the header in

@@ -1,0 +1,7 @@
+# Near white so the per species tint has full range to work with.
+
+newmtl fish_body
+Kd 0.92 0.92 0.92
+
+newmtl fish_fin
+Kd 0.72 0.72 0.78

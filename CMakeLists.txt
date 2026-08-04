@@ -24,6 +24,16 @@ if(BUILD_ENGINE_TESTS)
     add_executable(engine_tests engine/tests/test_engine.cpp)
     target_link_libraries(engine_tests pse-core)
     add_test(NAME engine_tests COMMAND engine_tests)
+
+    # Game test suites are discovered, never listed, same as the games
+    # themselves: a games/<slug>/tests/CMakeLists.txt is picked up here and its
+    # tests run in the same ctest pass CI already executes.
+    file(GLOB game_test_dirs CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/games/*/tests)
+    foreach(test_dir ${game_test_dirs})
+        if(EXISTS ${test_dir}/CMakeLists.txt)
+            add_subdirectory(${test_dir})
+        endif()
+    endforeach()
     return()
 endif()
 
@@ -33,7 +43,7 @@ include(picosystem_game)
 
 # Games are discovered, never listed. Adding a directory with a game.yml and a
 # CMakeLists.txt is the whole procedure for adding a game.
-file(GLOB game_dirs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/games
+file(GLOB game_dirs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/games CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/games/*)
 foreach(game ${game_dirs})
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/games/${game}/CMakeLists.txt)

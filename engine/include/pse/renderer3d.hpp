@@ -28,6 +28,20 @@ public:
     // Place the camera explicitly.
     void set_camera(float x, float y, float z, float yaw, float pitch);
 
+    // Project into a horizontal band of the target instead of the full frame,
+    // for split screen scenes: y0 is the band's first row, height its row
+    // count. Horizontal extent stays the full width, so a half height band
+    // simply sees a wider, letterboxed view. Pass height 0 to go back to the
+    // full frame.
+    void set_viewport(int y0, int height);
+
+    // Fade each vertex colour toward a fog colour by its world space y, from
+    // no fade at y_start to full fade at y_end. This is what makes underwater
+    // geometry read as submerged: a fish nosing down shades darker along its
+    // own body. Disabled by default and reset explicitly, never per draw.
+    void set_depth_fade(bool enabled, uint8_t r, uint8_t g, uint8_t b,
+                        float y_start = 0.0f, float y_end = -1.0f);
+
     // World point to screen. Returns false when the point is behind the near
     // plane or beyond the far plane.
     bool project(float wx, float wy, float wz,
@@ -74,6 +88,14 @@ private:
 
     float camera_x_ = 0.0f, camera_y_ = 0.0f, camera_z_ = 0.0f;
     float camera_yaw_ = 0.0f, camera_pitch_ = 0.0f;
+
+    int viewport_y0_ = 0;
+    int viewport_h_ = 0;   // 0 means the full target height
+
+    bool fade_enabled_ = false;
+    uint8_t fade_r_ = 0, fade_g_ = 0, fade_b_ = 0;
+    float fade_y_start_ = 0.0f;
+    float fade_y_scale_ = 0.0f;   // 1 / (y_end - y_start)
 
     // View projection in fixed point, rebuilt once per camera change.
     int32_t view_projection_[4][4] = {};

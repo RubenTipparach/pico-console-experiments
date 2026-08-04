@@ -19,6 +19,14 @@
 #define PSE_RENDER_HEIGHT 120
 #endif
 
+// Capacity of the split rasterization queue, in triangles. One queued triangle
+// is 24 bytes, so the default costs 15,360 bytes of RAM wherever a FrameQueue
+// is instantiated. Overflow drops triangles and counts them rather than
+// growing.
+#ifndef PSE_MAX_QUEUE
+#define PSE_MAX_QUEUE 640
+#endif
+
 namespace pse {
 
 constexpr int k_render_width = PSE_RENDER_WIDTH;

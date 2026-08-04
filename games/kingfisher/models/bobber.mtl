@@ -1,0 +1,5 @@
+newmtl bobber_top
+Kd 0.90 0.16 0.20
+
+newmtl bobber_belly
+Kd 0.95 0.93 0.88
