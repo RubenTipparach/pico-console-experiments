@@ -39,18 +39,34 @@ constexpr int k_stamina_regen = 1;
 //
 // The crank has a fixed power; the fish resists with pull, which is
 // strength scaled by remaining stamina (0..strength). What the player
-// gains per tick is power minus resistance, so a fresh strong fish barely
-// comes in and a spent one comes in at full crank. Against a running fish
-// the resistance is doubled: reeling into a strong run still loses line,
-// but less than resting does, so the crank acts as a brake on a long run
-// at the price of tension. Easing off saves the line and pays in distance.
-constexpr int k_reel_power = 14;       // unopposed crank, fp line per tick
-constexpr int k_reel_run_power = 12;   // crank power during a run
-constexpr int k_resist_run_mul = 2;    // run resistance = pull * this
+// gains per tick is power minus resistance, so a fresh strong fish does not
+// come in at all and a spent one comes in at full crank.
+//
+// The ceiling is k_reel_power, and it is deliberately no faster than the
+// bare lure tows at (k_retrieve_max_fp256, about 2 m/s). A fish on the line
+// can never come in quicker than a hook with nothing on it: the reel used
+// to be nearly three times the tow rate, which made a hooked fish the
+// fastest way to move the lure.
+//
+// During a run the crank is weaker still and the fish is pulling the other
+// way, so reeling into a run always loses line. It loses a shade less than
+// riding the run out, which leaves the crank usable as a brake, but only
+// just: against the legend it saves about one fp a tick and buys seventeen
+// tension for it. That is the trade the run phase is asking about, and the
+// answer is usually to let the fish go and take the line back later.
+constexpr int k_reel_power = 5;        // unopposed crank, fp line per tick
+constexpr int k_reel_run_power = 3;    // crank power during a run
+constexpr int k_resist_run_num = 3;    // run resistance = pull * num / den
+constexpr int k_resist_run_den = 4;
 constexpr int k_resist_tire_mul = 1;   // tire resistance = pull * this
 
-// A running fish that is not being reeled takes pull * this per tick.
+// A running fish that is not being reeled takes pull * mul / div per tick.
+// The divisor is what keeps a run survivable now that the crank is slow: a
+// run that took line twice as fast as the reel could ever win it back made
+// every fight a losing race against the line's length rather than against
+// the fish's stamina.
 constexpr int k_run_take_mul = 1;
+constexpr int k_run_take_div = 2;
 
 // The catch: line shorter than this lands the fish. The line snaps free at
 // max = initial * (1 + 1/k_line_slack_div) + k_line_slack_fp.
@@ -64,6 +80,11 @@ constexpr int32_t k_line_slack_fp = 3 * 256;
 // breaks after tension has camped at or above the danger threshold for the
 // full window, and the counter drains twice as fast below it, so the red
 // zone is a place to escape from, not an instant loss.
+//
+// Cranking against a fish that is swimming away is the worst thing the line
+// can be asked to do, and the numbers say so: a strong fish mid run loads
+// the line about seventeen a tick, which crosses the whole safe range in
+// three seconds. That is the pressure behind the choice to let a run go.
 constexpr uint16_t k_tension_start = 250;
 constexpr uint16_t k_tension_danger = 760;
 constexpr uint16_t k_danger_ticks = 110;
@@ -71,9 +92,9 @@ constexpr uint16_t k_danger_ticks = 110;
 // Per tick deltas. Run reeling adds base + (pull * num) / den; run drifting
 // adds pull / drift_div. Tire reeling adds creep while the fish still has
 // half its pull, sheds otherwise; easing off in tire sheds fastest.
-constexpr int k_tension_run_reel_base = 1;
+constexpr int k_tension_run_reel_base = 2;
 constexpr int k_tension_run_reel_num = 3;
-constexpr int k_tension_run_reel_den = 4;
+constexpr int k_tension_run_reel_den = 2;
 constexpr int k_tension_run_drift_div = 4;
 constexpr int k_tension_tire_creep = 1;
 constexpr int k_tension_tire_reel_shed = -2;

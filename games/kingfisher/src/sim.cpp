@@ -520,7 +520,7 @@ void update_fight(World& world, const Input& input) {
     // turns, and a spent one comes to the boat at full crank. Wearing the
     // stamina down IS the fight; the reel just collects afterwards.
     if (world.fight_phase == FightPhase::Run && !reeling && pull > 0) {
-        world.line_len += pull * k_run_take_mul;
+        world.line_len += (pull * k_run_take_mul) / k_run_take_div;
         if (world.line_len >= world.line_max) {
             world.ev.escape = true;
             end_fight(world, false);
@@ -529,9 +529,15 @@ void update_fight(World& world, const Input& input) {
     }
     if (reeling) {
         const bool tiring = world.fight_phase == FightPhase::Tire || pull == 0;
-        const int resist = pull * (tiring ? k_resist_tire_mul
-                                          : k_resist_run_mul);
-        const int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
+        const int resist = tiring ? pull * k_resist_tire_mul
+                                  : (pull * k_resist_run_num) /
+                                        k_resist_run_den;
+        int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
+        // A resting fish never takes line off a cranking reel. It can hold
+        // its ground, which is what a fresh strong one does, but a fish that
+        // is not swimming away has nothing to pull with, and paying out line
+        // to it read as the reel running backwards.
+        if (tiring && gain < 0) gain = 0;
         world.line_len -= gain;
         if (gain > 0) {
             world.reel_click_acc =

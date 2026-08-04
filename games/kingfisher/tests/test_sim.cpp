@@ -343,9 +343,11 @@ void test_fresh_fish_resists_the_reel() {
     CHECK(running.line_len > before_run);
 }
 
-// The tension climbs toward the red zone instead of teleporting there:
-// nearly a second of flat out greed against the legend must not reach it.
-void test_tension_builds_gradually() {
+// Cranking against a fish that is swimming away is the hardest thing the
+// player can ask of the line, and the meter has to say so: a quarter second
+// of it must not reach the red zone (nothing teleports), but half a second
+// must, or the warning arrives too late to mean anything.
+void test_tension_climbs_hard_against_a_run() {
     kf::World world;
     kf::world_init(world, 73);
     kf::world_test_hook(world, kf::k_species_count - 1, 200);
@@ -357,11 +359,72 @@ void test_tension_builds_gradually() {
 
     kf::Input reel{};
     reel.a = true;
-    for (int t = 0; t < 55 && world.mode == kf::Mode::Fight; t++) {
+    for (int t = 0; t < 25 && world.mode == kf::Mode::Fight; t++) {
         kf::world_tick(world, reel);
     }
     CHECK(world.mode == kf::Mode::Fight);
     CHECK(world.tension < kf::k_tension_danger);
+
+    for (int t = 0; t < 25 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.tension >= kf::k_tension_danger);
+    // Reaching the red zone is a warning, never the loss itself: the line
+    // still owes the player the whole danger window to escape in.
+    CHECK(world.mode == kf::Mode::Fight);
+}
+
+// Reeling into a run has to cost more tension than riding it out, or there
+// is no decision in the moment: the player would just always crank.
+void test_reeling_into_a_run_costs_more_than_riding_it() {
+    kf::World reeled;
+    kf::world_init(reeled, 91);
+    kf::world_test_hook(reeled, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(reeled, hook);
+    reeled.fight_phase = kf::FightPhase::Run;
+    reeled.phase_timer = 1000;
+
+    kf::World drifted = reeled;
+
+    kf::Input reel{};
+    reel.a = true;
+    for (int t = 0; t < 20; t++) {
+        kf::world_tick(reeled, reel);
+        kf::world_tick(drifted, kf::Input{});
+    }
+    CHECK(reeled.tension > drifted.tension);
+}
+
+// The complaint that started this: a fish on the line was coming in faster
+// than a bare hook tows. However spent the fish, the reel can never beat the
+// retrieve, because a fight is not a shortcut across the lake.
+void test_the_reel_never_beats_the_tow() {
+    const int tow_per_tick = kf::k_retrieve_max_fp256 / 256;
+    CHECK(kf::k_reel_power <= tow_per_tick);
+    CHECK(kf::k_reel_run_power <= kf::k_reel_power);
+
+    kf::World world;
+    kf::world_init(world, 92);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    world.fight_phase = kf::FightPhase::Tire;
+    world.phase_timer = 5000;
+    world.stamina = 0;            // as easy as the fight ever gets
+
+    kf::Input reel{};
+    reel.a = true;
+    int32_t worst = 0;
+    for (int t = 0; t < 200 && world.mode == kf::Mode::Fight; t++) {
+        const int32_t before = world.line_len;
+        kf::world_tick(world, reel);
+        const int32_t gain = before - world.line_len;
+        if (gain > worst) worst = gain;
+    }
+    CHECK(worst <= tow_per_tick);
 }
 
 
@@ -695,7 +758,9 @@ int main() {
     test_stamina_drains_and_regens();
     test_wiggle_relieves_and_tires();
     test_fresh_fish_resists_the_reel();
-    test_tension_builds_gradually();
+    test_tension_climbs_hard_against_a_run();
+    test_reeling_into_a_run_costs_more_than_riding_it();
+    test_the_reel_never_beats_the_tow();
     test_distance_zero_means_collected();
     test_cast_range();
     test_b_recalls_instantly();
