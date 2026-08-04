@@ -172,8 +172,8 @@ void draw_horizon(const World& world, float cam_x, float cam_z) {
         uint8_t r, g, b;
     };
     static const Ridge k_ridges[2] = {
-        {52.0f, 7.0f, 3.0f, 11.0f, 196, 212, 164},
-        {38.0f, 5.0f, 1.6f, 0.0f, 118, 150, 126},
+        {52.0f, 7.0f, 3.0f, 11.0f, 236, 206, 172},
+        {38.0f, 5.0f, 1.6f, 0.0f, 214, 174, 128},
     };
     // 5 m columns with hashed corner heights: linear between them, the
     // ridge comes out as angular peaks rather than a rolling swell, which
@@ -284,9 +284,9 @@ void draw_shadow(float bike_x, float bike_z, float lift) {
     const float wy[4] = {0.02f, 0.02f, 0.02f, 0.02f};
     const float wz[4] = {bike_z - 0.30f, bike_z - 0.30f, bike_z + 0.30f,
                          bike_z + 0.30f};
-    const uint8_t r[4] = {96, 128, 96, 128};
-    const uint8_t g[4] = {132, 156, 132, 156};
-    const uint8_t b[4] = {104, 118, 104, 118};
+    const uint8_t r[4] = {150, 150, 150, 150};
+    const uint8_t g[4] = {120, 120, 120, 120};
+    const uint8_t b[4] = {84, 84, 84, 84};
     quad_world(wx, wy, wz, r, g, b);
 }
 
@@ -315,10 +315,10 @@ void draw_dust() {
         int sx, sy, sz;
         if (g_renderer.project(d.x, d.y, d.z, sx, sy, sz)) {
             const uint8_t shade = static_cast<uint8_t>(150 + d.life * 4);
-            g_raster.plot(sx, sy, clamp8(shade - 10), clamp8(shade + 30),
-                          clamp8(shade - 40));
-            g_raster.plot(sx + 1, sy, clamp8(shade - 34), clamp8(shade + 4),
-                          clamp8(shade - 60));
+            g_raster.plot(sx, sy, shade, clamp8(shade - 30),
+                          clamp8(shade - 70));
+            g_raster.plot(sx + 1, sy, clamp8(shade - 12), clamp8(shade - 40),
+                          clamp8(shade - 80));
         }
     }
 }
@@ -395,14 +395,14 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     constexpr int k_far_cols = 16;
     constexpr float k_far_step = 7.0f;
     draw_strip(cam_x - 56.0f, k_far_cols, k_far_step, north_out,
-               [&](float) { return cam_z + 44.0f; }, 190, 212, 150, -4, -22);
+               [&](float) { return cam_z + 44.0f; }, 222, 184, 124, -6, -20);
 
     draw_strip(x0, k_columns, 1.0f, [&](float) { return near_ground; },
-               south_edge, 186, 210, 145, -18, 10);
+               south_edge, 214, 176, 116, -16, 8);
     draw_strip(x0, k_columns, 1.0f, south_edge, north_edge,
-               72, 128, 119, 8, -12);
+               132, 128, 124, 6, -10);
     draw_strip(x0, k_columns, 1.0f, north_edge, north_out,
-               194, 220, 153, 6, -12);
+               226, 188, 126, 4, -10);
 
     // Centerline dashes, every other meter.
     {
@@ -417,9 +417,9 @@ void render_scene(const World& world, const pse::RenderTarget& target,
             const float wy[4] = {0.015f, 0.015f, 0.015f, 0.015f};
             const float wz[4] = {ca - 0.08f, cb - 0.08f, cb + 0.08f,
                                  ca + 0.08f};
-            const uint8_t r[4] = {216, 216, 216, 216};
-            const uint8_t g[4] = {228, 228, 228, 228};
-            const uint8_t b[4] = {172, 172, 172, 172};
+            const uint8_t r[4] = {240, 240, 240, 240};
+            const uint8_t g[4] = {232, 232, 232, 232};
+            const uint8_t b[4] = {198, 198, 198, 198};
             quad_world(wx, wy, wz, r, g, b);
         }
     }
@@ -457,7 +457,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     g_stats.dropped = g_queue.dropped;
 
     pse::run_split(g_raster, g_queue,
-                   pse::SkyGradient{45, 89, 97, 228, 214, 164});
+                   pse::SkyGradient{118, 174, 232, 248, 206, 152});
     g_raster.end_collect();
 
     // ---- immediate overlays ----
