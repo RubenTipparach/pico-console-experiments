@@ -296,29 +296,6 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
-      # A compiled game is not a working game. Boot every web build this run
-      # produced in a real browser before it can touch the site: a page error
-      # here fails the publish and the previous good build stays live.
-      - name: Boot check the games this run built
-        env:
-          BUILT: ${{ needs.detect.outputs.built }}
-        run: |
-          set -euo pipefail
-          needed=""
-          for slug in $(echo "$BUILT" | tr ',' ' '); do
-            [ -n "$slug" ] || continue
-            [ -f "incoming/web/$slug/index.html" ] && needed="$needed $slug"
-          done
-          if [ -z "$needed" ]; then
-            echo "no web builds this run"
-            exit 0
-          fi
-          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(tools/setup_browser.sh)"
-          export PLAYWRIGHT_CHROMIUM_EXECUTABLE
-          for slug in $needed; do
-            python3 tools/boot_check.py --dir incoming/web --slug "$slug"
-          done
-
       - name: Overlay the rebuilt games
         env:
           BUILT: ${{ needs.detect.outputs.built }}
@@ -336,7 +313,20 @@ jobs:
               # exclude keeps a captured thumbnail from being swept up with
               # them. Without the exclude, republishing a game silently
               # destroys its screenshot.
-              rsync -a --delete --exclude 'thumbnail.png' \
+              #
+              # --checksum is load bearing, not a nicety. rsync's default
+              # quick check calls a file unchanged when its size and mtime
+              # match, and Emscripten's index.js is the exact shape that
+              # defeats: its ASM_CONSTS keys are addresses into the wasm's
+              # data, so they move whenever the game's data layout moves,
+              # but they stay the same NUMBER OF DIGITS, so the file's size
+              # never changes. The site checkout and the artifact download
+              # land in the same second, so the mtimes match too, and every
+              # rebuild silently kept the first index.js a game ever
+              # published while replacing its wasm. A game survives that
+              # until its EM_ASM addresses shift, then dies on boot with
+              # ASM_CONSTS[emAsmAddr] is not a function. Compare contents.
+              rsync -a --checksum --delete --exclude 'thumbnail.png' \
                 "incoming/web/$slug/" "site/${PREFIX}$slug/"
               # Stamp the build into the page and its asset URLs. Pages
               # caches everything for ten minutes under unchanging names, so
@@ -359,6 +349,35 @@ jobs:
             if [ -f "incoming/uf2/$slug.uf2" ]; then
               cp "incoming/uf2/$slug.uf2" "site/${PREFIX}uf2/$slug.uf2"
             fi
+          done
+
+      # A compiled game is not a working game, and a checked game is not the
+      # game that ships. This runs on the ASSEMBLED SITE, after the overlay
+      # and the stamping, because that is the only tree the deploy actually
+      # uploads. It used to check the build artifact instead, which is why a
+      # publish that dropped a game's index.js on the way to the site went
+      # out green: the artifact booted perfectly, and something else was
+      # deployed. Whatever assembly does from here on, this sees it.
+      - name: Boot check the site that is about to deploy
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+          PREFIX: ${{ needs.detect.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          root="site/${PREFIX%/}"
+          needed=""
+          for slug in $(echo "$BUILT" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            [ -f "$root/$slug/index.html" ] && needed="$needed $slug"
+          done
+          if [ -z "$needed" ]; then
+            echo "no web builds this run"
+            exit 0
+          fi
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(tools/setup_browser.sh)"
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          for slug in $needed; do
+            python3 tools/boot_check.py --dir "$root" --slug "$slug"
           done
 
       - name: Capture a thumbnail for anything that has never had one
