@@ -697,8 +697,8 @@ void update_lure(World& world, const Input& input) {
                 }
             } else if (input.a) {
                 // Towing: the reel winds up over a couple of seconds to its
-                // slow cruising speed. A sub fp accumulator carries the
-                // fraction so half a meter per second survives integer math.
+                // cruising speed. A sub fp accumulator carries the fraction
+                // so the speed survives integer math at tick granularity.
                 if (world.retrieve_hold < k_retrieve_ramp_ticks) {
                     world.retrieve_hold++;
                 }
