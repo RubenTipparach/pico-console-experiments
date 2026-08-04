@@ -44,13 +44,9 @@ int band_for_z(int32_t z) {
 constexpr int32_t k_lake_half_width = 8 * k_one;
 constexpr int32_t k_boat_z = 0;
 
-// Fight tuning. All per tick (10 ms). The host tests assert the consequences:
-// patient reeling lands everything, greedy reeling snaps on strong fish.
-constexpr int k_reel_tire = 14;      // fp8 line per tick reeling a tired fish
-constexpr int k_reel_run = 5;        // reeling against a running fish
-constexpr int32_t k_catch_len = 340; // ~1.3 units from the boat lands it
-constexpr int k_wiggle_relief = 40;  // tension shed by one rod wiggle
-constexpr int k_wiggle_drain = 12;   // stamina cost of countering a run
+// Fight tuning lives in tuning.hpp, one documented dial per behaviour. The
+// host tests assert the consequences: patient technique lands everything,
+// greedy reeling loses strong fish.
 
 }  // namespace
 
@@ -69,6 +65,14 @@ const Species k_species[k_species_count] = {
     {"STURGEON",   2, k_day | k_night,    4,  9,  80, 160,   110, 130, 135, 145},
     {"THE OLD ONE",2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
 };
+
+int fight_distance_dm(const World& world) {
+    if (world.mode != Mode::Fight) return 0;
+    const int32_t dist = world.line_len - k_catch_len;
+    if (dist <= 0) return 1;   // still hooked, so never display zero
+    const int dm = static_cast<int>((dist * 10 + 255) / 256);
+    return dm > 0 ? dm : 1;
+}
 
 uint8_t day_phase(const World& world) {
     return static_cast<uint8_t>((world.day_tick * 256u) / k_day_length);
@@ -362,19 +366,22 @@ void start_fight(World& world, int fish_index) {
     fish.state = FishState::Hooked;
     world.mode = Mode::Fight;
     world.hooked_fish = static_cast<int8_t>(fish_index);
-    world.tension = 250;
+    world.tension = k_tension_start;
     world.danger = 0;
-    world.stamina = static_cast<uint16_t>(200 + fish.size_cm * 4 +
-                                          s.strength * 60);
+    world.stamina = static_cast<uint16_t>(
+        k_stamina_base + fish.size_cm * k_stamina_per_cm +
+        s.strength * k_stamina_per_strength);
     world.stamina_max = world.stamina;
     world.run_dir = rnd(world.rng, 2) ? 1 : -1;
     world.last_wiggle = 0;
     world.line_len = world.lure_z + (world.lure_x < 0 ? -world.lure_x
                                                       : world.lure_x);
-    world.line_max = world.line_len + world.line_len / 2 + 3 * k_one;
+    world.line_max = world.line_len + world.line_len / k_line_slack_div +
+                     k_line_slack_fp;
     world.fight_phase = FightPhase::Run;
-    world.phase_timer = static_cast<uint16_t>(50 + rnd(world.rng,
-                                                       50 + s.strength * 8));
+    world.phase_timer = static_cast<uint16_t>(
+        k_run_ticks_base + rnd(world.rng, k_run_ticks_vary +
+                                          s.strength * k_run_ticks_per_strength));
     world.leap_timer = 0;
     world.bite_timer = 0;
     world.ev.hooked = true;
@@ -446,12 +453,21 @@ void update_fight(World& world, const Input& input) {
     }
 
     // Tension. Reeling against a fish that can still pull loads the line;
-    // a spent fish coming to the boat unloads it.
+    // a spent fish coming to the boat unloads it. The build is gradual on
+    // purpose: the red zone should be something a fight climbs toward, not
+    // somewhere it teleports.
     int delta;
     if (world.fight_phase == FightPhase::Run) {
-        delta = reeling ? (pull > 0 ? 2 + pull : -1) : pull / 3;
+        delta = reeling
+            ? (pull > 0 ? k_tension_run_reel_base +
+                          (pull * k_tension_run_reel_num) /
+                              k_tension_run_reel_den
+                        : -1)
+            : pull / k_tension_run_drift_div;
     } else {
-        delta = reeling ? (pull >= 5 ? 1 : -2) : -5;
+        delta = reeling ? (pull >= 5 ? k_tension_tire_creep
+                                     : k_tension_tire_reel_shed)
+                        : k_tension_tire_rest_shed;
     }
     const int tension = static_cast<int>(world.tension) + delta;
     world.tension = static_cast<uint16_t>(clamp32(tension, 0, 1023));
@@ -472,9 +488,13 @@ void update_fight(World& world, const Input& input) {
     }
 
     // Line length. A running fish takes line in proportion to what it has
-    // left in it.
+    // left in it, and it resists the reel the same way: the crank only wins
+    // what is left after the fish's pull is subtracted. A fresh fish barely
+    // comes in at all, a fresh fish mid run takes line even while the reel
+    // turns, and a spent one comes to the boat at full crank. Wearing the
+    // stamina down IS the fight; the reel just collects afterwards.
     if (world.fight_phase == FightPhase::Run && !reeling && pull > 0) {
-        world.line_len += pull;
+        world.line_len += pull * k_run_take_mul;
         if (world.line_len >= world.line_max) {
             world.ev.escape = true;
             end_fight(world, false);
@@ -482,20 +502,30 @@ void update_fight(World& world, const Input& input) {
         }
     }
     if (reeling) {
-        world.line_len -= (world.fight_phase == FightPhase::Tire || pull == 0)
-                              ? k_reel_tire : k_reel_run;
+        const bool tiring = world.fight_phase == FightPhase::Tire || pull == 0;
+        const int resist = pull * (tiring ? k_resist_tire_mul
+                                          : k_resist_run_mul);
+        const int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
+        world.line_len -= gain;
+        if (gain < 0 && world.line_len >= world.line_max) {
+            world.ev.escape = true;
+            end_fight(world, false);
+            return;
+        }
         // Tugging wears the fish down; that is the trade for the tension it
         // puts on the line.
         if (world.stamina > 0) {
-            const uint16_t drain =
-                (world.fight_phase == FightPhase::Run) ? 2 : 1;
+            const uint16_t drain = (world.fight_phase == FightPhase::Run)
+                                       ? k_drain_reel_run : k_drain_reel_tire;
             world.stamina = static_cast<uint16_t>(
                 world.stamina > drain ? world.stamina - drain : 0);
         }
     } else if (wiggle == 0 && world.stamina < world.stamina_max) {
         // A resting fish gets its wind back, so easing off the line is a
         // real decision rather than a free pause.
-        world.stamina++;
+        world.stamina = static_cast<uint16_t>(
+            world.stamina + k_stamina_regen > world.stamina_max
+                ? world.stamina_max : world.stamina + k_stamina_regen);
     }
 
     if (world.line_len <= k_catch_len) {
@@ -506,16 +536,17 @@ void update_fight(World& world, const Input& input) {
     // Phase changes. A spent fish cannot muster a run until it has breathed.
     if (world.phase_timer > 0) world.phase_timer--;
     if (world.phase_timer == 0) {
-        const bool can_run = world.stamina > world.stamina_max / 8;
+        const bool can_run = world.stamina > world.stamina_max / k_run_rest_div;
         if (world.fight_phase == FightPhase::Run || !can_run) {
             world.fight_phase = FightPhase::Tire;
             world.phase_timer = static_cast<uint16_t>(
-                70 + rnd(world.rng, 70));
+                k_tire_ticks_base + rnd(world.rng, k_tire_ticks_vary));
         } else {
             world.fight_phase = FightPhase::Run;
             world.run_dir = rnd(world.rng, 2) ? 1 : -1;
             world.phase_timer = static_cast<uint16_t>(
-                50 + rnd(world.rng, 50 + s.strength * 8));
+                k_run_ticks_base + rnd(world.rng, k_run_ticks_vary +
+                    s.strength * k_run_ticks_per_strength));
             // A fresh run sometimes breaks the surface.
             if (rnd(world.rng, 256) < 90) {
                 world.leap_timer = 45;

@@ -351,11 +351,17 @@ jobs:
               # caches everything for ten minutes under unchanging names, so
               # without the version query a device that just played the old
               # build keeps serving it from cache after the deploy.
+              #
+              # Emscripten minifies the page: attribute quotes are stripped
+              # and inline constants get folded away, so the injection has to
+              # anchor on <body> (which survives) and set a window global
+              # (which no minifier can fold), and the script tag sed has to
+              # match the quoted and unquoted forms both.
               html="site/${PREFIX}$slug/index.html"
               if [ -f "$html" ]; then
                 v="${GITHUB_SHA::7}"
-                sed -i "s|__PSE_BUILD__|$v|g" "$html"
-                sed -i "s|src=\"index.js\"|src=\"index.js?v=$v\"|" "$html"
+                sed -i "s|<body>|<body><script>window.PSE_BUILD=\"$v\"</script>|" "$html"
+                sed -i "s|src=\"index.js\"|src=\"index.js?v=$v\"|; s|src=index.js|src=index.js?v=$v|" "$html"
               fi
               echo "published site/${PREFIX}$slug/"
             fi

@@ -296,6 +296,108 @@ void test_wiggle_relieves_and_tires() {
     CHECK(world.mode != kf::Mode::Fight || world.stamina < before);
 }
 
+
+// The reel is opposed by the fish, scaled by its stamina: a fresh strong
+// fish gives up almost no line to the crank, a spent one comes in at full
+// speed. This is what makes a fight a fight instead of a countdown.
+void test_fresh_fish_resists_the_reel() {
+    kf::World world;
+    kf::world_init(world, 71);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    CHECK(world.mode == kf::Mode::Fight);
+
+    // Pin the phase so the comparison isolates stamina.
+    world.fight_phase = kf::FightPhase::Tire;
+    world.phase_timer = 1000;
+
+    kf::Input reel{};
+    reel.a = true;
+    const int32_t before_fresh = world.line_len;
+    kf::world_tick(world, reel);
+    const int32_t gain_fresh = before_fresh - world.line_len;
+
+    world.stamina = 0;
+    const int32_t before_spent = world.line_len;
+    kf::world_tick(world, reel);
+    const int32_t gain_spent = before_spent - world.line_len;
+
+    CHECK(gain_fresh >= 0);
+    CHECK(gain_spent > gain_fresh);
+    CHECK(gain_fresh * 2 < gain_spent);
+
+    // And against a fresh run, the reel loses ground outright.
+    kf::World running;
+    kf::world_init(running, 72);
+    kf::world_test_hook(running, kf::k_species_count - 1, 200);
+    kf::world_tick(running, hook);
+    running.fight_phase = kf::FightPhase::Run;
+    running.phase_timer = 1000;
+    const int32_t before_run = running.line_len;
+    kf::world_tick(running, reel);
+    CHECK(running.line_len > before_run);
+}
+
+// The tension climbs toward the red zone instead of teleporting there:
+// nearly a second of flat out greed against the legend must not reach it.
+void test_tension_builds_gradually() {
+    kf::World world;
+    kf::world_init(world, 73);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    world.fight_phase = kf::FightPhase::Run;
+    world.phase_timer = 1000;
+
+    kf::Input reel{};
+    reel.a = true;
+    for (int t = 0; t < 55 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode == kf::Mode::Fight);
+    CHECK(world.tension < kf::k_tension_danger);
+}
+
+
+// The HUD distance reads zero exactly when the fish is collected, never a
+// moment before: while the fight is on it is always positive, and the tick
+// that lands the fish is the tick it goes to zero.
+void test_distance_zero_means_collected() {
+    kf::World world;
+    kf::world_init(world, 81);
+    kf::world_test_hook(world, 6, 70);   // a carp
+    CHECK(kf::fight_distance_dm(world) == 0);   // not fighting yet
+
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    CHECK(world.mode == kf::Mode::Fight);
+    CHECK(kf::fight_distance_dm(world) > 0);
+
+    bool caught = false;
+    for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
+        kf::Input input{};
+        const bool tired = world.fight_phase == kf::FightPhase::Tire ||
+                           world.stamina == 0;
+        input.a = tired && world.tension < kf::k_tension_danger - 80;
+        if (t % 3 == 0) {
+            if ((t / 3) % 2 == 0) input.left_pressed = true;
+            else input.right_pressed = true;
+        }
+        kf::world_tick(world, input);
+        if (world.mode == kf::Mode::Fight) {
+            CHECK(kf::fight_distance_dm(world) > 0);
+            if (g_failures > 3) return;
+        }
+        if (world.ev.caught) caught = true;
+    }
+    CHECK(caught);
+    CHECK(kf::fight_distance_dm(world) == 0);
+}
+
 // Doing nothing after the hook must end the fight too: the fish takes all the
 // line and escapes. No fight lasts forever.
 void test_fight_terminates_without_input() {
@@ -472,6 +574,9 @@ int main() {
     test_break_needs_sustained_danger();
     test_stamina_drains_and_regens();
     test_wiggle_relieves_and_tires();
+    test_fresh_fish_resists_the_reel();
+    test_tension_builds_gradually();
+    test_distance_zero_means_collected();
     test_fight_terminates_without_input();
     test_fleeing_fish_despawn();
     test_curious_fish_reaches_the_lure();

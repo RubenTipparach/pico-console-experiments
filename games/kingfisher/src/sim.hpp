@@ -12,6 +12,8 @@
 
 #include <cstdint>
 
+#include "tuning.hpp"
+
 namespace kf {
 
 constexpr int k_fp = 8;
@@ -159,11 +161,7 @@ struct World {
 
 constexpr uint16_t k_day_length = 18000;      // 3 minutes per full cycle
 
-// The fight. Tension only breaks the line by staying in the red zone: the
-// danger counter charges while tension sits at or above k_tension_danger and
-// drains twice as fast below it, and the fish tears free when it fills.
-constexpr uint16_t k_tension_danger = 760;
-constexpr uint16_t k_danger_ticks = 110;
+// Fight tuning, including the tension danger model, lives in tuning.hpp.
 
 void world_init(World& world, uint32_t seed);
 void world_tick(World& world, const Input& input);
@@ -174,6 +172,13 @@ void world_make_save(const World& world, SaveData& out);
 // 0..255 position in the day cycle, for palette lerping.
 uint8_t day_phase(const World& world);
 bool is_night(const World& world);
+
+// The hooked fish's distance from the boat in tenths of a meter, for the
+// fight HUD. One world unit is one meter. Measured from the collect radius
+// and rounded UP, so it reads 0 exactly when the fish is collected and
+// never a moment before: the meter reaching zero IS the catch. Returns 0
+// outside a fight.
+int fight_distance_dm(const World& world);
 
 // Test hook: force a bite-ready fish of the given species and size so fight
 // tuning can be exercised directly. Returns the fish index.

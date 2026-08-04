@@ -65,6 +65,20 @@ void draw_records_overlay() {
     }
 }
 
+// The fight's distance readout: how far the fish is from the boat, in
+// meters, counting down to the catch. Zero is never shown during the
+// fight; the moment it would read zero is the moment the card appears.
+void draw_fight_distance() {
+    if (g_world.mode != kf::Mode::Fight) return;
+    const int dm = kf::fight_distance_dm(g_world);
+    char line[12];
+    snprintf(line, sizeof(line), "%d.%dm", dm / 10, dm % 10);
+    screen.pen = Pen(8, 6, 20, 170);
+    screen.rectangle(Rect(84, 101, 34, 9));
+    screen.pen = Pen(255, 255, 238);
+    screen.text(line, minimal_font, Point(87, 103));
+}
+
 void draw_card() {
     if (g_world.mode != kf::Mode::Landed || g_world.card_species < 0) return;
     const kf::Species& s = kf::k_species[g_world.card_species];
@@ -202,6 +216,7 @@ void render(uint32_t time) {
     if (g_shell == Shell::Title) { draw_title(); return; }
     if (g_shell == Shell::Options) { draw_options(); return; }
 
+    draw_fight_distance();
     draw_card();
     if (g_show_records) draw_records_overlay();
 }
