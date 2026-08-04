@@ -9,6 +9,7 @@
 #include "boat.hpp"
 #include "bobber.hpp"
 #include "fish.hpp"
+#include "tree.hpp"
 
 namespace kfr {
 namespace {
@@ -18,11 +19,16 @@ using kf::World;
 // Rendering state. Static because dynamic allocation is banned, and it is the
 // documented RAM cost of drawing this game:
 //   Rasterizer  ~14.5 KB (depth buffer)
-//   FrameQueue  ~15.4 KB (640 triangles for the two core split)
+//   FrameQueue  ~18 KB (640 triangles shared by the two scenes)
 //   the rest    well under 1 KB
 pse::Rasterizer g_raster;
 pse::Renderer3D g_renderer(g_raster);
 pse::FrameQueue g_queue;
+
+// The screen is two stacked scenes: the world above the surface in the top
+// band, the water below it in the bottom band. Each band is one core's whole
+// job on the device, so the split line is also the parallel seam.
+constexpr int k_split = 60;
 
 // Cosmetic surface effects. Presentation only, so they live here and not in
 // the sim: replaying the same sim produces the same catches even though the
@@ -36,6 +42,7 @@ struct Ripple {
 constexpr int k_max_ripples = 14;
 Ripple g_ripples[k_max_ripples];
 uint8_t g_dip_timer = 0;   // bobber dip after a nibble
+float g_hook_depth = 0.6f; // eased render depth of the hook underwater
 
 // Quarter resolution sine, s8 amplitude 127, 64 entries per turn.
 const int8_t k_sin[64] = {
@@ -50,6 +57,11 @@ inline int sin64(uint32_t index) { return k_sin[index & 63]; }
 
 inline uint8_t lerp8(uint8_t a, uint8_t b, int t256) {
     return static_cast<uint8_t>(a + ((b - a) * t256) / 256);
+}
+
+inline uint8_t shade8(int value, int mul) {
+    const int out = value * mul / 256;
+    return static_cast<uint8_t>(out > 255 ? 255 : (out < 0 ? 0 : out));
 }
 
 // Day cycle palette keyframes. Phase 0 is dawn; night begins at 128.
@@ -107,28 +119,8 @@ int wave_fp(int gx, int gz, uint32_t t, bool raining) {
     return ((a + b) * amp) >> 8;
 }
 
-// The water is a 10x9 grid of vertices ahead of the boat, two triangles per
-// cell, coloured per vertex: deeper water is darker, crests catch the light.
-// 144 triangles, the single biggest fill cost in the frame, which is exactly
-// what the two core split exists for.
-constexpr int k_wx = 10;
-constexpr int k_wz = 9;
-
-void draw_far_water(const SkyKey& sky) {
-    // Same shade as the animated grid's farthest row, so the seam vanishes.
-    const int shade = 256 - ((k_wz - 1) * 130) / (k_wz + 1);
-    const uint8_t r = static_cast<uint8_t>(sky.wat_r * shade / 256 * sky.light / 256);
-    const uint8_t g = static_cast<uint8_t>(sky.wat_g * shade / 256 * sky.light / 256);
-    const uint8_t b = static_cast<uint8_t>(sky.wat_b * shade / 256 * sky.light / 256);
-
-    int sx[4], sy[4], sz[4];
-    const float xs[4] = {-60.0f, 60.0f, 60.0f, -60.0f};
-    const float zs[4] = {14.5f, 14.5f, 70.0f, 70.0f};
-    for (int i = 0; i < 4; i++) {
-        if (!g_renderer.project(xs[i], 0.0f, zs[i], sx[i], sy[i], sz[i])) {
-            return;
-        }
-    }
+void push_quad(const int sx[4], const int sy[4], const int sz[4],
+               uint8_t r, uint8_t g, uint8_t b) {
     pse::ScreenTriangle t1;
     t1.x0 = static_cast<int16_t>(sx[0]); t1.y0 = static_cast<int16_t>(sy[0]);
     t1.x1 = static_cast<int16_t>(sx[1]); t1.y1 = static_cast<int16_t>(sy[1]);
@@ -147,6 +139,60 @@ void draw_far_water(const SkyKey& sky) {
     t2.z2 = static_cast<uint16_t>(sz[3]);
     g_raster.draw(t2);
 }
+
+// A flat ground quad spanning x -width..width over z z0..z1, at height y.
+void draw_ground_quad(float width, float z0, float z1, float y,
+                      uint8_t r, uint8_t g, uint8_t b) {
+    int sx[4], sy[4], sz[4];
+    const float xs[4] = {-width, width, width, -width};
+    const float zs[4] = {z0, z0, z1, z1};
+    for (int i = 0; i < 4; i++) {
+        if (!g_renderer.project(xs[i], y, zs[i], sx[i], sy[i], sz[i])) return;
+    }
+    push_quad(sx, sy, sz, r, g, b);
+}
+
+// The land beyond the water: a sand line where the pond ends, grass rising
+// behind it, and a stand of trees on the grass. This is what the eye lands on
+// when it follows a long cast, so it gets real colours instead of more water.
+void draw_shore(const SkyKey& sky) {
+    const int light = sky.light;
+
+    // Water between the animated grid and the shore, matched to the grid's
+    // farthest row so the seam vanishes.
+    const int wshade = 256 - (8 * 130) / 10;
+    draw_ground_quad(60.0f, 14.5f, 26.0f, 0.0f,
+                     shade8(sky.wat_r * wshade / 256, light),
+                     shade8(sky.wat_g * wshade / 256, light),
+                     shade8(sky.wat_b * wshade / 256, light));
+
+    // Sand, then grass climbing gently away from the water.
+    draw_ground_quad(70.0f, 26.0f, 31.0f, 0.02f,
+                     shade8(205, light), shade8(180, light), shade8(126, light));
+    draw_ground_quad(85.0f, 31.0f, 48.0f, 0.05f,
+                     shade8(66, light), shade8(132, light), shade8(64, light));
+    draw_ground_quad(100.0f, 48.0f, 80.0f, 0.4f,
+                     shade8(44, light), shade8(96, light), shade8(52, light));
+
+    // The treeline. A handful of trees at mixed depths and sizes reads as a
+    // wooded shore without costing more than one fish worth of triangles.
+    struct TreeSpot { float x, z, scale; };
+    static const TreeSpot k_trees[] = {
+        {-26.0f, 36.0f, 4.2f}, {-11.0f, 40.0f, 5.2f}, {2.0f, 37.0f, 4.0f},
+        {15.0f, 42.0f, 5.6f},  {30.0f, 38.0f, 4.6f},  {44.0f, 44.0f, 5.0f},
+    };
+    for (const auto& spot : k_trees) {
+        g_renderer.draw_mesh(models::tree, spot.x, 0.05f, spot.z, 0.0f,
+                             spot.scale, sky.light, sky.light, sky.light);
+    }
+}
+
+// The water is a grid of vertices ahead of the boat, two triangles per cell,
+// coloured per vertex: deeper water is darker, crests catch the light. The
+// single biggest fill cost in the frame, which is exactly what the two core
+// split exists for.
+constexpr int k_wx = 10;
+constexpr int k_wz = 9;
 
 void draw_water(const World& world, const SkyKey& sky, uint32_t t) {
     int sx[k_wx * k_wz];
@@ -173,9 +219,9 @@ void draw_water(const World& world, const SkyKey& sky, uint32_t t) {
             int r = (sky.wat_r * depth_shade / 256) + crest;
             int g = (sky.wat_g * depth_shade / 256) + crest;
             int b = (sky.wat_b * depth_shade / 256) + crest / 2;
-            cr[idx] = static_cast<uint8_t>(r * light / 256 > 255 ? 255 : r * light / 256);
-            cg[idx] = static_cast<uint8_t>(g * light / 256 > 255 ? 255 : g * light / 256);
-            cb[idx] = static_cast<uint8_t>(b * light / 256 > 255 ? 255 : b * light / 256);
+            cr[idx] = shade8(r, light);
+            cg[idx] = shade8(g, light);
+            cb[idx] = shade8(b, light);
         }
     }
 
@@ -237,7 +283,8 @@ void draw_ripples(const SkyKey& sky) {
             const float px = cx + radius * (sin64(k * 5 + 16) / 127.0f);
             const float pz = cz + radius * (sin64(k * 5) / 127.0f);
             int sx2, sy2, sz2;
-            if (g_renderer.project(px, 0.02f, pz, sx2, sy2, sz2)) {
+            if (g_renderer.project(px, 0.02f, pz, sx2, sy2, sz2) &&
+                sy2 < k_split) {
                 g_raster.plot(sx2, sy2, cr2, cg2, cb2);
             }
         }
@@ -251,22 +298,24 @@ void draw_rain(const World& world, uint32_t t) {
     for (int i = 0; i < 18; i++) {
         uint32_t h = (i * 2654435761u) ^ ((t / 2 + i * 13) * 40503u);
         const int x = static_cast<int>(h % 120);
-        const int y = static_cast<int>((h >> 8) % 46) + ((t * 3 + i) % 8);
+        const int y = static_cast<int>((h >> 8) % 40) + ((t * 3 + i) % 8);
         g_raster.plot(x, y, 150, 170, 200);
         g_raster.plot(x, y + 1, 120, 140, 180);
     }
 }
 
-void draw_line_screen(int x0, int y0, int x1, int y1,
-                      uint8_t r, uint8_t g, uint8_t b) {
-    // Bresenham, bounded: the endpoints come from project() so they are near
-    // screen space already.
+// Bresenham, bounded, and clipped to a row band so a line belonging to one
+// scene can never scribble into the other.
+void draw_line_band(int x0, int y0, int x1, int y1, int band_y0, int band_y1,
+                    uint8_t r, uint8_t g, uint8_t b) {
     int dx = x1 - x0, dy = y1 - y0;
     const int steps = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy)
                           ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
     if (steps == 0 || steps > 240) return;
     for (int i = 0; i <= steps; i++) {
-        g_raster.plot(x0 + dx * i / steps, y0 + dy * i / steps, r, g, b);
+        const int y = y0 + dy * i / steps;
+        if (y < band_y0 || y >= band_y1) continue;
+        g_raster.plot(x0 + dx * i / steps, y, r, g, b);
     }
 }
 
@@ -284,22 +333,150 @@ void draw_bar(int x, int y_top, int height, int filled, uint8_t r, uint8_t g,
     }
 }
 
-// Fish tint: species colour washed toward the water colour with depth, so a
-// deep fish reads as a shadow and a surfacing fish gains its real colours.
-void fish_tint(const kf::Fish& fish, const SkyKey& sky, bool surfaced,
-               uint8_t& r, uint8_t& g, uint8_t& b) {
-    const kf::Species& s = kf::k_species[fish.species];
-    if (surfaced) {
-        r = s.r; g = s.g; b = s.b;
-        return;
+// A five pixel fish glyph, for labelling the stamina meter without a word.
+void draw_fish_glyph(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+    g_raster.plot(x + 1, y, r, g, b);
+    g_raster.plot(x + 2, y, r, g, b);
+    g_raster.plot(x + 1, y + 1, r, g, b);
+    g_raster.plot(x + 2, y + 1, r, g, b);
+    g_raster.plot(x, y + 1, r, g, b);
+    g_raster.plot(x + 4, y, r, g, b);
+    g_raster.plot(x + 4, y + 2, r, g, b);
+    g_raster.plot(x + 3, y + 1, r, g, b);
+}
+
+// The fight meters the whole rework hangs on. Left edge: the fish's stamina
+// under a fish glyph, draining as the player tugs and refilling when they
+// rest. Bottom edge: line tension running left to right into a marked red
+// zone; camping in the red is what breaks the line, so the zone and the
+// charge toward breaking are both visible.
+void draw_fight_meters(const World& world) {
+    // Stamina, vertical on the left of the underwater view.
+    const int stam_h = 40;
+    const int fill = world.stamina_max > 0
+        ? (world.stamina * stam_h) / world.stamina_max : 0;
+    draw_fish_glyph(3, k_split + 4, 240, 240, 250);
+    draw_bar(3, k_split + 9, stam_h, fill, 120, 220, 250);
+
+    // Tension, horizontal along the bottom. The red zone begins where the
+    // danger counter starts charging.
+    const int bar_x = 12, bar_w = 96, bar_y = 113, bar_h = 5;
+    const int danger_x = bar_x + (kf::k_tension_danger * bar_w) / 1024;
+    for (int x = 0; x < bar_w; x++) {
+        const bool in_red = bar_x + x >= danger_x;
+        for (int y = 0; y < bar_h; y++) {
+            uint8_t r = in_red ? 90 : 30, g = 30, b = in_red ? 34 : 45;
+            if (y == 0 || y == bar_h - 1 || x == 0 || x == bar_w - 1) {
+                r = 60; g = 60; b = 80;
+            }
+            g_raster.plot(bar_x + x, bar_y + y, r, g, b);
+        }
     }
-    int depth = static_cast<int>(fish.y) - 32;
-    if (depth < 0) depth = 0;
-    if (depth > 480) depth = 480;
-    const int t = (depth * 200) / 480;   // never fully invisible
-    r = lerp8(s.r, sky.wat_r / 2, t);
-    g = lerp8(s.g, sky.wat_g / 2, t);
-    b = lerp8(s.b, sky.wat_b / 2, t);
+    const int tfill = (world.tension * bar_w) / 1024;
+    for (int x = 0; x < tfill; x++) {
+        const bool in_red = bar_x + x >= danger_x;
+        uint8_t r = in_red ? 250 : 120, g = in_red ? 80 : 220, b = 90;
+        g_raster.plot(bar_x + x, bar_y + 1, r, g, b);
+        g_raster.plot(bar_x + x, bar_y + 2, r, g, b);
+        g_raster.plot(bar_x + x, bar_y + 3, r, g, b);
+    }
+    // The break charge creeps along the top edge of the red zone while the
+    // player camps there. Full width of the zone means the fish is gone.
+    if (world.danger > 0) {
+        const int charge =
+            (world.danger * (bar_x + bar_w - danger_x)) / kf::k_danger_ticks;
+        for (int x = 0; x < charge; x++) {
+            g_raster.plot(danger_x + x, bar_y - 1, 255, 60, 60);
+        }
+    }
+}
+
+void set_top_camera(const World& world, uint32_t t) {
+    g_renderer.set_viewport(0, k_split);
+    float cam_tx = 0.0f, cam_ty = 0.0f, cam_tz = 5.6f;
+    float yaw = sin64(t / 4) / 2200.0f;
+    float dist = 8.2f, height = 3.8f;
+    if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
+        cam_tx = fp_to_f(world.fish[world.hooked_fish].x) * 0.4f;
+        cam_tz = 4.6f + fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
+    } else if (world.mode == kf::Mode::Landed) {
+        cam_tx = 0.0f; cam_ty = 0.55f; cam_tz = 3.1f;
+        dist = 2.3f; height = 0.7f;
+        yaw = 0.0f;
+    }
+    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height);
+}
+
+// The underwater camera hangs below the surface and looks at the hook, or
+// drifts under the boat when no line is out.
+void set_underwater_camera(const World& world, bool lure_in_water) {
+    g_renderer.set_viewport(k_split, 120 - k_split);
+    float cx = 0.0f, cy = -0.55f, cz = 0.6f;
+    float look_x = 0.0f, look_y = -0.9f, look_z = 6.0f;
+    if (lure_in_water) {
+        const float lx = fp_to_f(world.lure_x);
+        const float lz = fp_to_f(world.lure_z);
+        cx = lx * 0.5f;
+        cz = lz - 3.4f;
+        look_x = lx;
+        look_y = -g_hook_depth;
+        look_z = lz;
+    }
+    const float dx = look_x - cx, dy = look_y - cy, dz = look_z - cz;
+    const float yaw = atan2f(dx, dz);
+    const float pitch = atan2f(dy, sqrtf(dx * dx + dz * dz));
+    g_renderer.set_camera(cx, cy, cz, yaw, pitch);
+}
+
+void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
+                           bool lure_in_water) {
+    // Everything down here shades toward the deep with its own vertex depth,
+    // which is what makes the fish read as swimming bodies instead of decals.
+    g_renderer.set_depth_fade(true,
+                              shade8(sky.wat_r, 70), shade8(sky.wat_g, 80),
+                              shade8(sky.wat_b, 95),
+                              -0.1f, -2.8f);
+
+    for (const auto& fish : world.fish) {
+        if (fish.state == kf::FishState::Gone) continue;
+        if (world.mode == kf::Mode::Landed) continue;
+
+        const kf::Species& s = kf::k_species[fish.species];
+        float fx = fp_to_f(fish.x);
+        float fy = -fp_to_f(fish.y) - 0.12f;
+        float fz = fp_to_f(fish.z);
+        float fyaw;
+        if (fish.state == kf::FishState::Hooked) {
+            // Thrash on the line instead of swimming a heading.
+            fx += sin64(t * 3) / 500.0f;
+            fy -= sin64(t * 5 + 9) / 900.0f;
+            fyaw = atan2f(fp_to_f(world.lure_x) - fx, 0.8f) +
+                   sin64(t * 4) / 300.0f;
+        } else {
+            fyaw = atan2f(static_cast<float>(fish.vx),
+                          static_cast<float>(fish.vz == 0 ? 1 : fish.vz));
+        }
+        const float scale = 0.30f + fish.size_cm * 0.006f;
+        g_renderer.draw_mesh(models::fish, fx, fy, fz, fyaw, scale,
+                             shade8(s.r, sky.light), shade8(s.g, sky.light),
+                             shade8(s.b, sky.light));
+    }
+
+    // The hook. The bobber mesh reads as the lure below the surface too, and
+    // its eased depth is what the camera tracks.
+    if (lure_in_water) {
+        float target = 1.0f;
+        if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
+            target = fp_to_f(world.fish[world.hooked_fish].y) + 0.12f;
+        }
+        g_hook_depth += (target - g_hook_depth) * 0.08f;
+        const float bob = sin64(t * 2) / 2000.0f;
+        g_renderer.draw_mesh(models::bobber, fp_to_f(world.lure_x),
+                             -g_hook_depth + bob, fp_to_f(world.lure_z), 0.0f,
+                             0.18f, sky.light, sky.light, sky.light);
+    }
+
+    g_renderer.set_depth_fade(false, 0, 0, 0);
 }
 
 }  // namespace
@@ -308,25 +485,15 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                   uint32_t time_ms) {
     const uint32_t t = time_ms / 33;   // animation clock, ~30 steps a second
     const SkyKey sky = sky_now(world);
-
-    // Camera. A slow sway keeps the water alive; fights pull the view toward
-    // the fish; the catch card gets a close orbit around the trophy.
-    float cam_tx = 0.0f, cam_ty = 0.0f, cam_tz = 5.6f;
-    float yaw = sin64(t / 4) / 2200.0f;
-    float dist = 8.2f, height = 3.8f;
-    if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
-        cam_tx = fp_to_f(world.fish[world.hooked_fish].x) * 0.4f;
-        cam_tz = 4.6f + fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
-    } else if (world.mode == kf::Mode::Landed) {
-        cam_tx = 0.0f; cam_ty = 0.6f; cam_tz = 3.1f;
-        dist = 3.2f; height = 1.2f;
-        yaw = 0.0f;
-    }
-    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height);
+    const bool lure_in_water = world.mode == kf::Mode::Sinking ||
+                               world.mode == kf::Mode::Fight;
+    const bool lure_visible = lure_in_water || world.mode == kf::Mode::Flying;
 
     g_raster.begin_frame_collect(target, g_queue);
 
-    draw_far_water(sky);
+    // ---- top scene: the world above the surface ----
+    set_top_camera(world, t);
+    draw_shore(sky);
     draw_water(world, sky, t);
 
     // Boat, bobbing on the same water function so it sits in the waves.
@@ -334,33 +501,18 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     g_renderer.draw_mesh(models::boat, 0.0f, 0.02f + boat_bob, 0.2f, 0.0f,
                          0.85f, sky.light, sky.light, sky.light);
 
-    // Fish. Shadows under the surface, real colours when they breach.
-    for (const auto& fish : world.fish) {
-        if (fish.state == kf::FishState::Gone) continue;
-
-        float y = 0.045f;
-        bool surfaced = false;
-        if (fish.state == kf::FishState::Hooked && world.leap_timer > 0) {
-            const int lt = world.leap_timer;
-            y = 0.045f + (lt * (45 - lt)) / 900.0f;   // up to ~0.56 units
-            surfaced = true;
-        } else if (world.mode == kf::Mode::Landed) {
-            continue;   // the trophy is drawn separately
-        }
-
-        uint8_t r, g, b;
-        fish_tint(fish, sky, surfaced, r, g, b);
-
-        float fyaw;
-        if (fish.state == kf::FishState::Hooked) {
-            fyaw = atan2f(fp_to_f(fish.x), fp_to_f(fish.z));
-        } else {
-            fyaw = atan2f(static_cast<float>(fish.vx),
-                          static_cast<float>(fish.vz == 0 ? 1 : fish.vz));
-        }
+    // A hooked fish breaching the surface is the one moment a fish belongs
+    // to the top scene.
+    if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0 &&
+        world.leap_timer > 0) {
+        const auto& fish = world.fish[world.hooked_fish];
+        const kf::Species& s = kf::k_species[fish.species];
+        const int lt = world.leap_timer;
+        const float y = 0.045f + (lt * (45 - lt)) / 900.0f;
+        const float fyaw = atan2f(fp_to_f(fish.x), fp_to_f(fish.z));
         const float scale = 0.30f + fish.size_cm * 0.006f;
-        g_renderer.draw_mesh(models::fish, fp_to_f(fish.x), y, fp_to_f(fish.z),
-                             fyaw, scale, r, g, b);
+        g_renderer.draw_mesh(models::fish, fp_to_f(fish.x), y,
+                             fp_to_f(fish.z), fyaw, scale, s.r, s.g, s.b);
     }
 
     // Trophy shot while the card is up.
@@ -371,10 +523,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                              t * 0.05f, scale, s.r, s.g, s.b);
     }
 
-    // Bobber.
-    const bool lure_visible = world.mode == kf::Mode::Flying ||
-                              world.mode == kf::Mode::Sinking ||
-                              world.mode == kf::Mode::Fight;
+    // Bobber on or above the surface.
     float bob_y = 0.0f;
     if (lure_visible) {
         if (world.mode == kf::Mode::Flying) {
@@ -391,13 +540,26 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                              sky.light, sky.light, sky.light);
     }
 
-    // Everything above went into the queue; this is the frame's parallel part.
+    // ---- bottom scene: underwater ----
+    g_queue.mark_split();
+    set_underwater_camera(world, lure_in_water);
+    draw_underwater_scene(world, sky, t, lure_in_water);
+
+    // Everything above went into the queue; this is the frame's parallel
+    // part. The top band clears with the sky, the bottom with the water
+    // column fading into the deep.
     pse::run_split(g_raster, g_queue,
                    pse::SkyGradient{sky.sky_r, sky.sky_g, sky.sky_b,
-                                    sky.hor_r, sky.hor_g, sky.hor_b});
+                                    sky.hor_r, sky.hor_g, sky.hor_b},
+                   pse::SkyGradient{shade8(sky.wat_r * 5 / 4, sky.light),
+                                    shade8(sky.wat_g * 5 / 4, sky.light),
+                                    shade8(sky.wat_b * 6 / 5, sky.light),
+                                    shade8(sky.wat_r, 50),
+                                    shade8(sky.wat_g, 60),
+                                    shade8(sky.wat_b, 80)});
     g_raster.end_collect();
 
-    // Overlay pass, immediate mode on top of the finished frame.
+    // ---- overlay pass, immediate mode on top of the finished frame ----
     if (g_dip_timer > 0) g_dip_timer--;
 
     // Presentation reactions to this tick's events.
@@ -414,24 +576,58 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                      true);
     }
 
+    // The waterline: a bright seam where the two scenes meet.
+    for (int x = 0; x < target.width; x++) {
+        const int shimmer = sin64(x * 6 + t * 2) / 24;
+        g_raster.plot(x, k_split - 1,
+                      shade8(sky.wat_r + 90 + shimmer, sky.light),
+                      shade8(sky.wat_g + 90 + shimmer, sky.light),
+                      shade8(sky.wat_b + 80 + shimmer, sky.light));
+        g_raster.plot(x, k_split,
+                      shade8(sky.wat_r + 40, sky.light),
+                      shade8(sky.wat_g + 40, sky.light),
+                      shade8(sky.wat_b + 40, sky.light));
+    }
+
+    // Top half overlay, under the top camera.
+    set_top_camera(world, t);
     draw_ripples(sky);
     draw_rain(world, t);
 
-    // The line, rod tip to lure.
+    // Surface shadows for fish near the top, so the pond reads alive before
+    // a cast without paying for meshes twice.
+    for (const auto& fish : world.fish) {
+        if (fish.state == kf::FishState::Gone) continue;
+        if (fish.y > 320) continue;   // deep fish belong to the bottom half
+        int sx2, sy2, sz2;
+        if (g_renderer.project(fp_to_f(fish.x), 0.01f, fp_to_f(fish.z),
+                               sx2, sy2, sz2) && sy2 < k_split - 1) {
+            const uint8_t r = shade8(sky.wat_r, 90);
+            const uint8_t g = shade8(sky.wat_g, 90);
+            const uint8_t b = shade8(sky.wat_b, 110);
+            g_raster.plot(sx2, sy2, r, g, b);
+            g_raster.plot(sx2 + 1, sy2, r, g, b);
+            g_raster.plot(sx2 - 1, sy2, r, g, b);
+        }
+    }
+
+    // The line, rod tip to where it meets the water (or the airborne lure).
     if (lure_visible) {
         int rx, ry, rz, lx, ly, lz;
         const bool rod_ok = g_renderer.project(0.18f, 0.95f, 1.55f, rx, ry, rz);
+        const float entry_y = world.mode == kf::Mode::Flying
+                                  ? -fp_to_f(world.lure_y) + 0.08f : 0.04f;
         const bool lure_ok = g_renderer.project(
-            fp_to_f(world.lure_x), bob_y + 0.08f, fp_to_f(world.lure_z),
+            fp_to_f(world.lure_x), entry_y, fp_to_f(world.lure_z),
             lx, ly, lz);
         if (rod_ok && lure_ok) {
             uint8_t lr = 210, lg = 210, lb = 215;
             if (world.mode == kf::Mode::Fight) {
-                lr = world.tension >= 800 ? 240 : 160;
-                lg = world.tension >= 800 ? 70 : 220;
+                lr = world.tension >= kf::k_tension_danger ? 240 : 160;
+                lg = world.tension >= kf::k_tension_danger ? 70 : 220;
                 lb = 80;
             }
-            draw_line_screen(rx, ry, lx, ly, lr, lg, lb);
+            draw_line_band(rx, ry, lx, ly, 0, k_split, lr, lg, lb);
         }
     }
 
@@ -454,17 +650,47 @@ void render_scene(const World& world, const pse::RenderTarget& target,
         }
     }
 
-    // Power meter while aiming, tension bar while fighting. Nothing else.
+    // Power meter while aiming lives in the top half.
     if (world.mode == kf::Mode::Aiming) {
-        draw_bar(5, 30, 62, (world.power * 62) / 255, 250, 210, 90);
+        draw_bar(5, 8, 44, (world.power * 44) / 255, 250, 210, 90);
     }
-    if (world.mode == kf::Mode::Fight) {
-        const int fill = (world.tension * 62) / 1023;
-        uint8_t r = 90, g = 220, b = 110;
-        if (world.tension >= 800) { r = 240; g = 70; b = 70; }
-        else if (world.tension >= 500) { r = 240; g = 200; b = 80; }
-        draw_bar(111, 30, 62, fill, r, g, b);
+
+    // Bottom half overlay, under the water camera.
+    set_underwater_camera(world, lure_in_water);
+
+    // The line continues below the surface, straight down the seam to the
+    // hook, and it carries the same tension colour as above.
+    if (lure_in_water) {
+        int ex, ey, ez, hx, hy, hz;
+        const bool entry_ok = g_renderer.project(
+            fp_to_f(world.lure_x), 0.0f, fp_to_f(world.lure_z), ex, ey, ez);
+        const bool hook_ok = g_renderer.project(
+            fp_to_f(world.lure_x), -g_hook_depth + 0.06f,
+            fp_to_f(world.lure_z), hx, hy, hz);
+        if (entry_ok && hook_ok) {
+            uint8_t lr = 190, lg = 195, lb = 205;
+            if (world.mode == kf::Mode::Fight) {
+                lr = world.tension >= kf::k_tension_danger ? 240 : 150;
+                lg = world.tension >= kf::k_tension_danger ? 70 : 210;
+                lb = 90;
+            }
+            draw_line_band(ex, ey, hx, hy, k_split + 1, 120, lr, lg, lb);
+        }
     }
+
+    // Drifting motes give the water body without geometry.
+    for (int i = 0; i < 10; i++) {
+        uint32_t h = (i * 2246822519u) ^ (((t / 3) + i * 7) * 68601u);
+        const int x = static_cast<int>(h % 120);
+        const int y = k_split + 4 + static_cast<int>((h >> 9) % 52);
+        g_raster.plot(x, y, shade8(sky.wat_r + 60, sky.light),
+                      shade8(sky.wat_g + 60, sky.light),
+                      shade8(sky.wat_b + 70, sky.light));
+    }
+
+    if (world.mode == kf::Mode::Fight) draw_fight_meters(world);
+
+    g_renderer.set_viewport(0, 0);
 }
 
 }  // namespace kfr

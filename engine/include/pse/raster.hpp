@@ -23,14 +23,24 @@ struct ScreenTriangle {
 // cores. Fixed capacity: on a 264 KB device an unbounded queue is a crash with
 // extra steps. Overflow drops the triangle and counts it, so a scene that gets
 // too heavy degrades visibly rather than corrupting memory.
+//
+// A frame can hold either one scene or two. mark_split() ends the first
+// scene: triangles queued before it belong to the top band of the screen,
+// triangles after it to the bottom band, and run_split renders each group
+// only into its own band. Without a mark the whole queue renders into both
+// bands, which is the classic single scene split.
 struct FrameQueue {
     static constexpr int k_capacity = PSE_MAX_QUEUE;
+    static constexpr uint16_t k_no_split = 0xFFFF;
 
     ScreenTriangle tris[k_capacity];
     uint16_t count = 0;
     uint16_t dropped = 0;
+    uint16_t split = k_no_split;
 
-    void reset() { count = 0; dropped = 0; }
+    void reset() { count = 0; dropped = 0; split = k_no_split; }
+
+    void mark_split() { split = count; }
 
     bool push(const ScreenTriangle& tri) {
         if (count >= k_capacity) {
@@ -94,6 +104,14 @@ public:
                              uint8_t bottom_r, uint8_t bottom_g,
                              uint8_t bottom_b, int row_begin, int row_end);
 
+    // Same fill, but the gradient lerps across [span_begin, span_end) instead
+    // of the full height. A split screen scene uses this so its band carries
+    // a complete gradient of its own.
+    void clear_gradient_span(uint8_t top_r, uint8_t top_g, uint8_t top_b,
+                             uint8_t bottom_r, uint8_t bottom_g,
+                             uint8_t bottom_b, int row_begin, int row_end,
+                             int span_begin, int span_end);
+
     // Fill every pixel with a vertical gradient (immediate mode convenience).
     void clear_gradient(uint8_t top_r, uint8_t top_g, uint8_t top_b,
                         uint8_t bottom_r, uint8_t bottom_g, uint8_t bottom_b);
@@ -116,7 +134,8 @@ private:
     template <typename Format>
     void clear_gradient_typed(uint8_t top_r, uint8_t top_g, uint8_t top_b,
                               uint8_t bottom_r, uint8_t bottom_g,
-                              uint8_t bottom_b, int row_begin, int row_end);
+                              uint8_t bottom_b, int row_begin, int row_end,
+                              int span_begin, int span_end);
 
     // True when the triangle is a backface or entirely outside the target.
     bool rejected(const ScreenTriangle& tri) const;

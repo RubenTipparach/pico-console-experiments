@@ -15,6 +15,7 @@ Step g_steps[k_max_steps];
 int g_step_count = 0;
 int g_step_index = 0;
 int g_ticks_left = 0;
+bool g_enabled = true;
 
 void play(const Step* steps, int count) {
     // Later events replace earlier ones: a snap should never wait politely
@@ -37,7 +38,18 @@ void sfx_init() {
     channel.volume = 0x5fff;
 }
 
+void sfx_set_enabled(bool enabled) {
+    if (g_enabled && !enabled) {
+        blit::channels[0].trigger_release();
+        g_step_count = 0;
+    }
+    g_enabled = enabled;
+}
+
+bool sfx_enabled() { return g_enabled; }
+
 void sfx_handle(const kf::Events& ev) {
+    if (!g_enabled) return;
     // Order matters: the most important sound of the tick wins.
     if (ev.new_record) {
         const Step s[] = {{523, 6}, {659, 6}, {784, 6}, {1046, 14}};
@@ -69,6 +81,9 @@ void sfx_handle(const kf::Events& ev) {
     } else if (ev.cast) {
         const Step s[] = {{900, 3}, {620, 3}};
         play(s, 2);
+    } else if (ev.wiggle) {
+        const Step s[] = {{500, 1}};
+        play(s, 1);
     }
 }
 

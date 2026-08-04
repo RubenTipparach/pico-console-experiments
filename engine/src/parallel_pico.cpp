@@ -51,6 +51,10 @@ struct Job {
     SkyGradient sky;
     int row_begin;
     int row_end;
+    int tri_begin;
+    int tri_end;
+    int gradient_begin;
+    int gradient_end;
 };
 
 Job g_job;
@@ -61,8 +65,10 @@ bool g_core1_launched = false;
 // Ordinary flash resident code: only ever runs while core 0 is inside
 // run_split, and nothing writes flash from there.
 void worker_execute() {
-    render_rows(*g_job.rasterizer, *g_job.queue, g_job.sky,
-                g_job.row_begin, g_job.row_end);
+    render_band(*g_job.rasterizer, *g_job.queue, g_job.sky,
+                g_job.row_begin, g_job.row_end,
+                g_job.tri_begin, g_job.tri_end,
+                g_job.gradient_begin, g_job.gradient_end);
 }
 
 // The loop core 1 lives in between frames. RAM resident, and while waiting it
@@ -87,9 +93,8 @@ void __not_in_flash_func(worker_entry)() {
 }  // namespace
 
 void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
-               const SkyGradient& sky) {
-    const int height = rasterizer.target().height;
-    const int mid = height / 2;
+               const SkyGradient& sky_top, const SkyGradient& sky_bottom) {
+    const SplitPlan plan = plan_split(rasterizer, queue);
 
     if (!g_core1_launched) {
         multicore_launch_core1(worker_entry);
@@ -98,9 +103,13 @@ void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
 
     g_job.rasterizer = &rasterizer;
     g_job.queue = &queue;
-    g_job.sky = sky;
-    g_job.row_begin = mid;
-    g_job.row_end = height;
+    g_job.sky = sky_bottom;
+    g_job.row_begin = plan.mid;
+    g_job.row_end = plan.height;
+    g_job.tri_begin = plan.bottom_tri_begin;
+    g_job.tri_end = plan.bottom_tri_end;
+    g_job.gradient_begin = plan.bottom_grad_begin;
+    g_job.gradient_end = plan.height;
 
     // The barrier orders the job stores before the sequence bump that
     // publishes them.
@@ -108,12 +117,18 @@ void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
     const uint32_t seq = g_job_seq + 1;
     g_job_seq = seq;
 
-    render_rows(rasterizer, queue, sky, 0, mid);
+    render_band(rasterizer, queue, sky_top, 0, plan.mid,
+                plan.top_tri_begin, plan.top_tri_end, 0, plan.top_grad_end);
 
     while (g_done_seq != seq) {
         // Core 1 is finishing its band.
     }
     __sync_synchronize();
+}
+
+void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
+               const SkyGradient& sky) {
+    run_split(rasterizer, queue, sky, sky);
 }
 
 }  // namespace pse

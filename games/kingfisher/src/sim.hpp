@@ -78,12 +78,15 @@ struct Records {
 };
 
 // What write_save persists. Bump the magic when the layout changes so a stale
-// save is ignored instead of misread.
+// save is ignored instead of misread. sound_off belongs to the shell, not the
+// sim: world_make_save zeroes it and the game layer stamps it before writing.
 struct SaveData {
-    uint32_t magic;        // 'K','F','R','1'
+    uint32_t magic;        // 'K','F','R','2'
     Records records;
+    uint8_t sound_off;
+    uint8_t reserved[3];
 };
-constexpr uint32_t k_save_magic = 0x3152464Bu;
+constexpr uint32_t k_save_magic = 0x3252464Bu;
 
 // One tick's worth of input, already edge detected by the caller.
 struct Input {
@@ -92,6 +95,8 @@ struct Input {
     bool a_released;
     bool left;
     bool right;
+    bool left_pressed;
+    bool right_pressed;
 };
 
 // One tick's worth of things the presentation layers care about. Reset at the
@@ -107,6 +112,7 @@ struct Events {
     bool caught;
     bool new_record;
     bool leap;             // hooked fish broke the surface
+    bool wiggle;           // rod wiggle registered during a fight
 };
 
 struct World {
@@ -126,10 +132,14 @@ struct World {
     uint16_t twitch_timer;
 
     int8_t hooked_fish;    // index into fish[], -1 when none
-    uint16_t tension;      // 0..1023, snap at k_tension_snap
+    uint16_t tension;      // 0..1023; the red zone starts at k_tension_danger
+    uint16_t danger;       // ticks spent in the red zone, break at k_danger_ticks
     int32_t line_len;      // fp8 world units of line out
     int32_t line_max;
     uint16_t stamina;
+    uint16_t stamina_max;
+    int8_t run_dir;        // -1 or 1, which way the fish runs
+    int8_t last_wiggle;    // last rod wiggle direction, 0 before the first
     FightPhase fight_phase;
     uint16_t phase_timer;
     uint16_t leap_timer;   // hooked fish surface break, cosmetic
@@ -148,7 +158,12 @@ struct World {
 };
 
 constexpr uint16_t k_day_length = 18000;      // 3 minutes per full cycle
-constexpr uint16_t k_tension_snap = 1000;
+
+// The fight. Tension only breaks the line by staying in the red zone: the
+// danger counter charges while tension sits at or above k_tension_danger and
+// drains twice as fast below it, and the fish tears free when it fills.
+constexpr uint16_t k_tension_danger = 760;
+constexpr uint16_t k_danger_ticks = 110;
 
 void world_init(World& world, uint32_t seed);
 void world_tick(World& world, const Input& input);

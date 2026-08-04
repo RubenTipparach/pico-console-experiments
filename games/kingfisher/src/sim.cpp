@@ -49,6 +49,8 @@ constexpr int32_t k_boat_z = 0;
 constexpr int k_reel_tire = 14;      // fp8 line per tick reeling a tired fish
 constexpr int k_reel_run = 5;        // reeling against a running fish
 constexpr int32_t k_catch_len = 340; // ~1.3 units from the boat lands it
+constexpr int k_wiggle_relief = 40;  // tension shed by one rod wiggle
+constexpr int k_wiggle_drain = 12;   // stamina cost of countering a run
 
 }  // namespace
 
@@ -97,6 +99,8 @@ bool world_load(World& world, const SaveData& data) {
 void world_make_save(const World& world, SaveData& out) {
     out.magic = k_save_magic;
     out.records = world.records;
+    out.sound_off = 0;
+    out.reserved[0] = out.reserved[1] = out.reserved[2] = 0;
 }
 
 namespace {
@@ -359,8 +363,12 @@ void start_fight(World& world, int fish_index) {
     world.mode = Mode::Fight;
     world.hooked_fish = static_cast<int8_t>(fish_index);
     world.tension = 250;
+    world.danger = 0;
     world.stamina = static_cast<uint16_t>(200 + fish.size_cm * 4 +
                                           s.strength * 60);
+    world.stamina_max = world.stamina;
+    world.run_dir = rnd(world.rng, 2) ? 1 : -1;
+    world.last_wiggle = 0;
     world.line_len = world.lure_z + (world.lure_x < 0 ? -world.lure_x
                                                       : world.lure_x);
     world.line_max = world.line_len + world.line_len / 2 + 3 * k_one;
@@ -411,29 +419,62 @@ void update_fight(World& world, const Input& input) {
     const Fish& fish = world.fish[world.hooked_fish];
     const Species& s = k_species[fish.species];
     const bool reeling = input.a;
-    const bool exhausted = world.stamina == 0;
 
-    // Tension. The numbers here are the game: patient reeling in Tire is
-    // safe, reeling against a Run is how lines snap.
+    // How hard the fish can pull right now: full strength when fresh, nothing
+    // when spent. Every force in the fight scales through this, so wearing a
+    // fish down is what turns an unwinnable tug of war into a landing.
+    const int pull = world.stamina_max > 0
+        ? (s.strength * world.stamina) / world.stamina_max : 0;
+
+    // Rod wiggle: alternating left and right presses. Each swap eases the
+    // tension, and swinging against the run direction is what tires a
+    // running fish without touching the reel.
+    int wiggle = 0;
+    if (input.left_pressed && world.last_wiggle >= 0) wiggle = -1;
+    else if (input.right_pressed && world.last_wiggle <= 0) wiggle = 1;
+    if (wiggle != 0) {
+        world.last_wiggle = static_cast<int8_t>(wiggle);
+        world.ev.wiggle = true;
+        const int eased = static_cast<int>(world.tension) - k_wiggle_relief;
+        world.tension = static_cast<uint16_t>(eased < 0 ? 0 : eased);
+        if (world.fight_phase == FightPhase::Run &&
+            wiggle == -world.run_dir && world.stamina > 0) {
+            world.stamina = static_cast<uint16_t>(
+                world.stamina > k_wiggle_drain
+                    ? world.stamina - k_wiggle_drain : 0);
+        }
+    }
+
+    // Tension. Reeling against a fish that can still pull loads the line;
+    // a spent fish coming to the boat unloads it.
     int delta;
     if (world.fight_phase == FightPhase::Run) {
-        delta = reeling ? 2 + s.strength / 2 : (s.strength >= 6 ? 1 : 0);
-        if (exhausted) delta = reeling ? 1 : 0;
+        delta = reeling ? (pull > 0 ? 2 + pull : -1) : pull / 3;
     } else {
-        delta = reeling ? -2 : -4;
+        delta = reeling ? (pull >= 5 ? 1 : -2) : -5;
     }
     const int tension = static_cast<int>(world.tension) + delta;
     world.tension = static_cast<uint16_t>(clamp32(tension, 0, 1023));
 
-    if (world.tension >= k_tension_snap) {
-        world.ev.snap = true;
-        end_fight(world, false);
-        return;
+    // The line does not break on a spike: it breaks when the tension is held
+    // in the red zone too long, which is the window the player has to ease
+    // off or wiggle it back down.
+    if (world.tension >= k_tension_danger) {
+        world.danger++;
+        if (world.danger >= k_danger_ticks) {
+            world.ev.snap = true;
+            end_fight(world, false);
+            return;
+        }
+    } else if (world.danger > 0) {
+        world.danger = static_cast<uint16_t>(world.danger > 2
+                                                 ? world.danger - 2 : 0);
     }
 
-    // Line length.
-    if (world.fight_phase == FightPhase::Run && !reeling && !exhausted) {
-        world.line_len += s.strength;
+    // Line length. A running fish takes line in proportion to what it has
+    // left in it.
+    if (world.fight_phase == FightPhase::Run && !reeling && pull > 0) {
+        world.line_len += pull;
         if (world.line_len >= world.line_max) {
             world.ev.escape = true;
             end_fight(world, false);
@@ -441,12 +482,20 @@ void update_fight(World& world, const Input& input) {
         }
     }
     if (reeling) {
-        world.line_len -= (world.fight_phase == FightPhase::Tire || exhausted)
+        world.line_len -= (world.fight_phase == FightPhase::Tire || pull == 0)
                               ? k_reel_tire : k_reel_run;
+        // Tugging wears the fish down; that is the trade for the tension it
+        // puts on the line.
         if (world.stamina > 0) {
-            world.stamina -= (world.fight_phase == FightPhase::Tire) ? 3 : 1;
-            if (static_cast<int16_t>(world.stamina) < 0) world.stamina = 0;
+            const uint16_t drain =
+                (world.fight_phase == FightPhase::Run) ? 2 : 1;
+            world.stamina = static_cast<uint16_t>(
+                world.stamina > drain ? world.stamina - drain : 0);
         }
+    } else if (wiggle == 0 && world.stamina < world.stamina_max) {
+        // A resting fish gets its wind back, so easing off the line is a
+        // real decision rather than a free pause.
+        world.stamina++;
     }
 
     if (world.line_len <= k_catch_len) {
@@ -454,16 +503,17 @@ void update_fight(World& world, const Input& input) {
         return;
     }
 
-    // Phase changes. An exhausted fish never runs again, which is the reward
-    // for wearing it down instead of muscling it.
+    // Phase changes. A spent fish cannot muster a run until it has breathed.
     if (world.phase_timer > 0) world.phase_timer--;
     if (world.phase_timer == 0) {
-        if (world.fight_phase == FightPhase::Run || exhausted) {
+        const bool can_run = world.stamina > world.stamina_max / 8;
+        if (world.fight_phase == FightPhase::Run || !can_run) {
             world.fight_phase = FightPhase::Tire;
             world.phase_timer = static_cast<uint16_t>(
                 70 + rnd(world.rng, 70));
         } else {
             world.fight_phase = FightPhase::Run;
+            world.run_dir = rnd(world.rng, 2) ? 1 : -1;
             world.phase_timer = static_cast<uint16_t>(
                 50 + rnd(world.rng, 50 + s.strength * 8));
             // A fresh run sometimes breaks the surface.

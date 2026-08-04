@@ -1,0 +1,51 @@
+# A shoreline tree: square trunk under two stacked canopy cones. Same
+# winding convention as the other models in this game, counter clockwise
+# viewed from outside. Sixteen triangles, sized for the far shore where a
+# handful of these sell the whole treeline.
+
+mtllib tree.mtl
+
+# trunk base
+v  0.07 0.00  0.07
+v  0.07 0.00 -0.07
+v -0.07 0.00 -0.07
+v -0.07 0.00  0.07
+# trunk top
+v  0.07 0.42  0.07
+v  0.07 0.42 -0.07
+v -0.07 0.42 -0.07
+v -0.07 0.42  0.07
+# lower canopy ring and tip
+v  0.40 0.36  0.00
+v  0.00 0.36  0.40
+v -0.40 0.36  0.00
+v  0.00 0.36 -0.40
+v  0.00 0.85  0.00
+# upper canopy ring and tip
+v  0.26 0.68  0.00
+v  0.00 0.68  0.26
+v -0.26 0.68  0.00
+v  0.00 0.68 -0.26
+v  0.00 1.05  0.00
+
+usemtl tree_trunk
+f 5 2 1
+f 5 6 2
+f 6 3 2
+f 6 7 3
+f 7 4 3
+f 7 8 4
+f 8 1 4
+f 8 5 1
+
+usemtl tree_leaf_low
+f 13 9 10
+f 13 10 11
+f 13 11 12
+f 13 12 9
+
+usemtl tree_leaf_high
+f 18 14 15
+f 18 15 16
+f 18 16 17
+f 18 17 14

@@ -8,4 +8,5 @@ add_picosystem_game(kingfisher
         fish.obj
         boat.obj
         bobber.obj
+        tree.obj
 )

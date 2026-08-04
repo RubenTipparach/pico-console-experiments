@@ -156,8 +156,10 @@ Before adding anything, ask what it costs:
   audio on a core 0 hardware alarm, so core 1 idles. `pse::run_split()` gives
   it the bottom half of the screen: collect triangles with
   `begin_frame_collect`, run_split rasterizes both halves at once, each core
-  owning disjoint rows so there are no locks. The host tests prove the split
-  is byte identical to single core rendering.
+  owning disjoint rows so there are no locks. A queue with `mark_split()`
+  renders as two independent scenes, one per band with its own gradient,
+  which is how a split screen game gives each core a whole scene. The host
+  tests prove both forms byte identical to single core rendering.
 - The flash safety contract that comes with that: `write_save` disables XIP
   while it programs flash, and core 1 survives only because its idle loop is
   RAM resident (`__not_in_flash_func` in `parallel_pico.cpp`). Save outside

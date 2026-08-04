@@ -163,12 +163,35 @@ bool Renderer3D::project(float wx, float wy, float wz,
     if (cz <= 0 || cz > k_fixed_one) return false;
 
     const int width = rasterizer_.target().width;
-    const int height = rasterizer_.target().height;
 
     out_x = (cx + k_fixed_one) * (width - 1) / k_fixed_one / 2;
-    out_y = height - ((cy + k_fixed_one) * (height - 1)) / k_fixed_one / 2;
+    if (viewport_h_ > 0) {
+        // A viewport band keeps the same pixels per NDC unit vertically as
+        // horizontally, so shapes stay undistorted and the band is a crop of
+        // the view rather than a squash of it.
+        out_y = viewport_y0_ + viewport_h_ / 2 -
+                (cy * (width - 1)) / k_fixed_one / 2;
+    } else {
+        const int height = rasterizer_.target().height;
+        out_y = height - ((cy + k_fixed_one) * (height - 1)) / k_fixed_one / 2;
+    }
     out_depth = cz;
     return true;
+}
+
+void Renderer3D::set_viewport(int y0, int height) {
+    viewport_y0_ = y0;
+    viewport_h_ = height;
+}
+
+void Renderer3D::set_depth_fade(bool enabled, uint8_t r, uint8_t g, uint8_t b,
+                                float y_start, float y_end) {
+    fade_enabled_ = enabled && y_end != y_start;
+    fade_r_ = r;
+    fade_g_ = g;
+    fade_b_ = b;
+    fade_y_start_ = y_start;
+    fade_y_scale_ = fade_enabled_ ? 1.0f / (y_end - y_start) : 0.0f;
 }
 
 void Renderer3D::emit_quad(const int sx[8], const int sy[8], const int sz[8],
@@ -292,6 +315,7 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
 
         const uint16_t indices[3] = {face.i0, face.i1, face.i2};
         int px[3], py[3], pz[3];
+        float wy[3];
         bool all_visible = true;
 
         for (int corner = 0; corner < 3; corner++) {
@@ -301,7 +325,9 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
             const float lz = v.z * unit;
             const float wx = x + lx * cos_yaw + lz * sin_yaw;
             const float wz = z - lx * sin_yaw + lz * cos_yaw;
-            if (!project(wx, y + ly, wz, px[corner], py[corner], pz[corner])) {
+            wy[corner] = y + ly;
+            if (!project(wx, wy[corner], wz,
+                         px[corner], py[corner], pz[corner])) {
                 all_visible = false;
                 break;
             }
@@ -321,6 +347,21 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
         tri.r0 = tri.r1 = tri.r2 = r;
         tri.g0 = tri.g1 = tri.g2 = g;
         tri.b0 = tri.b1 = tri.b2 = b;
+
+        if (fade_enabled_) {
+            uint8_t* cr[3] = {&tri.r0, &tri.r1, &tri.r2};
+            uint8_t* cg[3] = {&tri.g0, &tri.g1, &tri.g2};
+            uint8_t* cb[3] = {&tri.b0, &tri.b1, &tri.b2};
+            for (int corner = 0; corner < 3; corner++) {
+                float t = (wy[corner] - fade_y_start_) * fade_y_scale_;
+                if (t < 0.0f) t = 0.0f;
+                if (t > 1.0f) t = 1.0f;
+                const int ti = static_cast<int>(t * 256.0f);
+                *cr[corner] = static_cast<uint8_t>(r + (fade_r_ - r) * ti / 256);
+                *cg[corner] = static_cast<uint8_t>(g + (fade_g_ - g) * ti / 256);
+                *cb[corner] = static_cast<uint8_t>(b + (fade_b_ - b) * ti / 256);
+            }
+        }
 
         rasterizer_.draw(tri);
     }

@@ -24,6 +24,8 @@ add_obj_model(kingfisher_preview
     ${CMAKE_CURRENT_SOURCE_DIR}/../models/boat.obj kingfisher_models)
 add_obj_model(kingfisher_preview
     ${CMAKE_CURRENT_SOURCE_DIR}/../models/bobber.obj kingfisher_models)
+add_obj_model(kingfisher_preview
+    ${CMAKE_CURRENT_SOURCE_DIR}/../models/tree.obj kingfisher_models)
 
 add_executable(kingfisher_preview
     preview.cpp

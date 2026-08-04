@@ -1,0 +1,8 @@
+newmtl tree_trunk
+Kd 0.36 0.24 0.14
+
+newmtl tree_leaf_low
+Kd 0.16 0.45 0.20
+
+newmtl tree_leaf_high
+Kd 0.20 0.55 0.24

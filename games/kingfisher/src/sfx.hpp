@@ -12,4 +12,9 @@ void sfx_init();
 void sfx_handle(const kf::Events& events);
 void sfx_tick();
 
+// Mute switch, owned by the options screen. Muting also silences anything
+// already playing, so toggling mid jingle goes quiet immediately.
+void sfx_set_enabled(bool enabled);
+bool sfx_enabled();
+
 }  // namespace kfs

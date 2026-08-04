@@ -360,6 +360,62 @@ void test_split_matches_immediate() {
     CHECK(r > 200 && g > 200);
 }
 
+// A marked queue is two scenes: the first group must render only into the top
+// band under its own gradient, the second only into the bottom band under
+// its. Verified against a reference built from the band primitives directly.
+void test_two_scene_split() {
+    const int w = pse::k_render_width, h = pse::k_render_height;
+    const int mid = h / 2;
+    const pse::SkyGradient sky_top{200, 120, 60, 240, 200, 160};
+    const pse::SkyGradient sky_bottom{40, 90, 120, 5, 10, 30};
+
+    // One triangle per scene, both crossing the split row so the clipping is
+    // actually exercised, horizontally separated so a leak of either into the
+    // other band is detectable as a lone colour in pure gradient.
+    pse::ScreenTriangle top_tri =
+        make_triangle(10, 20, 30, 100, 50, 20, 90, 250, 20, 20);
+    pse::ScreenTriangle bottom_tri =
+        make_triangle(70, 100, 110, 100, 90, 20, 90, 20, 250, 20);
+
+    // Reference: the exact band calls the split should reduce to.
+    TestSurface reference(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer ref_raster;
+    ref_raster.begin_frame(reference.target());
+    ref_raster.clear_gradient_span(sky_top.top_r, sky_top.top_g, sky_top.top_b,
+                                   sky_top.bottom_r, sky_top.bottom_g,
+                                   sky_top.bottom_b, 0, mid, 0, mid);
+    ref_raster.clear_gradient_span(sky_bottom.top_r, sky_bottom.top_g,
+                                   sky_bottom.top_b, sky_bottom.bottom_r,
+                                   sky_bottom.bottom_g, sky_bottom.bottom_b,
+                                   mid, h, mid, h);
+    ref_raster.draw_rows(top_tri, 0, mid);
+    ref_raster.draw_rows(bottom_tri, mid, h);
+
+    TestSurface split_out(w, h, pse::PixelFormat::rgb565);
+    static pse::Rasterizer collector;
+    static pse::FrameQueue queue;
+    collector.begin_frame_collect(split_out.target(), queue);
+    collector.draw(top_tri);
+    queue.mark_split();
+    collector.draw(bottom_tri);
+    pse::run_split(collector, queue, sky_top, sky_bottom);
+    collector.end_collect();
+
+    CHECK(queue.split == 1);
+    CHECK(queue.count == 2);
+    CHECK(reference.bytes_equal(split_out));
+
+    // The top scene's red triangle continues below the split row
+    // geometrically, but those rows belong to the bottom scene: they must
+    // show only the bottom gradient. Same for the bottom scene's green
+    // triangle above the split.
+    int r = 0, g = 0, b = 0;
+    split_out.pixel(30, 80, r, g, b);
+    CHECK(r < 100);
+    split_out.pixel(90, 40, r, g, b);
+    CHECK(b > 60 && g < 220);
+}
+
 // Queue overflow must drop and count, never write out of bounds.
 void test_queue_overflow() {
     static pse::FrameQueue queue;
@@ -392,6 +448,7 @@ int main() {
     test_mesh_rendering_and_bounds();
     test_memory_budget();
     test_split_matches_immediate();
+    test_two_scene_split();
     test_queue_overflow();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

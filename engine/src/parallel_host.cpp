@@ -10,11 +10,18 @@
 namespace pse {
 
 void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
+               const SkyGradient& sky_top, const SkyGradient& sky_bottom) {
+    const SplitPlan plan = plan_split(rasterizer, queue);
+    render_band(rasterizer, queue, sky_top, 0, plan.mid,
+                plan.top_tri_begin, plan.top_tri_end, 0, plan.top_grad_end);
+    render_band(rasterizer, queue, sky_bottom, plan.mid, plan.height,
+                plan.bottom_tri_begin, plan.bottom_tri_end,
+                plan.bottom_grad_begin, plan.height);
+}
+
+void run_split(Rasterizer& rasterizer, const FrameQueue& queue,
                const SkyGradient& sky) {
-    const int height = rasterizer.target().height;
-    const int mid = height / 2;
-    render_rows(rasterizer, queue, sky, 0, mid);
-    render_rows(rasterizer, queue, sky, mid, height);
+    run_split(rasterizer, queue, sky, sky);
 }
 
 }  // namespace pse

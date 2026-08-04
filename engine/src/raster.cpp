@@ -138,29 +138,43 @@ void Rasterizer::clear_gradient_rows(uint8_t top_r, uint8_t top_g,
                                      uint8_t top_b, uint8_t bottom_r,
                                      uint8_t bottom_g, uint8_t bottom_b,
                                      int row_begin, int row_end) {
+    clear_gradient_span(top_r, top_g, top_b, bottom_r, bottom_g, bottom_b,
+                        row_begin, row_end, 0, target_.height);
+}
+
+void Rasterizer::clear_gradient_span(uint8_t top_r, uint8_t top_g,
+                                     uint8_t top_b, uint8_t bottom_r,
+                                     uint8_t bottom_g, uint8_t bottom_b,
+                                     int row_begin, int row_end,
+                                     int span_begin, int span_end) {
     if (target_.pixels == nullptr) return;
     row_begin = clamp_int(row_begin, 0, target_.height);
     row_end = clamp_int(row_end, row_begin, target_.height);
+    if (span_end <= span_begin) return;
     switch (target_.format) {
         case PixelFormat::rgb565:
             clear_gradient_typed<Rgb565>(top_r, top_g, top_b,
                                          bottom_r, bottom_g, bottom_b,
-                                         row_begin, row_end);
+                                         row_begin, row_end,
+                                         span_begin, span_end);
             break;
         case PixelFormat::bgr555:
             clear_gradient_typed<Bgr555>(top_r, top_g, top_b,
                                          bottom_r, bottom_g, bottom_b,
-                                         row_begin, row_end);
+                                         row_begin, row_end,
+                                         span_begin, span_end);
             break;
         case PixelFormat::rgb888:
             clear_gradient_typed<Rgb888>(top_r, top_g, top_b,
                                          bottom_r, bottom_g, bottom_b,
-                                         row_begin, row_end);
+                                         row_begin, row_end,
+                                         span_begin, span_end);
             break;
         default:
             clear_gradient_typed<Rgba8888>(top_r, top_g, top_b,
                                            bottom_r, bottom_g, bottom_b,
-                                           row_begin, row_end);
+                                           row_begin, row_end,
+                                           span_begin, span_end);
             break;
     }
 }
@@ -169,18 +183,21 @@ template <typename Format>
 void Rasterizer::clear_gradient_typed(uint8_t top_r, uint8_t top_g,
                                       uint8_t top_b, uint8_t bottom_r,
                                       uint8_t bottom_g, uint8_t bottom_b,
-                                      int row_begin, int row_end) {
+                                      int row_begin, int row_end,
+                                      int span_begin, int span_end) {
     const int width = target_.width;
     const int height = target_.height;
     if (height <= 0 || width <= 0) return;
+    const int span = span_end - span_begin;
 
     for (int y = row_begin; y < row_end; y++) {
-        // Integer lerp down the full screen height, so bands rendered by
-        // different workers join seamlessly. One divide per row, none per
-        // pixel.
-        const int r = top_r + (bottom_r - top_r) * y / height;
-        const int g = top_g + (bottom_g - top_g) * y / height;
-        const int b = top_b + (bottom_b - top_b) * y / height;
+        // Integer lerp down the gradient span, so bands rendered by different
+        // workers join seamlessly when they share one span. One divide per
+        // row, none per pixel.
+        const int t = clamp_int(y - span_begin, 0, span);
+        const int r = top_r + (bottom_r - top_r) * t / span;
+        const int g = top_g + (bottom_g - top_g) * t / span;
+        const int b = top_b + (bottom_b - top_b) * t / span;
 
         uint8_t* row = target_.pixels + static_cast<size_t>(y) * target_.row_stride;
         // Convert once, then replicate. Cheaper than running the format

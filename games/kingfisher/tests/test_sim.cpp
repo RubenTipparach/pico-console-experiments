@@ -75,6 +75,8 @@ void test_monkey() {
         input.a_released = (r & 15) == 8;
         input.left = (r & 48) == 16;
         input.right = (r & 48) == 32;
+        input.left_pressed = (r & 192) == 64;
+        input.right_pressed = (r & 192) == 128;
         kf::world_tick(world, input);
         check_invariants(world);
         if (i > 100000) {
@@ -108,8 +110,9 @@ void test_determinism() {
     CHECK(std::memcmp(&a, &b, sizeof(kf::World)) == 0);
 }
 
-// A patient angler reels only while the fish is tired, and must land every
-// species at maximum size without ever snapping the line.
+// A patient angler with full technique must land every species at maximum
+// size without ever losing one: reel while the fish is tired and the tension
+// is safe, wiggle the rod throughout to shed tension and wear down runs.
 void test_patient_bot_lands_everything() {
     for (int species = 0; species < kf::k_species_count; species++) {
         kf::World world;
@@ -125,8 +128,13 @@ void test_patient_bot_lands_everything() {
         bool caught = false;
         for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
             kf::Input input{};
-            input.a = world.fight_phase == kf::FightPhase::Tire ||
-                      world.stamina == 0;
+            const bool tired = world.fight_phase == kf::FightPhase::Tire ||
+                               world.stamina == 0;
+            input.a = tired && world.tension < kf::k_tension_danger - 80;
+            if (t % 3 == 0) {
+                if ((t / 3) % 2 == 0) input.left_pressed = true;
+                else input.right_pressed = true;
+            }
             kf::world_tick(world, input);
             if (world.ev.snap) snapped = true;
             if (world.ev.caught) caught = true;
@@ -181,6 +189,111 @@ void test_greedy_bot_pays_for_it() {
     }
     CHECK(caught);
     CHECK(!snapped);
+}
+
+
+// The line must never break on a spike. It breaks only after the tension has
+// camped in the red zone for the full danger window, which is the player's
+// chance to ease off or wiggle out of trouble.
+void test_break_needs_sustained_danger() {
+    kf::World world;
+    kf::world_init(world, 61);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    int ticks_in_red_before_snap = 0;
+    bool snapped = false;
+    for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
+        kf::Input input{};
+        input.a = true;   // muscle it: guaranteed to reach the red zone
+        kf::world_tick(world, input);
+        if (world.mode == kf::Mode::Fight &&
+            world.tension >= kf::k_tension_danger) {
+            ticks_in_red_before_snap++;
+        }
+        if (world.ev.snap) { snapped = true; break; }
+    }
+    CHECK(snapped);
+    // The fish held on for the whole danger window, not one tick less.
+    CHECK(ticks_in_red_before_snap >= kf::k_danger_ticks - 1);
+}
+
+// Tugging drains the fish; resting lets it breathe. Both directions of the
+// stamina economy, verified directly.
+void test_stamina_drains_and_regens() {
+    kf::World world;
+    kf::world_init(world, 62);
+    kf::world_test_hook(world, 8, 60);   // a bass sized fish
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    const uint16_t fresh = world.stamina;
+    CHECK(fresh == world.stamina_max);
+
+    kf::Input reel{};
+    reel.a = true;
+    for (int t = 0; t < 120 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    const uint16_t worked = world.stamina;
+    CHECK(worked < fresh);
+
+    kf::Input rest{};
+    for (int t = 0; t < 120 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, rest);
+    }
+    CHECK(world.mode != kf::Mode::Fight || world.stamina > worked);
+}
+
+// One alternating wiggle pair must shed real tension, and countering the run
+// direction must cost the fish stamina without touching the reel.
+void test_wiggle_relieves_and_tires() {
+    kf::World world;
+    kf::world_init(world, 63);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    // Load the line first.
+    kf::Input reel{};
+    reel.a = true;
+    for (int t = 0; t < 60 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode == kf::Mode::Fight);
+    const uint16_t loaded = world.tension;
+    CHECK(loaded > 300);
+
+    kf::Input wiggle{};
+    wiggle.left_pressed = true;
+    kf::world_tick(world, wiggle);
+    kf::Input wiggle2{};
+    wiggle2.right_pressed = true;
+    kf::world_tick(world, wiggle2);
+    // Two wiggles minus at most a few ticks of drift beats one relief worth.
+    CHECK(world.tension + 40 < loaded);
+
+    // Counter wiggles during a run drain stamina faster than resting does.
+    while (world.mode == kf::Mode::Fight &&
+           world.fight_phase != kf::FightPhase::Run) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.mode == kf::Mode::Fight);
+    const uint16_t before = world.stamina;
+    int flips = 0;
+    for (int t = 0; t < 30 && world.mode == kf::Mode::Fight &&
+                    world.fight_phase == kf::FightPhase::Run; t++) {
+        kf::Input input{};
+        if (t % 3 == 0) {
+            if (flips++ % 2 == 0) input.left_pressed = true;
+            else input.right_pressed = true;
+        }
+        kf::world_tick(world, input);
+    }
+    CHECK(world.mode != kf::Mode::Fight || world.stamina < before);
 }
 
 // Doing nothing after the hook must end the fight too: the fish takes all the
@@ -356,6 +469,9 @@ int main() {
     test_determinism();
     test_patient_bot_lands_everything();
     test_greedy_bot_pays_for_it();
+    test_break_needs_sustained_danger();
+    test_stamina_drains_and_regens();
+    test_wiggle_relieves_and_tires();
     test_fight_terminates_without_input();
     test_fleeing_fish_despawn();
     test_curious_fish_reaches_the_lure();
