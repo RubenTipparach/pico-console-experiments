@@ -173,6 +173,13 @@ void world_make_save(const World& world, SaveData& out);
 uint8_t day_phase(const World& world);
 bool is_night(const World& world);
 
+// The hooked fish's distance from the boat in tenths of a meter, for the
+// fight HUD. One world unit is one meter. Measured from the collect radius
+// and rounded UP, so it reads 0 exactly when the fish is collected and
+// never a moment before: the meter reaching zero IS the catch. Returns 0
+// outside a fight.
+int fight_distance_dm(const World& world);
+
 // Test hook: force a bite-ready fish of the given species and size so fight
 // tuning can be exercised directly. Returns the fish index.
 int world_test_hook(World& world, int species, int size_cm);

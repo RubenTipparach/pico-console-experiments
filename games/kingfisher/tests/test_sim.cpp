@@ -361,6 +361,43 @@ void test_tension_builds_gradually() {
     CHECK(world.tension < kf::k_tension_danger);
 }
 
+
+// The HUD distance reads zero exactly when the fish is collected, never a
+// moment before: while the fight is on it is always positive, and the tick
+// that lands the fish is the tick it goes to zero.
+void test_distance_zero_means_collected() {
+    kf::World world;
+    kf::world_init(world, 81);
+    kf::world_test_hook(world, 6, 70);   // a carp
+    CHECK(kf::fight_distance_dm(world) == 0);   // not fighting yet
+
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    CHECK(world.mode == kf::Mode::Fight);
+    CHECK(kf::fight_distance_dm(world) > 0);
+
+    bool caught = false;
+    for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
+        kf::Input input{};
+        const bool tired = world.fight_phase == kf::FightPhase::Tire ||
+                           world.stamina == 0;
+        input.a = tired && world.tension < kf::k_tension_danger - 80;
+        if (t % 3 == 0) {
+            if ((t / 3) % 2 == 0) input.left_pressed = true;
+            else input.right_pressed = true;
+        }
+        kf::world_tick(world, input);
+        if (world.mode == kf::Mode::Fight) {
+            CHECK(kf::fight_distance_dm(world) > 0);
+            if (g_failures > 3) return;
+        }
+        if (world.ev.caught) caught = true;
+    }
+    CHECK(caught);
+    CHECK(kf::fight_distance_dm(world) == 0);
+}
+
 // Doing nothing after the hook must end the fight too: the fish takes all the
 // line and escapes. No fight lasts forever.
 void test_fight_terminates_without_input() {
@@ -539,6 +576,7 @@ int main() {
     test_wiggle_relieves_and_tires();
     test_fresh_fish_resists_the_reel();
     test_tension_builds_gradually();
+    test_distance_zero_means_collected();
     test_fight_terminates_without_input();
     test_fleeing_fish_despawn();
     test_curious_fish_reaches_the_lure();

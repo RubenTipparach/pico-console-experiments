@@ -66,6 +66,14 @@ const Species k_species[k_species_count] = {
     {"THE OLD ONE",2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
 };
 
+int fight_distance_dm(const World& world) {
+    if (world.mode != Mode::Fight) return 0;
+    const int32_t dist = world.line_len - k_catch_len;
+    if (dist <= 0) return 1;   // still hooked, so never display zero
+    const int dm = static_cast<int>((dist * 10 + 255) / 256);
+    return dm > 0 ? dm : 1;
+}
+
 uint8_t day_phase(const World& world) {
     return static_cast<uint8_t>((world.day_tick * 256u) / k_day_length);
 }
