@@ -23,7 +23,7 @@
     <div class="title-row"><h2>Chicken</h2><span class="tag web">web</span></div>
     <p class="blurb">Endless side scroller. Collect gems, do not fall.</p>
     <div class="controls"><span>left/right: move</span><span>A: jump</span></div>
-    <div class="actions"><a class="btn play" href="chicken/">Play</a><a class="btn" href="uf2/chicken.uf2" download>.uf2</a></div>
+    <div class="actions"><a class="btn play" data-slug="chicken" href="chicken/?v=8aaf5c0b24def6b0">Play</a><a class="btn" href="uf2/chicken.uf2" download>.uf2</a></div>
   </div>
 </article>
 <article class="cart">
@@ -32,7 +32,7 @@
     <div class="title-row"><h2>Kingfisher</h2><span class="tag web">web</span></div>
     <p class="blurb">Cast far, hook true. Twelve fish, one legend.</p>
     <div class="controls"><span>hold A: power, release: cast</span><span>A: hook, then hold to reel</span><span>left/right: wiggle the rod</span><span>Y: records</span></div>
-    <div class="actions"><a class="btn play" href="kingfisher/">Play</a><a class="btn" href="uf2/kingfisher.uf2" download>.uf2</a></div>
+    <div class="actions"><a class="btn play" data-slug="kingfisher" href="kingfisher/?v=62cbbe726a98b831">Play</a><a class="btn" href="uf2/kingfisher.uf2" download>.uf2</a></div>
   </div>
 </article>
 <article class="cart">
@@ -41,7 +41,7 @@
     <div class="title-row"><h2>Pico Santa</h2><span class="tag web">web</span></div>
     <p class="blurb">Chunked 3D city on one core. Grab the gems.</p>
     <div class="controls"><span>left/right: turn</span><span>up: drive</span></div>
-    <div class="actions"><a class="btn play" href="pico-santa/">Play</a><a class="btn" href="uf2/pico-santa.uf2" download>.uf2</a></div>
+    <div class="actions"><a class="btn play" data-slug="pico-santa" href="pico-santa/?v=534fb9a5fb8e9f38">Play</a><a class="btn" href="uf2/pico-santa.uf2" download>.uf2</a></div>
   </div>
 </article>
 </div>
@@ -49,8 +49,26 @@
   <footer class="shelf-footer">
     <span>Flash a .uf2: hold <kbd>X</kbd>, press power, drop the file on <kbd>RPI-RP2</kbd>.</span>
     <span><a href="https://github.com/RubenTipparach/pico-console-experiments">Source</a></span>
-    <span>Built 2026-08-04T13:39:37Z</span>
+    <span>Built 2026-08-04T14:28:44Z</span>
   </footer>
 </main>
+<script>
+(function () {
+  // This page itself sits behind the ten minute Pages cache, so its links
+  // can lag one build behind. The manifest fetched with a unique query is
+  // always fresh; rewriting the links from it means opening a game from
+  // here always gets the newest build, however stale this page is.
+  fetch('builds.json?_=' + Date.now())
+    .then(function (r) { return r.json(); })
+    .then(function (m) {
+      (m.games || []).forEach(function (g) {
+        if (!g.fingerprint) return;
+        var a = document.querySelector('a.play[data-slug="' + g.slug + '"]');
+        if (a) a.href = g.slug + '/?v=' + g.fingerprint;
+      });
+    })
+    .catch(function () {});
+})();
+</script>
 </body>
 </html>
