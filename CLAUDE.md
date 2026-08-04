@@ -47,6 +47,17 @@ So both halves are load bearing:
 - Drop the state branch and every held game disappears from the site.
 - Drop the artifact upload and nothing reaches the web at all.
 
+Copying a rebuilt game over the state it carried forward must compare
+**contents**, never size and timestamps. `rsync -a` alone calls a file
+unchanged when its size and mtime match, and Emscripten's `index.js` is
+built to defeat exactly that: its `ASM_CONSTS` keys are addresses into the
+wasm's data, so they move whenever the game's data moves, but they keep the
+same number of digits, so the file's size never changes. The site checkout
+and the artifact download land in the same second, so the mtimes match too.
+Every rebuild kept the first `index.js` a game ever published while
+replacing its wasm, and a game rode that until its EM_ASM addresses shifted
+and it died on boot. `--checksum` is not an optimisation to tune away.
+
 Any job that changes what the site should look like has to end in an upload and
 a deploy. `thumbnails.yml` does this too, otherwise a recaptured screenshot
 would sit in the state branch and never be seen.
@@ -107,11 +118,16 @@ reason nobody can see.
   once shipped a wasm whose EM_ASM addresses no longer matched its JS, so
   the game compiled green and died on its first frame. Web correctness
   beats web build speed; do not re-add caching there.
-- Compiling proves nothing about booting. The publish job boot checks every
-  rebuilt web game in a real browser (`tools/boot_check.py`) and fails the
-  deploy on any page error, so a dead game cannot replace a live one. The
-  shell also shows any runtime crash on the page with a copy button, so a
-  phone can report exactly what broke and from which build.
+- Compiling proves nothing about booting, and checking the build artifact
+  proves nothing about what ships. The publish job boot checks the
+  **assembled site**, after the overlay and the stamping, in a real browser
+  (`tools/boot_check.py`), and fails the deploy on any page error. It used
+  to check the incoming artifact instead, and a publish that dropped a
+  game's `index.js` on the way to the site went out green: the artifact
+  booted perfectly and something else was deployed. Check the tree that is
+  uploaded, never an earlier copy of it. The shell also shows any runtime
+  crash on the page with a copy button, so a phone can report exactly what
+  broke and from which build.
 - That browser comes from `tools/setup_browser.sh`, which never touches apt.
   `playwright install --with-deps chromium` pulls Chromium's whole system
   dependency set, 21 MB of it CJK fonts that a canvas game has no use for,
