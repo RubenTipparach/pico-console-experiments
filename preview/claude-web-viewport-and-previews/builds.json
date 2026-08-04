@@ -1,0 +1,30 @@
+{
+  "games": [
+    {
+      "built_at": "2026-08-04T00:49:14Z",
+      "commit": "148eaf9",
+      "dir": "games/chicken",
+      "fingerprint": "f5f6fb55d21bd476",
+      "has_thumbnail": false,
+      "sdk": "32blit",
+      "slug": "chicken",
+      "target": "chicken",
+      "title": "Chicken",
+      "web": true
+    },
+    {
+      "built_at": "2026-08-04T00:49:14Z",
+      "commit": "148eaf9",
+      "dir": "games/pico-santa",
+      "fingerprint": "23941040fa7c200d",
+      "has_thumbnail": false,
+      "sdk": "32blit",
+      "slug": "pico-santa",
+      "target": "pico-santa",
+      "title": "Pico Santa",
+      "web": true
+    }
+  ],
+  "generated_at": "2026-08-04T00:49:14Z",
+  "schema": 1
+}
