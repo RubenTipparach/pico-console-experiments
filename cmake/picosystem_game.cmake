@@ -13,6 +13,10 @@ include_guard(GLOBAL)
 
 include(${CMAKE_CURRENT_LIST_DIR}/obj_model.cmake)
 
+# Our Emscripten page, used instead of the SDK's.
+set(PICO_WEB_SHELL ${CMAKE_CURRENT_LIST_DIR}/../web/shell.html
+    CACHE INTERNAL "Emscripten shell with touch controls")
+
 function(add_picosystem_game NAME)
     cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;DEFINES" ${ARGN})
 
@@ -24,6 +28,21 @@ function(add_picosystem_game NAME)
     foreach(model ${GAME_MODELS})
         add_obj_model(${NAME} ${model} generated_sources)
     endforeach()
+
+    # Swap in our own Emscripten page.
+    #
+    # The SDK's shell is keyboard only, so a phone can load a game and then not
+    # play it. Ours adds a touch gamepad and a fullscreen button.
+    #
+    # blit_executable() bakes `--shell-file ${EMSCRIPTEN_SHELL}` into the
+    # target's LINK_FLAGS, so overriding that variable is the seam to use.
+    # CMake functions inherit the caller's variable scope, so setting it here
+    # reaches blit_executable without leaking to anything else. Rewriting
+    # LINK_FLAGS after the fact would clobber the SDK's other link flags,
+    # including the SDL2 ports and the IndexedDB filesystem.
+    if(EMSCRIPTEN)
+        set(EMSCRIPTEN_SHELL ${PICO_WEB_SHELL})
+    endif()
 
     blit_executable(${NAME} ${GAME_SOURCES} ${generated_sources})
 

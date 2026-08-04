@@ -22,14 +22,19 @@ concurrency:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   capture:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check out the live site
+      - name: Check out the site state
         run: |
           if ! git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
             echo "::error::no gh-pages branch yet, publish the site first"
@@ -75,7 +80,7 @@ jobs:
           done
           echo "recaptured $captured thumbnail(s)" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Rebuild the gallery and push
+      - name: Rebuild the gallery and save the state
         run: |
           set -euo pipefail
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -90,3 +95,16 @@ jobs:
           fi
           git commit -m "Recapture thumbnails"
           git push origin HEAD:gh-pages
+
+      # Pages serves the Actions artifact, so a recapture has to redeploy the
+      # site. Pushing the state branch alone would change nothing that anyone
+      # can see.
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          include-hidden-files: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

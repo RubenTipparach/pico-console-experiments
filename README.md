@@ -34,9 +34,10 @@ Two games ship today:
    site. Only games whose hash moved get built.
 3. **`build`** runs once per stale game: a `.uf2` for the PicoSystem and an
    Emscripten build for the browser.
-4. **`publish`** overlays the rebuilt games onto the `gh-pages` branch,
-   regenerates the gallery, and pushes. Games that were not rebuilt keep the
-   binaries they already had.
+4. **`publish`** overlays the rebuilt games onto the site state held on the
+   `gh-pages` branch, regenerates the gallery, then uploads the complete tree
+   and deploys it to Pages. Games that were not rebuilt keep the binaries they
+   already had.
 
 Change detection is content based rather than git-diff based, so it stays
 correct across force pushes, re-runs, and reverts. Reverting a change restores
@@ -44,6 +45,51 @@ the old hash, so nothing rebuilds, which is the right answer.
 
 To force a rebuild, run the workflow manually and pass slugs (or `all`) to the
 `force` input. To force everything permanently, bump `.build-epoch`.
+
+## Playing on a phone
+
+Every web build ships with an on-screen gamepad and a fullscreen button, so a
+game is playable on a touch device with nothing installed. Open the game's URL
+and the pad appears on its own.
+
+- The D-pad and the A/B/X/Y buttons match the console's own layout. Sliding a
+  thumb between D-pad arrows works, so diagonals and rolls behave like a real
+  pad.
+- **Fullscreen** takes the whole page, not just the canvas, so the pad stays on
+  screen. It also asks for a landscape lock where the browser allows one.
+- **Controls** hides or shows the pad, and the choice is remembered. The pad is
+  on by default on touch devices and off on desktop.
+- In landscape the pad moves to flank the screen instead of sitting under it.
+
+On desktop the keyboard still works: arrows or WASD to move, `Z X C V` for
+A/B/X/Y.
+
+The page is `web/shell.html`, used for every game. It synthesises keyboard
+events rather than calling into the engine, so it needs no per game knowledge
+and keeps working if the C++ button mapping changes.
+
+iPhone Safari has no Fullscreen API, so the button does nothing there. The
+layout is sized with `dvh` and the safe-area insets so it fits anyway.
+
+## Building a branch without publishing
+
+`workflow_dispatch` runs the pipeline on any branch you pick in the Actions UI.
+By default it builds and uploads artifacts but **does not touch the live site**:
+publishing only happens automatically on the default branch.
+
+- **Run workflow** on any branch: builds, and attaches the `.uf2` and web build
+  as run artifacts. Download them from the run page.
+- `force`: slugs to rebuild even when unchanged, comma separated, or `all`.
+  Useful on a fresh branch where the fingerprints still match the live site.
+- `publish`: tick this to overwrite the live site from that branch. Off by
+  default, because a branch build silently replacing the gallery is a nasty
+  surprise.
+
+Pull requests build too, and never publish.
+
+Pushes to a non default branch do not build on their own. Open a PR or dispatch
+manually. That is deliberate: building every push on every branch is exactly the
+CI spend this pipeline exists to avoid.
 
 ## Adding a game
 
@@ -126,14 +172,24 @@ Add `-DPICO_ONLY_GAME=<slug>` to any of these to build a single game.
 
 ## Repository settings this depends on
 
-The site is published from a branch, not from the Pages action. In
-**Settings > Pages**, set the source to **Deploy from a branch**, branch
-`gh-pages`, folder `/`.
+The Pages source is **GitHub Actions**, not "Deploy from a branch". The workflow
+uploads the site with `actions/upload-pages-artifact` and deploys it with
+`actions/deploy-pages`.
 
-This is deliberate. `actions/deploy-pages` replaces the entire site on every
-deploy, which would delete every game that was not rebuilt that run. Keeping the
-built site on a branch makes git itself the durable state, so an incremental
-overlay is possible and a bad publish can be reverted.
+Nothing else needs configuring. If the site ever 404s, check that the Pages
+source is still set to GitHub Actions: with it set to "Deploy from a branch"
+instead, `deploy-pages` is unavailable and the deployment step fails.
+
+### Why there is still a gh-pages branch
+
+`deploy-pages` replaces the entire site on every deployment, so a run that
+rebuilt one game would wipe every other game if it uploaded only what it built.
+
+The `gh-pages` branch is the durable state that prevents that. It holds the last
+published site, so each run can assemble the complete tree from it plus whatever
+was just rebuilt, and upload the whole thing.
+
+It is state, not the served site. Pushing to it publishes nothing on its own.
 
 ## Conventions
 

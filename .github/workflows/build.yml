@@ -10,6 +10,11 @@ on:
         description: "Slugs to rebuild even if unchanged, comma separated, or 'all'"
         required: false
         default: ""
+      publish:
+        description: "Publish to the live site. Leave off to test build a branch."
+        type: boolean
+        required: false
+        default: false
 
 # One publish at a time. Two runs overlaying the gh-pages tree concurrently will
 # race and one push gets rejected. cancel-in-progress is deliberately false: a
@@ -19,7 +24,12 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  # contents: write is for the gh-pages state branch, which is how a game that
+  # did not rebuild keeps the binaries it already had. pages + id-token are what
+  # actions/deploy-pages needs.
   contents: write
+  pages: write
+  id-token: write
 
 env:
   # The 32blit SDK and the `32blit` python tool are versioned separately and the
@@ -205,12 +215,25 @@ jobs:
     needs: [detect, build]
     # Runs even when `build` was skipped, because a run where nothing changed
     # still has to republish the site with the previous content intact.
-    if: ${{ !cancelled() && needs.detect.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') && github.event_name != 'pull_request' }}
+    #
+    # The ref check is what stops a branch build from taking over the live site.
+    # A manual run on a feature branch builds and uploads artifacts but does not
+    # publish, unless it is dispatched with publish=true on purpose.
+    if: >-
+      ${{ !cancelled()
+          && needs.detect.result == 'success'
+          && (needs.build.result == 'success' || needs.build.result == 'skipped')
+          && github.event_name != 'pull_request'
+          && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+              || github.event.inputs.publish == 'true') }}
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check out the live site
+      - name: Check out the site state
         run: |
           # actions/checkout hard fails on a missing ref and has no
           # create-if-missing, so the orphan branch is bootstrapped by hand.
@@ -311,7 +334,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --timestamp "$stamp"
 
-      - name: Commit and push
+      - name: Save the site state
         run: |
           set -euo pipefail
           cd site
@@ -323,7 +346,7 @@ jobs:
             echo "site is unchanged, nothing to push"
             exit 0
           fi
-          git commit -m "Publish site for ${GITHUB_SHA::7}"
+          git commit -m "Site state for ${GITHUB_SHA::7}"
           for attempt in 1 2 3; do
             if git push origin HEAD:gh-pages; then
               exit 0
@@ -332,8 +355,25 @@ jobs:
             git fetch origin gh-pages && git rebase FETCH_HEAD || true
             sleep $((attempt * 4))
           done
-          echo "::error::could not push the site after 3 attempts"
+          echo "::error::could not push the site state after 3 attempts"
           exit 1
+
+      # Pages is served from the Actions artifact, not from a branch. The whole
+      # site is uploaded every run, including the games that were not rebuilt,
+      # because deploy-pages replaces the entire site each deployment. That is
+      # exactly why the gh-pages state branch above exists: it carries the
+      # previous build forward so a full site can be assembled without
+      # rebuilding everything.
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          # The tarball drops dotfiles by default, which would eat .nojekyll.
+          include-hidden-files: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   # A terminal job so a run where nothing changed still reports success. A
   # skipped matrix job never reports, which silently blocks branch protection if

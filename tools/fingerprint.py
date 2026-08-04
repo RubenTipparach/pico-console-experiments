@@ -27,7 +27,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAMES_DIR = os.path.join(REPO_ROOT, "games")
 
 # Inputs every game depends on unless its game.yml says otherwise.
-DEFAULT_DEPENDS_ON = ["engine", "cmake", "tools/obj2cpp.py"]
+DEFAULT_DEPENDS_ON = ["engine", "cmake", "web", "tools/obj2cpp.py"]
 
 # Files inside a game directory that must never trigger a rebuild. Thumbnails
 # are published artefacts, not build inputs: rebuilding because a screenshot

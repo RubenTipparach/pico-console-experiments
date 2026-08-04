@@ -23,7 +23,40 @@ person's machine, it is not done. Local scripts exist for convenience, but the
 workflow in `.github/workflows/` is the source of truth. When you change how a
 game builds, change the workflow, not just the local script.
 
-### 3. Never rebuild or republish an unchanged game
+Publishing is limited to the default branch. A manual run on any other branch
+builds and uploads artifacts but leaves the live site alone unless it is
+dispatched with `publish` ticked on purpose. Never widen that: a branch build
+quietly replacing the gallery is very hard to notice.
+
+### 3. Pages is deployed by GitHub Actions, never from a branch
+
+The Pages source for this repo is **GitHub Actions**. `actions/upload-pages-artifact`
+plus `actions/deploy-pages` is how the site reaches the web, and that is not
+negotiable. Do not switch the repo to "Deploy from a branch" and do not write a
+pipeline that assumes a branch is being served: pushing to `gh-pages` publishes
+nothing here.
+
+The `gh-pages` branch still exists, but it is **state, not the served site**. It
+carries the previous build forward so a game that did not change keeps the
+binaries it already had. Every run assembles the complete site from that branch
+plus whatever was just rebuilt, then uploads the whole tree as the Pages
+artifact. That full upload is required, because `deploy-pages` replaces the
+entire site on every deployment.
+
+So both halves are load bearing:
+
+- Drop the state branch and every game that was not rebuilt disappears from the
+  site.
+- Drop the artifact upload and nothing reaches the web at all.
+
+Any job that changes what the site should look like has to end in an upload and
+a deploy. `thumbnails.yml` does this too, otherwise a recaptured screenshot
+would sit in the state branch and never be seen.
+
+Jobs that deploy need `pages: write` and `id-token: write`, plus
+`environment: github-pages`.
+
+### 4. Never rebuild or republish an unchanged game
 
 CI minutes are the scarce resource here. A game is rebuilt only when its own
 content hash changes, or when something it depends on (the shared engine, the
@@ -39,7 +72,7 @@ build tooling, the workflow itself) changes.
 - Never "just rebuild everything to be safe". If you think a rebuild is needed,
   fix the fingerprint inputs so the tool agrees with you.
 
-### 4. One SDK: 32blit
+### 5. One SDK: 32blit
 
 Every game builds against the 32blit SDK, which targets the PicoSystem through
 `-DPICO_BOARD=pimoroni_picosystem` and also builds for desktop and for the
@@ -48,7 +81,7 @@ browser.
 Do not reach for the raw Pimoroni picosystem SDK. It is device only: no SDL
 target, no Emscripten target, and its single SDL wrapper pull request was closed
 unmerged in 2021 with the branch deleted. A game written against it can ship a
-`.uf2` and can never have a playable page in the gallery, which breaks rule 10.
+`.uf2` and can never have a playable page in the gallery, which breaks rule 11.
 `tools/fingerprint.py` rejects `sdk: picosystem` rather than letting a game
 publish a dead URL.
 
@@ -58,7 +91,7 @@ Game code should not call the SDK where the engine already abstracts it.
 a `pse::RenderTarget`, which is why the renderer compiles unchanged for device,
 desktop, web, and the host test binary.
 
-### 5. SOLID
+### 6. SOLID
 
 The engine is a library, the games are consumers. Keep it that way.
 
@@ -81,7 +114,7 @@ Practical consequence: no globals shared between engine and game. The city's
 buildings and gems used to be file scope arrays that the game reached into
 directly; they are owned by `santa::City` now. Keep it that way.
 
-### 6. The PicoSystem is tiny. Budget everything.
+### 7. The PicoSystem is tiny. Budget everything.
 
 Hardware: RP2040 dual core Cortex-M0+ at 133 MHz (no FPU), 264 KB SRAM, 16 MB
 flash, 240x240 LCD, 4 bit per channel colour.
@@ -107,7 +140,7 @@ Before adding anything, ask what it costs:
   core. That choice also gave back the 84 KB the old triangle lists cost.
 - If you add a feature, state its RAM and flash cost in the PR body.
 
-### 7. Keep on-device UI sparse
+### 8. Keep on-device UI sparse
 
 The screen is 240x240, or 120x120 when pixel doubled. Text is expensive to read
 and expensive to draw.
@@ -120,7 +153,7 @@ and expensive to draw.
 - If the user explicitly asks for more text, give them more text. This rule is a
   default, not a veto.
 
-### 8. Mock up large UI changes before building them
+### 9. Mock up large UI changes before building them
 
 If a change materially alters the gallery, a game's title screen, or the flasher
 utility layout, produce a mockup first and get the user to confirm it. A mockup
@@ -129,7 +162,7 @@ fastest. Do not spend a long implementation on an unconfirmed design.
 
 Small changes (a label, a colour, one control) do not need a mockup.
 
-### 9. Models come from .obj files, not from code
+### 10. Models come from .obj files, not from code
 
 Do not hand write vertex tables in C++. Do not procedurally emit geometry in
 source when a real model would do.
@@ -144,12 +177,20 @@ source when a real model would do.
 - The exception is trivial primitives (a cube, a quad) that the engine already
   generates parametrically. Those stay in code.
 
-### 10. Every game gets its own URL, and a gallery entry
+### 11. Every game gets its own URL, a gallery entry, and touch controls
 
 - The gallery lives at the Pages root and lists every game.
 - Each game is published at `/<slug>/`, where `slug` comes from `game.yml`.
 - Games buildable for web get a "Play" link. Games that are device only get a
   "Download .uf2" link and say so on the card.
+- Every web build uses `web/shell.html`, which carries the on-screen gamepad
+  and the fullscreen button. Games must stay playable on a phone with nothing
+  installed. Do not fall back to the SDK's stock shell: it is keyboard only,
+  so a phone can load the game and then not play it.
+- The shell synthesises keyboard events rather than calling into the engine.
+  Keep it that way: it means the page needs no per game knowledge, and a change
+  to the C++ button mapping does not break it. `web` is in every game's
+  `depends_on` so editing the shell actually rebuilds the games.
 - **Thumbnails are manual.** CI captures a screenshot only the first time a game
   is published, when `games/<slug>/thumbnail.png` does not exist yet. After that
   the committed thumbnail is left alone forever, even when the game changes.
@@ -157,7 +198,7 @@ source when a real model would do.
   `Capture thumbnails` workflow with the game named, or by committing a new PNG.
   Never refresh thumbnails on your own initiative.
 
-### 11. Flashing to the device is a one click job
+### 12. Flashing to the device is a one click job
 
 `tools/flasher/` is a small Windows Forms utility. It watches for a PicoSystem in
 BOOTSEL mode and copies a selected `.uf2` across. Keep it quick and dirty on
