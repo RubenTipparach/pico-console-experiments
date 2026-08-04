@@ -82,8 +82,11 @@ make a fresh deploy look stale on a device that had just loaded the previous
 build. The publish step stamps each rebuilt game's page and asset URLs with
 the build version, gallery links carry that version and re-check a freshly
 fetched manifest, and the shell offers a one tap reload when a newer build
-lands. Keep the `__PSE_BUILD__` placeholder in `web/shell.html` intact:
-publishing depends on it.
+lands. The version reaches the page as a window.PSE_BUILD global injected
+after the body tag at publish time, and the shell reads it with a bracketed
+window lookup on purpose: Emscripten minifies the shell, and any compile
+time constant in there gets folded and the whole mechanism dead code
+eliminated. Publish time data must never travel through the minifier.
 
 ### 5. Never rebuild or republish an unchanged game
 

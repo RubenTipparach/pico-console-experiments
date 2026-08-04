@@ -574,10 +574,16 @@
     });
   }
 
-  // Stamped by the publish workflow. Local builds keep the placeholder and
-  // skip everything version related.
-  var PSE_BUILD = "__PSE_BUILD__";
-  var pseVersioned = PSE_BUILD.indexOf("__") !== 0;
+  // The publish workflow injects a tiny script at the top of the body that
+  // sets window.PSE_BUILD to the deployed sha. (Never write that tag out in
+  // a comment here: a literal closing script tag ends this whole script
+  // element at the HTML level.) Read the global through the window object
+  // every time: Emscripten minifies this script, and a plain constant here
+  // gets inlined, folded, and the entire version mechanism dead code
+  // eliminated, which is exactly what happened to the first version of this
+  // feature. A bracketed window lookup is opaque to every minifier. Local
+  // builds have no injected global and skip everything version related.
+  function pseBuild() { return window["PSE_BUILD"] || ""; }
 
   window.Module = {
     // Pages serves with max-age=600 and the filenames never change, so a
@@ -585,7 +591,8 @@
     // query makes each build's wasm and data distinct URLs; the script tag
     // gets the same treatment from the publish workflow.
     locateFile: function (path, prefix) {
-      return prefix + path + (pseVersioned ? "?v=" + PSE_BUILD : "");
+      var v = pseBuild();
+      return prefix + path + (v ? "?v=" + v : "");
     },
     // Match the device exactly.
     //
@@ -655,7 +662,7 @@
   // If a newer build than this page was published, offer a one tap reload.
   // The manifest fetch carries a unique query so it dodges the page cache
   // and notices within seconds of a deploy, instead of after ten minutes.
-  if (pseVersioned) {
+  if (pseBuild()) {
     fetch('../builds.json?_=' + Date.now())
       .then(function (r) { return r.json(); })
       .then(function (m) {
@@ -664,7 +671,7 @@
         (m.games || []).forEach(function (g) {
           if (g.slug === slug) mine = g;
         });
-        if (!mine || mine.commit === PSE_BUILD) return;
+        if (!mine || mine.commit === pseBuild()) return;
         var pill = document.createElement('button');
         pill.id = 'newbuild';
         pill.textContent = 'new build ' + mine.commit + ' - tap to reload';
