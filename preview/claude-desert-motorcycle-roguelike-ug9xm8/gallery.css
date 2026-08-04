@@ -1,0 +1,277 @@
+/* Cartridge shelf.
+ *
+ * Every colour is exactly representable in the console's own ARGB4444
+ * framebuffer: each hex pair is a repeated nibble, so the page is painted in
+ * the same 4096 colours the games are.
+ *
+ * Single theme on purpose. This is an arcade cabinet, not a document, and a
+ * light mode version of a CRT is a worse thing than a CRT. */
+
+:root {
+  --ground: #110011;
+  --panel: #221133;
+  --panel-lit: #332255;
+  --ink: #ffffee;
+  --muted: #9988bb;
+  --line: #553377;
+  --accent: #ff2266;
+  --accent-dim: #991144;
+  --play: #22ffaa;
+  --device: #ffcc22;
+
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 5rem;
+  background: var(--ground);
+  /* Faint vertical glow behind the shelf, like cabinet backlighting. */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, #33115533 0%, #11001100 70%);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: none;
+}
+
+.wrap {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---- marquee ---- */
+
+.marquee {
+  border-bottom: 4px solid var(--accent);
+  background:
+    repeating-linear-gradient(90deg, #22113300 0 6px, #33225533 6px 7px),
+    linear-gradient(180deg, #331155 0%, #220b33 100%);
+  padding: 2.25rem 1.25rem 1.75rem;
+  margin-bottom: 2.5rem;
+  text-align: center;
+}
+
+.marquee h1 {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  /* Hard offset shadow, no blur: a blurred glow reads as CSS, a hard offset
+     reads as a stencilled cabinet. */
+  text-shadow:
+    3px 0 var(--accent),
+    -3px 0 #22aaff,
+    0 4px #00000088;
+  text-wrap: balance;
+}
+
+.marquee p {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+}
+
+.marquee .stats {
+  margin-top: 0.5rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- shelf ---- */
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1.5rem;
+}
+
+.cart {
+  background: var(--panel);
+  /* Chunky stepped border, drawn rather than rounded. */
+  border: 3px solid var(--line);
+  border-bottom-width: 6px;
+  box-shadow: 0 0 0 3px var(--ground), 0 10px 0 -3px #00000066;
+  display: flex;
+  flex-direction: column;
+  transition: transform 120ms steps(3), border-color 120ms steps(3);
+}
+
+.cart:hover, .cart:focus-within {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+}
+
+/* ---- screen ---- */
+
+.screen {
+  position: relative;
+  aspect-ratio: 1;                 /* the console's real 240x240 */
+  background: #000011;
+  border-bottom: 3px solid var(--line);
+  overflow: hidden;
+}
+
+.screen img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.screen .pending {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  justify-items: center;
+  background:
+    repeating-linear-gradient(45deg, #221133 0 8px, #2a1840 8px 16px);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* ---- card body ---- */
+
+.body {
+  padding: 0.9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.cart h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.blurb {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.tag {
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.4rem;
+  border: 2px solid currentColor;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.tag.web { color: var(--play); }
+.tag.device { color: var(--device); }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.625rem;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.controls span {
+  border: 1px solid var(--line);
+  background: var(--ground);
+  padding: 0.1rem 0.35rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.45rem 0.75rem;
+  border: 2px solid var(--line);
+  background: var(--panel-lit);
+  color: var(--ink);
+  transition: background 100ms steps(2);
+}
+
+.btn:hover { background: var(--line); }
+.btn:focus-visible { outline: 3px solid var(--play); outline-offset: 2px; }
+
+.btn.play {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffee;
+  flex: 1;
+  text-align: center;
+}
+
+.btn.play:hover { background: var(--accent-dim); }
+
+/* ---- footer ---- */
+
+.shelf-footer {
+  margin-top: 3rem;
+  border-top: 3px solid var(--line);
+  padding-top: 1.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+}
+
+.shelf-footer a { color: var(--play); }
+
+kbd {
+  font-family: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0 0.3rem;
+  color: var(--ink);
+}
+
+.empty {
+  border: 3px dashed var(--line);
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8125rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cart, .btn { transition: none; }
+  .cart:hover, .cart:focus-within { transform: none; }
+}
