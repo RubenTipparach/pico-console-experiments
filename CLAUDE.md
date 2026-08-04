@@ -103,9 +103,16 @@ build tooling, the workflow itself) changes.
   in `game.yml`, otherwise the game will silently go stale.
 - Never "just rebuild everything to be safe". If you think a rebuild is needed,
   fix the fingerprint inputs so the tool agrees with you.
-- The builds that do run reuse objects through ccache (cached per game) and a
-  persistent Emscripten system library cache. Keep compiler flags stable
-  unless a change needs them: flag churn empties both.
+- The pico builds that do run reuse objects through ccache, cached per game.
+  The Emscripten builds use NO compile cache, deliberately: a warm ccache
+  once shipped a wasm whose EM_ASM addresses no longer matched its JS, so
+  the game compiled green and died on its first frame. Web correctness
+  beats web build speed; do not re-add caching there.
+- Compiling proves nothing about booting. The publish job boot checks every
+  rebuilt web game in a real browser (`tools/boot_check.py`) and fails the
+  deploy on any page error, so a dead game cannot replace a live one. The
+  shell also shows any runtime crash on the page with a copy button, so a
+  phone can report exactly what broke and from which build.
 
 ### 6. One SDK: 32blit
 

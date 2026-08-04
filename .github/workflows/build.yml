@@ -234,16 +234,16 @@ jobs:
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           source "$GITHUB_WORKSPACE/../emsdk/emsdk_env.sh"
-          export EM_CACHE="$GITHUB_WORKSPACE/../em-cache"
+          # NO ccache and NO persistent EM_CACHE here, on purpose. A warm
+          # ccache once shipped a wasm whose EM_ASM addresses no longer
+          # matched its JS: the game compiled green and died on its first
+          # frame. Web builds are cheap enough to pay for correctness.
           # 32BLIT_DIR must be absolute for Emscripten builds.
           emcmake cmake -S . -B build.web \
             -D32BLIT_DIR="$GITHUB_WORKSPACE/../32blit-sdk" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPICO_ONLY_GAME="$GAME"
           cmake --build build.web --parallel
-          ccache --show-stats
 
       - name: Collect the outputs
         env:
@@ -327,6 +327,29 @@ jobs:
           path: incoming
           merge-multiple: true
         continue-on-error: true
+
+      # A compiled game is not a working game. Boot every rebuilt web build
+      # in a real browser before it can touch the site: a page error here
+      # fails the publish and the previous good build stays live.
+      - name: Boot check the rebuilt games
+        env:
+          BUILT: ${{ needs.detect.outputs.built }}
+        run: |
+          set -euo pipefail
+          needed=""
+          for slug in $(echo "$BUILT" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            [ -f "incoming/web/$slug/index.html" ] && needed="$needed $slug"
+          done
+          if [ -z "$needed" ]; then
+            echo "no web builds this run"
+            exit 0
+          fi
+          pip3 install --user playwright
+          python3 -m playwright install --with-deps chromium
+          for slug in $needed; do
+            python3 tools/boot_check.py --dir incoming/web --slug "$slug"
+          done
 
       - name: Overlay the rebuilt games
         env:
