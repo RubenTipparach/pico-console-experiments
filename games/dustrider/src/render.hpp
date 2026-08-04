@@ -27,6 +27,12 @@ struct FrameStats {
     // screen gets checked against the projection that actually draws it.
     int16_t bike_x0;
     int16_t bike_x1;
+    // Vertical span too. The bike may leave the frame sideways, that is
+    // the whole game, but it must NEVER leave it up or down: the rider
+    // moves up and down the road by design, so a framing that loses them
+    // off the top or bottom is a bug, not a death.
+    int16_t bike_y0;
+    int16_t bike_y1;
 };
 FrameStats last_frame_stats();
 

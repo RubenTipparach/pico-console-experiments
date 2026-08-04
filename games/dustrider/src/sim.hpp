@@ -76,6 +76,7 @@ struct World {
     uint8_t x_frac;
     int32_t v;
     int32_t z;             // fp8
+    int32_t steer_v;       // fp8 z per tick, builds while the pad is held
     bool throttling;       // last tick's throttle, for the renderer's wheelie
 
     // The window. screen_x is the window CENTER, fp8.

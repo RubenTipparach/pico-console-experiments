@@ -57,38 +57,46 @@ void text_centered(const char* line, int y, Pen pen) {
     screen.text(line, minimal_font, Point((screen.bounds.w - size.w) / 2, y));
 }
 
-// A panel sized to its widest measured line, centred, with a small margin.
-void panel(int y, int height, int content_w, Pen pen) {
-    const int w = content_w + 12;
-    screen.pen = pen;
-    screen.rectangle(Rect((screen.bounds.w - w) / 2, y, w, height));
-}
+// A centred panel of centred lines, with BOTH dimensions measured.
+//
+// Sizing the width from the text and then hardcoding the height is only
+// half a fix: the wreck card's third line printed straight through the
+// bottom of its own panel the first time a run set a record. Measuring one
+// axis and guessing the other is the same bug as guessing both.
+void panel_lines(int top, const char* const* lines, const Pen* pens,
+                 int count, Pen background) {
+    constexpr int k_pad_x = 6, k_pad_y = 4, k_gap = 3;
 
-int widest(const char* const* lines, int count) {
-    int w = 0;
+    int content_w = 0, line_h = 0;
     for (int i = 0; i < count; i++) {
-        const int lw = screen.measure_text(lines[i], minimal_font).w;
-        if (lw > w) w = lw;
+        const Size size = screen.measure_text(lines[i], minimal_font);
+        if (size.w > content_w) content_w = size.w;
+        if (size.h > line_h) line_h = size.h;
     }
-    return w;
+
+    const int w = content_w + k_pad_x * 2;
+    const int h = count * line_h + (count - 1) * k_gap + k_pad_y * 2;
+    screen.pen = background;
+    screen.rectangle(Rect((screen.bounds.w - w) / 2, top, w, h));
+
+    for (int i = 0; i < count; i++) {
+        text_centered(lines[i], top + k_pad_y + i * (line_h + k_gap), pens[i]);
+    }
 }
 
 void draw_title() {
     char best[20];
-    const char* lines[2] = {"DUST RIDER", nullptr};
+    const char* lines[2] = {"DUST RIDER", best};
+    const Pen pens[2] = {Pen(255, 196, 90), Pen(210, 210, 220)};
     int count = 1;
     if (g_world.best_m > 0) {
         snprintf(best, sizeof(best), "best %um", g_world.best_m);
-        lines[1] = best;
         count = 2;
     }
 
     // No control prompts. Any button rides, so there is nothing a prompt
     // could usefully say, and the gallery card already lists the controls.
-    const int height = count == 2 ? 30 : 20;
-    panel(44, height, widest(lines, count), Pen(20, 10, 8, 190));
-    text_centered("DUST RIDER", 50, Pen(255, 196, 90));
-    if (count == 2) text_centered(best, 62, Pen(210, 210, 220));
+    panel_lines(46, lines, pens, count, Pen(20, 10, 8, 190));
 }
 
 const char* death_word(dr::Death death) {
@@ -107,14 +115,10 @@ const char* death_word(dr::Death death) {
 void draw_wreck() {
     char dist[16];
     snprintf(dist, sizeof(dist), "%dm", dr::distance_m(g_world));
-    const char* cause = death_word(g_world.death);
-    const char* lines[3] = {cause, dist, "RECORD"};
-    const int count = g_new_record ? 3 : 2;
-
-    panel(46, count == 3 ? 32 : 22, widest(lines, count), Pen(20, 10, 8, 200));
-    text_centered(cause, 51, Pen(255, 90, 70));
-    text_centered(dist, 62, Pen(255, 255, 238));
-    if (g_new_record) text_centered("RECORD", 73, Pen(255, 196, 90));
+    const char* lines[3] = {death_word(g_world.death), dist, "RECORD"};
+    const Pen pens[3] = {Pen(255, 90, 70), Pen(255, 255, 238),
+                         Pen(255, 196, 90)};
+    panel_lines(48, lines, pens, g_new_record ? 3 : 2, Pen(20, 10, 8, 200));
 }
 
 // The only thing on screen while riding: how far. Sized to the text so a
