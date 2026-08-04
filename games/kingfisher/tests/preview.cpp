@@ -122,5 +122,27 @@ int main(int argc, char** argv) {
         capture(world, 132000, out + "/preview_6_night.ppm");
     }
 
+    // 7: a bite at maximum distance. The far float projects within rows of
+    // the horizon, which is exactly where the old bounds check used to drop
+    // the "!" glyph: this frame proves the alert survives at 45 m out, in
+    // both halves of the screen.
+    {
+        world.raining = 0;
+        world.day_tick = kf::k_day_length / 8;
+        world.mode = kf::Mode::Sinking;
+        world.lure_x = 0;
+        world.lure_y = kf::k_one;
+        world.lure_z = 45 * kf::k_one;
+        world.bite_timer = 40;
+        kf::Fish& biter = world.fish[0];
+        biter.state = kf::FishState::Biting;
+        biter.species = 9;   // a catfish, deep water
+        biter.size_cm = 80;
+        biter.x = world.lure_x;
+        biter.z = world.lure_z;
+        biter.y = kf::k_one;
+        capture(world, 134000, out + "/preview_7_bite_far.ppm");
+    }
+
     return 0;
 }

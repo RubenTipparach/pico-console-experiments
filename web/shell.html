@@ -433,7 +433,16 @@
   function press(code, button) {
     if (held[code]) return;         // no key repeat: the game polls button state
     held[code] = true;
-    if (button) button.classList.add('held');
+    if (button) {
+      button.classList.add('held');
+      // A short tap of haptics so a glass button pushes back. Gated on the
+      // on-screen pad only: physical keyboards bring their own feedback.
+      // vibrate() is absent on iOS Safari and can throw when a page has had
+      // no user gesture yet, so both failures are swallowed on purpose.
+      if (navigator.vibrate) {
+        try { navigator.vibrate(12); } catch (ignored) { /* no haptics */ }
+      }
+    }
     sendKey('keydown', code);
   }
 

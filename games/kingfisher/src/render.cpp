@@ -340,6 +340,24 @@ void draw_line_band(int x0, int y0, int x1, int y1, int band_y0, int band_y1,
     }
 }
 
+// The red "!" over the hook. (bx, by) is the projected anchor; the glyph is
+// then clamped fully inside [band_y0, band_y1) so it stays visible however
+// far away or close to the seam the hook sits. An alert that can slide off
+// screen is an alert that sometimes does not exist.
+void draw_bite_mark(int bx, int by, int band_y0, int band_y1) {
+    if (bx < 1) bx = 1;
+    if (bx > 117) bx = 117;
+    int top = by - 9;              // glyph spans 8 rows: bar, gap, dot
+    if (top < band_y0 + 1) top = band_y0 + 1;
+    if (top > band_y1 - 9) top = band_y1 - 9;
+    for (int y = 0; y < 5; y++) {
+        g_raster.plot(bx, top + y, 255, 60, 60);
+        g_raster.plot(bx + 1, top + y, 255, 60, 60);
+    }
+    g_raster.plot(bx, top + 7, 255, 60, 60);
+    g_raster.plot(bx + 1, top + 7, 255, 60, 60);
+}
+
 void draw_bar(int x, int y_top, int height, int filled, uint8_t r, uint8_t g,
               uint8_t b) {
     for (int y = 0; y < height; y++) {
@@ -727,22 +745,20 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     }
 
     // Bite mark: one glyph, no words. Gated on an actual biting fish as well
-    // as the timer, so a stale timer can never show a phantom alert.
+    // as the timer, so a stale timer can never show a phantom alert. The
+    // glyph is clamped into the band rather than culled: after the world
+    // grew to 50 m a distant float projected within a few rows of the
+    // horizon, the old bounds check dropped it, and the bite played its
+    // sound with no visual at all.
     bool bite_open = false;
     for (const auto& fish : world.fish) {
         if (fish.state == kf::FishState::Biting) bite_open = true;
     }
     if (bite_open && world.bite_timer > 0 && world.mode == kf::Mode::Sinking) {
         int bx, by, bz;
-        if (g_renderer.project(fp_to_f(world.lure_x), 0.9f,
-                               fp_to_f(world.lure_z), bx, by, bz) &&
-            by - 9 >= 0 && by < k_split) {
-            for (int y = 0; y < 5; y++) {
-                g_raster.plot(bx, by + y - 9, 255, 60, 60);
-                g_raster.plot(bx + 1, by + y - 9, 255, 60, 60);
-            }
-            g_raster.plot(bx, by - 2, 255, 60, 60);
-            g_raster.plot(bx + 1, by - 2, 255, 60, 60);
+        if (g_renderer.project(fp_to_f(world.lure_x), 0.30f,
+                               fp_to_f(world.lure_z), bx, by, bz)) {
+            draw_bite_mark(bx, by, 0, k_split);
         }
     }
 
@@ -774,19 +790,13 @@ void render_scene(const World& world, const pse::RenderTarget& target,
         }
     }
 
-    // The bite mark again, beside the hook itself, so the alert reads in
+    // The bite mark again, right above the hook, so the alert reads in
     // whichever half of the screen the player is watching.
     if (bite_open && world.bite_timer > 0 && world.mode == kf::Mode::Sinking) {
         int bx, by, bz;
         if (g_renderer.project(fp_to_f(world.lure_x), -g_hook_depth + 0.35f,
-                               fp_to_f(world.lure_z), bx, by, bz) &&
-            by - 9 >= k_split && by < 120) {
-            for (int y = 0; y < 5; y++) {
-                g_raster.plot(bx, by + y - 9, 255, 60, 60);
-                g_raster.plot(bx + 1, by + y - 9, 255, 60, 60);
-            }
-            g_raster.plot(bx, by - 2, 255, 60, 60);
-            g_raster.plot(bx + 1, by - 2, 255, 60, 60);
+                               fp_to_f(world.lure_z), bx, by, bz)) {
+            draw_bite_mark(bx, by, k_split + 1, 120);
         }
     }
 

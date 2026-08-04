@@ -116,6 +116,7 @@ struct Events {
     bool new_record;
     bool leap;             // hooked fish broke the surface
     bool wiggle;           // rod wiggle registered during a fight
+    bool reel_click;       // the ratchet: a chunk of line came in
 };
 
 struct World {
@@ -135,6 +136,7 @@ struct World {
     uint16_t twitch_timer;
     uint16_t retrieve_hold;   // ticks A has been held towing the lure
     uint16_t retrieve_frac;   // sub fp remainder of the tow speed
+    uint16_t reel_click_acc;  // fp of line wound since the last ratchet click
 
     int8_t hooked_fish;    // index into fish[], -1 when none
     uint16_t tension;      // 0..1023; the red zone starts at k_tension_danger

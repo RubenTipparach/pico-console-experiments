@@ -86,16 +86,19 @@ void draw_card() {
     if (g_world.mode != kf::Mode::Landed || g_world.card_species < 0) return;
     const kf::Species& s = kf::k_species[g_world.card_species];
 
+    // The card sits centred in the top viewport (the boat scene, rows 0..59),
+    // because that is where the catch just happened. The bottom half keeps
+    // showing the water undisturbed.
     screen.pen = Pen(8, 6, 20, 200);
-    screen.rectangle(Rect(0, 96, 120, 24));
+    screen.rectangle(Rect(0, 18, 120, 24));
 
     char line[28];
     snprintf(line, sizeof(line), "%s %dcm", s.name, g_world.card_size);
     screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(6, 100));
+    screen.text(line, minimal_font, Point(6, 22));
     if (g_world.card_record) {
         screen.pen = Pen(255, 220, 90);
-        screen.text("RECORD", minimal_font, Point(6, 109));
+        screen.text("RECORD", minimal_font, Point(6, 31));
     }
 }
 
