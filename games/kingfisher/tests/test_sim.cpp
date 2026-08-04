@@ -366,16 +366,26 @@ void test_tension_builds_gradually() {
 // moment before: while the fight is on it is always positive, and the tick
 // that lands the fish is the tick it goes to zero.
 void test_distance_zero_means_collected() {
+    kf::World idle;
+    kf::world_init(idle, 80);
+    CHECK(kf::hook_distance_dm(idle) == 0);   // no hook out, no number
+
     kf::World world;
     kf::world_init(world, 81);
-    kf::world_test_hook(world, 6, 70);   // a carp
-    CHECK(kf::fight_distance_dm(world) == 0);   // not fighting yet
+    kf::world_test_hook(world, 6, 70);   // a carp, lure sinking at depth
+    const int sinking_dm = kf::hook_distance_dm(world);
+    CHECK(sinking_dm > 0);   // locality exists before any fish commits
 
     kf::Input hook{};
     hook.a_pressed = true;
     kf::world_tick(world, hook);
     CHECK(world.mode == kf::Mode::Fight);
-    CHECK(kf::fight_distance_dm(world) > 0);
+    const int fighting_dm = kf::hook_distance_dm(world);
+    CHECK(fighting_dm > 0);
+    // The measure is continuous across the hook: no jump when the fight
+    // takes over the number.
+    const int step = fighting_dm - sinking_dm;
+    CHECK(step > -10 && step < 10);
 
     bool caught = false;
     for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
@@ -389,13 +399,13 @@ void test_distance_zero_means_collected() {
         }
         kf::world_tick(world, input);
         if (world.mode == kf::Mode::Fight) {
-            CHECK(kf::fight_distance_dm(world) > 0);
+            CHECK(kf::hook_distance_dm(world) > 0);
             if (g_failures > 3) return;
         }
         if (world.ev.caught) caught = true;
     }
     CHECK(caught);
-    CHECK(kf::fight_distance_dm(world) == 0);
+    CHECK(kf::hook_distance_dm(world) == 0);
 }
 
 // Doing nothing after the hook must end the fight too: the fish takes all the
