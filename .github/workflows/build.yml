@@ -201,8 +201,16 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DPICO_ONLY_GAME="$GAME"
+            -DPICO_ONLY_GAME="$GAME" \
+            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
           cmake --build build.pico --parallel
+
+          # The metadata block is what the launcher draws a menu from, and it
+          # is the kind of thing that disappears silently: it compiles, lands
+          # in the object file, and gets collected by --gc-sections on the way
+          # to the .uf2. Nothing downstream would notice until a device showed
+          # an empty menu, so check the artifact itself.
+          python3 tools/game_meta.py extract --uf2 "$(find build.pico -name "$TARGET.uf2" -print -quit)"
           ccache --show-stats
 
       # The same game again, linked where the launcher expects to find it.
@@ -223,8 +231,10 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DPICO_ONLY_GAME="$GAME" \
-            -DPICO_SLOT="$SLOT"
+            -DPICO_SLOT="$SLOT" \
+            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
           cmake --build build.slot --parallel
+          python3 tools/game_meta.py extract --uf2 "$(find build.slot -name "$TARGET.uf2" -print -quit)"
 
       - name: Build for the browser
         if: matrix.web

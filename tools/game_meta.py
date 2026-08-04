@@ -372,7 +372,13 @@ def cmd_emit(args):
         "",
         "#include <cstdint>",
         "",
-        'extern "C" __attribute__((used, section(".pse_meta")))',
+        "// `retain` is the load bearing word. `used` only stops the",
+        "// compiler discarding this; the pico SDK links with --gc-sections,",
+        "// and nothing in the game references the block, so without",
+        "// SHF_GNU_RETAIN the linker collects it and the .uf2 ships with no",
+        "// name and no icon. cmake/game_meta.cmake also passes -u as a",
+        "// second guarantee for toolchains that ignore the attribute.",
+        'extern "C" __attribute__((used, retain, section(".pse_meta")))',
         "const uint8_t pse_game_meta[%d] = {" % len(block),
     ]
     for offset in range(0, len(block), 16):
