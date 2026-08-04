@@ -20,9 +20,17 @@ add_library(pse-core STATIC
 # halves sequentially. PICO_BOARD is only defined when configuring with the
 # pico toolchain, so host tests, desktop, and Emscripten all take the host
 # path.
+#
+# Only the multicore HEADERS are linked. pico_multicore itself is an SDK
+# INTERFACE library, so linking it into this static library makes CMake
+# compile its multicore.c right here, where the pico_runtime_init include
+# path does not exist: that path travels with pico_stdlib, which only the
+# final executables link. Those executables already receive the multicore
+# implementation through 32blit's BlitHalPico, which links pico_multicore,
+# so the headers are genuinely all that is missing at this level.
 if(PICO_BOARD OR PICO_ADDON)
     target_sources(pse-core PRIVATE src/parallel_pico.cpp)
-    target_link_libraries(pse-core PUBLIC pico_multicore)
+    target_link_libraries(pse-core PRIVATE pico_multicore_headers)
 else()
     target_sources(pse-core PRIVATE src/parallel_host.cpp)
 endif()
