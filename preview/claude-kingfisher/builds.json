@@ -13,10 +13,10 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T05:26:08Z",
-      "commit": "abb8e16",
+      "built_at": "2026-08-04T13:33:32Z",
+      "commit": "e9ebc85",
       "dir": "games/kingfisher",
-      "fingerprint": "c7b9136dbb51455f",
+      "fingerprint": "b33d75f27d2cb947",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "kingfisher",
@@ -37,6 +37,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-04T05:26:08Z",
+  "generated_at": "2026-08-04T13:33:32Z",
   "schema": 1
 }
