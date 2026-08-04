@@ -30,45 +30,45 @@ const Chunk& chunk_ref(const World& world, int32_t index) {
     return world.chunks[clamp_index(world, index) & (k_track_chunks - 1)];
 }
 
-// Lay down one more chunk of world. Height first (the chunk records the
-// height at its own start), then the feature state machines advance.
+// Pick the next stretch of road: a straight, or a decisive bend one way.
+// Alternating the two is what gives the road its plateau, transition,
+// plateau shape instead of one long wobble.
+void next_feature(World& world) {
+    const uint32_t r = next_rand(world);
+    if (world.gen_bending) {
+        world.gen_bending = false;
+        world.gen_curve_target = 0;
+        world.gen_feat_left = 6 + static_cast<int32_t>((r >> 4) % 9);
+        return;
+    }
+    world.gen_bending = true;
+    const int32_t size =
+        60 + static_cast<int32_t>((r >> 8) % (k_curve_max - 60));
+    // Bend away from the edges of the band the road is allowed to wander
+    // in, otherwise pick a side.
+    int32_t sign = (r & 1) ? 1 : -1;
+    if (world.gen_c > k_center_limit - 1536) sign = -1;
+    if (world.gen_c < -k_center_limit + 1536) sign = 1;
+    world.gen_curve_target = size * sign;
+    world.gen_feat_left = 3 + static_cast<int32_t>((r >> 20) % 5);
+}
+
+// Lay down one more chunk of world. The centerline first (the chunk records
+// the centerline at its own start), then the feature state machines.
 void generate_chunk(World& world) {
     Chunk& chunk = world.chunks[world.gen_next & (k_track_chunks - 1)];
-    chunk.h = static_cast<int16_t>(world.gen_h);
+    chunk.c = static_cast<int16_t>(world.gen_c);
     chunk.flags = 0;
-    chunk.cactus_off = 0;
+    chunk.cactus_x = 0;
+    chunk.cactus_z = 0;
 
-    const bool calm = world.gen_next < k_calm_chunks || world.gen_flat;
+    const bool calm = world.gen_next < k_calm_chunks || world.gen_straight;
     if (!calm) {
-        // Terrain: ease the slope toward its target; pick a new feature
-        // when the current one runs out. Drops are drawn slightly steeper
-        // than climbs so the horizon keeps coming back down to meet you.
-        if (world.gen_feat_left <= 0) {
-            const uint32_t r = next_rand(world);
-            const int kind = static_cast<int>(r & 3);
-            if (kind == 0) {
-                world.gen_slope_target = 0;
-            } else {
-                const int32_t size =
-                    20 + static_cast<int32_t>((r >> 8) % (k_slope_max - 20));
-                world.gen_slope_target = (kind == 1) ? size : -size;
-            }
-            world.gen_feat_left =
-                3 + static_cast<int32_t>((r >> 20) % 7);
-        }
+        if (world.gen_feat_left <= 0) next_feature(world);
         world.gen_feat_left--;
 
-        // Keep the world inside the height band by bending the target back
-        // toward zero altitude before the clamp ever engages.
-        if (world.gen_h > k_height_limit - 1024 && world.gen_slope_target > 0) {
-            world.gen_slope_target = -world.gen_slope_target;
-        }
-        if (world.gen_h < -k_height_limit + 1024 && world.gen_slope_target < 0) {
-            world.gen_slope_target = -world.gen_slope_target;
-        }
-
-        world.gen_slope += clamp32(world.gen_slope_target - world.gen_slope,
-                                   -k_slope_ease, k_slope_ease);
+        world.gen_curve += clamp32(world.gen_curve_target - world.gen_curve,
+                                   -k_curve_ease, k_curve_ease);
 
         // Guardrails: alternate gap and run.
         if (world.gen_rail_left > 0) {
@@ -89,11 +89,10 @@ void generate_chunk(World& world) {
             }
         }
 
-        // Cactus: only where it can be dodged. Never in or near a rail run
-        // (the rail must stay a lane lock, not a trap) and never closer to
-        // the previous cactus than a lane change costs at top speed.
-        // gen_rail_after is read before it decays so the full clear count
-        // of chunks actually passes after a run ends.
+        // Cactus: on the north shoulder, never on the tarmac, and never
+        // behind a rail where the bike could not reach it. gen_rail_after
+        // is read before it decays so the full clear count of chunks
+        // actually passes after a run ends.
         if (world.gen_cactus_gap > 0) world.gen_cactus_gap--;
         const bool rail_zone = (chunk.flags & k_flag_rail) != 0 ||
                                world.gen_rail_after > 0 ||
@@ -109,15 +108,16 @@ void generate_chunk(World& world) {
             const uint32_t r = next_rand(world);
             if (static_cast<int32_t>(r & 255) < chance) {
                 chunk.flags |= k_flag_cactus;
-                if (r & 256) chunk.flags |= k_flag_cactus_sand;
-                chunk.cactus_off = static_cast<uint8_t>((r >> 16) & 127);
+                chunk.cactus_x = static_cast<uint8_t>((r >> 16) & 127);
+                chunk.cactus_z = static_cast<uint8_t>(
+                    ((r >> 24) % (k_cactus_off_span / 4)));
                 world.gen_cactus_gap = k_cactus_min_gap;
             }
         }
     }
 
-    world.gen_h += world.gen_slope * 2;   // slope * chunk length / 256
-    world.gen_h = clamp32(world.gen_h, -k_height_limit, k_height_limit);
+    world.gen_c += world.gen_curve;
+    world.gen_c = clamp32(world.gen_c, -k_center_limit, k_center_limit);
     world.gen_next++;
 }
 
@@ -125,6 +125,17 @@ void generate_chunk(World& world) {
 void ensure_generated(World& world, int32_t up_to_x) {
     const int32_t need = ((up_to_x + (24 << 8)) >> k_chunk_shift) + 1;
     while (world.gen_next <= need) generate_chunk(world);
+}
+
+// A cactus's world position from its chunk.
+inline int32_t cactus_x_of(int32_t index, const Chunk& chunk) {
+    return (index << k_chunk_shift) + chunk.cactus_x * 4;
+}
+
+inline int32_t cactus_z_of(const World& world, int32_t cactus_x,
+                           const Chunk& chunk) {
+    return track_center_z(world, cactus_x) + k_cactus_off_min +
+           chunk.cactus_z * 4;
 }
 
 void die(World& world, Death cause) {
@@ -145,8 +156,6 @@ void world_init(World& world, uint32_t seed) {
     world = World{};
     world.rng = seed | 1u;
     world.alive = true;
-    world.grounded = true;
-    world.lane_z = k_lane_road_z;
     world.gen_rail_gap =
         k_rail_gap_min + static_cast<int32_t>(next_rand(world) % k_rail_gap_span);
     ensure_generated(world, 12 << 8);
@@ -160,30 +169,37 @@ void world_tick(World& world, const Input& input) {
     ensure_generated(world, (world.x > world.screen_x ? world.x
                                                       : world.screen_x));
 
-    // ---- lane intent ----
-    if (input.to_road) world.lane_z = k_lane_road_z;
-    if (input.to_sand) world.lane_z = k_lane_sand_z;
-
     if (input.throttle && !world.started) {
         world.started = true;
         world.start_tick = world.tick;
     }
-    world.throttling = input.throttle && world.grounded;
+    world.throttling = input.throttle;
+
+    // ---- steering ----
+    // z is absolute, so a bend that the rider does not follow carries the
+    // road out from under the bike. The dunes stop the bike a few meters
+    // out either side, measured from the centerline so the shoulder is the
+    // same width wherever the road has wandered to.
+    if (input.north) world.z += k_steer_rate;
+    if (input.south) world.z -= k_steer_rate;
+    const int32_t center = track_center_z(world, world.x);
+    world.z = clamp32(world.z, center - k_offroad_max, center + k_offroad_max);
+    const int32_t offset = world.z - center;
+
+    // ---- the guardrail, which turns the north edge into a wall ----
+    if (offset > k_road_half && track_rail_at(world, world.x)) {
+        die(world, Death::Rail);
+        return;
+    }
 
     // ---- forward speed ----
-    const int32_t slope_here = track_slope(world, world.x);
-    if (world.grounded) {
-        if (input.throttle) world.v += k_bike_accel;
-        if (input.brake) {
-            world.v -= (world.v >> k_brake_shift) + k_brake_base;
-        }
-        world.v -= world.v >> k_drag_shift;
-        if (world.z > k_road_edge_z) {
-            world.v -= world.v >> k_sand_drag_shift;   // sand pays extra
-        }
-        world.v -= (slope_here * k_slope_pull) >> 8;   // gravity along the hill
-    } else {
-        world.v -= world.v >> k_air_drag_shift;
+    if (input.throttle) world.v += k_bike_accel;
+    if (input.brake) {
+        world.v -= (world.v >> k_brake_shift) + k_brake_base;
+    }
+    world.v -= world.v >> k_drag_shift;
+    if (offset > k_road_half || offset < -k_road_half) {
+        world.v -= world.v >> k_sand_drag_shift;   // sand pays extra
     }
     world.v = clamp32(world.v, 0, 32000);
 
@@ -192,65 +208,20 @@ void world_tick(World& world, const Input& input) {
     world.x += x_step >> 8;
     world.x_frac = static_cast<uint8_t>(x_step & 255);
 
-    // ---- vertical: hug the ground until it falls away faster than
-    // gravity, then fly ballistic until it comes back ----
-    const int32_t ground16 = track_height(world, world.x) << 8;
-    if (world.grounded) {
-        const int32_t needed_vy = ground16 - world.y16;
-        const int32_t falling = world.vy - k_gravity;
-        if (needed_vy < falling) {
-            world.grounded = false;
-            world.vy = falling;
-            world.y16 += world.vy;
-            world.ev.takeoff = true;
-        } else {
-            world.y16 = ground16;
-            world.vy = needed_vy;
-        }
-    } else {
-        world.vy -= k_gravity;
-        world.y16 += world.vy;
-        if (world.y16 <= ground16) {
-            world.y16 = ground16;
-            world.grounded = true;
-            world.ev.landed = true;
-            // vy is NOT zeroed: on a downhill the wheels keep the terrain's
-            // own descent rate, and next tick's grounded branch reads vy as
-            // "last tick's dy". Zeroing it here made every landing on a
-            // slope bounce straight back into phantom airtime.
-        }
-    }
-
-    // ---- lane movement, and the rail that punishes crossing it ----
-    const int32_t z_old = world.z;
-    world.z += clamp32(world.lane_z - world.z, -k_lane_rate, k_lane_rate);
-    const bool was_road_side = z_old <= k_road_edge_z;
-    const bool is_road_side = world.z <= k_road_edge_z;
-    if (was_road_side != is_road_side && track_rail_at(world, world.x) &&
-        (world.y16 >> 8) - track_height(world, world.x) < k_rail_top) {
-        die(world, Death::Rail);
-        return;
-    }
-
-    // ---- cactus collision, jumpable by clearing its top ----
+    // ---- cactus collision ----
     const int32_t first = (world.x - k_cactus_half) >> k_chunk_shift;
     const int32_t last = (world.x + k_cactus_half) >> k_chunk_shift;
     for (int32_t index = first; index <= last; index++) {
+        if (index < 0) continue;
         const Chunk& chunk = chunk_ref(world, index);
         if (!(chunk.flags & k_flag_cactus)) continue;
-        const int32_t cactus_x =
-            (index << k_chunk_shift) + chunk.cactus_off * 4;
-        int32_t dx = world.x - cactus_x;
+        const int32_t cx = cactus_x_of(index, chunk);
+        int32_t dx = world.x - cx;
         if (dx < 0) dx = -dx;
         if (dx > k_cactus_half) continue;
-        const int32_t lane_center = (chunk.flags & k_flag_cactus_sand)
-                                        ? k_lane_sand_z : k_lane_road_z;
-        int32_t dz = world.z - lane_center;
+        int32_t dz = world.z - cactus_z_of(world, cx, chunk);
         if (dz < 0) dz = -dz;
         if (dz >= k_cactus_z_reach) continue;
-        if ((world.y16 >> 8) - track_height(world, cactus_x) >= k_cactus_top) {
-            continue;   // sailed clean over it
-        }
         die(world, Death::Cactus);
         return;
     }
@@ -299,21 +270,13 @@ void world_make_save(const World& world, SaveData& out) {
     out.best_m = world.best_m;
 }
 
-int32_t track_height(const World& world, int32_t x) {
+int32_t track_center_z(const World& world, int32_t x) {
     if (x < 0) x = 0;
     const int32_t index = x >> k_chunk_shift;
-    const int32_t h0 = chunk_ref(world, index).h;
-    const int32_t h1 = chunk_ref(world, index + 1).h;
+    const int32_t c0 = chunk_ref(world, index).c;
+    const int32_t c1 = chunk_ref(world, index + 1).c;
     const int32_t frac = x & (k_chunk_len - 1);
-    return h0 + ((h1 - h0) * frac >> k_chunk_shift);
-}
-
-int32_t track_slope(const World& world, int32_t x) {
-    if (x < 0) x = 0;
-    const int32_t index = x >> k_chunk_shift;
-    const int32_t h0 = chunk_ref(world, index).h;
-    const int32_t h1 = chunk_ref(world, index + 1).h;
-    return (h1 - h0) * 256 / k_chunk_len;
+    return c0 + ((c1 - c0) * frac >> k_chunk_shift);
 }
 
 bool track_rail_at(const World& world, int32_t x) {
@@ -326,33 +289,29 @@ const Chunk& track_chunk_at(const World& world, int32_t x) {
 }
 
 bool track_next_cactus(const World& world, int32_t from_x, int32_t max_ahead,
-                       int32_t& out_x, bool& out_sand) {
+                       int32_t& out_x, int32_t& out_z) {
     const int32_t first = (from_x < 0 ? 0 : from_x) >> k_chunk_shift;
     const int32_t last = (from_x + max_ahead) >> k_chunk_shift;
     for (int32_t index = first; index <= last; index++) {
         if (index >= world.gen_next) break;
         const Chunk& chunk = chunk_ref(world, index);
         if (!(chunk.flags & k_flag_cactus)) continue;
-        const int32_t cactus_x =
-            (index << k_chunk_shift) + chunk.cactus_off * 4;
-        if (cactus_x <= from_x || cactus_x > from_x + max_ahead) continue;
-        out_x = cactus_x;
-        out_sand = (chunk.flags & k_flag_cactus_sand) != 0;
+        const int32_t cx = cactus_x_of(index, chunk);
+        if (cx <= from_x || cx > from_x + max_ahead) continue;
+        out_x = cx;
+        out_z = cactus_z_of(world, cx, chunk);
         return true;
     }
     return false;
 }
 
-void world_test_place_cactus(World& world, int32_t x, bool sand_lane) {
+void world_test_place_cactus(World& world, int32_t x, int32_t z_offset) {
     Chunk& chunk = const_cast<Chunk&>(track_chunk_at(world, x));
     chunk.flags |= k_flag_cactus;
-    if (sand_lane) {
-        chunk.flags |= k_flag_cactus_sand;
-    } else {
-        chunk.flags &= static_cast<uint8_t>(~k_flag_cactus_sand);
-    }
-    chunk.cactus_off =
-        static_cast<uint8_t>((x & (k_chunk_len - 1)) / 4);
+    chunk.cactus_x = static_cast<uint8_t>((x & (k_chunk_len - 1)) / 4);
+    chunk.cactus_z = static_cast<uint8_t>(
+        clamp32((z_offset - k_cactus_off_min) / 4, 0,
+                k_cactus_off_span / 4 - 1));
 }
 
 void world_test_set_rail(World& world, int32_t x, bool rail) {
@@ -370,11 +329,18 @@ void world_test_clear_hazards(World& world) {
     }
 }
 
-void world_test_flat(World& world, bool flat) {
-    world.gen_flat = flat;
-    if (flat) {
-        world.gen_slope = 0;
-        world.gen_slope_target = 0;
+void world_test_straight(World& world, bool straight) {
+    world.gen_straight = straight;
+    if (!straight) return;
+    // Flatten what is already in the ring as well as what comes next.
+    // world_init has generated a first stretch by the time a test can call
+    // this, and leaving that stretch bent would quietly start the bike in
+    // the sand, which reads as a physics bug rather than a setup one.
+    world.gen_curve = 0;
+    world.gen_curve_target = 0;
+    world.gen_c = 0;
+    for (Chunk& chunk : world.chunks) {
+        chunk.c = 0;
     }
 }
 

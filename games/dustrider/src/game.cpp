@@ -47,7 +47,7 @@ void draw_title() {
     screen.pen = Pen(255, 255, 238);
     screen.text("A: ride", minimal_font, Point(46, 54));
     screen.pen = Pen(190, 170, 150);
-    screen.text("B brake  pad: lane", minimal_font, Point(24, 66));
+    screen.text("B brake  pad: steer", minimal_font, Point(22, 66));
 
     if (g_world.best_m > 0) {
         char line[20];
@@ -132,10 +132,10 @@ void update(uint32_t time) {
     dr::Input input;
     input.throttle = (buttons & Button::A) != 0;
     input.brake = (buttons & Button::B) != 0;
-    // The camera sits on the near side of the road, so the sand shoulder is
-    // the far lane: up on the pad reads as away from the camera.
-    input.to_sand = (buttons.pressed & Button::DPAD_UP) != 0;
-    input.to_road = (buttons.pressed & Button::DPAD_DOWN) != 0;
+    // Steering is held, not tapped: the road curves continuously and the
+    // rider holds a line through it. Up is north, away from the camera.
+    input.north = (buttons & Button::DPAD_UP) != 0;
+    input.south = (buttons & Button::DPAD_DOWN) != 0;
 
     dr::world_tick(g_world, input);
 

@@ -10,7 +10,7 @@ web: true
 controls:
   - "A: throttle"
   - "B: brake"
-  - "up/down: lane"
+  - "up/down: steer"
 
 models:
   - bike.obj

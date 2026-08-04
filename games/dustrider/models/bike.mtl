@@ -10,9 +10,6 @@ Kd 0.800 0.180 0.100
 newmtl seat
 Kd 0.080 0.080 0.090
 
-newmtl chrome
-Kd 0.750 0.740 0.720
-
 newmtl light
 Kd 1.000 0.920 0.620
 
@@ -21,6 +18,3 @@ Kd 0.160 0.260 0.580
 
 newmtl helmet
 Kd 0.930 0.930 0.950
-
-newmtl visor
-Kd 0.100 0.120 0.160
