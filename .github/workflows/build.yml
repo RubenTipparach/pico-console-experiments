@@ -347,6 +347,16 @@ jobs:
               # destroys its screenshot.
               rsync -a --delete --exclude 'thumbnail.png' \
                 "incoming/web/$slug/" "site/${PREFIX}$slug/"
+              # Stamp the build into the page and its asset URLs. Pages
+              # caches everything for ten minutes under unchanging names, so
+              # without the version query a device that just played the old
+              # build keeps serving it from cache after the deploy.
+              html="site/${PREFIX}$slug/index.html"
+              if [ -f "$html" ]; then
+                v="${GITHUB_SHA::7}"
+                sed -i "s|__PSE_BUILD__|$v|g" "$html"
+                sed -i "s|src=\"index.js\"|src=\"index.js?v=$v\"|" "$html"
+              fi
               echo "published site/${PREFIX}$slug/"
             fi
             if [ -f "incoming/uf2/$slug.uf2" ]; then
