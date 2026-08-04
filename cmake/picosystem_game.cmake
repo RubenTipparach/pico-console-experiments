@@ -56,6 +56,10 @@ function(add_picosystem_game NAME)
 
     target_link_libraries(${NAME} pse-engine)
 
+    if(NOT EMSCRIPTEN)
+        game_meta_keep(${NAME})
+    endif()
+
     # Generated model headers land in the build tree, next to nothing else.
     target_include_directories(${NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
