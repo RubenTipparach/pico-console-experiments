@@ -12,6 +12,8 @@
 
 #include <cstdint>
 
+#include "tuning.hpp"
+
 namespace kf {
 
 constexpr int k_fp = 8;
@@ -159,11 +161,7 @@ struct World {
 
 constexpr uint16_t k_day_length = 18000;      // 3 minutes per full cycle
 
-// The fight. Tension only breaks the line by staying in the red zone: the
-// danger counter charges while tension sits at or above k_tension_danger and
-// drains twice as fast below it, and the fish tears free when it fills.
-constexpr uint16_t k_tension_danger = 760;
-constexpr uint16_t k_danger_ticks = 110;
+// Fight tuning, including the tension danger model, lives in tuning.hpp.
 
 void world_init(World& world, uint32_t seed);
 void world_tick(World& world, const Input& input);
