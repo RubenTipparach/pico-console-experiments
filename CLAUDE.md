@@ -205,9 +205,18 @@ and expensive to draw.
 
 - Show the minimum: score, state, and the one thing the player needs right now.
 - No tutorial paragraphs, no explanatory subtitles, no decorative status lines.
+- **No button prompts.** Do not spend a line telling the player which button
+  starts, retries, or continues. Accept any button instead: with nothing on
+  screen naming one, no press can be the wrong guess, and the line disappears.
+  The gallery card already lists the controls for anyone who wants them.
 - Debug overlays (frame time, triangle count, CPU split) are opt in behind a
   build flag, not on by default in a published build.
 - Same rule for the web gallery: short labels, no marketing copy.
+- **Measure text, never place it by eye.** `screen.measure_text()` gives the
+  width; centre and size panels from it. A hand tuned x is only correct for
+  the exact string it was tuned against, so the first wording change prints
+  through the edge of its own panel, and nothing catches it because it still
+  compiles and still runs.
 - If the user explicitly asks for more text, give them more text. This rule is a
   default, not a veto.
 

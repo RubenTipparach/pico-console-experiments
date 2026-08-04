@@ -24,6 +24,7 @@ constexpr int k_h = 120;
 uint32_t g_clock = 1000;
 uint16_t g_worst_dropped = 0;
 uint16_t g_worst_queued = 0;
+bool g_window_fail = false;
 
 void write_ppm(const char* path, const uint8_t* rgb) {
     FILE* f = std::fopen(path, "wb");
@@ -147,6 +148,46 @@ int main(int argc, char** argv) {
         capture(doomed, out, "preview_8_wreck.ppm");
     }
 
+    // The window promise, checked against the projection that actually
+    // draws the bike: at the death threshold nothing of it may be on
+    // screen, and a nudge back inside must put something back on screen.
+    {
+        dr::World probe;
+        dr::world_init(probe, 7);
+        dr::world_test_straight(probe, true);
+        dr::world_test_clear_hazards(probe);
+        const std::string scratch = out + "/tmp.ppm";
+
+        auto span_at = [&](int32_t rel) {
+            probe.x = (60 << 8) + rel;
+            probe.screen_x = 60 << 8;
+            probe.z = 0;
+            // Settle the eased camera before reading the span.
+            for (int f = 0; f < 30; f++) draw(probe, scratch);
+            return drr::last_frame_stats();
+        };
+
+        for (int sign = -1; sign <= 1; sign += 2) {
+            const drr::FrameStats edge = span_at(sign * dr::k_window_half);
+            const bool off = edge.bike_x1 < 0 || edge.bike_x0 > k_w - 1;
+            std::printf("window %s edge: bike span %d..%d -> %s\n",
+                        sign < 0 ? "left" : "right",
+                        edge.bike_x0, edge.bike_x1,
+                        off ? "fully off screen" : "STILL VISIBLE");
+            if (!off) g_window_fail = true;
+
+            // 0.4 m back inside the window, some of the bike must show.
+            const drr::FrameStats in =
+                span_at(sign * (dr::k_window_half - 102));
+            const bool visible = in.bike_x1 >= 0 && in.bike_x0 <= k_w - 1;
+            std::printf("window %s inside: bike span %d..%d -> %s\n",
+                        sign < 0 ? "left" : "right",
+                        in.bike_x0, in.bike_x1,
+                        visible ? "visible" : "ALREADY GONE");
+            if (!visible) g_window_fail = true;
+        }
+    }
+
     std::remove((out + "/tmp.ppm").c_str());
 
     // The triangle queue silently drops its overflow, which on screen is a
@@ -158,6 +199,10 @@ int main(int argc, char** argv) {
     if (g_worst_dropped > 0) {
         std::printf("FAIL: dropped %u triangles, the queue is too small\n",
                     static_cast<unsigned>(g_worst_dropped));
+        return 1;
+    }
+    if (g_window_fail) {
+        std::printf("FAIL: k_window_half does not match the camera\n");
         return 1;
     }
     return 0;

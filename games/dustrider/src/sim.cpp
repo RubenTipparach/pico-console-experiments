@@ -175,6 +175,15 @@ void world_tick(World& world, const Input& input) {
     }
     world.throttling = input.throttle;
 
+    // ---- integrate x, keeping the fractional fp8 bits ----
+    // x moves FIRST, so everything below reads one consistent position.
+    // Clamping z against the centerline at the old x and then advancing
+    // leaves the bike momentarily further out than the dunes allow, which
+    // is only invisible while the road is straight.
+    const int32_t x_step = world.v + world.x_frac;
+    world.x += x_step >> 8;
+    world.x_frac = static_cast<uint8_t>(x_step & 255);
+
     // ---- steering ----
     // z is absolute, so a bend that the rider does not follow carries the
     // road out from under the bike. The dunes stop the bike a few meters
@@ -192,7 +201,7 @@ void world_tick(World& world, const Input& input) {
         return;
     }
 
-    // ---- forward speed ----
+    // ---- forward speed, for the next tick's travel ----
     if (input.throttle) world.v += k_bike_accel;
     if (input.brake) {
         world.v -= (world.v >> k_brake_shift) + k_brake_base;
@@ -202,11 +211,6 @@ void world_tick(World& world, const Input& input) {
         world.v -= world.v >> k_sand_drag_shift;   // sand pays extra
     }
     world.v = clamp32(world.v, 0, 32000);
-
-    // ---- integrate x, keeping the fractional fp8 bits ----
-    const int32_t x_step = world.v + world.x_frac;
-    world.x += x_step >> 8;
-    world.x_frac = static_cast<uint8_t>(x_step & 255);
 
     // ---- cactus collision ----
     const int32_t first = (world.x - k_cactus_half) >> k_chunk_shift;

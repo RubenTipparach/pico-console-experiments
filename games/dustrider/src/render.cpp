@@ -208,6 +208,92 @@ void draw_horizon(const World& world, float cam_x, float cam_z) {
     }
 }
 
+// Scree and boulders scattered over the sand. This is the frame's only
+// parallax: everything else out there (the ridges, the sky) is pinned to
+// the camera, so without something at a real world position the desert
+// slides past as one flat sheet and the sense of speed goes with it.
+// Near stones sweep by fast, far ones crawl, for free, because they are
+// actually where they say they are.
+//
+// Positions come from a hash of the world grid cell, never from a frame
+// counter, so a stone stays put while the camera moves over it.
+void draw_ground_detail(const World& world, float cam_x, float cam_z) {
+    constexpr float k_cell = 1.6f;
+    const int first =
+        static_cast<int>(std::floor((cam_x - k_column_back) / k_cell));
+    const float edge = fp_to_f(dr::k_road_half);
+
+    for (int i = 0; i < 18; i++) {
+        const int gx = first + i;
+        const float x = static_cast<float>(gx) * k_cell;
+        const uint32_t base = static_cast<uint32_t>(gx + 8192) * 2654435761u;
+
+        for (int side = 0; side < 2; side++) {
+            const uint32_t h = base ^ (side ? 0x9E3779B9u : 0x85EBCA6Bu);
+            if ((h & 7) == 0) continue;      // gaps, so it is not a grid
+
+            // Out on the sand, never on the tarmac. The two shoulders get
+            // different bands because they sit at very different depths:
+            // north runs away from the lens and has room to spread, south
+            // is the near foreground and only a metre of it is both past
+            // the near guard and still on screen. That near metre is worth
+            // the trouble, since it is where parallax is fastest.
+            const float spread = static_cast<float>((h >> 6) & 31) / 31.0f;
+            const float out = side ? edge + 0.5f + spread * 5.0f
+                                   : edge + 0.35f + spread * 0.95f;
+            const float cz = center_at(world, x) + (side ? out : -out);
+
+            // Keep detail out of the lens. A hand sized rock two metres
+            // from the camera is a boulder the size of the bike, and the
+            // south shoulder passes very close indeed.
+            const float depth = cz - cam_z;
+            if (depth < 2.6f || depth > 16.0f) continue;
+
+            const float jx = x + static_cast<float>((h >> 12) & 15) * 0.09f;
+            const float size = 0.14f + static_cast<float>((h >> 17) & 7) * 0.03f;
+            const int tone = static_cast<int>((h >> 21) & 15);
+
+            // Boulders only out north, where they are far enough away to
+            // read as rocks. Up close a boxy one is all top face and reads
+            // as a table floating on the sand, so the near foreground gets
+            // flat scree instead, which is also what sells speed there.
+            if ((h & 28) == 0 && side == 1) {
+                // Worth its twelve triangles for the silhouette it throws
+                // against the flat sand.
+                g_renderer.draw_box(jx, 0.0f, cz, size * 2.2f, size * 1.8f,
+                                    size * 2.0f,
+                                    clamp8(176 - tone * 3),
+                                    clamp8(150 - tone * 3),
+                                    clamp8(112 - tone * 2),
+                                    clamp8(150 - tone * 3),
+                                    clamp8(126 - tone * 3),
+                                    clamp8(94 - tone * 2));
+                continue;
+            }
+
+            // Flat scree patch: two triangles, and at this grazing angle it
+            // reads as a streak of darker grit.
+            // Stretched along x and given real z extent: at this grazing
+            // angle a square patch collapses to a one pixel line.
+            const float wx[4] = {jx - size * 1.6f, jx + size * 1.6f,
+                                 jx + size * 1.6f, jx - size * 1.6f};
+            const float wy[4] = {0.01f, 0.01f, 0.01f, 0.01f};
+            const float wz[4] = {cz - size * 1.1f, cz - size * 1.1f,
+                                 cz + size * 1.1f, cz + size * 1.1f};
+            // Well under the sand it sits on. Scree a few shades off the
+            // ground is invisible at this size, and invisible detail is
+            // triangles spent on nothing.
+            const uint8_t r = clamp8(168 - tone * 5);
+            const uint8_t g = clamp8(134 - tone * 5);
+            const uint8_t b = clamp8(86 - tone * 4);
+            const uint8_t cr[4] = {r, r, r, r};
+            const uint8_t cg[4] = {g, g, g, g};
+            const uint8_t cb[4] = {b, b, b, b};
+            quad_world(wx, wy, wz, cr, cg, cb);
+        }
+    }
+}
+
 // Guardrail: a bright beam over dark posts, riding the north edge of the
 // road. North means behind the bike from this camera, so it can never
 // occlude the rider.
@@ -273,6 +359,54 @@ void draw_cacti(const World& world, float cam_x) {
                              yaw, scale);
         scan = cx + 1;
     }
+}
+
+// The bike's horizontal screen span, from its own vertex bounds put
+// through the same yaw, pitch and lift that draw_mesh will use. Measured
+// from the model rather than hardcoded, so reshaping the bike cannot
+// quietly invalidate the window that the run's life depends on.
+void measure_bike_span(float x, float y, float z, float yaw, float pitch) {
+    static float bx0 = 0.0f, bx1 = 0.0f, by0 = 0.0f, by1 = 0.0f;
+    static float bz0 = 0.0f, bz1 = 0.0f;
+    static bool bounds_ready = false;
+    if (!bounds_ready) {
+        const pse::MeshData& m = models::bike;
+        const float unit = 1.0f / static_cast<float>(m.scale);
+        for (uint16_t i = 0; i < m.vertex_count; i++) {
+            const float vx = m.vertices[i].x * unit;
+            const float vy = m.vertices[i].y * unit;
+            const float vz = m.vertices[i].z * unit;
+            if (i == 0) {
+                bx0 = bx1 = vx; by0 = by1 = vy; bz0 = bz1 = vz;
+            }
+            if (vx < bx0) bx0 = vx;
+            if (vx > bx1) bx1 = vx;
+            if (vy < by0) by0 = vy;
+            if (vy > by1) by1 = vy;
+            if (vz < bz0) bz0 = vz;
+            if (vz > bz1) bz1 = vz;
+        }
+        bounds_ready = true;
+    }
+
+    const float sin_yaw = std::sin(yaw), cos_yaw = std::cos(yaw);
+    const float sin_p = std::sin(pitch), cos_p = std::cos(pitch);
+    int lo = 32767, hi = -32768;
+    for (int corner = 0; corner < 8; corner++) {
+        const float lx = (corner & 1) ? bx1 : bx0;
+        const float ry = (corner & 2) ? by1 : by0;
+        const float rz = (corner & 4) ? bz1 : bz0;
+        const float ly = ry * cos_p + rz * sin_p;
+        const float lz = rz * cos_p - ry * sin_p;
+        const float wx = x + lx * cos_yaw + lz * sin_yaw;
+        const float wz = z - lx * sin_yaw + lz * cos_yaw;
+        int sx, sy, sz;
+        if (!g_renderer.project(wx, y + ly, wz, sx, sy, sz)) continue;
+        if (sx < lo) lo = sx;
+        if (sx > hi) hi = sx;
+    }
+    g_stats.bike_x0 = static_cast<int16_t>(lo);
+    g_stats.bike_x1 = static_cast<int16_t>(hi);
 }
 
 // A soft dark patch under the bike, which is what sells a flat ground.
@@ -360,16 +494,21 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     // The camera tracks the bike's own z, not the road's, so a rider who
     // drifts into the sand stays framed and it is the ROAD that slides away
     // under them. That slide is the steering feedback.
-    // The ease is stiff on purpose. A slack one lags by speed/ease, and at
-    // full steering lock that is metres: through a hard bend the bike
-    // walked toward the camera and slid out of frame. This keeps the rider
-    // planted and lets the ROAD do the moving, which is the whole read of
-    // a curve seen from the side.
-    if (!g_cam_seeded) {
-        g_cam_z = bike_z;
-        g_cam_seeded = true;
-    }
-    g_cam_z += (bike_z - g_cam_z) * 0.35f;
+    // The camera holds the bike's z exactly, with no easing at all.
+    //
+    // An eased camera lags by roughly speed over ease, which at full
+    // steering lock is most of a metre. That lag changes the bike's
+    // distance from the camera, which changes how far along x it can get
+    // before it leaves the frame. The run's life depends on that distance
+    // (see k_window_half), and a window that quietly breathes with how
+    // hard the player is steering cannot be made exact. Tracking exactly
+    // makes the bike's screen position a constant, which is what lets the
+    // "off screen means dead" promise be checked and kept.
+    //
+    // Nothing is lost visually: the rider stays planted and the ROAD does
+    // the moving, which is the whole read of a curve seen from the side.
+    g_cam_z = bike_z;
+    g_cam_seeded = true;
     const float cam_z = g_cam_z - k_cam_dist;
 
     g_raster.begin_frame_collect(target, g_queue);
@@ -424,6 +563,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
         }
     }
 
+    draw_ground_detail(world, cam_x, cam_z);
     draw_rails(world, cam_x);
     draw_cacti(world, cam_x);
 
@@ -452,6 +592,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     draw_shadow(bike_x, bike_z, lift);
     g_renderer.draw_mesh(models::bike, bike_x, lift, bike_z,
                          k_pi / 2.0f, 1.0f, 255, 255, 255, g_pitch);
+    measure_bike_span(bike_x, lift, bike_z, k_pi / 2.0f, g_pitch);
 
     g_stats.queued = g_queue.count;
     g_stats.dropped = g_queue.dropped;

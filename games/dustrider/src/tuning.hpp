@@ -67,9 +67,19 @@ constexpr int32_t k_screen_accel = 6;
 // Ticks after the first throttle press before the window starts to move.
 constexpr int32_t k_start_grace = 100;
 
-// Half width of the survival window in fp8 meters. The camera shows about
-// 5.2 m each side of center; dying at 4.5 m keeps the wreck on screen.
-constexpr int32_t k_window_half = 1152;
+// Half width of the survival window in fp8 meters.
+//
+// A run ends only once the bike is COMPLETELY off screen: while a single
+// pixel of it still shows, the rider is still alive. That makes this
+// number a consequence of the camera, not a taste decision, and it only
+// holds still because the camera tracks the bike's z exactly (see
+// render.cpp) so the bike's distance from the lens never varies.
+//
+// The sim cannot ask the renderer anything, so this is verified the other
+// way round: the preview harness parks the bike at exactly this offset,
+// reads the span the real projection gives it, and fails if any of it is
+// still on screen, or if a nudge back inside the window is not.
+constexpr int32_t k_window_half = 2112;
 
 // ---- track generation ----
 
