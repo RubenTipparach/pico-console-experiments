@@ -191,6 +191,11 @@ Before adding anything, ask what it costs:
   RAM resident (`__not_in_flash_func` in `parallel_pico.cpp`). Save outside
   the render call, never during it, and never move that worker loop into
   flash. The clock is 250 MHz on both cores (`OVERCLOCK_250` defaults on).
+- Flash is the roomy resource: 12 MB for the program and baked assets, plus
+  a 4 MB FAT partition the SDK mounts for saves and loose files. How to use
+  both, and how a multi-game library would work, is documented in
+  `STORAGE.md`. Read it before touching persistence, the storage partition,
+  a launcher, or any game big enough to care about asset budgets.
 - If you add a feature, state its RAM and flash cost in the PR body.
 
 ### 9. Keep on-device UI sparse
@@ -280,6 +285,7 @@ cmake/             reusable CMake helpers (game registration, obj packaging)
 tools/             build tooling, gallery generator, flasher utility
 web/               gallery templates and the emscripten page shell
 .github/workflows/ the build and publish pipeline
+STORAGE.md         the 16 MB flash: persistence, game library, larger games
 ```
 
 ## Adding a game
