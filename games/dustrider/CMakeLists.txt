@@ -1,0 +1,9 @@
+add_picosystem_game(dustrider
+    SOURCES
+        src/game.cpp
+        src/sim.cpp
+        src/render.cpp
+    MODELS
+        bike.obj
+        cactus.obj
+)

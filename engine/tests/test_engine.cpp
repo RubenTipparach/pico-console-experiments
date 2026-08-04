@@ -295,6 +295,73 @@ void test_mesh_rendering_and_bounds() {
     bad_renderer.draw_mesh(zero_scale, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
+// Pitch tilts a mesh about its own lateral axis: positive pitch must lift the
+// +Z nose of the model on screen, negative must drop it, and omitting the
+// argument must reproduce the unpitched image exactly. A sign error here shows
+// up on the device as a motorcycle wheelie tipping the bike onto its face.
+void test_mesh_pitch() {
+    // A single marker face out on the +Z nose, drawn with both windings so the
+    // test cannot silently pass or fail off backface culling.
+    static const pse::MeshVertex nose_vertices[] = {
+        {-80, 0, 256}, {80, 0, 256}, {0, 80, 256},
+    };
+    static const pse::MeshFace nose_faces[] = {
+        {0, 1, 2, 255, 255, 255, 0, 0, -127},
+        {2, 1, 0, 255, 255, 255, 0, 0, 127},
+    };
+    static const pse::MeshData nose{nose_vertices, 3, nose_faces, 2, 256};
+
+    // Centroid row of every lit pixel, or -1 for an empty frame.
+    auto centroid_row = [](const TestSurface& surface) {
+        long sum = 0, count = 0;
+        for (int y = 0; y < pse::k_render_height; y++) {
+            for (int x = 0; x < pse::k_render_width; x++) {
+                int r, g, b;
+                surface.pixel(x, y, r, g, b);
+                if (r || g || b) { sum += y; count++; }
+            }
+        }
+        return count > 0 ? static_cast<int>(sum / count) : -1;
+    };
+
+    auto render_at = [&](TestSurface& surface, float pitch) {
+        pse::Rasterizer raster;
+        pse::Renderer3D renderer(raster);
+        raster.begin_frame(surface.target());
+        renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
+        renderer.draw_mesh(nose, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                           255, 255, 255, pitch);
+    };
+
+    TestSurface level(pse::k_render_width, pse::k_render_height,
+                      pse::PixelFormat::rgb888);
+    TestSurface up(pse::k_render_width, pse::k_render_height,
+                   pse::PixelFormat::rgb888);
+    TestSurface down(pse::k_render_width, pse::k_render_height,
+                     pse::PixelFormat::rgb888);
+    render_at(level, 0.0f);
+    render_at(up, 0.8f);
+    render_at(down, -0.8f);
+
+    const int row_level = centroid_row(level);
+    const int row_up = centroid_row(up);
+    const int row_down = centroid_row(down);
+    CHECK(row_level >= 0 && row_up >= 0 && row_down >= 0);
+    CHECK(row_up < row_level);       // screen y grows downward
+    CHECK(row_down > row_level);
+
+    // The default argument must be the identity: a call that never mentions
+    // pitch renders byte for byte what it rendered before pitch existed.
+    TestSurface defaulted(pse::k_render_width, pse::k_render_height,
+                          pse::PixelFormat::rgb888);
+    pse::Rasterizer raster;
+    pse::Renderer3D renderer(raster);
+    raster.begin_frame(defaulted.target());
+    renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
+    renderer.draw_mesh(nose, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    CHECK(defaulted.bytes_equal(level));
+}
+
 
 // Split rasterization is only allowed to exist if it is invisible: collecting
 // triangles and rendering them as two disjoint row bands must reproduce the
@@ -446,6 +513,7 @@ int main() {
     test_billboard_depth_claim();
     test_renderer_projects_and_culls();
     test_mesh_rendering_and_bounds();
+    test_mesh_pitch();
     test_memory_budget();
     test_split_matches_immediate();
     test_two_scene_split();

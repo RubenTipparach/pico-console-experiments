@@ -1,0 +1,5 @@
+newmtl post
+Kd 0.340 0.290 0.250
+
+newmtl beam
+Kd 0.700 0.710 0.740

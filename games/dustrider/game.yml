@@ -1,0 +1,23 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: dustrider
+title: Dust Rider
+blurb: Outrun the screen through cactus country.
+target: dustrider
+sdk: 32blit
+web: true
+
+controls:
+  - "A: throttle"
+  - "B: brake"
+  - "up/down: steer"
+
+models:
+  - bike.obj
+  - cactus.obj
+
+depends_on:
+  - engine
+  - cmake
+  - web
+  - tools/obj2cpp.py
