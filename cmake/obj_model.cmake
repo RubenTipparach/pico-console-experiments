@@ -8,6 +8,14 @@ include_guard(GLOBAL)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# find_package results are directory scoped, and include_guard(GLOBAL) means
+# only the FIRST directory to include this file runs the find. Cache the
+# interpreter path so every later add_obj_model call expands a real python
+# rather than an empty string. Without this, the second game to ship models
+# in its tests breaks the first one's build.
+set(PICO_PYTHON3 ${Python3_EXECUTABLE}
+    CACHE INTERNAL "python interpreter for obj2cpp")
+
 set(PICO_OBJ2CPP ${CMAKE_CURRENT_LIST_DIR}/../tools/obj2cpp.py
     CACHE INTERNAL "obj2cpp converter")
 
@@ -36,7 +44,7 @@ function(add_obj_model TARGET MODEL OUT_SOURCES)
     add_custom_command(
         OUTPUT ${generated_cpp} ${generated_hpp}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${generated_dir}
-        COMMAND ${Python3_EXECUTABLE} ${PICO_OBJ2CPP}
+        COMMAND ${PICO_PYTHON3} ${PICO_OBJ2CPP}
                 ${model_path}
                 --out-cpp ${generated_cpp}
                 --out-hpp ${generated_hpp}

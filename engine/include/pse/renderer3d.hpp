@@ -58,11 +58,17 @@ public:
     //
     // The tint multiplies the model's own face colours, so one mesh in flash
     // can serve every colour variant a game needs. 255 leaves a channel alone.
+    //
+    // Pitch rotates about the model's local X axis, applied before yaw, so it
+    // tilts the model about its own lateral axis whichever way yaw points it.
+    // Positive pitch lifts the +Z nose of the model. It trails the tints so
+    // every existing call keeps its meaning; a caller that wants pitch with
+    // default tints spells the tints out.
     void draw_mesh(const MeshData& mesh,
                    float x, float y, float z,
                    float yaw, float scale,
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
-                   uint8_t tint_b = 255);
+                   uint8_t tint_b = 255, float pitch = 0.0f);
 
     // Screen position and pixel size for a camera facing sprite. Returns false
     // when the point is off screen or behind the camera. The caller draws the

@@ -278,12 +278,15 @@ void Renderer3D::draw_box(float x, float y, float z,
 void Renderer3D::draw_mesh(const MeshData& mesh,
                            float x, float y, float z,
                            float yaw, float scale,
-                           uint8_t tint_r, uint8_t tint_g, uint8_t tint_b) {
+                           uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
+                           float pitch) {
     if (mesh.vertices == nullptr || mesh.faces == nullptr) return;
     if (mesh.scale <= 0) return;
 
     const float sin_yaw = sinf(yaw);
     const float cos_yaw = cosf(yaw);
+    const float sin_pitch = sinf(pitch);
+    const float cos_pitch = cosf(pitch);
     const float unit = scale / static_cast<float>(mesh.scale);
 
     for (uint16_t f = 0; f < mesh.face_count; f++) {
@@ -294,12 +297,15 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
             continue;
         }
 
-        // Rotate the baked normal with the model so lighting follows it.
+        // Rotate the baked normal with the model so lighting follows it,
+        // pitch about local X first, then yaw, same order as the vertices.
         const float nx = face.nx / 127.0f;
-        const float ny = face.ny / 127.0f;
-        const float nz = face.nz / 127.0f;
-        const float world_nx = nx * cos_yaw + nz * sin_yaw;
-        const float world_nz = -nx * sin_yaw + nz * cos_yaw;
+        const float raw_ny = face.ny / 127.0f;
+        const float raw_nz = face.nz / 127.0f;
+        const float ny = raw_ny * cos_pitch + raw_nz * sin_pitch;
+        const float pitched_nz = raw_nz * cos_pitch - raw_ny * sin_pitch;
+        const float world_nx = nx * cos_yaw + pitched_nz * sin_yaw;
+        const float world_nz = -nx * sin_yaw + pitched_nz * cos_yaw;
 
         float lambert = world_nx * k_light_x + ny * k_light_y +
                         world_nz * k_light_z;
@@ -321,8 +327,10 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
         for (int corner = 0; corner < 3; corner++) {
             const MeshVertex& v = mesh.vertices[indices[corner]];
             const float lx = v.x * unit;
-            const float ly = v.y * unit;
-            const float lz = v.z * unit;
+            const float raw_ly = v.y * unit;
+            const float raw_lz = v.z * unit;
+            const float ly = raw_ly * cos_pitch + raw_lz * sin_pitch;
+            const float lz = raw_lz * cos_pitch - raw_ly * sin_pitch;
             const float wx = x + lx * cos_yaw + lz * sin_yaw;
             const float wz = z - lx * sin_yaw + lz * cos_yaw;
             wy[corner] = y + ly;
