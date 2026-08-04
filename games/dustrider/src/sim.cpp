@@ -189,8 +189,20 @@ void world_tick(World& world, const Input& input) {
     // road out from under the bike. The dunes stop the bike a few meters
     // out either side, measured from the centerline so the shoulder is the
     // same width wherever the road has wandered to.
-    if (input.north) world.z += k_steer_rate;
-    if (input.south) world.z -= k_steer_rate;
+    //
+    // The rate builds while the pad is held and drops to nothing the moment
+    // it is let go, so a short tap is a small correction and only a
+    // sustained input reaches full lock. Reversing ramps back through zero,
+    // which is what gives the bike some weight. A flat rate made the
+    // shortest press a human can manage cross the entire road.
+    const int32_t steer_dir = input.north ? 1 : (input.south ? -1 : 0);
+    if (steer_dir == 0) {
+        world.steer_v = 0;
+    } else {
+        world.steer_v += clamp32(steer_dir * k_steer_rate - world.steer_v,
+                                 -k_steer_accel, k_steer_accel);
+    }
+    world.z += world.steer_v;
     const int32_t center = track_center_z(world, world.x);
     world.z = clamp32(world.z, center - k_offroad_max, center + k_offroad_max);
     const int32_t offset = world.z - center;

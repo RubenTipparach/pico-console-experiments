@@ -13,13 +13,13 @@ namespace dr {
 // Full throttle thrust per tick, in velocity units. With the k_drag_shift
 // drag below, terminal velocity on the road works out to exactly
 // k_bike_accel << k_drag_shift.
-constexpr int32_t k_bike_accel = 72;
+constexpr int32_t k_bike_accel = 84;
 
 // Rolling and air drag: v -= v >> k_drag_shift every tick.
 constexpr int k_drag_shift = 8;
 
 // Top speed on the road, the number every other speed hangs off:
-// 18432 = 0.28 m per tick = ~28 m/s.
+// 21504 = 0.33 m per tick = ~33 m/s.
 constexpr int32_t k_bike_vmax = k_bike_accel << k_drag_shift;
 
 // Sand pays an extra v >> k_sand_drag_shift per tick, which puts off road
@@ -33,10 +33,18 @@ constexpr int32_t k_brake_base = 20;
 
 // ---- steering ----
 
-// How fast the bike crosses the road, fp8 z per tick. This has to beat the
-// worst case lateral demand (the tightest curve taken at top speed) with
-// room to spare, which the host tests check against k_curve_max.
-constexpr int32_t k_steer_rate = 64;
+// Steering is a rate that BUILDS while the pad is held, not a speed the
+// bike snaps to. Full lock still has to beat the worst case lateral demand
+// (the tightest bend taken at top speed) with room to spare, which the
+// host tests check against k_curve_max.
+//
+// The ramp is what makes the pad usable. At a flat 64 the bike crossed the
+// whole three metre road in an eighth of a second, so the shortest tap a
+// human can make threw it into the sand. Building at k_steer_accel means a
+// tenth of a second of pad is about half a metre, while a held input still
+// reaches full lock in a sixth of a second for following a bend.
+constexpr int32_t k_steer_rate = 48;
+constexpr int32_t k_steer_accel = 3;
 
 // The road is 3 m wide: this is the distance from its centerline to either
 // painted edge, fp8.
@@ -54,9 +62,11 @@ constexpr int32_t k_offroad_max = 920;
 constexpr int32_t k_screen_vmax = (k_bike_vmax * 9) / 10;
 
 // Launch speed of the ramp, and how much target speed each meter of
-// progress adds until the cap: the window hits its 90% ceiling a bit past
-// the 3 km mark, so a run's difficulty climbs for several minutes.
-constexpr int32_t k_screen_v0 = 6800;
+// progress adds until the cap. It opens fast rather than crawling: the
+// window speed IS the speed the world goes by, because the camera rides
+// the window, so a slow opening reads as a slow game no matter what the
+// bike is doing.
+constexpr int32_t k_screen_v0 = 11500;
 constexpr int32_t k_screen_ramp_per_m = 3;
 
 // The screen changes speed by at most this much per tick, far below the
@@ -71,15 +81,22 @@ constexpr int32_t k_start_grace = 100;
 //
 // A run ends only once the bike is COMPLETELY off screen: while a single
 // pixel of it still shows, the rider is still alive. That makes this
-// number a consequence of the camera, not a taste decision, and it only
-// holds still because the camera tracks the bike's z exactly (see
-// render.cpp) so the bike's distance from the lens never varies.
+// number a consequence of the camera, not a taste decision.
+//
+// The camera is locked to the road rather than to the bike, so the bike's
+// distance from the lens changes as the rider strays off the centerline,
+// and with it how far along x the bike can travel before clearing the
+// frame. This is derived against the WORST case, the bike as far from the
+// camera as it is allowed to get, because that is when it draws smallest
+// and leaves latest. Every nearer position clears sooner, so the promise
+// holds for all of them.
 //
 // The sim cannot ask the renderer anything, so this is verified the other
-// way round: the preview harness parks the bike at exactly this offset,
-// reads the span the real projection gives it, and fails if any of it is
-// still on screen, or if a nudge back inside the window is not.
-constexpr int32_t k_window_half = 2112;
+// way round: the preview harness parks the bike at exactly this offset, at
+// that worst case depth, reads the span the real projection gives it, and
+// fails if any of it is still on screen, or if a nudge back inside the
+// window is not.
+constexpr int32_t k_window_half = 1900;
 
 // ---- track generation ----
 
@@ -94,8 +111,8 @@ constexpr int k_calm_chunks = 15;
 // How far the centerline may swing north or south per chunk, fp8. The
 // generator eases curvature toward a target by at most k_curve_ease per
 // chunk, which rounds the entry and exit of every bend.
-constexpr int32_t k_curve_max = 160;
-constexpr int32_t k_curve_ease = 34;
+constexpr int32_t k_curve_max = 120;
+constexpr int32_t k_curve_ease = 28;
 
 // The road wanders inside a 20 m band, so a long run does not drift the
 // world off into large coordinates.

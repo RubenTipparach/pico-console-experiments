@@ -29,9 +29,22 @@ constexpr float k_pi = 3.14159265f;
 // screen right: the bike rides rightward. The ground is flat, so every
 // rise and fall on screen is the road's own north/south curve seen in
 // perspective.
-constexpr float k_cam_dist = 5.8f;
-constexpr float k_cam_up = 3.5f;
-constexpr float k_cam_pitch = -0.46f;
+// Close enough that the near edge of the tarmac is right in front of the
+// lens rather than across a field of sand. The camera sits this far south
+// of the bike, and the road's south edge is k_road_half nearer still, so
+// the foreground sand band is only what is left over.
+constexpr float k_cam_dist = 3.4f;
+constexpr float k_cam_up = 1.7f;
+constexpr float k_cam_pitch = -0.30f;
+
+// How near and far the bike is ever allowed to sit from the lens. The
+// camera is road locked, so the bike's depth is the road distance plus
+// however far off the centerline the rider has strayed; these bound that.
+// k_bike_depth_max is also what the survival window is derived against,
+// because the bike is smallest, and so leaves the frame latest, when it is
+// as far from the camera as it can get.
+constexpr float k_bike_depth_min = 1.7f;
+constexpr float k_bike_depth_max = 5.6f;
 
 // How many 1 m columns of ground are drawn, and where they start relative
 // to the camera.
@@ -49,7 +62,7 @@ constexpr float k_column_back = 13.0f;
 // anchoring the foreground to the centerline puts it behind the camera the
 // moment the rider drifts north, and a quad with a corner behind the near
 // plane is dropped whole, which reads as the desert vanishing.
-constexpr float k_near_ground = 0.7f;
+constexpr float k_near_ground = 0.45f;
 
 // Presentation state: the eased camera z, the bike's body pitch, and the
 // dust off the rear wheel. Replaying a run reproduces the sim exactly even
@@ -218,19 +231,19 @@ void draw_horizon(const World& world, float cam_x, float cam_z) {
 // Positions come from a hash of the world grid cell, never from a frame
 // counter, so a stone stays put while the camera moves over it.
 void draw_ground_detail(const World& world, float cam_x, float cam_z) {
-    constexpr float k_cell = 1.6f;
+    constexpr float k_cell = 1.25f;
     const int first =
         static_cast<int>(std::floor((cam_x - k_column_back) / k_cell));
     const float edge = fp_to_f(dr::k_road_half);
 
-    for (int i = 0; i < 18; i++) {
+    for (int i = 0; i < 22; i++) {
         const int gx = first + i;
         const float x = static_cast<float>(gx) * k_cell;
         const uint32_t base = static_cast<uint32_t>(gx + 8192) * 2654435761u;
 
         for (int side = 0; side < 2; side++) {
             const uint32_t h = base ^ (side ? 0x9E3779B9u : 0x85EBCA6Bu);
-            if ((h & 7) == 0) continue;      // gaps, so it is not a grid
+            if ((h & 15) == 0) continue;     // gaps, so it is not a grid
 
             // Out on the sand, never on the tarmac. The two shoulders get
             // different bands because they sit at very different depths:
@@ -247,10 +260,10 @@ void draw_ground_detail(const World& world, float cam_x, float cam_z) {
             // from the camera is a boulder the size of the bike, and the
             // south shoulder passes very close indeed.
             const float depth = cz - cam_z;
-            if (depth < 2.6f || depth > 16.0f) continue;
+            if (depth < 1.6f || depth > 16.0f) continue;
 
             const float jx = x + static_cast<float>((h >> 12) & 15) * 0.09f;
-            const float size = 0.14f + static_cast<float>((h >> 17) & 7) * 0.03f;
+            const float size = 0.22f + static_cast<float>((h >> 17) & 7) * 0.055f;
             const int tone = static_cast<int>((h >> 21) & 15);
 
             // Boulders only out north, where they are far enough away to
@@ -262,12 +275,12 @@ void draw_ground_detail(const World& world, float cam_x, float cam_z) {
                 // against the flat sand.
                 g_renderer.draw_box(jx, 0.0f, cz, size * 2.2f, size * 1.8f,
                                     size * 2.0f,
-                                    clamp8(176 - tone * 3),
-                                    clamp8(150 - tone * 3),
-                                    clamp8(112 - tone * 2),
-                                    clamp8(150 - tone * 3),
-                                    clamp8(126 - tone * 3),
-                                    clamp8(94 - tone * 2));
+                                    clamp8(168 - tone * 4),
+                                    clamp8(138 - tone * 4),
+                                    clamp8(98 - tone * 3),
+                                    clamp8(126 - tone * 4),
+                                    clamp8(100 - tone * 4),
+                                    clamp8(70 - tone * 3));
                 continue;
             }
 
@@ -283,9 +296,9 @@ void draw_ground_detail(const World& world, float cam_x, float cam_z) {
             // Well under the sand it sits on. Scree a few shades off the
             // ground is invisible at this size, and invisible detail is
             // triangles spent on nothing.
-            const uint8_t r = clamp8(168 - tone * 5);
-            const uint8_t g = clamp8(134 - tone * 5);
-            const uint8_t b = clamp8(86 - tone * 4);
+            const uint8_t r = clamp8(150 - tone * 6);
+            const uint8_t g = clamp8(116 - tone * 6);
+            const uint8_t b = clamp8(72 - tone * 4);
             const uint8_t cr[4] = {r, r, r, r};
             const uint8_t cg[4] = {g, g, g, g};
             const uint8_t cb[4] = {b, b, b, b};
@@ -494,22 +507,25 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     // The camera tracks the bike's own z, not the road's, so a rider who
     // drifts into the sand stays framed and it is the ROAD that slides away
     // under them. That slide is the steering feedback.
-    // The camera holds the bike's z exactly, with no easing at all.
+    // The camera rides the ROAD, not the bike, so the world holds still and
+    // the rider is what moves up and down the frame. Locking it to the bike
+    // instead makes every steering input slide the entire desert, which is
+    // disorienting precisely because it is the one thing on screen the
+    // player expects to be able to trust.
     //
-    // An eased camera lags by roughly speed over ease, which at full
-    // steering lock is most of a metre. That lag changes the bike's
-    // distance from the camera, which changes how far along x it can get
-    // before it leaves the frame. The run's life depends on that distance
-    // (see k_window_half), and a window that quietly breathes with how
-    // hard the player is steering cannot be made exact. Tracking exactly
-    // makes the bike's screen position a constant, which is what lets the
-    // "off screen means dead" promise be checked and kept.
-    //
-    // Nothing is lost visually: the rider stays planted and the ROAD does
-    // the moving, which is the whole read of a curve seen from the side.
-    g_cam_z = bike_z;
+    // The clamp is the exception that keeps it safe. The bike may wander
+    // metres either side of the centerline, and south is toward the lens,
+    // so a purely road locked camera would eventually have the bike behind
+    // its own near plane. Normal riding never reaches the clamp, so the
+    // camera is genuinely still; only a deep excursion into the sand nudges
+    // it, and only as far as it has to.
+    const float road_z = center_at(world, cam_x) - k_cam_dist;
+    const float nearest = bike_z - k_bike_depth_min;
+    const float farthest = bike_z - k_bike_depth_max;
+    g_cam_z = road_z > nearest ? nearest
+                               : (road_z < farthest ? farthest : road_z);
     g_cam_seeded = true;
-    const float cam_z = g_cam_z - k_cam_dist;
+    const float cam_z = g_cam_z;
 
     g_raster.begin_frame_collect(target, g_queue);
     g_renderer.set_camera(cam_x, k_cam_up, cam_z, 0.0f, k_cam_pitch);

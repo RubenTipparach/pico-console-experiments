@@ -113,9 +113,12 @@ int main(int argc, char** argv) {
     });
     capture(world, out, "preview_5_bend_south.ppm");
 
-    // 6: a railed stretch, the north edge walled off.
+    // 6: the middle of a railed stretch, the north edge walled off. Waiting
+    // for rail-just-ahead framed the very start of a run, which is mostly
+    // off the right of the screen and looks like the rails are missing.
     bot_until(world, 60000, [](const dr::World& w) {
-        return dr::track_rail_at(w, w.x + (3 << 8));
+        return dr::track_rail_at(w, w.x - (4 << 8)) &&
+               dr::track_rail_at(w, w.x + (6 << 8));
     });
     capture(world, out, "preview_6_rail.ppm");
 
@@ -158,11 +161,16 @@ int main(int argc, char** argv) {
         dr::world_test_clear_hazards(probe);
         const std::string scratch = out + "/tmp.ppm";
 
+        // Measured with the bike as FAR from the lens as it can get, which
+        // is hard north. The camera is road locked, so the bike's depth
+        // varies with how far off the centerline it has strayed, and the
+        // farther it is the smaller it draws and the later it clears the
+        // frame. Deriving the window against the worst case makes it safe
+        // for every nearer one.
         auto span_at = [&](int32_t rel) {
             probe.x = (60 << 8) + rel;
             probe.screen_x = 60 << 8;
-            probe.z = 0;
-            // Settle the eased camera before reading the span.
+            probe.z = dr::k_offroad_max;
             for (int f = 0; f < 30; f++) draw(probe, scratch);
             return drr::last_frame_stats();
         };
