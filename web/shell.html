@@ -487,6 +487,20 @@
   document.addEventListener('fullscreenchange', syncFullscreenLabel);
   document.addEventListener('webkitfullscreenchange', syncFullscreenLabel);
 
+  // The CSS sizes the canvas as a square because that is what the console is.
+  // If a game ever comes up with a different backing store, follow it rather
+  // than stretching the image to fit an assumption.
+  function syncCanvasAspect() {
+    var w = canvasElement.width, h = canvasElement.height;
+    if (!w || !h) return;
+    canvasElement.style.aspectRatio = w + ' / ' + h;
+    if (w !== h) {
+      // Non square: let width lead and let aspect-ratio derive the height.
+      canvasElement.style.height = 'auto';
+    }
+  }
+  window.addEventListener('resize', syncCanvasAspect);
+
   // Keep arrow keys and space from scrolling the page behind the canvas.
   window.addEventListener('keydown', function (event) {
     if (KEYS[event.code] || event.code === 'Space') event.preventDefault();
@@ -506,10 +520,23 @@
   }
 
   window.Module = {
+    // Match the device exactly.
+    //
+    // The SDL backend defaults to 320x240 (System::max_width/max_height), so
+    // `hires` is 320x240 and `lores` is 160x120 in the browser. On the
+    // PicoSystem the board config overrides the width to 240, giving 240x240
+    // and 120x120. Without this the browser hands a game a wider surface than
+    // it has on hardware, and a game that draws to its own fixed bounds leaves
+    // black margins down the side.
+    //
+    // Passing --size makes the web surface identical to the device, so what you
+    // test in a browser is what runs on the console.
+    arguments: ["--size", "240,240"],
     preRun: [mountIDBFS],
     postRun: [function () {
       bootElement.classList.add('done');
       setTimeout(function () { bootElement.style.display = 'none'; }, 250);
+      syncCanvasAspect();
       canvasElement.focus();
     }],
     print: function (text) {
