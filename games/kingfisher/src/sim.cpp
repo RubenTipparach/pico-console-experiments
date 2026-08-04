@@ -66,12 +66,25 @@ const Species k_species[k_species_count] = {
     {"THE OLD ONE",2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
 };
 
-int fight_distance_dm(const World& world) {
-    if (world.mode != Mode::Fight) return 0;
-    const int32_t dist = world.line_len - k_catch_len;
-    if (dist <= 0) return 1;   // still hooked, so never display zero
-    const int dm = static_cast<int>((dist * 10 + 255) / 256);
-    return dm > 0 ? dm : 1;
+int hook_distance_dm(const World& world) {
+    int32_t dist;
+    switch (world.mode) {
+        case Mode::Fight:
+            dist = world.line_len - k_catch_len;
+            if (dist <= 0) return 1;   // still hooked: never zero mid fight
+            break;
+        case Mode::Flying:
+        case Mode::Sinking: {
+            const int32_t ax = world.lure_x < 0 ? -world.lure_x
+                                                : world.lure_x;
+            dist = world.lure_z + ax - k_catch_len;
+            if (dist < 0) dist = 0;
+            break;
+        }
+        default:
+            return 0;
+    }
+    return static_cast<int>((dist * 10 + 255) / 256);
 }
 
 uint8_t day_phase(const World& world) {

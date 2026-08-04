@@ -65,12 +65,15 @@ void draw_records_overlay() {
     }
 }
 
-// The fight's distance readout: how far the fish is from the boat, in
-// meters, counting down to the catch. Zero is never shown during the
-// fight; the moment it would read zero is the moment the card appears.
+// The hook's distance readout, in meters, for the hook's whole life: it
+// rises with the cast, holds while the lure sinks, and counts down through
+// the fight. Zero is never shown while a fish is on; the moment it would
+// read zero is the moment the card appears.
 void draw_fight_distance() {
-    if (g_world.mode != kf::Mode::Fight) return;
-    const int dm = kf::fight_distance_dm(g_world);
+    const kf::Mode m = g_world.mode;
+    if (m != kf::Mode::Fight && m != kf::Mode::Sinking &&
+        m != kf::Mode::Flying) return;
+    const int dm = kf::hook_distance_dm(g_world);
     char line[12];
     snprintf(line, sizeof(line), "%d.%dm", dm / 10, dm % 10);
     screen.pen = Pen(8, 6, 20, 170);
