@@ -39,9 +39,11 @@ target_include_directories(pse-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_compile_options(pse-core PRIVATE
-    -Wall -Wextra -Wno-unused-parameter
-)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(pse-core PRIVATE
+        -Wall -Wextra -Wno-unused-parameter
+    )
+endif()
 
 # Host tests link the core alone and stop here.
 if(BUILD_ENGINE_TESTS)
