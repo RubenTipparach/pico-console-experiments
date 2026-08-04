@@ -304,43 +304,45 @@ void test_wiggle_relieves_and_tires() {
 // fish gives up almost no line to the crank, a spent one comes in at full
 // speed. This is what makes a fight a fight instead of a countdown.
 void test_fresh_fish_resists_the_reel() {
-    kf::World world;
-    kf::world_init(world, 71);
-    kf::world_test_hook(world, kf::k_species_count - 1, 200);
-    kf::Input hook{};
-    hook.a_pressed = true;
-    kf::world_tick(world, hook);
-    CHECK(world.mode == kf::Mode::Fight);
+    // A fish working flat out barely moves, a spent one comes in at the
+    // fight's full rate, and neither ever matches an empty hook.
+    auto reel_rate = [](int effort, int8_t dir) {
+        kf::World world;
+        kf::world_init(world, 71);
+        kf::world_test_hook(world, kf::k_species_count - 1, 200);
+        kf::Input hook{};
+        hook.a_pressed = true;
+        kf::world_tick(world, hook);
+        world.fight_phase = kf::FightPhase::Tire;
+        world.phase_timer = 5000;
+        world.dir_timer = 5000;
+        world.fish_dir = dir;
+        world.fish_effort = static_cast<uint8_t>(effort);
+        world.stamina = effort == 0 ? 0 : world.stamina_max;
 
-    // Pin the phase so the comparison isolates stamina.
-    world.fight_phase = kf::FightPhase::Tire;
-    world.phase_timer = 1000;
+        kf::Input reel{};
+        reel.a = true;
+        const int32_t before = world.line_len;
+        for (int t = 0; t < 100 && world.mode == kf::Mode::Fight; t++) {
+            // Pin the effort: this measures the rate at a given effort, not
+            // the fish's own decisions about where to take it.
+            world.fish_effort = static_cast<uint8_t>(effort);
+            kf::world_tick(world, reel);
+        }
+        return before - world.line_len;   // fp gained in one second
+    };
 
-    kf::Input reel{};
-    reel.a = true;
-    const int32_t before_fresh = world.line_len;
-    kf::world_tick(world, reel);
-    const int32_t gain_fresh = before_fresh - world.line_len;
+    const int32_t spent = reel_rate(0, 0);
+    const int32_t fighting = reel_rate(255, 0);
+    const int32_t tow = kf::k_retrieve_max_fp256 * 100 / 256;
 
-    world.stamina = 0;
-    const int32_t before_spent = world.line_len;
-    kf::world_tick(world, reel);
-    const int32_t gain_spent = before_spent - world.line_len;
+    CHECK(spent > fighting);
+    CHECK(fighting * 4 < spent);
+    CHECK(spent < tow);            // a fish is never as quick as no fish
+    CHECK(fighting > 0);           // but something always comes in
 
-    CHECK(gain_fresh >= 0);
-    CHECK(gain_spent > gain_fresh);
-    CHECK(gain_fresh * 2 < gain_spent);
-
-    // And against a fresh run, the reel loses ground outright.
-    kf::World running;
-    kf::world_init(running, 72);
-    kf::world_test_hook(running, kf::k_species_count - 1, 200);
-    kf::world_tick(running, hook);
-    running.fight_phase = kf::FightPhase::Run;
-    running.phase_timer = 1000;
-    const int32_t before_run = running.line_len;
-    kf::world_tick(running, reel);
-    CHECK(running.line_len > before_run);
+    // Against a fish swimming away flat out, the reel loses ground outright.
+    CHECK(reel_rate(255, 1) < 0);
 }
 
 // Cranking against a fish that is swimming away is the hardest thing the
@@ -390,11 +392,36 @@ void test_reeling_into_a_run_costs_more_than_riding_it() {
 
     kf::Input reel{};
     reel.a = true;
-    for (int t = 0; t < 20; t++) {
+    for (int t = 0; t < 60; t++) {
         kf::world_tick(reeled, reel);
         kf::world_tick(drifted, kf::Input{});
     }
+    // Both the load itself and what the player is shown have to say it.
+    CHECK(reeled.line_stress > drifted.line_stress);
     CHECK(reeled.tension > drifted.tension);
+}
+
+// The rule the whole meter rests on: a fish cannot break the line by itself.
+// Hook the strongest fish there is, never touch the reel, and the line has to
+// survive it however long the fight runs. If this ever fails, letting go
+// stops being safe and the meter stops meaning anything.
+void test_a_fish_alone_never_breaks_the_line() {
+    for (int trial = 0; trial < 8; trial++) {
+        kf::World world;
+        kf::world_init(world, 3300 + trial);
+        kf::world_test_hook(world, kf::k_species_count - 1, 200);
+        kf::Input hook{};
+        hook.a_pressed = true;
+        kf::world_tick(world, hook);
+
+        uint16_t worst = 0;
+        for (int t = 0; t < 20000 && world.mode == kf::Mode::Fight; t++) {
+            kf::world_tick(world, kf::Input{});   // never touch the reel
+            if (world.line_stress > worst) worst = world.line_stress;
+            CHECK(!world.ev.snap);
+        }
+        CHECK(worst < kf::k_rod_starter_max);
+    }
 }
 
 // The complaint that started this: a fish on the line was coming in faster
@@ -402,8 +429,8 @@ void test_reeling_into_a_run_costs_more_than_riding_it() {
 // retrieve, because a fight is not a shortcut across the lake.
 void test_the_reel_never_beats_the_tow() {
     const int tow_per_tick = kf::k_retrieve_max_fp256 / 256;
-    CHECK(kf::k_reel_power <= tow_per_tick);
-    CHECK(kf::k_reel_run_power <= kf::k_reel_power);
+    CHECK(kf::k_fight_reel_max_fp256 < kf::k_retrieve_max_fp256);
+    CHECK(kf::k_fight_reel_min_fp256 < kf::k_fight_reel_max_fp256);
 
     kf::World world;
     kf::world_init(world, 92);
@@ -566,12 +593,12 @@ void test_retrieve_ramps_to_cruise() {
         if (world.ev.reel_click) clicks++;
     }
     const int32_t cruise = late_start - world.lure_z;   // one second at max
-    // Half the old ramp: the first half second averages well under cruise.
-    CHECK(early < cruise / 2 + 40);
-    CHECK(cruise >= 480 && cruise <= 545);   // ~2 m in one second
-    // 3 seconds of tow covers ~5 m: one click per half meter, give or take
+    // The ramp: the first half second averages well under cruise.
+    CHECK(early < cruise / 2 + 80);
+    CHECK(cruise >= 980 && cruise <= 1075);   // ~4 m in one second
+    // 3 seconds of tow covers ~10 m: one click per half meter, give or take
     // the ramp.
-    CHECK(clicks >= 7 && clicks <= 13);
+    CHECK(clicks >= 15 && clicks <= 26);
 
     // Ease off: no line moving, no ratchet.
     kf::Input rest{};
@@ -761,6 +788,7 @@ int main() {
     test_tension_climbs_hard_against_a_run();
     test_reeling_into_a_run_costs_more_than_riding_it();
     test_the_reel_never_beats_the_tow();
+    test_a_fish_alone_never_breaks_the_line();
     test_distance_zero_means_collected();
     test_cast_range();
     test_b_recalls_instantly();

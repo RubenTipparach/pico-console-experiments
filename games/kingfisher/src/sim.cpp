@@ -392,7 +392,14 @@ void start_fight(World& world, int fish_index) {
     fish.state = FishState::Hooked;
     world.mode = Mode::Fight;
     world.hooked_fish = static_cast<int8_t>(fish_index);
-    world.tension = k_tension_start;
+    // The meter starts where the fish's first effort will put it, rather
+    // than at an arbitrary number: a hooked fish is already pulling.
+    world.tension = 0;
+    world.line_stress = 0;
+    world.line_frac = 0;
+    world.fish_effort = 0;
+    world.fish_dir = 1;
+    world.dir_timer = k_dir_ticks_base;
     world.danger = 0;
     world.stamina = static_cast<uint16_t>(
         k_stamina_base + fish.size_cm * k_stamina_per_cm +
@@ -448,60 +455,117 @@ void end_fight(World& world, bool caught) {
     if (caught) world.mode = Mode::Landed;
 }
 
+// Pick a direction for the fish to put its effort into. A running fish
+// mostly pulls away; a resting one mostly holds, and sometimes swims back at
+// the boat, which is the moment that gives the player free line.
+void reroll_direction(World& world) {
+    const bool running = world.fight_phase == FightPhase::Run;
+    const int roll = rnd(world.rng, 256);
+    const int away = running ? k_dir_away_run : k_dir_away_tire;
+    if (roll < away) {
+        world.fish_dir = 1;
+    } else if (!running && roll < away + k_dir_toward_tire) {
+        world.fish_dir = -1;
+    } else {
+        world.fish_dir = 0;
+    }
+    world.dir_timer = static_cast<uint16_t>(
+        k_dir_ticks_base + rnd(world.rng, k_dir_ticks_vary));
+}
+
 void update_fight(World& world, const Input& input) {
     const Fish& fish = world.fish[world.hooked_fish];
     const Species& s = k_species[fish.species];
     const bool reeling = input.a;
 
-    // How hard the fish can pull right now: full strength when fresh, nothing
-    // when spent. Every force in the fight scales through this, so wearing a
-    // fish down is what turns an unwinnable tug of war into a landing.
-    const int pull = world.stamina_max > 0
-        ? (s.strength * world.stamina) / world.stamina_max : 0;
-
     // Rod wiggle: alternating left and right presses. Each swap eases the
-    // tension, and swinging against the run direction is what tires a
-    // running fish without touching the reel.
+    // line and costs the fish, which is what makes it worth doing while a
+    // fish is working hard.
     int wiggle = 0;
     if (input.left_pressed && world.last_wiggle >= 0) wiggle = -1;
     else if (input.right_pressed && world.last_wiggle <= 0) wiggle = 1;
     if (wiggle != 0) {
         world.last_wiggle = static_cast<int8_t>(wiggle);
         world.ev.wiggle = true;
-        const int eased = static_cast<int>(world.tension) - k_wiggle_relief;
-        world.tension = static_cast<uint16_t>(eased < 0 ? 0 : eased);
-        if (world.fight_phase == FightPhase::Run &&
-            wiggle == -world.run_dir && world.stamina > 0) {
+        // A wiggle knocks the fish off its effort, which is what takes the
+        // load off the line. Easing the meter directly would do nothing: it
+        // is recomputed from the forces every tick, so relief has to come
+        // from changing a force.
+        world.fish_effort = static_cast<uint8_t>(
+            world.fish_effort > k_wiggle_effort_drop
+                ? world.fish_effort - k_wiggle_effort_drop : 0);
+        if (world.fish_dir != 0 && wiggle == -world.run_dir &&
+            world.stamina > 0) {
             world.stamina = static_cast<uint16_t>(
                 world.stamina > k_wiggle_drain
                     ? world.stamina - k_wiggle_drain : 0);
         }
     }
 
-    // Tension. Reeling against a fish that can still pull loads the line;
-    // a spent fish coming to the boat unloads it. The build is gradual on
-    // purpose: the red zone should be something a fight climbs toward, not
-    // somewhere it teleports.
-    int delta;
-    if (world.fight_phase == FightPhase::Run) {
-        delta = reeling
-            ? (pull > 0 ? k_tension_run_reel_base +
-                          (pull * k_tension_run_reel_num) /
-                              k_tension_run_reel_den
-                        : -1)
-            : pull / k_tension_run_drift_div;
+    // ---- what the fish is doing ----
+    //
+    // Effort walks toward a target rather than snapping to it, so a fish
+    // works up to a surge and eases out of it. A tired fish cannot reach its
+    // target at all: stamina is the ceiling on everything it does.
+    const bool running = world.fight_phase == FightPhase::Run;
+    int target = running
+        ? k_effort_run_min + rnd(world.rng, k_effort_run_vary)
+        : k_effort_tire_min + rnd(world.rng, k_effort_tire_vary);
+    // A fish that is being pulled on fights back. This is what stops the
+    // crank being free: hold it down and the fish answers with effort, which
+    // is stress, which is the meter climbing.
+    if (reeling) target += k_effort_reel_bump;
+    if (world.stamina_max > 0) {
+        target = (target * world.stamina) / world.stamina_max;
     } else {
-        delta = reeling ? (pull >= 5 ? k_tension_tire_creep
-                                     : k_tension_tire_reel_shed)
-                        : k_tension_tire_rest_shed;
+        target = 0;
     }
-    const int tension = static_cast<int>(world.tension) + delta;
-    world.tension = static_cast<uint16_t>(clamp32(tension, 0, 1023));
+    int effort = world.fish_effort;
+    if (effort < target) effort = effort + k_effort_step > target
+                                      ? target : effort + k_effort_step;
+    else if (effort > target) effort = effort - k_effort_step < target
+                                           ? target : effort - k_effort_step;
+    world.fish_effort = static_cast<uint8_t>(clamp32(effort, 0, 255));
 
-    // The line does not break on a spike: it breaks when the tension is held
-    // in the red zone too long, which is the window the player has to ease
-    // off or wiggle it back down.
-    if (world.tension >= k_tension_danger) {
+    if (world.dir_timer > 0) world.dir_timer--;
+    if (world.dir_timer == 0) reroll_direction(world);
+
+    // ---- forces on the line ----
+    //
+    // The fish's share can never reach the rod's limit on its own (see the
+    // static_assert in tuning.hpp). The player's share is what can take it
+    // over, so a break is always something the player did.
+    const int fish_stress =
+        (s.strength * k_stress_per_strength * world.fish_effort) / 255;
+    const int tow_stress = reeling
+        ? k_tow_stress_base + (fish.size_cm * k_tow_stress_num) /
+                                  k_tow_stress_den
+        : 0;
+    // Only a fish that is actually pulling against the rod loads it. One
+    // swimming at the boat is slack line, however hard it is working.
+    const int loaded = world.fish_dir >= 0 ? fish_stress : fish_stress / 4;
+    world.line_stress = static_cast<uint16_t>(clamp32(loaded + tow_stress, 0,
+                                                      65535));
+
+    // The meter is that stress against the rod, slewed: the climb is the
+    // warning, and a bar that jumped would not be one.
+    const int shown = clamp32((static_cast<int>(world.line_stress) * 1023) /
+                                  k_rod_starter_max, 0, 1023);
+    const int current = world.tension;
+    int next = current;
+    if (shown > current) {
+        next = current + k_tension_slew > shown ? shown
+                                               : current + k_tension_slew;
+    } else if (shown < current) {
+        next = current - k_tension_slew < shown ? shown
+                                               : current - k_tension_slew;
+    }
+    world.tension = static_cast<uint16_t>(clamp32(next, 0, 1023));
+
+    // The line breaks only after its stress has sat at the rod's limit for
+    // the whole window. Easing off drops the tow out of the sum immediately,
+    // which is why letting go is the answer.
+    if (world.tension >= k_tension_full) {
         world.danger++;
         if (world.danger >= k_danger_ticks) {
             world.ev.snap = true;
@@ -509,63 +573,68 @@ void update_fight(World& world, const Input& input) {
             return;
         }
     } else if (world.danger > 0) {
-        world.danger = static_cast<uint16_t>(world.danger > 2
-                                                 ? world.danger - 2 : 0);
+        world.danger--;
     }
 
-    // Line length. A running fish takes line in proportion to what it has
-    // left in it, and it resists the reel the same way: the crank only wins
-    // what is left after the fish's pull is subtracted. A fresh fish barely
-    // comes in at all, a fresh fish mid run takes line even while the reel
-    // turns, and a spent one comes to the boat at full crank. Wearing the
-    // stamina down IS the fight; the reel just collects afterwards.
-    if (world.fight_phase == FightPhase::Run && !reeling && pull > 0) {
-        world.line_len += (pull * k_run_take_mul) / k_run_take_div;
-        if (world.line_len >= world.line_max) {
-            world.ev.escape = true;
-            end_fight(world, false);
-            return;
-        }
+    // ---- line movement ----
+    //
+    // Both sides move the line every tick and the net is what happens. The
+    // reel slows down the harder the fish works, from 2 m/s against a spent
+    // fish to a tenth of that against one fighting flat out, and it is never
+    // as quick as the 4 m/s an empty hook tows at.
+    int delta = 0;   // fp<<8, positive pays line out
+    if (world.fish_dir != 0) {
+        const int pull = (k_fish_pull_max_fp256 * s.strength *
+                          world.fish_effort) / (10 * 255);
+        // A fish swimming back at the boat gives line up, but it is not
+        // swimming as hard as one fleeing, and it must not reel itself in.
+        delta += world.fish_dir > 0 ? pull : -(pull / k_toward_div);
     }
     if (reeling) {
-        const bool tiring = world.fight_phase == FightPhase::Tire || pull == 0;
-        const int resist = tiring ? pull * k_resist_tire_mul
-                                  : (pull * k_resist_run_num) /
-                                        k_resist_run_den;
-        int gain = (tiring ? k_reel_power : k_reel_run_power) - resist;
-        // A resting fish never takes line off a cranking reel. It can hold
-        // its ground, which is what a fresh strong one does, but a fish that
-        // is not swimming away has nothing to pull with, and paying out line
-        // to it read as the reel running backwards.
-        if (tiring && gain < 0) gain = 0;
-        world.line_len -= gain;
-        if (gain > 0) {
-            world.reel_click_acc =
-                static_cast<uint16_t>(world.reel_click_acc + gain);
-            if (world.reel_click_acc >= k_reel_click_fp) {
-                world.reel_click_acc -= k_reel_click_fp;
-                world.ev.reel_click = true;
-            }
+        // Mass first: a heavy fish is slow to move even limp. Then effort,
+        // which is the fish actively refusing.
+        int top = k_fight_reel_max_fp256 - fish.size_cm * k_reel_mass_drag;
+        if (top < k_fight_reel_min_fp256) top = k_fight_reel_min_fp256;
+        const int span = top - k_fight_reel_min_fp256;
+        const int reel = top - (span * world.fish_effort) / 255;
+        delta -= reel;
+    }
+
+    // Carry the fraction so a tenth of a metre a second is not rounded away.
+    int total = static_cast<int>(world.line_frac) + delta;
+    world.line_frac = static_cast<uint16_t>(total & 0xFF);
+    const int moved = total >> 8;
+    world.line_len += moved;
+    if (moved < 0) {
+        world.reel_click_acc =
+            static_cast<uint16_t>(world.reel_click_acc - moved);
+        if (world.reel_click_acc >= k_reel_click_fp) {
+            world.reel_click_acc -= k_reel_click_fp;
+            world.ev.reel_click = true;
         }
-        if (gain < 0 && world.line_len >= world.line_max) {
-            world.ev.escape = true;
-            end_fight(world, false);
-            return;
-        }
-        // Tugging wears the fish down; that is the trade for the tension it
-        // puts on the line.
-        if (world.stamina > 0) {
-            const uint16_t drain = (world.fight_phase == FightPhase::Run)
-                                       ? k_drain_reel_run : k_drain_reel_tire;
-            world.stamina = static_cast<uint16_t>(
-                world.stamina > drain ? world.stamina - drain : 0);
-        }
-    } else if (wiggle == 0 && world.stamina < world.stamina_max) {
-        // A resting fish gets its wind back, so easing off the line is a
-        // real decision rather than a free pause.
+    }
+
+    if (world.line_len >= world.line_max) {
+        world.ev.escape = true;
+        end_fight(world, false);
+        return;
+    }
+
+    // ---- stamina ----
+    //
+    // Working costs the fish, and being cranked on costs it more. Easing off
+    // lets it get its wind back, so resting is a real decision on both sides.
+    const int spend = (world.fish_effort * k_drain_effort) / 255 +
+                      (reeling ? k_drain_reel : 0);
+    const int recover = (!reeling && wiggle == 0) ? k_stamina_regen : 0;
+    const int net = spend - recover;
+    if (net > 0) {
         world.stamina = static_cast<uint16_t>(
-            world.stamina + k_stamina_regen > world.stamina_max
-                ? world.stamina_max : world.stamina + k_stamina_regen);
+            world.stamina > net ? world.stamina - net : 0);
+    } else if (net < 0 && world.stamina < world.stamina_max) {
+        const int gained = world.stamina - net;
+        world.stamina = static_cast<uint16_t>(
+            gained > world.stamina_max ? world.stamina_max : gained);
     }
 
     if (world.line_len <= k_catch_len) {
@@ -593,6 +662,7 @@ void update_fight(World& world, const Input& input) {
                 world.ev.leap = true;
             }
         }
+        reroll_direction(world);
     }
     if (world.leap_timer > 0) world.leap_timer--;
 
