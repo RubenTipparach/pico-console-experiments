@@ -59,6 +59,14 @@ jobs:
           cmake --build build.test --parallel
           ctest --test-dir build.test --output-on-failure
 
+      # The metadata block is what a launcher and the desktop tool read a
+      # game's name and icon out of, and nothing downstream would notice if
+      # it silently stopped reaching the binary.
+      - name: Test the build tooling
+        run: |
+          python3 tools/tests/test_game_meta.py
+          python3 tools/tests/test_make_bundle.py
+
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
   # not something inferred from content hashes.
@@ -197,6 +205,27 @@ jobs:
           cmake --build build.pico --parallel
           ccache --show-stats
 
+      # The same game again, linked where the launcher expects to find it.
+      # Both artifacts come out of one job so a slot build can never be from a
+      # different commit than the standalone .uf2 beside it.
+      - name: Build the .uf2 for the launcher bundle
+        env:
+          GAME: ${{ matrix.slug }}
+          TARGET: ${{ matrix.target }}
+          SLOT: ${{ matrix.slot }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake -S . -B build.slot -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
+            -DPICO_BOARD=pimoroni_picosystem \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DPICO_ONLY_GAME="$GAME" \
+            -DPICO_SLOT="$SLOT"
+          cmake --build build.slot --parallel
+
       - name: Build for the browser
         if: matrix.web
         env:
@@ -231,6 +260,14 @@ jobs:
           fi
           cp "$uf2" "out/uf2/$GAME.uf2"
 
+          mkdir -p out/slot
+          slot_uf2=$(find build.slot -name "$TARGET.uf2" -print -quit)
+          if [ -z "$slot_uf2" ]; then
+            echo "::error::no slot .uf2 produced for $GAME"
+            exit 1
+          fi
+          cp "$slot_uf2" "out/slot/$GAME.uf2"
+
           if [ "$WANTS_WEB" = "true" ]; then
             # add_picosystem_game renames the Emscripten target to `index`,
             # because GitHub Pages has no directory listing and only
@@ -249,6 +286,108 @@ jobs:
         with:
           name: game-${{ matrix.slug }}
           path: out
+          retention-days: 7
+          if-no-files-found: error
+
+  # The launcher plus every game, in one flashable file. Separate from the
+  # matrix because it needs every game's slot build at once, and separate from
+  # publish because a bundle is a download, not a page.
+  bundle:
+    needs: [detect, build]
+    if: >-
+      ${{ !cancelled()
+          && needs.detect.result == 'success'
+          && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build ccache python3 python3-pip \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          pip3 install --user 32blit
+
+      - name: Cache SDKs
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/../32blit-sdk
+            ${{ github.workspace }}/../pico-sdk
+          key: sdks-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}
+
+      - name: Check out the SDKs
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          git clone --depth 1 --branch "$BLIT_SDK_TAG" \
+            https://github.com/32blit/32blit-sdk
+          git clone --depth 1 --branch "$PICO_SDK_TAG" \
+            https://github.com/raspberrypi/pico-sdk
+          git -C pico-sdk submodule update --init lib/tinyusb
+
+      - name: Cache compiler output
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-launcher-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-${{ github.sha }}
+          restore-keys: |
+            ccache-launcher-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-
+
+      - name: Build the launcher
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake -S . -B build.launcher -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
+            -DPICO_BOARD=pimoroni_picosystem \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DPICO_LAUNCHER_ONLY=ON
+          cmake --build build.launcher --parallel
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: game-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Compose the bundle
+        env:
+          MATRIX: ${{ needs.detect.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          launcher=$(find build.launcher -name "launcher.uf2" -print -quit)
+          if [ -z "$launcher" ]; then
+            echo "::error::the launcher did not build"
+            exit 1
+          fi
+
+          # Slots come from the same plan the build matrix came from, so the
+          # address a game was linked at and the slot it lands in cannot
+          # disagree. make_bundle refuses the bundle if they ever do.
+          printf '%s' "$MATRIX" > matrix.json
+          python3 tools/make_bundle.py \
+            --launcher "$launcher" \
+            --plan matrix.json \
+            --slot-dir incoming/slot \
+            --out bundle.uf2
+          {
+            echo "## Launcher bundle"
+            echo
+            echo '```'
+            python3 tools/make_bundle.py --list bundle.uf2
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-bundle
+          path: bundle.uf2
           retention-days: 7
           if-no-files-found: error
 
@@ -487,7 +626,7 @@ jobs:
   # skipped matrix job never reports, which silently blocks branch protection if
   # `build` is the required check. Make this the required check instead.
   gate:
-    needs: [engine-tests, detect, build]
+    needs: [engine-tests, detect, build, bundle]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -501,3 +640,4 @@ jobs:
           if [ "${{ needs.engine-tests.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.detect.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.build.result }}" = "failure" ]; then exit 1; fi
+          if [ "${{ needs.bundle.result }}" = "failure" ]; then exit 1; fi

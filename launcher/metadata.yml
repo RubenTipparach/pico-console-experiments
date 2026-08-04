@@ -1,0 +1,10 @@
+title: Launcher
+description: Pick a game and hand the console to it.
+author: rubentipparach
+splash:
+  file: ../games/pico-santa/assets/no-image.png
+icon:
+  file: ../games/pico-santa/assets/no-icon.png
+version: v0.1.0
+category: launcher
+url: https://github.com/rubentipparach/pico-console-experiments

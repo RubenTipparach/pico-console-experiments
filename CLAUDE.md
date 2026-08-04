@@ -216,7 +216,9 @@ Before adding anything, ask what it costs:
   a 4 MB FAT partition the SDK mounts for saves and loose files. How to use
   both, and how a multi-game library would work, is documented in
   `STORAGE.md`. Read it before touching persistence, the storage partition,
-  a launcher, or any game big enough to care about asset budgets.
+  a launcher, or any game big enough to care about asset budgets. `LAUNCHER.md`
+  is the design built on top of it: the flash map, the metadata block every
+  game now carries, and how a launcher would boot one game from another.
 - If you add a feature, state its RAM and flash cost in the PR body.
 
 ### 9. Keep on-device UI sparse
@@ -317,6 +319,7 @@ tools/             build tooling, gallery generator, flasher utility
 web/               gallery templates and the emscripten page shell
 .github/workflows/ the build and publish pipeline
 STORAGE.md         the 16 MB flash: persistence, game library, larger games
+LAUNCHER.md        the multi-game plan: flash map, metadata block, tool
 ```
 
 ## Adding a game
