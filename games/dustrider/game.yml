@@ -16,8 +16,3 @@ models:
   - bike.obj
   - cactus.obj
 
-depends_on:
-  - engine
-  - cmake
-  - web
-  - tools/obj2cpp.py

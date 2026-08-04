@@ -1,15 +1,17 @@
 name: Build and publish
 
 on:
-  # Every branch, so a push deploys a preview and iteration does not require a
-  # PR. Only the default branch reaches the site root: everything else lands
-  # under preview/<branch>/, so a branch can never overwrite the live gallery.
+  # main builds on every push, and every build publishes: the site is always
+  # what main last produced. No other branch builds on its own, because a
+  # branch build is a deliberate act, not a side effect of pushing. Dispatch
+  # one by hand and it deploys under preview/<branch>/.
   push:
-  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      force:
-        description: "Slugs to rebuild even if unchanged, comma separated, or 'all'"
+      games:
+        description: "Slugs to build, comma separated. Empty builds everything build.yaml enables."
         required: false
         default: ""
       publish:
@@ -18,23 +20,14 @@ on:
         required: false
         default: false
 
-# One publish at a time. Two runs overlaying the gh-pages tree concurrently will
-# race and one push gets rejected. cancel-in-progress stays false for those: a
-# half applied overlay is worse than a slow queue.
-#
-# Pull request runs get their own queue, one per PR. The publish job excludes
-# pull requests by design, so they never touch gh-pages and have nothing to
-# race over. Sharing the publish lock only let one stall a deploy: a PR job
-# that hung in apt for over an hour kept a merge to main from reaching the
-# site, with the six hour job timeout as the only way out. They cancel in
-# progress instead, because a new push to a PR makes the previous run's answer
-# stale anyway.
+# One publish at a time. Every run of this workflow publishes now, and two runs
+# overlaying the gh-pages tree concurrently will race until one push is
+# rejected. cancel-in-progress stays false: a half applied overlay is worse
+# than a slow queue. Keep an eye on that queue, because a job wedged in apt
+# once held this lock for over an hour and kept a merge to main off the site.
 concurrency:
-  group: >-
-    ${{ github.event_name == 'pull_request'
-        && format('pico-console-pr-{0}', github.ref)
-        || 'pico-console-publish' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: pico-console-publish
+  cancel-in-progress: false
 
 permissions:
   # contents: write is for the gh-pages state branch, which is how a game that
@@ -66,17 +59,16 @@ jobs:
           cmake --build build.test --parallel
           ctest --test-dir build.test --output-on-failure
 
-  # Works out which games actually changed, by comparing a content hash of each
-  # game plus its declared dependencies against the hashes recorded on the live
-  # site. Content based rather than git-diff based, so it stays correct across
-  # force pushes, re-runs, and reverts.
+  # Reads build.yaml and turns it into the build matrix. Every enabled game is
+  # built, every run: what gets built is a decision written down in the repo,
+  # not something inferred from content hashes.
   detect:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       has_work: ${{ steps.plan.outputs.has_work }}
       built: ${{ steps.plan.outputs.built }}
-      skipped: ${{ steps.plan.outputs.skipped }}
+      held: ${{ steps.plan.outputs.held }}
       prefix: ${{ steps.where.outputs.prefix }}
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +77,6 @@ jobs:
         id: where
         env:
           FORCE_ROOT: ${{ github.event.inputs.publish }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           flag=""
@@ -95,48 +86,16 @@ jobs:
             --default-branch "${{ github.event.repository.default_branch }}" \
             $flag)
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
-          # A pull request never publishes, so its own prefix has no state
-          # behind it. Its baseline is what the BASE branch last published:
-          # the root manifest when the base is the default branch, that
-          # branch's preview manifest otherwise. Without this, every PR run
-          # would find an empty manifest and rebuild every game every time.
-          state_prefix="$prefix"
-          if [ -n "${BASE_REF:-}" ]; then
-            state_prefix=$(python3 tools/site_prefix.py \
-              --ref-name "$BASE_REF" \
-              --default-branch "${{ github.event.repository.default_branch }}")
-          fi
-          echo "state_prefix=$state_prefix" >> "$GITHUB_OUTPUT"
-          echo "publishing to '${prefix:-<root>}', baseline '${state_prefix:-<root>}'"
-
-      - name: Fetch the published manifest
-        env:
-          PREFIX: ${{ steps.where.outputs.state_prefix }}
-        run: |
-          # A branch push tracks its own preview's fingerprints; a pull
-          # request tracks its base branch's. A game whose fingerprint matches
-          # what the baseline already built and published green needs no
-          # rebuild to prove anything, on either kind of run.
-          #
-          # Absent branch, absent file and malformed JSON all mean the same
-          # thing: nothing is published there, so everything is stale.
-          if git fetch --depth 1 origin gh-pages 2>/dev/null; then
-            git show "FETCH_HEAD:${PREFIX}builds.json" > published.json 2>/dev/null \
-              || echo '{}' > published.json
-          else
-            echo '{}' > published.json
-          fi
+          echo "publishing to '${prefix:-<root>}'"
 
       - name: Plan the build
         id: plan
         env:
-          FORCE_INPUT: ${{ github.event.inputs.force }}
+          GAMES_INPUT: ${{ github.event.inputs.games }}
         run: |
-          # FORCE_INPUT goes through the environment, never spliced into the
+          # GAMES_INPUT goes through the environment, never spliced into the
           # script text, so a dispatch input cannot inject shell.
-          python3 tools/fingerprint.py plan \
-            --published published.json \
-            --force "${FORCE_INPUT:-}"
+          python3 tools/build_plan.py plan --games "${GAMES_INPUT:-}"
 
   build:
     needs: [detect, engine-tests]
@@ -295,20 +254,18 @@ jobs:
 
   publish:
     needs: [detect, build]
-    # Runs even when `build` was skipped, because a run where nothing changed
-    # still has to republish the site with the previous content intact.
+    # Building is publishing here: every run that gets this far deploys what it
+    # built, plus whatever the state branch already carried for held games.
+    # It still runs when `build` was skipped, because a run with every game
+    # held has to republish the site with the previous content intact.
     #
-    # Any branch may deploy, because a non default branch only ever writes under
-    # preview/<branch>/. Reaching the site root still takes the default branch,
-    # or an explicit publish=true dispatch.
-    #
-    # Pull requests stay excluded: a PR from a fork would otherwise get write
-    # access to the site.
+    # Any branch may deploy, because a non default branch only ever writes
+    # under preview/<branch>/. Reaching the site root still takes the default
+    # branch, or an explicit publish=true dispatch.
     if: >-
       ${{ !cancelled()
           && needs.detect.result == 'success'
-          && (needs.build.result == 'success' || needs.build.result == 'skipped')
-          && github.event_name != 'pull_request' }}
+          && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -339,10 +296,10 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
-      # A compiled game is not a working game. Boot every rebuilt web build
-      # in a real browser before it can touch the site: a page error here
-      # fails the publish and the previous good build stays live.
-      - name: Boot check the rebuilt games
+      # A compiled game is not a working game. Boot every web build this run
+      # produced in a real browser before it can touch the site: a page error
+      # here fails the publish and the previous good build stays live.
+      - name: Boot check the games this run built
         env:
           BUILT: ${{ needs.detect.outputs.built }}
         run: |
@@ -438,7 +395,7 @@ jobs:
         run: |
           set -euo pipefail
           for dir in games/*/; do
-            slug=$(python3 -c "import sys,os;sys.path.insert(0,'tools');from fingerprint import Game;print(Game(os.path.abspath('$dir')).slug)")
+            slug=$(python3 -c "import sys,os;sys.path.insert(0,'tools');from build_plan import Game;print(Game(os.path.abspath('$dir')).slug)")
             if [ -f "$dir/thumbnail.png" ]; then
               cp "$dir/thumbnail.png" "site/${PREFIX}thumbs/$slug.png"
             fi
@@ -453,7 +410,7 @@ jobs:
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           title="$(basename "$GITHUB_REPOSITORY")"
           [ -n "$PREFIX" ] && title="$GITHUB_REF_NAME (preview)"
-          python3 tools/fingerprint.py manifest \
+          python3 tools/build_plan.py manifest \
             --published "site/${PREFIX}builds.json" \
             --built "$BUILT" \
             --out "site/${PREFIX}builds.json" \
@@ -507,7 +464,7 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-  # A terminal job so a run where nothing changed still reports success. A
+  # A terminal job so a run with every game held still reports success. A
   # skipped matrix job never reports, which silently blocks branch protection if
   # `build` is the required check. Make this the required check instead.
   gate:
@@ -518,10 +475,10 @@ jobs:
       - name: Summarise
         env:
           BUILT: ${{ needs.detect.outputs.built }}
-          SKIPPED: ${{ needs.detect.outputs.skipped }}
+          HELD: ${{ needs.detect.outputs.held }}
         run: |
-          echo "rebuilt: ${BUILT:-none}"
-          echo "reused:  ${SKIPPED:-none}"
+          echo "built: ${BUILT:-none}"
+          echo "held:  ${HELD:-none}"
           if [ "${{ needs.engine-tests.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.detect.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.build.result }}" = "failure" ]; then exit 1; fi

@@ -31,12 +31,11 @@ games/<slug>/
 | `web` | no | Build for the browser. Defaults to true for the 32blit SDK. |
 | `controls` | no | Short strings shown on the card, like `"A: jump"`. |
 | `models` | no | Documentation only. The real list lives in `CMakeLists.txt`. |
-| `depends_on` | no | Paths that force a rebuild when they change. Defaults to `engine`, `cmake`, `tools/obj2cpp.py`. |
 
-`depends_on` is the field that bites. A game is rebuilt only when its own
-directory or one of these paths changes. If your game starts using a new shared
-directory and you do not list it here, the game will quietly go stale: CI will
-keep republishing the old binary because nothing it watches changed.
+Whether a game builds is decided in [`build.yaml`](../build.yaml) at the repo
+root, not in `game.yml`: list the slug under `build:` to keep it in the
+rotation, under `hold:` to take it out, or leave it out entirely and it builds
+by default.
 
 ## On the SDK field
 
@@ -48,7 +47,7 @@ The raw Pimoroni picosystem SDK is device only. It has no SDL target and no
 Emscripten target, its one SDL wrapper pull request was closed unmerged in 2021
 and the branch deleted. A game written against it can ship a `.uf2` and can
 never have a playable page in the gallery. `sdk: picosystem` is therefore
-rejected by `tools/fingerprint.py` rather than silently producing a game with a
+rejected by `tools/build_plan.py` rather than silently producing a game with a
 dead URL.
 
 ## Thumbnails

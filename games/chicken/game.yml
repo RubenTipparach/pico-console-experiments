@@ -11,6 +11,3 @@ controls:
   - "left/right: move"
   - "A: jump"
 
-depends_on:
-  - cmake
-  - web

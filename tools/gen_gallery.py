@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fingerprint import GameError, discover_games, load_published  # noqa: E402
+from build_plan import GameError, discover_games, load_published  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,8 +77,7 @@ class Card:
             # The version query gives every build a distinct page URL, which
             # is what defeats the ten minute Pages cache: a link to the new
             # build can never be satisfied by a cached copy of the old one.
-            version = (self.published.get("fingerprint")
-                       or self.published.get("commit") or "")
+            version = self.published.get("commit") or ""
             href = "%s/" % escape(self.game.slug)
             if version:
                 href += "?v=%s" % escape(version)
@@ -161,9 +160,10 @@ def render_page(cards, repo, generated_at, title):
     .then(function (r) { return r.json(); })
     .then(function (m) {
       (m.games || []).forEach(function (g) {
-        if (!g.fingerprint) return;
+        var v = g.commit || g.fingerprint;
+        if (!v) return;
         var a = document.querySelector('a.play[data-slug="' + g.slug + '"]');
-        if (a) a.href = g.slug + '/?v=' + g.fingerprint;
+        if (a) a.href = g.slug + '/?v=' + v;
       });
     })
     .catch(function () {});

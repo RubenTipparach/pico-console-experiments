@@ -717,7 +717,7 @@
         pill.textContent = 'new build ' + mine.commit + ' - tap to reload';
         pill.addEventListener('click', function () {
           location.replace(location.pathname + '?v='
-                           + (mine.fingerprint || mine.commit));
+                           + (mine.commit || mine.fingerprint));
         });
         document.body.appendChild(pill);
       })

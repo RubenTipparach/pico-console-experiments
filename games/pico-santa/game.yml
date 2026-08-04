@@ -15,8 +15,3 @@ models:
   - gem.obj
   - sleigh.obj
 
-depends_on:
-  - engine
-  - cmake
-  - web
-  - tools/obj2cpp.py

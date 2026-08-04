@@ -61,7 +61,7 @@ jobs:
           # Inputs arrive through the environment, never spliced into the
           # script, so a crafted dispatch value cannot inject shell.
           if [ "$GAMES" = "all" ]; then
-            slugs=$(python3 tools/fingerprint.py list | awk '{print $1}')
+            slugs=$(python3 tools/build_plan.py list | awk '{print $1}')
           else
             slugs=$(echo "$GAMES" | tr ',' ' ')
           fi

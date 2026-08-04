@@ -33,19 +33,19 @@ Two games ship today:
 2. **`detect`** hashes each game directory plus everything it declares a
    dependency on, and compares that against the hashes recorded on the live
    site. Only games whose hash moved get built.
-3. **`build`** runs once per stale game: a `.uf2` for the PicoSystem and an
+3. **`build`** runs once per enabled game: a `.uf2` for the PicoSystem and an
    Emscripten build for the browser.
-4. **`publish`** overlays the rebuilt games onto the site state held on the
-   `gh-pages` branch, regenerates the gallery, then uploads the complete tree
-   and deploys it to Pages. Games that were not rebuilt keep the binaries they
-   already had.
+4. **`publish`** overlays the games this run built onto the site state held on
+   the `gh-pages` branch, regenerates the gallery, then uploads the complete
+   tree and deploys it to Pages. Held games keep the binaries they already had.
 
-Change detection is content based rather than git-diff based, so it stays
-correct across force pushes, re-runs, and reverts. Reverting a change restores
-the old hash, so nothing rebuilds, which is the right answer.
+What gets built is written down in [`build.yaml`](build.yaml), not inferred.
+Every game under `build:` is built on every run; `hold:` takes a game out of
+the rotation while leaving its published build on the site; a game in neither
+list is built by default. Adding a game is still just adding a directory.
 
-To force a rebuild, run the workflow manually and pass slugs (or `all`) to the
-`force` input. To force everything permanently, bump `.build-epoch`.
+To build one held game without editing the config, run the workflow manually
+and name it in the `games` input.
 
 ## Playing on a phone
 
@@ -99,19 +99,20 @@ access to the site.
 
 ## Building a branch without publishing
 
-`workflow_dispatch` runs the pipeline on any branch you pick in the Actions UI.
-By default it builds and uploads artifacts but **does not touch the live site**:
-publishing only happens automatically on the default branch.
+Only `main` builds on a push. Every other branch is manual: `workflow_dispatch`
+runs the pipeline on any branch you pick in the Actions UI, and it deploys to
+`preview/<branch>/` rather than to the live gallery.
 
-- **Run workflow** on any branch: builds, and attaches the `.uf2` and web build
-  as run artifacts. Download them from the run page.
-- `force`: slugs to rebuild even when unchanged, comma separated, or `all`.
-  Useful on a fresh branch where the fingerprints still match the live site.
+- **Run workflow** on any branch: builds, deploys the preview, and attaches the
+  `.uf2` and web build as run artifacts. Download them from the run page.
+- `games`: slugs to build, comma separated. Empty builds everything `build.yaml`
+  enables; naming a game overrides the config, including a held one.
 - `publish`: tick this to overwrite the live site from that branch. Off by
   default, because a branch build silently replacing the gallery is a nasty
   surprise.
 
-Pull requests build too, and never publish.
+Pull requests do not build at all, so the merge to `main` is what proves the
+tree.
 
 Pushes to a non default branch do not build on their own. Open a PR or dispatch
 manually. That is deliberate: building every push on every branch is exactly the
@@ -220,5 +221,5 @@ It is state, not the served site. Pushing to it publishes nothing on its own.
 ## Conventions
 
 Project rules live in [`CLAUDE.md`](CLAUDE.md): no em dashes, SOLID, one SDK,
-never rebuild an unchanged game, respect how small this device is, keep the
-on-screen UI sparse, models come from `.obj` files.
+what builds is a decision in `build.yaml`, respect how small this device is,
+keep the on-screen UI sparse, models come from `.obj` files.

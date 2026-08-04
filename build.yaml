@@ -1,0 +1,24 @@
+# What CI builds.
+#
+# Every run builds every game listed under `build`, every time. There is no
+# change detection: if a game is in the rotation, it is rebuilt and
+# republished whether or not anything under it changed.
+#
+# `hold` takes a game out of the rotation without losing it. A held game is
+# never built, and its last published build stays on the site and in the
+# gallery exactly as it is. Move it back under `build` to pick it up again.
+#
+# A game directory in neither list is built, so adding a game is still just
+# adding a directory. The build plan names those in the run summary so this
+# file cannot quietly drift out of date.
+#
+# A manual run can name games explicitly, which overrides both lists: that is
+# the way to rebuild one held game without editing this file.
+
+build:
+  - dustrider
+  - kingfisher
+
+hold:
+  - chicken
+  - pico-santa
