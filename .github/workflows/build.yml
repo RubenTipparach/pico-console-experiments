@@ -59,6 +59,12 @@ jobs:
           cmake --build build.test --parallel
           ctest --test-dir build.test --output-on-failure
 
+      # The metadata block is what a launcher and the desktop tool read a
+      # game's name and icon out of, and nothing downstream would notice if
+      # it silently stopped reaching the binary.
+      - name: Test the build tooling
+        run: python3 tools/tests/test_game_meta.py
+
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
   # not something inferred from content hashes.

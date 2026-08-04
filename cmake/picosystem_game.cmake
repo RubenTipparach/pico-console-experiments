@@ -12,6 +12,7 @@
 include_guard(GLOBAL)
 
 include(${CMAKE_CURRENT_LIST_DIR}/obj_model.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/game_meta.cmake)
 
 # Our Emscripten page, used instead of the SDK's.
 set(PICO_WEB_SHELL ${CMAKE_CURRENT_LIST_DIR}/../web/shell.html
@@ -28,6 +29,13 @@ function(add_picosystem_game NAME)
     foreach(model ${GAME_MODELS})
         add_obj_model(${NAME} ${model} generated_sources)
     endforeach()
+
+    # The name and icon block, for the launcher and the desktop tool. Device
+    # builds only: on the web the gallery already says what a game is, and the
+    # icon would just be 4.7 KB more wasm to download.
+    if(NOT EMSCRIPTEN)
+        add_game_meta(${NAME} generated_sources)
+    endif()
 
     # Swap in our own Emscripten page.
     #
