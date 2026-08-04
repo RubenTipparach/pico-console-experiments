@@ -201,10 +201,20 @@ source when a real model would do.
   "Download .uf2" link and say so on the card.
 - Every web build uses `web/shell.html`, which carries the on-screen gamepad
   and the fullscreen button. Games must stay playable on a phone with nothing
-  installed. The shell passes `--size 240,240` so the browser surface matches
-  the device exactly: the SDL backend otherwise defaults to 320x240, and a game
-  drawing to its own fixed bounds ends up with black margins on the web that it
-  does not have on hardware. Do not fall back to the SDK's stock shell: it is keyboard only,
+  installed. Two SDK behaviours govern how the screen is sized, and both have
+  bitten already, so do not "simplify" this:
+  - The shell passes `--size 240,240`, because the SDL backend defaults to
+    320x240 while the PicoSystem board config is 240x240. Without it a game
+    drawing to its own bounds gets black margins on the web it does not have on
+    hardware.
+  - The canvas is pinned to 240x240 in CSS and magnified with a `transform`,
+    never sized responsively. The SDL window is `SDL_WINDOW_RESIZABLE`, so
+    Emscripten keeps the render buffer in step with the element's CSS box, and
+    `Renderer.cpp` hardcodes `KeepPixels`, which turns on integer scaling with
+    no switch to disable it. A responsive CSS size gives an arbitrary buffer
+    like 358, `floor(358 / 240)` is 1, and the game sits small in a black
+    frame. Pinning the buffer keeps the integer scale at exactly 1x (hires) or
+    2x (lores). Media queries must resize `#frame`, never the canvas. Do not fall back to the SDK's stock shell: it is keyboard only,
   so a phone can load the game and then not play it.
 - The shell synthesises keyboard events rather than calling into the engine.
   Keep it that way: it means the page needs no per game knowledge, and a change
