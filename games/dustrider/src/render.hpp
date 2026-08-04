@@ -20,6 +20,13 @@ void render_scene(const dr::World& world, const pse::RenderTarget& target,
 struct FrameStats {
     uint16_t queued;
     uint16_t dropped;
+    // The bike's horizontal screen span this frame, in pixels, from its
+    // real transformed bounding box. The sim decides death from a world
+    // space window and cannot ask the renderer anything, so this is how
+    // the promise that a run only ends once the bike is COMPLETELY off
+    // screen gets checked against the projection that actually draws it.
+    int16_t bike_x0;
+    int16_t bike_x1;
 };
 FrameStats last_frame_stats();
 

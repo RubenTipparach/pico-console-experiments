@@ -20,6 +20,14 @@ dr::World g_world;
 Shell g_shell = Shell::Title;
 uint32_t g_dead_ticks = 0;
 uint32_t g_attract_dead = 0;
+bool g_new_record = false;
+
+// Any button acts. With nothing on screen telling the player which one to
+// press, no press can be the wrong guess.
+constexpr uint32_t k_any_button =
+    Button::A | Button::B | Button::X | Button::Y |
+    Button::DPAD_UP | Button::DPAD_DOWN | Button::DPAD_LEFT |
+    Button::DPAD_RIGHT;
 
 // The sim's RAM footprint is a promise, checked at compile time.
 static_assert(sizeof(dr::World) <= 1024, "sim state grew past its RAM budget");
@@ -39,22 +47,48 @@ void save_if_needed() {
     g_world.save_pending = false;
 }
 
-void draw_title() {
-    screen.pen = Pen(20, 10, 8, 190);
-    screen.rectangle(Rect(12, 30, 96, 50));
-    screen.pen = Pen(255, 196, 90);
-    screen.text("DUST RIDER", minimal_font, Point(34, 38));
-    screen.pen = Pen(255, 255, 238);
-    screen.text("A: ride", minimal_font, Point(46, 54));
-    screen.pen = Pen(190, 170, 150);
-    screen.text("B brake  pad: steer", minimal_font, Point(22, 66));
+// Centre one line on the screen. Every string here is measured rather than
+// placed by eye: a hand picked x is only correct for the exact string it
+// was tuned against, which is how the old title ended up printing its
+// control hints straight through the edges of their own panel.
+void text_centered(const char* line, int y, Pen pen) {
+    const Size size = screen.measure_text(line, minimal_font);
+    screen.pen = pen;
+    screen.text(line, minimal_font, Point((screen.bounds.w - size.w) / 2, y));
+}
 
-    if (g_world.best_m > 0) {
-        char line[20];
-        snprintf(line, sizeof(line), "best %um", g_world.best_m);
-        screen.pen = Pen(210, 210, 220);
-        screen.text(line, minimal_font, Point(40, 108));
+// A panel sized to its widest measured line, centred, with a small margin.
+void panel(int y, int height, int content_w, Pen pen) {
+    const int w = content_w + 12;
+    screen.pen = pen;
+    screen.rectangle(Rect((screen.bounds.w - w) / 2, y, w, height));
+}
+
+int widest(const char* const* lines, int count) {
+    int w = 0;
+    for (int i = 0; i < count; i++) {
+        const int lw = screen.measure_text(lines[i], minimal_font).w;
+        if (lw > w) w = lw;
     }
+    return w;
+}
+
+void draw_title() {
+    char best[20];
+    const char* lines[2] = {"DUST RIDER", nullptr};
+    int count = 1;
+    if (g_world.best_m > 0) {
+        snprintf(best, sizeof(best), "best %um", g_world.best_m);
+        lines[1] = best;
+        count = 2;
+    }
+
+    // No control prompts. Any button rides, so there is nothing a prompt
+    // could usefully say, and the gallery card already lists the controls.
+    const int height = count == 2 ? 30 : 20;
+    panel(44, height, widest(lines, count), Pen(20, 10, 8, 190));
+    text_centered("DUST RIDER", 50, Pen(255, 196, 90));
+    if (count == 2) text_centered(best, 62, Pen(210, 210, 220));
 }
 
 const char* death_word(dr::Death death) {
@@ -67,31 +101,33 @@ const char* death_word(dr::Death death) {
     }
 }
 
+// State, score, and a record tag when there is one. No retry prompt: any
+// button rides again, and a line telling the player that is a line they
+// have to read every single death.
 void draw_wreck() {
-    char line[24];
-    screen.pen = Pen(20, 10, 8, 200);
-    screen.rectangle(Rect(14, 34, 92, 46));
-    screen.pen = Pen(255, 90, 70);
-    screen.text(death_word(g_world.death), minimal_font, Point(42, 40));
-    snprintf(line, sizeof(line), "%dm", dr::distance_m(g_world));
-    screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(52, 52));
-    snprintf(line, sizeof(line), "best %um", g_world.best_m);
-    screen.pen = Pen(210, 210, 220);
-    screen.text(line, minimal_font, Point(40, 62));
-    if (g_dead_ticks > 40) {
-        screen.pen = Pen(255, 196, 90);
-        screen.text("A: again", minimal_font, Point(44, 71));
-    }
+    char dist[16];
+    snprintf(dist, sizeof(dist), "%dm", dr::distance_m(g_world));
+    const char* cause = death_word(g_world.death);
+    const char* lines[3] = {cause, dist, "RECORD"};
+    const int count = g_new_record ? 3 : 2;
+
+    panel(46, count == 3 ? 32 : 22, widest(lines, count), Pen(20, 10, 8, 200));
+    text_centered(cause, 51, Pen(255, 90, 70));
+    text_centered(dist, 62, Pen(255, 255, 238));
+    if (g_new_record) text_centered("RECORD", 73, Pen(255, 196, 90));
 }
 
+// The only thing on screen while riding: how far. Sized to the text so a
+// four digit distance cannot run out of its own backing.
 void draw_hud() {
     char line[16];
     snprintf(line, sizeof(line), "%dm", dr::distance_m(g_world));
+    const Size size = screen.measure_text(line, minimal_font);
+    const int x = screen.bounds.w - size.w - 4;
     screen.pen = Pen(40, 24, 16, 160);
-    screen.rectangle(Rect(86, 2, 32, 9));
+    screen.rectangle(Rect(x - 2, 2, size.w + 4, size.h + 2));
     screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(88, 3));
+    screen.text(line, minimal_font, Point(x, 3));
 }
 
 void start_run() {
@@ -125,7 +161,7 @@ void update(uint32_t time) {
             g_world.best_m = best;
             g_attract_dead = 0;
         }
-        if (buttons.pressed & Button::A) start_run();
+        if (buttons.pressed & k_any_button) start_run();
         return;
     }
 
@@ -137,12 +173,16 @@ void update(uint32_t time) {
     input.north = (buttons & Button::DPAD_UP) != 0;
     input.south = (buttons & Button::DPAD_DOWN) != 0;
 
+    const uint32_t prev_best = g_world.best_m;
     dr::world_tick(g_world, input);
+    if (g_world.ev.died) g_new_record = g_world.best_m > prev_best;
 
     if (!g_world.alive) {
         g_dead_ticks++;
         save_if_needed();
-        if (g_dead_ticks > 40 && (buttons.pressed & Button::A)) start_run();
+        // The grace period is so a wreck is not skipped by the button that
+        // was already held when it happened.
+        if (g_dead_ticks > 40 && (buttons.pressed & k_any_button)) start_run();
     }
 }
 
