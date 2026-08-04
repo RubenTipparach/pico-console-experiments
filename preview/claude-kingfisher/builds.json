@@ -1,10 +1,10 @@
 {
   "games": [
     {
-      "built_at": "2026-08-04T17:59:25Z",
-      "commit": "61f4bd8",
+      "built_at": "2026-08-04T20:39:43Z",
+      "commit": "f49317c",
       "dir": "games/chicken",
-      "fingerprint": "40aecf1d6d0b0251",
+      "fingerprint": "d915904938d238d7",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "chicken",
@@ -13,10 +13,22 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T17:59:25Z",
-      "commit": "61f4bd8",
+      "built_at": "2026-08-04T20:39:43Z",
+      "commit": "f49317c",
+      "dir": "games/dustrider",
+      "fingerprint": "5a1ed2a6e20b1044",
+      "has_thumbnail": false,
+      "sdk": "32blit",
+      "slug": "dustrider",
+      "target": "dustrider",
+      "title": "Dust Rider",
+      "web": true
+    },
+    {
+      "built_at": "2026-08-04T20:39:43Z",
+      "commit": "f49317c",
       "dir": "games/kingfisher",
-      "fingerprint": "ee724ee2be78f034",
+      "fingerprint": "7f6a133e75561586",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "kingfisher",
@@ -25,10 +37,10 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T17:59:25Z",
-      "commit": "61f4bd8",
+      "built_at": "2026-08-04T20:39:43Z",
+      "commit": "f49317c",
       "dir": "games/pico-santa",
-      "fingerprint": "f8dab3c015606bcf",
+      "fingerprint": "af2b0e220be7011d",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "pico-santa",
@@ -37,6 +49,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-04T18:47:10Z",
+  "generated_at": "2026-08-04T20:39:43Z",
   "schema": 1
 }
