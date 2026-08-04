@@ -103,9 +103,16 @@ build tooling, the workflow itself) changes.
   in `game.yml`, otherwise the game will silently go stale.
 - Never "just rebuild everything to be safe". If you think a rebuild is needed,
   fix the fingerprint inputs so the tool agrees with you.
-- The builds that do run reuse objects through ccache (cached per game) and a
-  persistent Emscripten system library cache. Keep compiler flags stable
-  unless a change needs them: flag churn empties both.
+- The pico builds that do run reuse objects through ccache, cached per game.
+  The Emscripten builds use NO compile cache, deliberately: a warm ccache
+  once shipped a wasm whose EM_ASM addresses no longer matched its JS, so
+  the game compiled green and died on its first frame. Web correctness
+  beats web build speed; do not re-add caching there.
+- Compiling proves nothing about booting. The publish job boot checks every
+  rebuilt web game in a real browser (`tools/boot_check.py`) and fails the
+  deploy on any page error, so a dead game cannot replace a live one. The
+  shell also shows any runtime crash on the page with a copy button, so a
+  phone can report exactly what broke and from which build.
 
 ### 6. One SDK: 32blit
 
@@ -287,8 +294,18 @@ Do not edit the workflow, the gallery template, or the top level CMakeLists to
 add a game. If you find yourself needing to, the discovery mechanism is broken
 and that is the bug to fix.
 
+### 14. Sync with main before every push
+
+Before each push to any branch, the branch must be synced up with main so it
+carries the latest version: fetch main and rebase the branch onto it (or
+restart the branch from main when its previous PR already merged). A push
+from a stale base ships code that was never built against what main has
+become, and the preview it deploys tests yesterday's repo with today's
+change. Never force push over commits that are not already merged into main.
+
 ## Before you open a PR
 
+- The branch is freshly synced with main (rule 14).
 - The workflow builds clean from a cold cache.
 - No game rebuilt that did not need to rebuild. Check the `detect` job summary.
 - RAM and flash deltas stated for anything touching the device build.

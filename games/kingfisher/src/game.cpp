@@ -193,6 +193,7 @@ void update(uint32_t time) {
     input.a = (buttons & Button::A) != 0;
     input.a_pressed = (buttons.pressed & Button::A) != 0;
     input.a_released = (buttons.released & Button::A) != 0;
+    input.b_pressed = (buttons.pressed & Button::B) != 0;
     input.left = (buttons & Button::DPAD_LEFT) != 0;
     input.right = (buttons & Button::DPAD_RIGHT) != 0;
     input.left_pressed = (buttons.pressed & Button::DPAD_LEFT) != 0;

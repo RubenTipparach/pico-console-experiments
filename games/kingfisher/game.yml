@@ -11,6 +11,7 @@ controls:
   - "hold A: power, release: cast"
   - "A: hook, then hold to reel"
   - "left/right: wiggle the rod"
+  - "B: recall the lure"
   - "Y: records"
 
 models:

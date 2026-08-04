@@ -100,6 +100,46 @@
 
   /* ---- loading ---- */
 
+  #crash {
+    position: fixed;
+    top: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    width: min(92vw, 480px);
+    background: #221133;
+    border: 1px solid #ff2266;
+    border-radius: 8px;
+    padding: 10px;
+    color: #ffffee;
+  }
+  .crash-head {
+    color: #ff2266;
+    font-size: 13px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .crash-body {
+    margin: 0 0 8px;
+    max-height: 40vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 11px;
+    color: #d9d4ee;
+  }
+  .crash-copy {
+    background: #332255;
+    color: #ffcc22;
+    border: 1px solid #553377;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
   #newbuild {
     position: fixed;
     top: 8px;
@@ -685,13 +725,69 @@
   }
 
   Module.setStatus('Downloading...');
-  window.onerror = function () {
-    Module.setStatus('Exception thrown, see JavaScript console');
+  // A crash on a phone has no JavaScript console. Put the real error on
+  // the page with a copy button, so any device can report exactly what
+  // broke and which build broke it.
+  var crashShown = false;
+  function showCrash(detail) {
+    if (crashShown) return;
+    crashShown = true;
     spinnerElement.style.display = 'none';
+    Module.setStatus('');
     Module.setStatus = function (text) {
       if (text) Module.printErr('[post-exception status] ' + text);
     };
+    var report = 'build ' + (pseBuild() || 'local') + ' at ' +
+                 location.pathname + '\n' + detail;
+    var panel = document.createElement('div');
+    panel.id = 'crash';
+    var head = document.createElement('div');
+    head.className = 'crash-head';
+    head.textContent = 'the game crashed';
+    var body = document.createElement('pre');
+    body.className = 'crash-body';
+    body.textContent = report;
+    var copy = document.createElement('button');
+    copy.className = 'crash-copy';
+    copy.textContent = 'copy error';
+    copy.addEventListener('click', function () {
+      var done = function () { copy.textContent = 'copied'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(report).then(done, function () {
+          fallbackCopy(report, done);
+        });
+      } else {
+        fallbackCopy(report, done);
+      }
+    });
+    panel.appendChild(head);
+    panel.appendChild(body);
+    panel.appendChild(copy);
+    document.body.appendChild(panel);
+  }
+  function fallbackCopy(text, done) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    try { document.execCommand('copy'); done(); } catch (err) {}
+    document.body.removeChild(area);
+  }
+  window.onerror = function (message, source, lineno, colno, error) {
+    var detail = String(message);
+    if (error && error.stack) detail += '\n' + error.stack;
+    else if (source) detail += '\n' + source + ':' + lineno + ':' + colno;
+    showCrash(detail);
   };
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event.reason;
+    var detail = 'unhandled rejection: ' + String(reason);
+    if (reason && reason.stack) detail += '\n' + reason.stack;
+    showCrash(detail);
+  });
 })();
 </script>
 {{{ SCRIPT }}}
