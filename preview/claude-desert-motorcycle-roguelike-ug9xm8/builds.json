@@ -13,10 +13,10 @@
       "web": true
     },
     {
-      "built_at": "2026-08-04T18:21:34Z",
-      "commit": "e6ab8c9",
+      "built_at": "2026-08-04T18:42:26Z",
+      "commit": "494c8f8",
       "dir": "games/dustrider",
-      "fingerprint": "3ea3a4a97c195160",
+      "fingerprint": "5ad484b57c62b896",
       "has_thumbnail": false,
       "sdk": "32blit",
       "slug": "dustrider",
@@ -49,6 +49,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-04T18:21:34Z",
+  "generated_at": "2026-08-04T18:42:26Z",
   "schema": 1
 }
