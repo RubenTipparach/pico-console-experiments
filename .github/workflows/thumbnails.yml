@@ -48,8 +48,9 @@ jobs:
 
       - name: Install Playwright
         run: |
-          pip3 install --user playwright
-          python3 -m playwright install --with-deps chromium
+          set -euo pipefail
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE=$(tools/setup_browser.sh)" \
+            >> "$GITHUB_ENV"
 
       - name: Recapture
         env:

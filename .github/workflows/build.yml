@@ -356,8 +356,8 @@ jobs:
             echo "no web builds this run"
             exit 0
           fi
-          pip3 install --user playwright
-          python3 -m playwright install --with-deps chromium
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(tools/setup_browser.sh)"
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE
           for slug in $needed; do
             python3 tools/boot_check.py --dir incoming/web --slug "$slug"
           done
@@ -424,8 +424,8 @@ jobs:
             echo "every published game already has a thumbnail"
             exit 0
           fi
-          pip3 install --user playwright
-          python3 -m playwright install --with-deps chromium
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(tools/setup_browser.sh)"
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE
           for slug in $needed; do
             python3 tools/capture_thumbnail.py \
               --site "site/${PREFIX%/}" --slug "$slug" \

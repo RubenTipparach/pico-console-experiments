@@ -113,6 +113,12 @@ build tooling, the workflow itself) changes.
   deploy on any page error, so a dead game cannot replace a live one. The
   shell also shows any runtime crash on the page with a copy button, so a
   phone can report exactly what broke and from which build.
+- That browser comes from `tools/setup_browser.sh`, which never touches apt.
+  `playwright install --with-deps chromium` pulls Chromium's whole system
+  dependency set, 21 MB of it CJK fonts that a canvas game has no use for,
+  and that apt run hung a publish job on the archive mirror. Prefer the
+  browser the runner already ships, fall back to Playwright's download, and
+  do not add `--with-deps` back.
 
 ### 6. One SDK: 32blit
 
