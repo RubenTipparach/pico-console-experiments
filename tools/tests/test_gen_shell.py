@@ -56,13 +56,19 @@ web: true
 """
 
 
-def panels_for(body):
+def _game_from(body):
+    """A Game built from a throwaway directory. The caller owns nothing: the
+    manifest is read at construction, so the directory can go straight away."""
     tmp = tempfile.mkdtemp()
     try:
         write_game(os.path.join(tmp, "testgame"), body)
-        return gen_shell.render_panels(Game(os.path.join(tmp, "testgame")))
+        return Game(os.path.join(tmp, "testgame"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def panels_for(body):
+    return gen_shell.render_panels(_game_from(body))
 
 
 def test_the_objective_leads():
@@ -107,6 +113,44 @@ def test_no_arrows_for_a_single_panel():
     html = panels_for(BASE + 'objective: "Go."\n')
     check("data-panel" in html, "the one panel is there")
     check("tut-next" not in html, "no arrows when there is nowhere to go")
+
+
+def test_the_keyboard_keys_come_from_the_pad():
+    """The mapping is read out of the shell's own gamepad, so it cannot drift
+    from what those buttons actually dispatch."""
+    with open(SHELL, encoding="utf-8") as handle:
+        shell = handle.read()
+    mapping = gen_shell.keyboard_map(shell)
+
+    # Every console button has to be in there. If the pad's markup changes
+    # shape the regex quietly matches nothing, the hints vanish from every
+    # page, and nothing else would notice: that is what this guards.
+    for button, expected in (("a", "Z"), ("b", "X"), ("x", "C"), ("y", "V")):
+        check(mapping.get(button) == expected,
+              "the pad says %s is %s" % (button.upper(), expected))
+    for direction in ("up", "down", "left", "right"):
+        check(direction in mapping, "the pad maps %s" % direction)
+    check(len(mapping) >= 8, "all four buttons and four directions are mapped")
+
+
+def test_a_control_carries_its_keyboard_key():
+    mapping = {"a": "Z", "b": "X", "left": "←", "right": "→"}
+    check(gen_shell.keyboard_hint("hold A", mapping) == "Z",
+          "a button named with a word beside it still resolves")
+    check(gen_shell.keyboard_hint("left/right", mapping) == "← →",
+          "a pair of directions gives both keys in order")
+    check(gen_shell.keyboard_hint("A", mapping) == "Z", "a bare button works")
+    check(gen_shell.keyboard_hint("tilt", mapping) == "",
+          "something that is not a button gets no key rather than an empty one")
+
+    html = panels_for(BASE + 'controls:\n  - "A: throttle"\n')
+    check('<kbd class="kb">Z</kbd>' not in html,
+          "render_panels without a mapping adds no hints")
+    html = gen_shell.render_panels(
+        _game_from(BASE + 'controls:\n  - "A: throttle"\n'), mapping)
+    check('<kbd class="kb">Z</kbd>' in html,
+          "with a mapping, the key is shown beside the button")
+    check("<kbd>A</kbd>" in html, "and the console button is still named")
 
 
 def test_the_shell_is_filled_in():
@@ -169,6 +213,8 @@ def main():
     test_a_control_without_a_colon_survives()
     test_controls_split_across_panels()
     test_no_arrows_for_a_single_panel()
+    test_the_keyboard_keys_come_from_the_pad()
+    test_a_control_carries_its_keyboard_key()
     test_the_shell_is_filled_in()
     test_a_shell_without_the_placeholder_is_an_error()
     test_every_web_game_explains_itself()
