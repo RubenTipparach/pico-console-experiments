@@ -304,6 +304,12 @@ void draw_overworld(const World& w, uint32_t t) {
     const float pz = float(w.ty) + 0.5f + float(oy) / 256.0f;
 
     g_renderer.set_fov(k_fov);
+    // Bracket the depth range to what this scene occupies. The engine's
+    // default 0.25 to 400 puts an entire tree inside one step of the one byte
+    // depth buffer at this camera distance, so every prop ties with the ground
+    // it stands on and loses the tie. That is not a theoretical risk: it is
+    // what made the first version of this scene a field with no trees in it.
+    g_renderer.set_depth_range(12.0f, 84.0f);
     g_renderer.set_camera(px, k_cam_height, pz - k_cam_back, 0.0f, k_pitch);
 
     g_raster.begin_frame(g_raster.target());
@@ -526,6 +532,7 @@ void draw_battle(const World& w, uint32_t t) {
     // A battle is a different shot from the overworld, so it gets a different
     // lens: wider and lower, the way these games have always staged them.
     g_renderer.set_fov(30.0f);
+    g_renderer.set_depth_range(3.0f, 48.0f);
     g_renderer.set_camera(0.0f, 6.54f, -13.44f, 0.0f, -0.3735f);
 
     g_raster.begin_frame(g_raster.target());
@@ -545,8 +552,8 @@ void draw_battle(const World& w, uint32_t t) {
         const Species& fs = k_species[b.foe.species];
         const float scale = float(fs.scale) / 100.0f;
         if (b.state != BattleState::Wobble && b.state != BattleState::Caught) {
-            g_renderer.draw_mesh(*mesh_for(fs.mesh), 1.9f, 0.02f + bob, 3.6f,
-                                 3.14159f, scale * 1.15f,
+            g_renderer.draw_mesh(*mesh_for(fs.mesh), 1.9f, 0.02f + bob, 2.9f,
+                                 3.14159f, scale * 1.45f,
                                  fs.tint_r, fs.tint_g, fs.tint_b);
         }
     }
@@ -707,6 +714,7 @@ void draw_title(uint32_t t) {
     g_raster.begin_frame(g_raster.target());
     g_raster.clear_gradient(0x22, 0x33, 0x66, 0x66, 0x99, 0xDD);
     g_renderer.set_fov(34.0f);
+    g_renderer.set_depth_range(2.0f, 40.0f);
     g_renderer.set_camera(0.0f, 2.6f, -7.4f, 0.0f, -0.22f);
     ground_quad(-20.0f, -8.0f, 20.0f, 40.0f, 0x55, 0x99, 0x44);
     for (int i = 0; i < 7; i++) {

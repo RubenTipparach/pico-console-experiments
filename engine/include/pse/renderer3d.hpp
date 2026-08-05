@@ -35,6 +35,15 @@ public:
     // Place the camera explicitly.
     void set_camera(float x, float y, float z, float yaw, float pitch);
 
+    // Near and far clip. The default 0.25 to 400 covers anything, and that is
+    // the problem: the depth buffer is one byte, a perspective depth curve
+    // spends nearly all of its resolution near the near plane, and a scene
+    // sitting 40 units out lands inside a single step of it. A whole tree
+    // then ties with the ground it stands on, and ties go to whoever drew
+    // first, so the tree vanishes. Bracket the range to what a scene actually
+    // occupies and the same tree separates cleanly.
+    void set_depth_range(float near_plane, float far_plane);
+
     // Vertical field of view in degrees. The default is 90, which is a very
     // wide lens: it makes the bottom of the frame look 45 degrees further down
     // than the middle, so a camera pitched for a three quarter view still
@@ -110,6 +119,8 @@ private:
     float camera_x_ = 0.0f, camera_y_ = 0.0f, camera_z_ = 0.0f;
     float camera_yaw_ = 0.0f, camera_pitch_ = 0.0f;
     float fov_degrees_ = 90.0f;
+    float z_near_ = 0.25f;     // k_default_z_near in the .cpp
+    float z_far_ = 400.0f;     // k_default_z_far
 
     int viewport_y0_ = 0;
     int viewport_h_ = 0;   // 0 means the full target height

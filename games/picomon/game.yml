@@ -10,7 +10,10 @@ web: true
 objective: "Walk out of Hometown, step into the tall grass, and catch what comes out of it. Wear a creature down before you throw, then build a team good enough to get past the trainers on the road north."
 
 controls:
-  - "dpad: walk"
+  - "up: walk, and turn to face"
+  - "down: walk, and turn to face"
+  - "left: walk, and turn to face"
+  - "right: walk, and turn to face"
   - "A: talk, read, pick up, confirm"
   - "B: back"
   - "X: bag"

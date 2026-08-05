@@ -6,8 +6,8 @@ namespace pse {
 namespace {
 
 constexpr float k_pi = 3.14159265f;
-constexpr float k_z_near = 0.25f;
-constexpr float k_z_far = 400.0f;
+constexpr float k_default_z_near = 0.25f;
+constexpr float k_default_z_far = 400.0f;
 constexpr float k_default_fov_degrees = 90.0f;
 
 // Flat shading direction. Baked into the engine because a game that wants a
@@ -64,6 +64,14 @@ const float k_face_shade[6] = {0.70f, 0.90f, 0.60f, 1.00f, 1.00f, 0.50f};
 
 }  // namespace
 
+void Renderer3D::set_depth_range(float near_plane, float far_plane) {
+    if (near_plane < 0.05f) near_plane = 0.05f;
+    if (far_plane < near_plane * 1.5f) far_plane = near_plane * 1.5f;
+    z_near_ = near_plane;
+    z_far_ = far_plane;
+    rebuild_view_projection();
+}
+
 void Renderer3D::set_fov(float degrees) {
     if (degrees < 1.0f) degrees = 1.0f;
     if (degrees > 175.0f) degrees = 175.0f;
@@ -107,8 +115,8 @@ void Renderer3D::rebuild_view_projection() {
     float projection[4][4] = {};
     projection[0][0] = focal;
     projection[1][1] = focal;
-    projection[2][2] = -((k_z_far + k_z_near) / (k_z_far - k_z_near));
-    projection[2][3] = -((2.0f * k_z_far * k_z_near) / (k_z_far - k_z_near));
+    projection[2][2] = -((z_far_ + z_near_) / (z_far_ - z_near_));
+    projection[2][3] = -((2.0f * z_far_ * z_near_) / (z_far_ - z_near_));
     projection[3][2] = -1.0f;
 
     const float cos_pitch = cosf(camera_pitch_), sin_pitch = sinf(camera_pitch_);
