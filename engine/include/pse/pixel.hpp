@@ -15,12 +15,28 @@ namespace pse {
 // These are the three layouts a 32blit Surface presents. On the pico devices
 // `screen` is RGB565, on desktop and Emscripten it is 24 bit RGB.
 
+// The SDK's RGB565 puts RED IN THE LOW BITS. This is not conventional RGB565
+// and it is not what the enum name suggests, so it is worth being explicit:
+//
+//     32blit/graphics/blend.cpp, pack_rgb565():
+//         (r >> 3) | ((g >> 2) << 5) | ((b >> 3) << 11)
+//
+// which is red at bits 0..4, green at 5..10, blue at 11..15. It comes out
+// right on the PicoSystem because the panel is put in BGR order: the dbi
+// driver always sets MADCTL bit 3 (`MADCTL::RGB = 0b00001000`), and bit 3 on
+// an ST7789 selects BGR, so the panel reads the halfword back the other way
+// round. The two wrongs are load bearing and cancel exactly.
+//
+// Writing conventional RGB565 here instead swaps red and blue on hardware and
+// nowhere else, because desktop and the browser hand us 24 bit RGB. That is a
+// bug that cannot be seen without a device, and it shipped once: keep this in
+// step with the SDK, not with what the format is called.
 struct Rgb565 {
     static constexpr int k_bytes_per_pixel = 2;
 
     static inline void store(uint8_t* dst, uint8_t r, uint8_t g, uint8_t b) {
         const uint16_t value = static_cast<uint16_t>(
-            ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+            (r >> 3) | ((g & 0xFC) << 3) | ((b & 0xF8) << 8));
         // Little endian halfword, written bytewise so the target does not need
         // to be 2 byte aligned.
         dst[0] = static_cast<uint8_t>(value & 0xFF);
