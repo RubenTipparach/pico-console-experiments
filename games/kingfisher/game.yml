@@ -7,6 +7,8 @@ target: kingfisher
 sdk: 32blit
 web: true
 
+objective: "Cast into deep water for the rarer fish, then wear the fish down: reel while the line is safe, ease off when the meter climbs, and land it before it breaks free."
+
 controls:
   - "hold A: power, release: cast"
   - "A: hook, then hold to reel"

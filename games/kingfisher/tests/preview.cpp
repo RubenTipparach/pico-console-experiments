@@ -92,14 +92,12 @@ int main(int argc, char** argv) {
         capture(world, 95000, out + "/preview_4_fight.ppm");
     }
 
-    // 5: the catch card trophy, landed with the full technique: reel on
-    // tired while the tension is safe, wiggle throughout.
+    // 5: the catch card trophy, landed with the full technique: work the reel
+    // whenever the meter is out of the red, wiggle throughout.
     {
         for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
             kf::Input input{};
-            const bool tired = world.fight_phase == kf::FightPhase::Tire ||
-                               world.stamina == 0;
-            input.a = tired && world.tension < kf::k_tension_danger - 80;
+            input.a = world.tension < kf::k_tension_danger - 80;
             if (t % 3 == 0) {
                 if ((t / 3) % 2 == 0) input.left_pressed = true;
                 else input.right_pressed = true;

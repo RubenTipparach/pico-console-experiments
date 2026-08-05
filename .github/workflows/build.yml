@@ -67,6 +67,8 @@ jobs:
           python3 tools/tests/test_game_meta.py
           python3 tools/tests/test_make_bundle.py
           python3 tools/tests/test_make_thumbnail.py
+          python3 tools/tests/test_gen_gallery.py
+          python3 tools/tests/test_gen_shell.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
@@ -589,7 +591,13 @@ jobs:
         run: |
           set -euo pipefail
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          title="$(basename "$GITHUB_REPOSITORY")"
+          # Left empty so gen_gallery names the site itself, from --repo: it
+          # reads the repo's dashes as spaces, which a path needs and a sign
+          # over a cabinet does not. Naming it here is what put the hyphens
+          # back on the marquee, because the generator's default is dead code
+          # whenever this is set. A preview still overrides it, since a branch
+          # name is an identifier and wants showing verbatim.
+          title=""
           [ -n "$PREFIX" ] && title="$GITHUB_REF_NAME (preview)"
 
           # Claim what arrived, not what was planned. The manifest's commit is

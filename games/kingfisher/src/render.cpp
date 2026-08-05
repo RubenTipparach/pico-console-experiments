@@ -52,11 +52,24 @@ struct Mote {
     int32_t x, y;      // 8.8 fixed, band pixels
     uint8_t layer;     // 1 far .. 3 near; near motes move and shine more
     uint8_t phase;     // per mote wander offset
+    int8_t vx;         // own sideways drift, 8.8 per frame
 };
 constexpr int k_max_motes = 12;
 Mote g_motes[k_max_motes];
 bool g_motes_seeded = false;
+uint32_t g_mote_respawns = 0;   // stirs the hash when a mote is recycled
 float g_mote_cam_x = 0.0f, g_mote_cam_z = 0.0f, g_mote_hook = 0.6f;
+
+// How far the pool is currently bulged away from the centre line, 8.8. Camera
+// travel toward the scene feeds it and it springs back to nothing, so parting
+// the water is something the pool does and then recovers from.
+//
+// This used to be integrated into every mote's own x instead, which had no
+// way back: a run of travel in one direction walked the whole field onto the
+// centre column and left it there, and only a sideways move redistributed it.
+// A bulge that decays cannot accumulate, so the pool keeps its spread.
+int32_t g_mote_bulge = 0;
+constexpr int32_t k_mote_bulge_max = 6 << 8;
 
 // Quarter resolution sine, s8 amplitude 127, 64 entries per turn.
 const int8_t k_sin[64] = {
@@ -445,10 +458,18 @@ void draw_motes(const SkyKey& sky, uint32_t t) {
     if (!g_motes_seeded) {
         for (int i = 0; i < k_max_motes; i++) {
             const uint32_t h = (i + 1) * 2246822519u;
-            g_motes[i].x = static_cast<int32_t>(h % (120 << 8));
+            // One mote per column slice plus jitter, rather than a hash across
+            // the whole width: twelve specks is few enough that an unlucky
+            // hash leaves visible gaps and clumps on the very first frame.
+            constexpr int32_t slice = (120 << 8) / k_max_motes;
+            g_motes[i].x = i * slice + static_cast<int32_t>(h % slice);
             g_motes[i].y = k_band_top + static_cast<int32_t>((h >> 9) % k_band_h);
             g_motes[i].layer = static_cast<uint8_t>(1 + (h >> 21) % 3);
             g_motes[i].phase = static_cast<uint8_t>(h >> 24);
+            // Each mote drifts its own way. The shared sine wander only
+            // oscillates, so without this nothing ever separates two motes
+            // that happen to meet.
+            g_motes[i].vx = static_cast<int8_t>((h >> 16) % 13 - 6);
         }
         g_motes_seeded = true;
         g_mote_cam_x = cam_x;
@@ -473,9 +494,14 @@ void draw_motes(const SkyKey& sky, uint32_t t) {
     // pixel per frame: clearly flowing, nowhere near noise.
     const int push_x = static_cast<int>(-dx * 1400.0f);
     const int push_y = static_cast<int>(-dh * 1200.0f);
-    // Moving toward the hook parts the water: motes ease outward from the
-    // centre line, faster the closer they are.
-    const int part = static_cast<int>(dz * 500.0f);
+
+    // Moving toward the hook parts the water. Fed by travel and sprung back
+    // toward nothing every frame, so it bulges the pool and releases it
+    // instead of walking it somewhere and leaving it there.
+    g_mote_bulge += static_cast<int32_t>(dz * 500.0f);
+    g_mote_bulge -= g_mote_bulge / 8;
+    if (g_mote_bulge > k_mote_bulge_max) g_mote_bulge = k_mote_bulge_max;
+    if (g_mote_bulge < -k_mote_bulge_max) g_mote_bulge = -k_mote_bulge_max;
 
     for (int i = 0; i < k_max_motes; i++) {
         Mote& m = g_motes[i];
@@ -486,18 +512,32 @@ void draw_motes(const SkyKey& sky, uint32_t t) {
         const int amb_x = sin64(t / 6 + m.phase) / 10;
         const int amb_y = -14 - 4 * scale;
 
-        const int outward = m.x >= (60 << 8) ? 1 : -1;
-        m.x += amb_x + (push_x + outward * part) * scale / 3;
+        m.x += amb_x + m.vx + push_x * scale / 3;
         m.y += amb_y + push_y * scale / 3;
 
-        // Wrap within the band so the pool never thins out.
+        // Wrap within the band so the pool never thins out. A mote that has
+        // risen out of the top comes back at the bottom somewhere new: over a
+        // long sit that reseeding is what keeps the field even, whatever the
+        // drift has been doing.
         if (m.x < 0) m.x += 120 << 8;
         if (m.x >= (120 << 8)) m.x -= 120 << 8;
-        if (m.y < k_band_top) m.y += k_band_h;
+        if (m.y < k_band_top) {
+            m.y += k_band_h;
+            const uint32_t h = (++g_mote_respawns + i * 71u) * 2654435761u;
+            m.x = static_cast<int32_t>(h % (120 << 8));
+            m.vx = static_cast<int8_t>((h >> 16) % 13 - 6);
+        }
         if (m.y >= k_band_bottom) m.y -= k_band_h;
 
+        // The bulge is a draw time offset, never stored: that is what stops
+        // it accumulating into the positions.
+        int32_t draw_x = m.x + (m.x >= (60 << 8) ? 1 : -1) *
+                                   (g_mote_bulge * scale) / 3;
+        if (draw_x < 0) draw_x += 120 << 8;
+        if (draw_x >= (120 << 8)) draw_x -= 120 << 8;
+
         const int lift = 40 + scale * 12;
-        g_raster.plot(m.x >> 8, m.y >> 8,
+        g_raster.plot(draw_x >> 8, m.y >> 8,
                       shade8(sky.wat_r + lift, sky.light),
                       shade8(sky.wat_g + lift, sky.light),
                       shade8(sky.wat_b + lift + 10, sky.light));
@@ -509,15 +549,24 @@ void set_top_camera(const World& world, uint32_t t) {
     float cam_tx = 0.0f, cam_ty = 0.0f, cam_tz = 5.6f;
     float yaw = sin64(t / 4) / 2200.0f;
     float dist = 8.2f, height = 3.8f;
+    // The lake wants the default framing: aiming a unit over the water pushes
+    // it down the band and keeps the far shore and the sky in shot.
+    float look_lift = 1.0f;
     if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
         cam_tx = fp_to_f(world.fish[world.hooked_fish].x) * 0.4f;
         cam_tz = 4.6f + fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
     } else if (world.mode == kf::Mode::Landed) {
+        // The trophy shot is the one camera studying a single object, so it
+        // aims straight at it. With the lake's lift the fish hung a metre
+        // below the aim point, which put it across the split and cut its
+        // belly off on the biggest species, exactly the ones worth showing.
         cam_tx = 0.0f; cam_ty = 0.55f; cam_tz = 3.1f;
         dist = 2.3f; height = 0.7f;
         yaw = 0.0f;
+        look_lift = 0.0f;
     }
-    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height);
+    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height,
+                                look_lift);
 }
 
 // The underwater camera hangs below the surface and looks at the hook, or

@@ -405,8 +405,11 @@ void start_fight(World& world, int fish_index) {
         k_stamina_base + fish.size_cm * k_stamina_per_cm +
         s.strength * k_stamina_per_strength);
     world.stamina_max = world.stamina;
+    world.stamina_cap = world.stamina;
+    world.spent_timer = 0;
     world.run_dir = rnd(world.rng, 2) ? 1 : -1;
     world.last_wiggle = 0;
+    world.wiggle_cd = 0;
     world.line_len = world.lure_z + (world.lure_x < 0 ? -world.lure_x
                                                       : world.lure_x);
     world.line_max = world.line_len + world.line_len / k_line_slack_div +
@@ -481,11 +484,21 @@ void update_fight(World& world, const Input& input) {
     // Rod wiggle: alternating left and right presses. Each swap eases the
     // line and costs the fish, which is what makes it worth doing while a
     // fish is working hard.
+    if (world.wiggle_cd > 0) world.wiggle_cd--;
     int wiggle = 0;
     if (input.left_pressed && world.last_wiggle >= 0) wiggle = -1;
     else if (input.right_pressed && world.last_wiggle <= 0) wiggle = 1;
+    // A swap still tracks direction while the rod is reloading, so the player
+    // can keep the alternation going, but only a wiggle off cooldown does
+    // anything. Spamming it is neither punished nor rewarded: it is simply
+    // not the mechanic.
+    if (wiggle != 0 && world.wiggle_cd > 0) {
+        world.last_wiggle = static_cast<int8_t>(wiggle);
+        wiggle = 0;
+    }
     if (wiggle != 0) {
         world.last_wiggle = static_cast<int8_t>(wiggle);
+        world.wiggle_cd = k_wiggle_cooldown;
         world.ev.wiggle = true;
         // A wiggle knocks the fish off its effort, which is what takes the
         // load off the line. Easing the meter directly would do nothing: it
@@ -494,11 +507,16 @@ void update_fight(World& world, const Input& input) {
         world.fish_effort = static_cast<uint8_t>(
             world.fish_effort > k_wiggle_effort_drop
                 ? world.fish_effort - k_wiggle_effort_drop : 0);
-        if (world.fish_dir != 0 && wiggle == -world.run_dir &&
-            world.stamina > 0) {
+        // Countering the way the fish is running costs it most, but a jerked
+        // rod tires a fish whatever it is doing. Without the second half a
+        // holding fish regenerates through a wiggle for free, and the rod
+        // stops being worth working between runs.
+        if (world.stamina > 0) {
+            const int cost = (world.fish_dir != 0 && wiggle == -world.run_dir)
+                                 ? k_wiggle_drain
+                                 : k_wiggle_drain / 2;
             world.stamina = static_cast<uint16_t>(
-                world.stamina > k_wiggle_drain
-                    ? world.stamina - k_wiggle_drain : 0);
+                world.stamina > cost ? world.stamina - cost : 0);
         }
     }
 
@@ -623,18 +641,46 @@ void update_fight(World& world, const Input& input) {
     // ---- stamina ----
     //
     // Working costs the fish, and being cranked on costs it more. Easing off
-    // lets it get its wind back, so resting is a real decision on both sides.
-    const int spend = (world.fish_effort * k_drain_effort) / 255 +
-                      (reeling ? k_drain_reel : 0);
-    const int recover = (!reeling && wiggle == 0) ? k_stamina_regen : 0;
-    const int net = spend - recover;
-    if (net > 0) {
+    // lets it get its wind back fast, so parking the reel between runs hands
+    // the fish everything back: the pressure has to stay on.
+    if (world.spent_timer > 0) {
+        // Second wind. The fish is refilling no matter what the player does,
+        // so the easy window closes on its own and the player has to spend it
+        // rather than wait it out. Rate is a share of this fish's own pool,
+        // which is what makes the comeback take the same time for everything
+        // in the lake.
+        int rate = world.stamina_max / k_spent_recharge_ticks;
+        if (rate < 1) rate = 1;
+        const int gained = world.stamina + rate;
         world.stamina = static_cast<uint16_t>(
-            world.stamina > net ? world.stamina - net : 0);
-    } else if (net < 0 && world.stamina < world.stamina_max) {
-        const int gained = world.stamina - net;
-        world.stamina = static_cast<uint16_t>(
-            gained > world.stamina_max ? world.stamina_max : gained);
+            gained > world.stamina_cap ? world.stamina_cap : gained);
+        world.spent_timer--;
+        if (world.stamina >= world.stamina_cap) world.spent_timer = 0;
+    } else {
+        const int spend = (world.fish_effort * k_drain_effort) / 255 +
+                          (reeling ? k_drain_reel : 0);
+        const int recover = (!reeling && wiggle == 0) ? k_stamina_regen : 0;
+        const int net = spend - recover;
+        if (net > 0) {
+            world.stamina = static_cast<uint16_t>(
+                world.stamina > net ? world.stamina - net : 0);
+        } else if (net < 0 && world.stamina < world.stamina_cap) {
+            const int gained = world.stamina - net;
+            world.stamina = static_cast<uint16_t>(
+                gained > world.stamina_cap ? world.stamina_cap : gained);
+        }
+
+        // Run it out and it comes back, but smaller. The ceiling dropping a
+        // quarter each time is the whole reason the cycle converges: six
+        // winds in, a legend has a quarter of the fish it started as.
+        if (world.stamina == 0) {
+            const int floor = (world.stamina_max * k_wind_cap_floor_num) /
+                              k_wind_cap_floor_den;
+            int next = (world.stamina_cap * k_wind_cap_num) / k_wind_cap_den;
+            if (next < floor) next = floor;
+            world.stamina_cap = static_cast<uint16_t>(next);
+            world.spent_timer = k_spent_recharge_ticks;
+        }
     }
 
     if (world.line_len <= k_catch_len) {

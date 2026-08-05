@@ -20,6 +20,13 @@
   --device: #ffcc22;
 
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* The marquee is the one thing on the page that is not a readout, so it is
+     the one thing not set in the code face. Weight 900 picks up SF Pro Black
+     on Apple and Segoe UI Black on Windows, with Arial Black as the floor:
+     a heavy poster face everywhere, and no webfont to fetch. */
+  --display: system-ui, -apple-system, "Segoe UI", "Arial Black",
+             "Helvetica Neue", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -58,17 +65,20 @@ body {
 
 .marquee h1 {
   margin: 0;
-  font-size: clamp(2rem, 7vw, 3.5rem);
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-family: var(--display);
+  font-size: clamp(2.25rem, 8vw, 4.25rem);
+  font-weight: 900;
+  /* A heavy face wants to be set tight. The old 0.12em was there to stop a
+     mono face reading as a filename, which is not a problem this one has. */
+  letter-spacing: 0.02em;
+  line-height: 1.05;
   text-transform: uppercase;
   color: var(--ink);
-  /* Hard offset shadow, no blur: a blurred glow reads as CSS, a hard offset
-     reads as a stencilled cabinet. */
-  text-shadow:
-    3px 0 var(--accent),
-    -3px 0 #22aaff,
-    0 4px #00000088;
+  /* One hard offset shadow, no blur and no colour split. The red and blue
+     ghosts either side used to read as a broken signal rather than a lit
+     sign, and at this weight the letterforms carry the sign on their own.
+     The accent still frames the marquee, along its bottom rule. */
+  text-shadow: 0 4px 0 #00000099;
   text-wrap: balance;
 }
 
@@ -269,6 +279,63 @@ kbd {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-size: 0.8125rem;
+}
+
+/* ---- the archive ---- */
+
+.archive-link {
+  margin: 2.5rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+/* A list, not a shelf. Held games are not choices any more, so they get a
+   line each instead of a cartridge with a picture on it. */
+.archive-list {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.archived-row {
+  background: var(--panel);
+  border: 3px solid var(--line);
+  border-bottom-width: 5px;
+  box-shadow: 0 0 0 3px var(--ground);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.archived-row h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.archived-row .actions { padding-top: 0.2rem; }
+.archived-row .btn.play { flex: 0 0 auto; }
+
+.shelf-footer code {
+  font-family: inherit;
+  color: var(--ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
