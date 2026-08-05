@@ -1,0 +1,2028 @@
+<title>Picomon mockup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    /* Every colour on this page is a value the PicoSystem panel can show:
+       each channel is a multiple of 0x11, which is what 4 bits per channel
+       gives you. The page is held to the same palette as the game. */
+    --bg:      #EEEEEE;
+    --bg-alt:  #DDDDDD;
+    --panel:   #FFFFFF;
+    --line:    #CCCCDD;
+    --line-2:  #AAAABB;
+    --text:    #222233;
+    --muted:   #666677;
+    --accent:  #AA5500;
+    --jade:    #117755;
+    --rose:    #CC3355;
+    --shadow:  0 1px 0 #CCCCDD;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:     #111122;
+      --bg-alt: #191926;
+      --panel:  #222233;
+      --line:   #333344;
+      --line-2: #444455;
+      --text:   #DDDDEE;
+      --muted:  #8888AA;
+      --accent: #FFBB33;
+      --jade:   #55DDAA;
+      --rose:   #EE5577;
+      --shadow: 0 1px 0 #000011;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:     #111122;
+    --bg-alt: #191926;
+    --panel:  #222233;
+    --line:   #333344;
+    --line-2: #444455;
+    --text:   #DDDDEE;
+    --muted:  #8888AA;
+    --accent: #FFBB33;
+    --jade:   #55DDAA;
+    --rose:   #EE5577;
+    --shadow: 0 1px 0 #000011;
+  }
+  :root[data-theme="light"] {
+    --bg:     #EEEEEE;
+    --bg-alt: #DDDDDD;
+    --panel:  #FFFFFF;
+    --line:   #CCCCDD;
+    --line-2: #AAAABB;
+    --text:   #222233;
+    --muted:  #666677;
+    --accent: #AA5500;
+    --jade:   #117755;
+    --rose:   #CC3355;
+    --shadow: 0 1px 0 #CCCCDD;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 96px; }
+
+  /* ---- masthead ---------------------------------------------------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: clamp(38px, 9vw, 68px);
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .thesis {
+    margin: 16px 0 0;
+    max-width: 62ch;
+    font-size: 17px;
+    color: var(--text);
+  }
+  .specstrip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    margin: 26px 0 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .specstrip div {
+    flex: 1 1 130px;
+    padding: 10px 14px;
+    border-right: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .specstrip div:last-child { border-right: 0; }
+  .specstrip b { display: block; font-size: 15px; font-weight: 700; }
+  .specstrip span { color: var(--muted); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+
+  /* ---- stage ------------------------------------------------------- */
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 34px;
+    margin-top: 44px;
+    align-items: start;
+  }
+  @media (min-width: 940px) {
+    .stage { grid-template-columns: 316px minmax(0, 1fr); gap: 44px; }
+    .devcol { position: sticky; top: 22px; }
+  }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .tabs button {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .tabs button:hover { color: var(--text); border-color: var(--text); }
+  .tabs button[aria-selected="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 700;
+  }
+  .tabs button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+
+  .bezel {
+    background: #111111;
+    border: 1px solid #333333;
+    border-radius: 14px;
+    padding: 18px 18px 12px;
+    box-shadow: inset 0 0 0 2px #000000;
+  }
+  canvas#screen {
+    display: block;
+    width: 240px;
+    height: 240px;
+    margin: 0 auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #000000;
+    border-radius: 2px;
+  }
+  @media (min-width: 940px) {
+    canvas#screen { width: 264px; height: 264px; }
+  }
+  .brandline {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #666666; margin-top: 10px;
+  }
+
+  .pad { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: repeat(3, 30px); }
+  .face { display: grid; grid-template-columns: repeat(2, 34px); gap: 6px; }
+  .btn {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line-2); border-radius: 4px;
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  .btn:active, .btn.held { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .dpad .btn { border-radius: 2px; }
+  .dpad .sp { visibility: hidden; }
+
+  .readout {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .readout div {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 5px 10px; border-bottom: 1px solid var(--line);
+  }
+  .readout div:last-child { border-bottom: 0; }
+  .readout dt, .readout .k { color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+  .readout .v { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .ok { color: var(--jade); }
+  .hot { color: var(--rose); }
+  .hint { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+
+  /* ---- notes ------------------------------------------------------- */
+  .note { display: none; }
+  .note.on { display: block; }
+  .note h2, section h2 {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+    font-weight: 700;
+  }
+  .note h3 {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 26px 0 6px;
+    color: var(--text);
+  }
+  .lede { font-size: 17px; margin: 0 0 18px; max-width: 60ch; }
+  .note p, section p { max-width: 64ch; }
+  ul { padding-left: 18px; max-width: 64ch; }
+  li { margin: 5px 0; }
+  code, .m { font-family: var(--mono); font-size: 0.88em; background: var(--bg-alt); padding: 1px 4px; border-radius: 2px; }
+
+  .tablewrap { overflow-x: auto; margin: 14px 0; border: 1px solid var(--line); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; min-width: 420px; background: var(--panel); }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
+  th { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: 0; }
+  tfoot td { font-weight: 700; border-top: 1px solid var(--line-2); }
+
+  .cards { display: grid; gap: 12px; grid-template-columns: 1fr; margin: 16px 0; }
+  @media (min-width: 640px) { .cards { grid-template-columns: 1fr 1fr; } }
+  .card { border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 3px; background: var(--panel); padding: 12px 14px; }
+  .card b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .card p { margin: 0; font-size: 14px; }
+
+  section { margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .q { counter-reset: q; list-style: none; padding: 0; max-width: 66ch; }
+  .q li { counter-increment: q; position: relative; padding-left: 34px; margin: 14px 0; }
+  .q li::before {
+    content: counter(q, decimal-leading-zero);
+    position: absolute; left: 0; top: 2px;
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent);
+  }
+  .q b { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; }
+  footer { margin-top: 60px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">Mockup / nothing built yet</p>
+  <h1>PICOMON</h1>
+  <p class="thesis">
+    A creature catching adventure for the PicoSystem, drawn the way the DS games were:
+    a real 3D world under a fixed three quarter camera, characters as flat sprites inside it,
+    and menus that are pure 2D on top. Everything on this page renders live at
+    <b>120 by 120</b>, in four bits per channel, through a software rasterizer that copies
+    what <code>pse::Renderer3D</code> already does. The triangle counter under the screen is
+    the real one.
+  </p>
+
+  <div class="specstrip">
+    <div><span>Render</span><b>120 x 120</b></div>
+    <div><span>Colour</span><b>4 bit / ch</b></div>
+    <div><span>Queue</span><b>640 tris</b></div>
+    <div><span>Font</span><b>3 x 5</b></div>
+    <div><span>SRAM</span><b>264 KB</b></div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ---------------- device ---------------- -->
+    <div class="devcol">
+      <div class="tabs" role="tablist" aria-label="Screens">
+        <button role="tab" data-scene="route"   aria-selected="true">Route</button>
+        <button role="tab" data-scene="battle"  aria-selected="false">Battle</button>
+        <button role="tab" data-scene="catch"   aria-selected="false">Catch</button>
+        <button role="tab" data-scene="bag"     aria-selected="false">Bag</button>
+        <button role="tab" data-scene="party"   aria-selected="false">Party</button>
+      </div>
+
+      <div class="bezel">
+        <canvas id="screen" width="120" height="120" aria-label="Picomon screen mockup"></canvas>
+        <div class="brandline"><span>Picosystem</span><span id="sceneName">Route 1</span></div>
+        <div class="pad">
+          <div class="dpad">
+            <div class="sp"></div><button class="btn" data-key="up">&uarr;</button><div class="sp"></div>
+            <button class="btn" data-key="left">&larr;</button><div class="sp"></div><button class="btn" data-key="right">&rarr;</button>
+            <div class="sp"></div><button class="btn" data-key="down">&darr;</button><div class="sp"></div>
+          </div>
+          <div class="face">
+            <button class="btn" data-key="y">Y</button>
+            <button class="btn" data-key="x">X</button>
+            <button class="btn" data-key="b">B</button>
+            <button class="btn" data-key="a">A</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="readout">
+        <div><span class="k">Triangles</span><span class="v" id="rTris">0</span></div>
+        <div><span class="k">Ground quads</span><span class="v" id="rGround">0</span></div>
+        <div><span class="k">Sprites</span><span class="v" id="rSprites">0</span></div>
+        <div><span class="k">Queue headroom</span><span class="v" id="rHead">640</span></div>
+      </div>
+      <p class="hint">
+        Keyboard: arrows move, Z is A, X is B, A is X, S is Y.<br>
+        Touch: the pad above works.
+      </p>
+    </div>
+
+    <!-- ---------------- notes ---------------- -->
+    <div class="notecol">
+
+      <div class="note on" data-note="route">
+        <h2>Route 1 / the overworld</h2>
+        <p class="lede">Walk, talk, and get ambushed. The camera never rotates, which is what
+        keeps the whole thing inside budget.</p>
+
+        <p>The world is a tile grid on a flat plane, seen from a fixed three quarter angle
+        (35 degrees down, no yaw). Locking the yaw is the single biggest saving here: with a
+        fixed heading the visible window of tiles is a rectangle in map space, so culling is
+        two comparisons instead of a frustum test, and props can be sorted once at load rather
+        than every frame.</p>
+
+        <h3>Ground, and why it is cheap</h3>
+        <p>The visible window is 19 tiles across by 21 deep. Drawing each one as its own quad is
+        399 quads, 798 triangles, before a single tree is placed: more than the whole 640
+        triangle queue, on the ground alone.</p>
+        <p>Two things fix that. Each row merges runs of the same material into one long quad, and
+        rows more than seven tiles out are drawn two deep instead of one, because at that
+        distance a tile is about three pixels tall and the detail was never visible. Together
+        they take the same picture to <b>127 quads, 254 triangles</b>. The counter next to the
+        screen is measuring exactly this, so you can watch it move as you walk from open grass
+        onto the crossroads.</p>
+        <p>The cost of merging is that a checkerboard texture would defeat it, every tile would
+        break its own run. So ground detail comes from a handful of scattered decal quads
+        instead: darker grass tufts, stones on the path, ripples on the pond. Detail you place
+        rather than detail you tile.</p>
+        <p>The whole scene peaks at <b>354 triangles</b>, which leaves 286 spare in the queue.</p>
+
+        <h3>Characters are sprites, not meshes</h3>
+        <p>The player and every NPC is one camera facing billboard, exactly what
+        <code>project_billboard</code> already returns a position and scale for. Two triangles
+        each if drawn as geometry, or a direct sprite blit with a single depth value, which is
+        what this mockup does and what I would ship. A 12 by 16 sprite in four directions plus a
+        two frame walk cycle is 96 sprites of art for the whole cast, in flash, and no skinning
+        maths on a chip with no FPU.</p>
+
+        <h3>NPCs</h3>
+        <ul>
+          <li><b>Villagers</b> stand still and say one thing. Press A while facing them.</li>
+          <li><b>Trainers</b> own a line of sight straight ahead of them, four tiles long. Cross
+            it and they walk to you and the battle starts, no way out. Their sight line is drawn
+            as a faint tint on the ground while they are unbeaten, so the trap is visible and
+            avoidable rather than a gotcha.</li>
+          <li><b>The healer</b> in the house restores the party. Free, no currency loop.</li>
+        </ul>
+        <p>Dialogue is the bottom 32 pixels: a filled panel, three lines of 3 by 5 text at four
+        pixel advance, which is 28 characters a line. That is the writing budget, so lines get
+        written to it rather than trimmed to fit later.</p>
+
+        <h3>Encounters</h3>
+        <p>Tall grass is the only encounter surface. Each step onto a grass tile adds to a
+        counter; when it crosses a threshold the screen flashes and the battle scene takes over.
+        Walk into the patch on the left to trigger one here.</p>
+      </div>
+
+      <div class="note" data-note="battle">
+        <h2>Battle</h2>
+        <p class="lede">Two low poly creatures on a lit arena, plates over the top, a four way
+        menu at the bottom. The 3D is here because it animates, not because it is flashy.</p>
+
+        <p>Each creature is a UV blob of 80 triangles with box ears, a tail, and eyes drawn as
+        projected dots rather than geometry. That last one matters: two spheres for eyes would
+        cost more triangles than the head. Projecting two points and writing four pixels reads
+        better at this size and costs nothing.</p>
+        <p>The whole scene peaks at <b>281 triangles</b>: two creatures, two pads, three merged
+        ground bands, and a nine tree backdrop. That leaves over half the queue spare, which is
+        deliberate. Attack animations spawn extra geometry and the budget has to survive the
+        worst frame, not the average one. The ember arc here is drawn as projected points rather
+        than geometry, which is why firing a move does not move the counter at all.</p>
+
+        <h3>Why meshes and not sprites</h3>
+        <p>Sprites would be cheaper per frame but not per byte. A creature that has to face two
+        ways, lunge, flinch, and faint needs a sheet per pose per direction; the blob does all of
+        it with one mesh in flash and a rotation. It also means the camera can push in on an
+        attack, which is the single thing that makes a turn feel like it landed.</p>
+
+        <h3>Types</h3>
+        <p>Six types, not eighteen. A player has to hold the whole chart in their head on a
+        screen with no room to show it: EMBER, TIDE, LEAF, SPARK, STONE, MIND. The first five are
+        a ring where each beats the next, and MIND is even against everything but takes double
+        from itself. One rule, no table to memorise.</p>
+
+        <h3>Damage, in integers</h3>
+        <p>No floats anywhere in the turn resolution:</p>
+        <p><code>dmg = ((2 * lvl / 5 + 2) * power * atk / def / 50 + 2) * mult / 4 * rng / 255</code></p>
+        <p>where <code>mult</code> is 8 for super effective, 4 for neutral, 2 for resisted, and
+        <code>rng</code> is 217 to 255. Everything is 32 bit integer maths, evaluated left to
+        right so the intermediate never overflows.</p>
+
+        <h3>Controls</h3>
+        <p>Menu is a 2 by 2 grid: FIGHT, BAG, MON, RUN. A confirms, B backs out. No button
+        prompts on screen, per the project rule, and none are needed because every button that
+        does anything does the obvious thing.</p>
+      </div>
+
+      <div class="note" data-note="catch">
+        <h2>Catch</h2>
+        <p class="lede">The one moment the game is actually about. It gets its own animation
+        budget and no text until it is over.</p>
+
+        <p>Press A to throw. The ball travels a parabola in world space, the creature shrinks and
+        washes to white as it is drawn in, the ball drops and settles, then wobbles. Three
+        wobbles and it clicks. One wobble and it breaks out.</p>
+
+        <h3>The odds, and the tell</h3>
+        <p>Gen 3 style, adapted to a chip with no FPU:</p>
+        <p><code>a = (3 * maxhp - 2 * hp) * rate * ball / (3 * maxhp)</code>, then multiplied by
+        status (sleep and freeze double it, everything else is 1.5 as a shift and add), clamped
+        to 1 to 255.</p>
+        <p>The shake check is normally a fourth root, which is a non starter here. Instead
+        <code>a</code> indexes a 32 entry lookup table in flash, 64 bytes, giving the shake
+        threshold directly. Four rolls against it: pass all four and it is caught. The table is
+        generated once by a build script from the real formula, so the maths is right and the
+        device never does it.</p>
+        <p>The wobble count is the only feedback. No percentage, no odds display, nothing to read.
+        Watching the ball is the game.</p>
+
+        <h3>Balls</h3>
+        <ul>
+          <li><b>Pico Ball</b>, multiplier 1, the one you always have.</li>
+          <li><b>Great Ball</b>, 1.5, as a shift and add.</li>
+          <li><b>Dusk Ball</b>, 3 in caves and at night, 1 otherwise. Cheap to implement, changes
+            where people hunt.</li>
+        </ul>
+      </div>
+
+      <div class="note" data-note="bag">
+        <h2>Bag</h2>
+        <p class="lede">Pure 2D, zero triangles, and the place where the 3 by 5 font earns its
+        keep.</p>
+        <p>Three pockets on a tab row: BALLS, MEDICINE, KEY. Left and right change pocket, up and
+        down move the cursor, A uses, B leaves. Eight rows fit at once with a description line
+        underneath, and the pocket a stack lands in is decided by the item, so nothing has to be
+        sorted by hand.</p>
+        <p>The whole bag is 64 slots of two bytes, an item id and a count. 128 bytes of save
+        state, and no dynamic allocation anywhere.</p>
+        <p>Item names get 12 characters at four pixel advance. That is the constraint the names
+        are written to, which is why they are short rather than truncated with an ellipsis.</p>
+      </div>
+
+      <div class="note" data-note="party">
+        <h2>Party</h2>
+        <p class="lede">Six slots, each one row. The screen is too small for portraits, so the
+        icon does the recognising.</p>
+        <p>Every row is a 16 by 16 icon, a name, a level, and an HP bar that changes colour at a
+        half and a quarter. The bar is the whole point: it has to be readable at a glance from
+        across a room, so it is a solid block with a hard edge, not a gradient.</p>
+        <p>A opens the slot for a summary and move list, B leaves, and holding A then moving picks
+        a slot up to reorder the party. Reordering matters because slot one is what gets sent out.</p>
+        <p>A party member is 32 bytes: species, level, experience, four move ids with PP, current
+        HP, status, and five stat experience counters. Six of them is 192 bytes of save state.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ---------------- budget ---------------- -->
+  <section>
+    <h2>What it costs</h2>
+    <p>Figures for the device build. The two big ones are already what every 3D game in this
+    repo pays; the rest is what Picomon adds on top.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>SRAM</th><th class="n">Bytes</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Rasterizer depth buffer</td><td class="n">14,400</td><td>120 x 120, already paid</td></tr>
+          <tr><td>FrameQueue</td><td class="n">15,360</td><td>640 tris, already paid</td></tr>
+          <tr><td>Loaded zone tiles</td><td class="n">2,048</td><td>one 64 x 32 zone, 1 byte a tile</td></tr>
+          <tr><td>Live NPC state</td><td class="n">384</td><td>24 slots x 16 bytes</td></tr>
+          <tr><td>Party and bag, live copy</td><td class="n">320</td><td>mirrors the save block</td></tr>
+          <tr><td>Battle state</td><td class="n">256</td><td>two combatants, turn queue, effects</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Total</td><td class="n">32,768</td><td>12 percent of 264 KB</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Flash</th><th class="n">Bytes</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Creature meshes, 24 species</td><td class="n">~29,000</td><td>80 faces x 12 B plus vertices</td></tr>
+          <tr><td>Species stat blocks, 40</td><td class="n">960</td><td>24 bytes each, const table</td></tr>
+          <tr><td>Overworld sprite sheets</td><td class="n">~12,000</td><td>12 x 16, four ways, two frames</td></tr>
+          <tr><td>Party icons, 40 species</td><td class="n">~7,700</td><td>16 x 16</td></tr>
+          <tr><td>Zone tile data, 6 zones</td><td class="n">12,288</td><td>const, read straight from XIP</td></tr>
+          <tr><td>Dialogue and names</td><td class="n">~6,000</td><td>plain const char arrays</td></tr>
+          <tr><td>Catch threshold table</td><td class="n">64</td><td>32 entries, generated at build</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td>Total</td><td class="n">~68,000</td><td>comfortably inside a 12 MB program region</td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p>Save state is 640 bytes: party 192, bag 128, seen and caught bits 10, flags 64, position
+    and the rest inside 256. That fits one flash save block with room to grow, and
+    <code>write_save</code> gets called on zone change and after a battle, never inside a render
+    call, per the flash safety contract in the project rules.</p>
+  </section>
+
+  <section>
+    <h2>The parts I would cut first</h2>
+    <div class="cards">
+      <div class="card"><b>Day and night</b><p>A tint on the ground colours and a clock in the
+        save block. Cheap, and it makes Dusk Ball mean something. Keep unless it drags.</p></div>
+      <div class="card"><b>Trading</b><p>No radio on the PicoSystem. A code you type in could
+        move a creature between saves, but that is a second game's worth of UI. Cut.</p></div>
+      <div class="card"><b>Evolution</b><p>Two meshes per line instead of one, so it roughly
+        doubles the mesh flash. Worth it for maybe six lines, not for all 24 species.</p></div>
+      <div class="card"><b>Six party slots</b><p>Four would fit the party screen better and halve
+        the save block. Six is only there because it is what people expect.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What I need you to decide</h2>
+    <ol class="q">
+      <li><b>Sprites or meshes for creatures in battle</b>
+        Meshes cost triangles and buy animation and a moving camera. Sprites cost flash and buy
+        art that looks exactly like what you drew. This mockup argues for meshes; it is the
+        biggest single call on the page.</li>
+      <li><b>Six types or three</b>
+        Six is a ring you can hold in your head. Three is rock paper scissors and needs no
+        explaining at all. Six shown here.</li>
+      <li><b>How big is the world</b>
+        Six zones of 64 by 32 is about two hours of play and fits everything above. More zones is
+        mostly more tile data and more writing, not more engine.</li>
+      <li><b>Does the fixed camera bother you</b>
+        Locking the yaw is where most of the budget comes from. A rotatable camera is possible
+        but it costs the cheap culling and the pre sorted props, and I would want something back
+        for it.</li>
+      <li><b>Catching only, or catching and gyms</b>
+        Gyms are trainers with a bigger party and a locked door, so they are almost free. The
+        romantic date from <code>ideas.md</code> is not free and is not mocked up here.</li>
+    </ol>
+  </section>
+
+  <footer>
+    Picomon mockup, rendered live in software at the device's own resolution and colour depth.
+    Nothing here is built yet.
+  </footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ==================================================================
+   Software renderer. Deliberately mirrors pse::Rasterizer and
+   pse::Renderer3D: flat shaded triangles, a z buffer, no textures,
+   colours quantised to 4 bits per channel on the way in.
+   ================================================================== */
+
+const W = 120, H = 120;
+const cv  = document.getElementById("screen");
+const ctx = cv.getContext("2d", { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+const img = ctx.createImageData(W, H);
+const fb  = img.data;
+const zb  = new Float32Array(W * H);
+
+let triCount = 0, groundQuads = 0, spriteCount = 0;
+
+const FOV = 1.05;                       // radians, vertical
+const FOCAL = (H / 2) / Math.tan(FOV / 2);
+
+const cam = { x: 0, y: 6, z: -8, yaw: 0, pitch: -0.6 };
+
+// 4 bits a channel is what the panel shows, so snap on the way in and
+// every colour on screen is one the hardware can actually make.
+const q4 = v => (v < 0 ? 0 : v > 255 ? 255 : (Math.round(v / 17) * 17));
+
+function clearSky(topR, topG, topB, botR, botG, botB) {
+  for (let y = 0; y < H; y++) {
+    const t = y / (H - 1);
+    const r = q4(topR + (botR - topR) * t);
+    const g = q4(topG + (botG - topG) * t);
+    const b = q4(topB + (botB - topB) * t);
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      fb[i] = r; fb[i + 1] = g; fb[i + 2] = b; fb[i + 3] = 255;
+      zb[y * W + x] = 1e9;
+    }
+  }
+}
+
+const NEAR = 0.4;
+
+function toView(wx, wy, wz) {
+  const dx = wx - cam.x, dy = wy - cam.y, dz = wz - cam.z;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const rx = dx * cy - dz * sy;
+  const rz = dx * sy + dz * cy;
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  return { x: rx, y: dy * cp - rz * sp, z: dy * sp + rz * cp };
+}
+
+function toScreen(v) {
+  return { x: W / 2 + v.x * FOCAL / v.z, y: H / 2 - v.y * FOCAL / v.z, z: v.z };
+}
+
+function project(wx, wy, wz) {
+  const v = toView(wx, wy, wz);
+  return v.z < NEAR ? null : toScreen(v);
+}
+
+function lerpV(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+}
+
+// Clip a view space triangle against the near plane, then rasterize the one
+// or two triangles that survive. Without this a ground quad with a corner
+// behind the camera vanishes whole, which leaves a band of sky across the
+// bottom of the screen wherever the player is standing.
+function emitTri(v0, v1, v2, r, g, bl) {
+  const inside = [], outside = [];
+  (v0.z >= NEAR ? inside : outside).push(v0);
+  (v1.z >= NEAR ? inside : outside).push(v1);
+  (v2.z >= NEAR ? inside : outside).push(v2);
+  if (inside.length === 0) return;
+  if (inside.length === 3) {
+    rasterTri(toScreen(v0), toScreen(v1), toScreen(v2), r, g, bl);
+    return;
+  }
+  if (inside.length === 1) {
+    const a = inside[0];
+    const p = lerpV(a, outside[0], (NEAR - a.z) / (outside[0].z - a.z));
+    const q = lerpV(a, outside[1], (NEAR - a.z) / (outside[1].z - a.z));
+    rasterTri(toScreen(a), toScreen(p), toScreen(q), r, g, bl);
+    return;
+  }
+  const a = inside[0], b = inside[1], o = outside[0];
+  const p = lerpV(a, o, (NEAR - a.z) / (o.z - a.z));
+  const q = lerpV(b, o, (NEAR - b.z) / (o.z - b.z));
+  rasterTri(toScreen(a), toScreen(b), toScreen(p), r, g, bl);
+  rasterTri(toScreen(b), toScreen(q), toScreen(p), r, g, bl);
+}
+
+function rasterTri(p0, p1, p2, r, g, b) {
+  let area = (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y);
+  if (area > -0.0001 && area < 0.0001) return;
+  if (area < 0) { const t = p1; p1 = p2; p2 = t; area = -area; }
+
+  let minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x)));
+  let maxX = Math.min(W - 1, Math.ceil(Math.max(p0.x, p1.x, p2.x)));
+  let minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y)));
+  let maxY = Math.min(H - 1, Math.ceil(Math.max(p0.y, p1.y, p2.y)));
+  if (minX > maxX || minY > maxY) return;
+
+  triCount++;
+  const inv = 1 / area;
+  for (let y = minY; y <= maxY; y++) {
+    const py = y + 0.5;
+    for (let x = minX; x <= maxX; x++) {
+      const px = x + 0.5;
+      const w0 = ((p1.x - p0.x) * (py - p0.y) - (px - p0.x) * (p1.y - p0.y)) * inv;
+      if (w0 < 0) continue;
+      const w1 = ((p2.x - p1.x) * (py - p1.y) - (px - p1.x) * (p2.y - p1.y)) * inv;
+      if (w1 < 0) continue;
+      const w2 = 1 - w0 - w1;
+      if (w2 < 0) continue;
+      const z = p0.z * w1 + p1.z * w2 + p2.z * w0;
+      const idx = y * W + x;
+      if (z >= zb[idx]) continue;
+      zb[idx] = z;
+      const i = idx * 4;
+      fb[i] = r; fb[i + 1] = g; fb[i + 2] = b;
+    }
+  }
+}
+
+const LIGHT = (() => {
+  const v = [0.42, 0.82, -0.4];
+  const l = Math.hypot(v[0], v[1], v[2]);
+  return [v[0] / l, v[1] / l, v[2] / l];
+})();
+
+// A flat world space quad, wound so the normal points up.
+function quadY(x0, z0, x1, z1, y, r, g, b) {
+  const a = toView(x0, y, z0), bb = toView(x1, y, z0);
+  const c = toView(x1, y, z1), d = toView(x0, y, z1);
+  if (a.z < NEAR && bb.z < NEAR && c.z < NEAR && d.z < NEAR) return;
+  const R = q4(r), G = q4(g), B = q4(b);
+  emitTri(a, bb, c, R, G, B);
+  emitTri(a, c, d, R, G, B);
+  groundQuads++;
+}
+
+/* ---- meshes ------------------------------------------------------ */
+
+function makeBox(cx, cy, cz, sx, sy, sz, r, g, b, topR, topG, topB) {
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const v = [
+    [cx - hx, cy - hy, cz - hz], [cx + hx, cy - hy, cz - hz],
+    [cx + hx, cy + hy, cz - hz], [cx - hx, cy + hy, cz - hz],
+    [cx - hx, cy - hy, cz + hz], [cx + hx, cy - hy, cz + hz],
+    [cx + hx, cy + hy, cz + hz], [cx - hx, cy + hy, cz + hz]
+  ];
+  const tr = topR === undefined ? r : topR;
+  const tg = topG === undefined ? g : topG;
+  const tb = topB === undefined ? b : topB;
+  const f = [
+    [0, 2, 1, r, g, b], [0, 3, 2, r, g, b],          // -z
+    [5, 6, 2, r, g, b], [5, 2, 1, r, g, b],          // +x
+    [4, 7, 6, r, g, b], [4, 6, 5, r, g, b],          // +z
+    [0, 4, 7, r, g, b], [0, 7, 3, r, g, b],          // -x
+    [3, 7, 6, tr, tg, tb], [3, 6, 2, tr, tg, tb],    // +y
+    [0, 1, 5, r, g, b], [0, 5, 4, r, g, b]           // -y
+  ];
+  return { v, f };
+}
+
+function makeCone(cx, cy, cz, radius, height, segs, r, g, b) {
+  const v = [[cx, cy + height, cz]];
+  for (let i = 0; i < segs; i++) {
+    const a = i / segs * Math.PI * 2;
+    v.push([cx + Math.cos(a) * radius, cy, cz + Math.sin(a) * radius]);
+  }
+  const f = [];
+  for (let i = 0; i < segs; i++) {
+    const n = 1 + ((i + 1) % segs);
+    const shade = 0.82 + 0.18 * Math.cos(i / segs * Math.PI * 2);
+    // Apex, next, current: this winding puts the normal on the outside, which
+    // is what the world space backface test expects.
+    f.push([0, n, 1 + i, r * shade, g * shade, b * shade]);
+  }
+  return { v, f };
+}
+
+// A UV blob: the creature body shape. segs x rings x 2 triangles, minus
+// the degenerate ones at the poles.
+function makeBlob(sx, sy, sz, segs, rings, r, g, b, bellyR, bellyG, bellyB) {
+  const v = [];
+  for (let ri = 0; ri <= rings; ri++) {
+    const phi = ri / rings * Math.PI;
+    for (let si = 0; si < segs; si++) {
+      const th = si / segs * Math.PI * 2;
+      v.push([
+        Math.sin(phi) * Math.cos(th) * sx,
+        Math.cos(phi) * sy,
+        Math.sin(phi) * Math.sin(th) * sz
+      ]);
+    }
+  }
+  const f = [];
+  const idx = (ri, si) => ri * segs + (si % segs);
+  for (let ri = 0; ri < rings; ri++) {
+    for (let si = 0; si < segs; si++) {
+      const a = idx(ri, si), bq = idx(ri, si + 1);
+      const c = idx(ri + 1, si + 1), d = idx(ri + 1, si);
+      const low = (ri + 0.5) / rings;
+      const t = Math.max(0, (low - 0.45) / 0.55);
+      const cr = r + (bellyR - r) * t;
+      const cg = g + (bellyG - g) * t;
+      const cb = b + (bellyB - b) * t;
+      if (ri > 0)          f.push([a, bq, c, cr, cg, cb]);
+      if (ri < rings - 1)  f.push([a, c, d, cr, cg, cb]);
+    }
+  }
+  return { v, f };
+}
+
+function mergeMesh(into, m, ox, oy, oz) {
+  const base = into.v.length;
+  for (const p of m.v) into.v.push([p[0] + ox, p[1] + oy, p[2] + oz]);
+  for (const t of m.f) into.f.push([t[0] + base, t[1] + base, t[2] + base, t[3], t[4], t[5]]);
+  return into;
+}
+
+const scratch = [];
+function drawMesh(mesh, x, y, z, yaw, scale, tint) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const n = mesh.v.length;
+  while (scratch.length < n) scratch.push({ wx: 0, wy: 0, wz: 0, p: null });
+  for (let i = 0; i < n; i++) {
+    const p = mesh.v[i];
+    const wx = (p[0] * cy - p[2] * sy) * scale + x;
+    const wz = (p[0] * sy + p[2] * cy) * scale + z;
+    const wy = p[1] * scale + y;
+    const s = scratch[i];
+    s.wx = wx; s.wy = wy; s.wz = wz;
+    s.p = toView(wx, wy, wz);
+  }
+  const tr = tint ? tint[0] : 1, tg = tint ? tint[1] : 1, tb = tint ? tint[2] : 1;
+  for (const t of mesh.f) {
+    const a = scratch[t[0]], b = scratch[t[1]], c = scratch[t[2]];
+    const ux = b.wx - a.wx, uy = b.wy - a.wy, uz = b.wz - a.wz;
+    const vx = c.wx - a.wx, vy = c.wy - a.wy, vz = c.wz - a.wz;
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-7) continue;
+    nx /= len; ny /= len; nz /= len;
+    // Backface cull in world space, so winding never has to be reasoned
+    // about in screen space.
+    const ex = a.wx - cam.x, ey = a.wy - cam.y, ez = a.wz - cam.z;
+    if (nx * ex + ny * ey + nz * ez >= 0) continue;
+    const lam = 0.55 + 0.45 * Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
+    emitTri(a.p, b.p, c.p,
+      q4(t[3] * lam * tr), q4(t[4] * lam * tg), q4(t[5] * lam * tb));
+  }
+}
+
+/* ---- 2D layer: sprites, panels, text ----------------------------- */
+
+function px(x, y, r, g, b) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  const i = (y * W + x) * 4;
+  fb[i] = r; fb[i + 1] = g; fb[i + 2] = b;
+}
+
+function pxZ(x, y, z, r, g, b) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  const idx = y * W + x;
+  if (z >= zb[idx]) return;
+  zb[idx] = z;
+  const i = idx * 4;
+  fb[i] = r; fb[i + 1] = g; fb[i + 2] = b;
+}
+
+function rect(x, y, w, h, r, g, b) {
+  const R = q4(r), G = q4(g), B = q4(b);
+  for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) px(i, j, R, G, B);
+}
+
+function frameBox(x, y, w, h, fill, edge) {
+  rect(x, y, w, h, fill[0], fill[1], fill[2]);
+  const R = q4(edge[0]), G = q4(edge[1]), B = q4(edge[2]);
+  for (let i = x; i < x + w; i++) { px(i, y, R, G, B); px(i, y + h - 1, R, G, B); }
+  for (let j = y; j < y + h; j++) { px(x, j, R, G, B); px(x + w - 1, j, R, G, B); }
+  // knock the corners out so the panel reads as rounded at this size
+  const f = [q4(fill[0]), q4(fill[1]), q4(fill[2])];
+  px(x, y, f[0], f[1], f[2]); px(x + w - 1, y, f[0], f[1], f[2]);
+  px(x, y + h - 1, f[0], f[1], f[2]); px(x + w - 1, y + h - 1, f[0], f[1], f[2]);
+}
+
+// 3 by 5 glyphs on a 4 pixel advance. This is minimal_font's metric, so
+// what fits here is what fits on the device.
+const FONT = {
+  "A": [".#.", "#.#", "###", "#.#", "#.#"],
+  "B": ["##.", "#.#", "##.", "#.#", "##."],
+  "C": [".##", "#..", "#..", "#..", ".##"],
+  "D": ["##.", "#.#", "#.#", "#.#", "##."],
+  "E": ["###", "#..", "##.", "#..", "###"],
+  "F": ["###", "#..", "##.", "#..", "#.."],
+  "G": [".##", "#..", "#.#", "#.#", ".##"],
+  "H": ["#.#", "#.#", "###", "#.#", "#.#"],
+  "I": ["###", ".#.", ".#.", ".#.", "###"],
+  "J": ["..#", "..#", "..#", "#.#", ".#."],
+  "K": ["#.#", "#.#", "##.", "#.#", "#.#"],
+  "L": ["#..", "#..", "#..", "#..", "###"],
+  "M": ["#.#", "###", "###", "#.#", "#.#"],
+  "N": ["##.", "#.#", "#.#", "#.#", "#.#"],
+  "O": [".#.", "#.#", "#.#", "#.#", ".#."],
+  "P": ["##.", "#.#", "##.", "#..", "#.."],
+  "Q": [".#.", "#.#", "#.#", ".#.", "..#"],
+  "R": ["##.", "#.#", "##.", "#.#", "#.#"],
+  "S": [".##", "#..", ".#.", "..#", "##."],
+  "T": ["###", ".#.", ".#.", ".#.", ".#."],
+  "U": ["#.#", "#.#", "#.#", "#.#", "###"],
+  "V": ["#.#", "#.#", "#.#", ".#.", ".#."],
+  "W": ["#.#", "#.#", "###", "###", "#.#"],
+  "X": ["#.#", "#.#", ".#.", "#.#", "#.#"],
+  "Y": ["#.#", "#.#", ".#.", ".#.", ".#."],
+  "Z": ["###", "..#", ".#.", "#..", "###"],
+  "0": ["###", "#.#", "#.#", "#.#", "###"],
+  "1": [".#.", "##.", ".#.", ".#.", "###"],
+  "2": ["##.", "..#", ".#.", "#..", "###"],
+  "3": ["##.", "..#", ".#.", "..#", "##."],
+  "4": ["#.#", "#.#", "###", "..#", "..#"],
+  "5": ["###", "#..", "##.", "..#", "##."],
+  "6": [".#.", "#..", "###", "#.#", "###"],
+  "7": ["###", "..#", ".#.", ".#.", ".#."],
+  "8": ["###", "#.#", "###", "#.#", "###"],
+  "9": ["###", "#.#", "###", "..#", ".#."],
+  " ": ["...", "...", "...", "...", "..."],
+  ".": ["...", "...", "...", "...", ".#."],
+  ",": ["...", "...", "...", ".#.", "#.."],
+  "!": [".#.", ".#.", ".#.", "...", ".#."],
+  "?": ["##.", "..#", ".#.", "...", ".#."],
+  ":": ["...", ".#.", "...", ".#.", "..."],
+  "-": ["...", "...", "###", "...", "..."],
+  "/": ["..#", "..#", ".#.", "#..", "#.."],
+  "'": [".#.", ".#.", "...", "...", "..."],
+  "%": ["#.#", "..#", ".#.", "#..", "#.#"],
+  ">": ["#..", ".#.", "..#", ".#.", "#.."],
+  "<": ["..#", ".#.", "#..", ".#.", "..#"],
+  "+": ["...", ".#.", "###", ".#.", "..."],
+  "*": ["#.#", ".#.", "#.#", "...", "..."],
+  "(": ["..#", ".#.", ".#.", ".#.", "..#"],
+  ")": ["#..", ".#.", ".#.", ".#.", "#.."]
+};
+
+function textWidth(s) { return s.length * 4 - 1; }
+
+function text(s, x, y, r, g, b) {
+  const R = q4(r), G = q4(g), B = q4(b);
+  s = String(s).toUpperCase();
+  for (let i = 0; i < s.length; i++) {
+    const gl = FONT[s[i]] || FONT["?"];
+    for (let row = 0; row < 5; row++) {
+      const line = gl[row];
+      for (let col = 0; col < 3; col++) {
+        if (line[col] === "#") px(x + i * 4 + col, y + row, R, G, B);
+      }
+    }
+  }
+}
+
+function textCentred(s, cx, y, r, g, b) { text(s, Math.round(cx - textWidth(s) / 2), y, r, g, b); }
+
+function wrap(s, cols) {
+  const words = String(s).split(" ");
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    if (cur.length === 0) cur = w;
+    else if (cur.length + 1 + w.length <= cols) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/* ---- sprites ----------------------------------------------------- */
+
+function sprite(pal, rows) {
+  return { w: rows[0].length, h: rows.length, pal, rows };
+}
+
+// Palette letters kept short so the art stays readable in source.
+const PAL_HERO = {
+  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0x66, 0x33, 0x11],
+  c: [0xEE, 0x55, 0x77], p: [0x33, 0x44, 0x88], b: [0x44, 0x22, 0x22],
+  w: [0xFF, 0xFF, 0xFF]
+};
+const HERO_DOWN = sprite(PAL_HERO, [
+  "...kkkk...",
+  "..khhhhk..",
+  "..khhhhk..",
+  "..khsshk..",
+  "..kswwsk..",
+  "...ksskk..",
+  "..kcccck..",
+  ".kcwccwck.",
+  ".kcccccck.",
+  ".kkcccckk.",
+  "..kppppk..",
+  "..kp..pk..",
+  "..kp..pk..",
+  "..kb..bk..",
+  "..kb..bk..",
+  "..kk..kk.."
+]);
+const HERO_UP = sprite(PAL_HERO, [
+  "...kkkk...",
+  "..khhhhk..",
+  "..khhhhk..",
+  "..khhhhk..",
+  "..khhhhk..",
+  "...kkkk...",
+  "..kcccck..",
+  ".kcccccck.",
+  ".kcccccck.",
+  ".kkcccckk.",
+  "..kppppk..",
+  "..kp..pk..",
+  "..kp..pk..",
+  "..kb..bk..",
+  "..kb..bk..",
+  "..kk..kk.."
+]);
+const HERO_SIDE = sprite(PAL_HERO, [
+  "...kkkk...",
+  "..khhhhk..",
+  "..khhhhk..",
+  "..khhssk..",
+  "..khswwk..",
+  "...kssk...",
+  "..kcccck..",
+  "..kccccks.",
+  "..kcccck..",
+  "..kkcckk..",
+  "..kppppk..",
+  "..kppppk..",
+  "..kp..pk..",
+  "..kb..bk..",
+  "..kb..bk..",
+  "..kk..kk.."
+]);
+
+const PAL_NPC = {
+  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0x22, 0x22, 0x33],
+  c: [0x55, 0xBB, 0xDD], p: [0x33, 0x33, 0x44], b: [0x33, 0x22, 0x22],
+  w: [0xFF, 0xFF, 0xFF]
+};
+const PAL_TRAINER = {
+  k: [0x22, 0x11, 0x22], s: [0xEE, 0xBB, 0x88], h: [0x55, 0x22, 0x11],
+  c: [0xEE, 0xAA, 0x22], p: [0x55, 0x44, 0x22], b: [0x33, 0x22, 0x11],
+  w: [0xFF, 0xFF, 0xFF]
+};
+const PAL_HEAL = {
+  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0xDD, 0xAA, 0x55],
+  c: [0xEE, 0xEE, 0xEE], p: [0xDD, 0xDD, 0xEE], b: [0x55, 0x55, 0x66],
+  w: [0xEE, 0x33, 0x55]
+};
+const NPC_BODY = [
+  "...kkkk...",
+  "..khhhhk..",
+  "..khhhhk..",
+  "..khsshk..",
+  "..kswwsk..",
+  "...ksskk..",
+  "..kcccck..",
+  ".kcwccwck.",
+  ".kcccccck.",
+  ".kkcccckk.",
+  "..kppppk..",
+  "..kp..pk..",
+  "..kp..pk..",
+  "..kb..bk..",
+  "..kb..bk..",
+  "..kk..kk.."
+];
+const NPC_VILLAGER = sprite(PAL_NPC, NPC_BODY);
+const NPC_TRAINER  = sprite(PAL_TRAINER, NPC_BODY);
+const NPC_HEALER   = sprite(PAL_HEAL, NPC_BODY);
+
+const PAL_GRASS = { d: [0x22, 0x66, 0x33], m: [0x33, 0x88, 0x44], l: [0x55, 0xAA, 0x55] };
+const TUFT = sprite(PAL_GRASS, [
+  "..d....d..",
+  ".dm...dm..",
+  ".dm..dmm.d",
+  "dmm.dmml dm",
+  "dmlldmmlldm",
+  "dmlldmllldm",
+  "ddmmddmmddm",
+  "..ddd..dd.."
+].map(s => (s + "..........").slice(0, 11)));
+
+const PAL_BALL = {
+  k: [0x11, 0x11, 0x11], r: [0xEE, 0x33, 0x44], d: [0xAA, 0x22, 0x33],
+  w: [0xEE, 0xEE, 0xEE], g: [0xAA, 0xAA, 0xBB], h: [0xFF, 0xFF, 0xFF]
+};
+const BALL = sprite(PAL_BALL, [
+  "..kkkk..",
+  ".krrhrk.",
+  "krrrrrrk",
+  "kdrrrrdk",
+  "kkkgkkkk",
+  "kwwgwwwk",
+  ".kwwwwk.",
+  "..kkkk.."
+]);
+
+function drawSprite(sp, cx, topY, scale, depth, tintWhite) {
+  spriteCount++;
+  const s = Math.max(1, scale);
+  const w = Math.round(sp.w * s), h = Math.round(sp.h * s);
+  const x0 = Math.round(cx - w / 2), y0 = Math.round(topY);
+  for (let j = 0; j < h; j++) {
+    const sy = Math.min(sp.h - 1, Math.floor(j / s));
+    const row = sp.rows[sy];
+    for (let i = 0; i < w; i++) {
+      const sx = Math.min(sp.w - 1, Math.floor(i / s));
+      const ch = row[sx];
+      if (!ch || ch === "." || ch === " ") continue;
+      const c = sp.pal[ch];
+      if (!c) continue;
+      let r = c[0], g = c[1], b = c[2];
+      if (tintWhite) {
+        r = r + (255 - r) * tintWhite;
+        g = g + (255 - g) * tintWhite;
+        b = b + (255 - b) * tintWhite;
+      }
+      pxZ(x0 + i, y0 + j, depth, q4(r), q4(g), q4(b));
+    }
+  }
+}
+
+// Place a billboard by its feet, the way project_billboard is meant to be
+// used: one projected point, one scale, one depth for the whole sprite.
+function drawBillboard(sp, wx, wy, wz, worldHeight, tintWhite) {
+  const p = project(wx, wy, wz);
+  if (!p) return null;
+  const pxHeight = worldHeight * FOCAL / p.z;
+  const scale = pxHeight / sp.h;
+  if (scale < 0.25) return null;
+  drawSprite(sp, p.x, p.y - pxHeight, scale, p.z - 0.05, tintWhite);
+  return p;
+}
+
+/* ==================================================================
+   Shared game data
+   ================================================================== */
+
+const TYPES = ["EMBER", "TIDE", "LEAF", "SPARK", "STONE", "MIND"];
+const TYPE_COL = {
+  EMBER: [0xEE, 0x66, 0x33], TIDE: [0x44, 0x99, 0xEE], LEAF: [0x55, 0xBB, 0x55],
+  SPARK: [0xEE, 0xCC, 0x33], STONE: [0xAA, 0x99, 0x77], MIND: [0xCC, 0x66, 0xDD]
+};
+
+function buildEmberkit() {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBlob(0.62, 0.5, 0.72, 8, 5, 0xEE, 0x88, 0x33, 0xFF, 0xDD, 0xAA), 0, 0.5, 0);
+  mergeMesh(m, makeBlob(0.4, 0.38, 0.4, 7, 4, 0xEE, 0x99, 0x44, 0xFF, 0xEE, 0xCC), 0, 1.18, 0.28);
+  mergeMesh(m, makeCone(0, 0, 0, 0.15, 0.34, 4, 0xDD, 0x77, 0x33), -0.22, 1.42, 0.2);
+  mergeMesh(m, makeCone(0, 0, 0, 0.15, 0.34, 4, 0xDD, 0x77, 0x33), 0.22, 1.42, 0.2);
+  mergeMesh(m, makeBlob(0.2, 0.42, 0.2, 6, 4, 0xFF, 0xAA, 0x55, 0xFF, 0xEE, 0xCC), 0, 0.62, -0.7);
+  mergeMesh(m, makeBox(0, 0, 0, 0.18, 0.28, 0.18, 0xCC, 0x77, 0x33), -0.3, 0.14, 0.26);
+  mergeMesh(m, makeBox(0, 0, 0, 0.18, 0.28, 0.18, 0xCC, 0x77, 0x33), 0.3, 0.14, 0.26);
+  mergeMesh(m, makeBox(0, 0, 0, 0.18, 0.28, 0.18, 0xCC, 0x77, 0x33), -0.28, 0.14, -0.3);
+  mergeMesh(m, makeBox(0, 0, 0, 0.18, 0.28, 0.18, 0xCC, 0x77, 0x33), 0.28, 0.14, -0.3);
+  m.eyes = [[-0.17, 1.26, 0.62], [0.17, 1.26, 0.62]];
+  m.name = "EMBERKIT";
+  m.type = "EMBER";
+  return m;
+}
+
+function buildMossling() {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBlob(0.6, 0.58, 0.6, 8, 5, 0x55, 0xAA, 0x55, 0xCC, 0xEE, 0x99), 0, 0.58, 0);
+  mergeMesh(m, makeBlob(0.42, 0.36, 0.42, 7, 4, 0x66, 0xBB, 0x55, 0xDD, 0xEE, 0xAA), 0, 1.2, 0.16);
+  mergeMesh(m, makeCone(0, 0, 0, 0.26, 0.5, 5, 0x88, 0xDD, 0x55), 0, 1.46, 0);
+  mergeMesh(m, makeBox(0, 0, 0, 0.2, 0.24, 0.2, 0x44, 0x99, 0x44), -0.28, 0.12, 0.22);
+  mergeMesh(m, makeBox(0, 0, 0, 0.2, 0.24, 0.2, 0x44, 0x99, 0x44), 0.28, 0.12, 0.22);
+  mergeMesh(m, makeBox(0, 0, 0, 0.2, 0.24, 0.2, 0x44, 0x99, 0x44), -0.26, 0.12, -0.26);
+  mergeMesh(m, makeBox(0, 0, 0, 0.2, 0.24, 0.2, 0x44, 0x99, 0x44), 0.26, 0.12, -0.26);
+  m.eyes = [[-0.16, 1.26, 0.48], [0.16, 1.26, 0.48]];
+  m.name = "MOSSLING";
+  m.type = "LEAF";
+  return m;
+}
+
+const MESH_EMBERKIT = buildEmberkit();
+const MESH_MOSSLING = buildMossling();
+const MESH_TREE = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBox(0, 0, 0, 0.3, 0.85, 0.3, 0x77, 0x55, 0x33), 0, 0.42, 0);
+  mergeMesh(m, makeCone(0, 0, 0, 0.82, 1.15, 6, 0x33, 0x88, 0x44), 0, 0.7, 0);
+  mergeMesh(m, makeCone(0, 0, 0, 0.6, 0.9, 6, 0x44, 0x99, 0x4A), 0, 1.32, 0);
+  return m;
+})();
+const MESH_HOUSE = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBox(0, 0, 0, 3.4, 1.9, 2.8, 0xEE, 0xDD, 0xBB), 0, 0.95, 0);
+  mergeMesh(m, makeBox(0, 0, 0, 0.8, 1.2, 0.14, 0x77, 0x44, 0x33), 0, 0.6, -1.44);
+  mergeMesh(m, makeCone(0, 0, 0, 2.6, 1.25, 4, 0xCC, 0x44, 0x44), 0, 1.9, 0);
+  return m;
+})();
+const MESH_SIGN = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBox(0, 0, 0, 0.12, 0.6, 0.12, 0x77, 0x55, 0x33), 0, 0.3, 0);
+  mergeMesh(m, makeBox(0, 0, 0, 0.7, 0.45, 0.1, 0xCC, 0x99, 0x55, 0xDD, 0xAA, 0x66), 0, 0.78, 0);
+  return m;
+})();
+const MESH_PAD = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeCone(0, 0, 0, 1.5, 0.05, 8, 0xAA, 0x99, 0x77), 0, 0, 0);
+  return m;
+})();
+const MESH_BALL3D = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeBlob(0.22, 0.22, 0.22, 6, 4, 0xEE, 0x33, 0x44, 0xEE, 0xEE, 0xEE), 0, 0, 0);
+  return m;
+})();
+
+/* ==================================================================
+   Scene: Route 1
+   ================================================================== */
+
+const MAP_W = 30, MAP_H = 30;
+const map = new Array(MAP_W * MAP_H).fill("g");
+const at = (x, z) => (x < 0 || z < 0 || x >= MAP_W || z >= MAP_H) ? "T" : map[z * MAP_W + x];
+const setTile = (x, z, c) => { if (x >= 0 && z >= 0 && x < MAP_W && z < MAP_H) map[z * MAP_W + x] = c; };
+
+(function buildMap() {
+  const fill = (x0, z0, w, h, c) => {
+    for (let z = z0; z < z0 + h; z++) for (let x = x0; x < x0 + w; x++) setTile(x, z, c);
+  };
+  for (let x = 0; x < MAP_W; x++) { setTile(x, 0, "T"); setTile(x, MAP_H - 1, "T"); }
+  for (let z = 0; z < MAP_H; z++) { setTile(0, z, "T"); setTile(MAP_W - 1, z, "T"); }
+  fill(3, 4, 6, 7, "G");          // tall grass, west
+  fill(19, 17, 7, 6, "G");        // tall grass, south east
+  fill(2, 22, 8, 6, "w");         // pond
+  fill(1, 13, 28, 2, "p");        // main path, east to west
+  fill(14, 1, 2, 28, "p");        // main path, north to south
+  fill(18, 4, 5, 4, "H");         // house footprint
+  fill(19, 8, 3, 1, "f");         // its doorstep
+  setTile(11, 16, "s");           // signpost
+  // A deterministic scatter of trees, so the same picture comes back
+  // every reload.
+  let seed = 20260805;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const nearPath = (x, z) => {
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++)
+      if (at(x + i, z + j) === "p") return true;
+    return false;
+  };
+  for (let i = 0; i < 90; i++) {
+    const x = 1 + Math.floor(rnd() * (MAP_W - 2));
+    const z = 1 + Math.floor(rnd() * (MAP_H - 2));
+    // Trees keep off the path and its verges, so one is never standing
+    // between the camera and the person you walked up to talk to.
+    if (at(x, z) === "g" && !nearPath(x, z)) setTile(x, z, "T");
+  }
+  fill(12, 12, 6, 4, "g");        // keep the crossroads clear
+  fill(1, 13, 28, 2, "p");
+  fill(14, 1, 2, 28, "p");
+  fill(18, 4, 5, 4, "H");
+})();
+
+const GROUND_COL = {
+  g: [0x55, 0x99, 0x44], G: [0x33, 0x77, 0x33], p: [0xBB, 0xAA, 0x77],
+  w: [0x33, 0x66, 0xBB], T: [0x44, 0x88, 0x44], H: [0x99, 0x99, 0x88],
+  f: [0xBB, 0xBB, 0xAA], s: [0x55, 0x99, 0x44]
+};
+const solid = c => c === "T" || c === "w" || c === "H" || c === "s";
+
+const NPCS = [
+  { x: 12.5, z: 11.5, dir: 2, sp: NPC_VILLAGER, kind: "villager",
+    say: "The grass to the west moves on its own. Something lives in it." },
+  { x: 16.5, z: 19.5, dir: 0, sp: NPC_TRAINER, kind: "trainer", sight: 5,
+    say: "You walked into my line. Send one out!" },
+  { x: 20.5, z: 9.5, dir: 2, sp: NPC_HEALER, kind: "healer",
+    say: "Come inside. Your team looks tired." },
+  { x: 8.5, z: 14.5, dir: 1, sp: NPC_VILLAGER, kind: "villager",
+    say: "A ball works better on something worn down." }
+];
+
+const route = {
+  px: 14.9, pz: 11.0, dir: 2, step: 0, moving: 0, grassSteps: 0,
+  dialogue: null, dialoguePage: 0, flash: 0
+};
+
+const DIRV = [[0, 1], [1, 0], [0, -1], [-1, 0]];   // up(north), east, down(south), west
+
+function routeUpdate(dt, keys) {
+  if (route.flash > 0) { route.flash -= dt * 2.2; return; }
+  if (route.dialogue) {
+    if (keys.pressed.a || keys.pressed.b) route.dialogue = null;
+    return;
+  }
+  let dx = 0, dz = 0;
+  if (keys.down.up)    { dz = 1;  route.dir = 0; }
+  else if (keys.down.right) { dx = 1;  route.dir = 1; }
+  else if (keys.down.down)  { dz = -1; route.dir = 2; }
+  else if (keys.down.left)  { dx = -1; route.dir = 3; }
+
+  if (dx || dz) {
+    const speed = 3.4 * dt;
+    const nx = route.px + dx * speed, nz = route.pz + dz * speed;
+    const tx = Math.floor(nx), tz = Math.floor(nz);
+    const wasTile = Math.floor(route.px) + "," + Math.floor(route.pz);
+    if (!solid(at(tx, Math.floor(route.pz)))) route.px = nx;
+    if (!solid(at(Math.floor(route.px), tz))) route.pz = nz;
+    route.step += speed * 2.4;
+    const nowTile = Math.floor(route.px) + "," + Math.floor(route.pz);
+    if (nowTile !== wasTile) {
+      if (at(Math.floor(route.px), Math.floor(route.pz)) === "G") {
+        route.grassSteps++;
+        if (route.grassSteps >= 4) { route.grassSteps = 0; route.flash = 1; startEncounter(); }
+      }
+    }
+  }
+
+  if (keys.pressed.a) {
+    const f = DIRV[route.dir];
+    const fx = route.px + f[0] * 1.0, fz = route.pz + f[1] * 1.0;
+    let best = null, bestD = 1.4;
+    for (const n of NPCS) {
+      const d = Math.hypot(n.x - fx, n.z - fz);
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    if (best) route.dialogue = { who: best.kind === "trainer" ? "TRAINER" : "", text: best.say };
+    else if (at(Math.floor(fx), Math.floor(fz)) === "s")
+      route.dialogue = { who: "", text: "ROUTE 1. TALL GRASS BOTH SIDES. WATCH YOUR STEP." };
+  }
+}
+
+function drawGroundMerged(px, pz, time) {
+  // Only the tiles inside the fixed window can be on screen, because the
+  // camera never rotates. Rows merge runs of the same material into one
+  // quad, which is where the triangle count actually comes from.
+  const x0 = Math.max(0, Math.floor(px) - 9), x1 = Math.min(MAP_W - 1, Math.floor(px) + 9);
+  const z0 = Math.max(0, Math.floor(pz) - 9), z1 = Math.min(MAP_H - 1, Math.floor(pz) + 14);
+  const here = Math.floor(pz);
+  let z = z0;
+  while (z <= z1) {
+    // Rows past the near band are two tiles deep. At that distance a tile is
+    // three pixels tall, so the detail was never visible and the row count
+    // halves.
+    const step = (z - here) > 7 ? 2 : 1;
+    const zEnd = Math.min(z1 + 1, z + step);
+    let x = x0;
+    while (x <= x1) {
+      const m = at(x, z);
+      let e = x;
+      while (e + 1 <= x1 && at(e + 1, z) === m) e++;
+      const c = GROUND_COL[m] || GROUND_COL.g;
+      let r = c[0], g = c[1], b = c[2];
+      if (m === "w") {
+        const s = Math.sin(time * 1.6 + z * 0.9) * 0.12 + 1;
+        r *= s; g *= s; b *= s;
+      } else {
+        const s = ((z * 7 + x * 3) % 5) * 0.012 + 0.97;
+        r *= s; g *= s; b *= s;
+      }
+      quadY(x, z, e + 1, zEnd, 0, r, g, b);
+      x = e + 1;
+    }
+    z = zEnd;
+  }
+  // Scattered decal quads: the detail merging costs us, put back by hand.
+  for (let i = 0; i < 14; i++) {
+    const dx = Math.floor(px) - 6 + ((i * 5) % 13);
+    const dz = Math.floor(pz) + ((i * 7) % 15);
+    if (at(dx, dz) !== "g") continue;
+    quadY(dx + 0.3, dz + 0.35, dx + 0.62, dz + 0.6, 0.01, 0x44, 0x88, 0x3A);
+  }
+}
+
+function drawRoute(time, dt, keys) {
+  routeUpdate(dt, keys);
+
+  cam.yaw = 0; cam.pitch = -0.62;
+  cam.x = route.px; cam.y = 6.6; cam.z = route.pz - 7.4;
+
+  clearSky(0x66, 0xAA, 0xEE, 0xAA, 0xDD, 0xEE);
+  drawGroundMerged(route.px, route.pz, time);
+
+  // Trainer sight line, drawn on the ground as a tint.
+  for (const n of NPCS) {
+    if (n.kind !== "trainer") continue;
+    const f = DIRV[n.dir];
+    for (let i = 1; i <= n.sight; i++) {
+      const tx = Math.floor(n.x) + f[0] * i, tz = Math.floor(n.z) + f[1] * i;
+      if (solid(at(tx, tz))) break;
+      quadY(tx + 0.15, tz + 0.15, tx + 0.85, tz + 0.85, 0.02, 0xCC, 0x99, 0x55);
+    }
+  }
+
+  // Props, back to front so the sprites layered on top stay sane.
+  const x0 = Math.max(0, Math.floor(route.px) - 9), x1 = Math.min(MAP_W - 1, Math.floor(route.px) + 9);
+  const z0 = Math.max(0, Math.floor(route.pz) - 6), z1 = Math.min(MAP_H - 1, Math.floor(route.pz) + 14);
+  for (let z = z1; z >= z0; z--) {
+    for (let x = x0; x <= x1; x++) {
+      const m = at(x, z);
+      if (m === "T") {
+        const s = 0.72 + ((x * 13 + z * 7) % 5) * 0.05;
+        drawMesh(MESH_TREE, x + 0.5, 0, z + 0.5, (x * 37 + z * 11) % 6, s);
+      } else if (m === "s") {
+        drawMesh(MESH_SIGN, x + 0.5, 0, z + 0.5, 0, 1);
+      } else if (m === "H" && x === 20 && z === 5) {
+        drawMesh(MESH_HOUSE, x + 0.5, 0, z + 0.5, 0, 1);
+      }
+    }
+  }
+
+  // Tall grass tufts as billboards, and the cast on top of them.
+  for (let z = z1; z >= z0; z--) {
+    for (let x = x0; x <= x1; x++) {
+      if (at(x, z) !== "G") continue;
+      const sway = Math.sin(time * 2.1 + x * 0.7 + z * 0.4) * 0.06;
+      drawBillboard(TUFT, x + 0.5 + sway, 0, z + 0.5, 0.5);
+    }
+  }
+
+  const bob = Math.sin(route.step) > 0 ? 0 : 1;
+  const drawn = [];
+  for (const n of NPCS) drawn.push({ z: n.z, f: () => drawBillboard(n.sp, n.x, 0, n.z, 1.35) });
+  drawn.push({
+    z: route.pz, f: () => {
+      const sp = route.dir === 0 ? HERO_UP : (route.dir === 2 ? HERO_DOWN : HERO_SIDE);
+      drawBillboard(sp, route.px, bob * 0.03, route.pz, 1.4);
+    }
+  });
+  drawn.sort((a, b) => b.z - a.z);
+  for (const d of drawn) d.f();
+
+  // 2D layer.
+  frameBox(2, 2, 52, 13, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  text("ROUTE 1", 6, 6, 0xFF, 0xFF, 0xFF);
+  const dot = at(Math.floor(route.px), Math.floor(route.pz)) === "G";
+  if (dot) text("*", 46, 6, 0xEE, 0xDD, 0x55);
+
+  if (route.dialogue) {
+    frameBox(2, 84, 116, 34, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+    let y = 89;
+    if (route.dialogue.who) { text(route.dialogue.who, 6, y, 0xFF, 0xBB, 0x33); y += 8; }
+    const lines = wrap(route.dialogue.text, 28);
+    for (let i = 0; i < Math.min(3, lines.length); i++) {
+      text(lines[i], 6, y + i * 8, 0xEE, 0xEE, 0xEE);
+    }
+    // The blinking "more" marker, the one piece of UI chrome worth its pixels.
+    if (Math.floor(time * 3) % 2 === 0) text(">", 110, 111, 0xFF, 0xBB, 0x33);
+  }
+
+  if (route.flash > 0) {
+    const a = Math.min(1, route.flash);
+    for (let y = 0; y < H; y++) {
+      const band = Math.abs(y - H / 2) / (H / 2);
+      if (band > a) continue;
+      rect(0, y, W, 1, 0xFF, 0xFF, 0xFF);
+    }
+    if (route.flash <= 0.02) setScene("battle");
+  }
+}
+
+function startEncounter() {
+  battle.reset(true);
+  setTimeout(() => setScene("battle"), 480);
+}
+
+/* ==================================================================
+   Scene: Battle
+   ================================================================== */
+
+const MOVES = [
+  { name: "EMBER", type: "EMBER", pp: 25, max: 25, pow: 40 },
+  { name: "SCRATCH", type: "STONE", pp: 35, max: 35, pow: 40 },
+  { name: "TAIL WHIP", type: "MIND", pp: 30, max: 30, pow: 0 },
+  { name: "FLARE UP", type: "EMBER", pp: 10, max: 10, pow: 75 }
+];
+
+const battle = {
+  state: "menu",       // menu, moves, anim, msg
+  cursor: 0, moveCursor: 0,
+  foeHP: 44, foeMax: 44, myHP: 39, myMax: 39,
+  msg: "", msgQueue: [], anim: 0, animKind: "",
+  shake: 0, camPush: 0, wild: true,
+  reset(wild) {
+    this.state = "menu"; this.cursor = 0; this.moveCursor = 0;
+    this.foeHP = 44; this.myHP = 39; this.msgQueue = [];
+    this.msg = wild ? "A WILD MOSSLING APPEARED!" : "TRAINER SENT OUT MOSSLING!";
+    this.state = "msg"; this.wild = wild;
+  },
+  push(m) { this.msgQueue.push(m); }
+};
+battle.reset(true);
+
+function battleUpdate(dt, keys) {
+  battle.shake = Math.max(0, battle.shake - dt * 4);
+  battle.camPush += ((battle.state === "anim" ? 1 : 0) - battle.camPush) * Math.min(1, dt * 5);
+
+  if (battle.state === "msg") {
+    if (keys.pressed.a || keys.pressed.b) {
+      if (battle.msgQueue.length) battle.msg = battle.msgQueue.shift();
+      else if (battle.foeHP <= 0) { battle.reset(true); }
+      else battle.state = "menu";
+    }
+    return;
+  }
+  if (battle.state === "anim") {
+    battle.anim -= dt;
+    if (battle.anim <= 0) {
+      battle.state = "msg";
+      battle.msg = battle.msgQueue.shift() || "";
+    }
+    return;
+  }
+  if (battle.state === "menu") {
+    if (keys.pressed.up)    battle.cursor = (battle.cursor + 2) % 4;
+    if (keys.pressed.down)  battle.cursor = (battle.cursor + 2) % 4;
+    if (keys.pressed.left)  battle.cursor = battle.cursor ^ 1;
+    if (keys.pressed.right) battle.cursor = battle.cursor ^ 1;
+    if (keys.pressed.a) {
+      if (battle.cursor === 0) battle.state = "moves";
+      else if (battle.cursor === 1) setScene("bag");
+      else if (battle.cursor === 2) setScene("party");
+      else {
+        battle.state = "msg";
+        battle.msg = battle.wild ? "GOT AWAY SAFELY!" : "NO RUNNING FROM A TRAINER!";
+        if (battle.wild) battle.push("BACK TO ROUTE 1.");
+      }
+    }
+    return;
+  }
+  if (battle.state === "moves") {
+    if (keys.pressed.up)    battle.moveCursor = (battle.moveCursor + 2) % 4;
+    if (keys.pressed.down)  battle.moveCursor = (battle.moveCursor + 2) % 4;
+    if (keys.pressed.left || keys.pressed.right) battle.moveCursor = battle.moveCursor ^ 1;
+    if (keys.pressed.b) battle.state = "menu";
+    if (keys.pressed.a) {
+      const mv = MOVES[battle.moveCursor];
+      if (mv.pp > 0) mv.pp--;
+      const eff = mv.type === "EMBER" ? 8 : 4;
+      const dmg = mv.pow === 0 ? 0 :
+        Math.max(1, Math.floor((((2 * 12 / 5 + 2) * mv.pow * 14 / 11 / 50 + 2) * eff / 4) * 236 / 255));
+      battle.foeHP = Math.max(0, battle.foeHP - dmg);
+      battle.state = "anim"; battle.anim = 0.55; battle.animKind = mv.type;
+      battle.shake = 1;
+      battle.msg = "EMBERKIT USED " + mv.name + "!";
+      battle.msgQueue = [];
+      if (mv.pow === 0) battle.msgQueue.push("MOSSLING'S DEFENCE FELL!");
+      else if (eff === 8) battle.msgQueue.push("IT'S SUPER EFFECTIVE!");
+      if (battle.foeHP <= 0) battle.msgQueue.push("MOSSLING FAINTED!");
+      else {
+        battle.myHP = Math.max(0, battle.myHP - 7);
+        battle.msgQueue.push("MOSSLING USED VINE SNAP!");
+      }
+    }
+  }
+}
+
+function hpPlate(x, y, name, lvl, hp, max, right) {
+  frameBox(x, y, 56, right ? 24 : 19, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  text(name, x + 3, y + 3, 0xEE, 0xEE, 0xEE);
+  text("L" + lvl, x + 44, y + 3, 0xFF, 0xBB, 0x33);
+  rect(x + 3, y + 11, 50, 5, 0x44, 0x44, 0x55);
+  const frac = max > 0 ? hp / max : 0;
+  const w = Math.round(48 * frac);
+  const col = frac > 0.5 ? [0x55, 0xDD, 0x66] : frac > 0.25 ? [0xEE, 0xCC, 0x33] : [0xEE, 0x44, 0x55];
+  rect(x + 4, y + 12, Math.max(0, w), 3, col[0], col[1], col[2]);
+  if (right) {
+    const s = hp + "/" + max;
+    text(s, x + 53 - textWidth(s), y + 18, 0xEE, 0xEE, 0xEE);
+  }
+}
+
+function drawArena(time, pushT) {
+  clearSky(0x44, 0x77, 0xCC, 0xCC, 0xDD, 0xEE);
+  const shakeX = battle.shake > 0 ? Math.sin(time * 60) * battle.shake * 0.06 : 0;
+  cam.yaw = 0.0 + shakeX;
+  cam.pitch = -0.30 - pushT * 0.04;
+  cam.x = 0; cam.y = 2.5 - pushT * 0.25; cam.z = -5.4 + pushT * 0.8;
+
+  // Arena floor as three merged bands rather than tiles.
+  quadY(-14, -6, 14, 2, 0, 0x77, 0xAA, 0x55);
+  quadY(-14, 2, 14, 9, 0, 0x66, 0x99, 0x4A);
+  quadY(-14, 9, 14, 26, 0, 0x55, 0x88, 0x55);
+  // Distant treeline: cheap, and it stops the horizon reading as a void.
+  for (let i = 0; i < 9; i++) {
+    const x = -12 + i * 3 + ((i * 7) % 3);
+    drawMesh(MESH_TREE, x, 0, 15 + (i % 3) * 2, i, 1.4);
+  }
+  drawMesh(MESH_PAD, 1.9, 0.02, 4.6, 0, 1);
+  drawMesh(MESH_PAD, -1.8, 0.02, 0.2, 0, 1.25);
+}
+
+function drawMonEyes(mesh, x, y, z, yaw, scale, blink) {
+  if (blink) return;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  for (const e of mesh.eyes) {
+    const wx = (e[0] * cy - e[2] * sy) * scale + x;
+    const wz = (e[0] * sy + e[2] * cy) * scale + z;
+    const wy = e[1] * scale + y;
+    const p = project(wx, wy, wz);
+    if (!p) continue;
+    const r = Math.max(1, Math.round(scale * 2.2));
+    for (let j = 0; j < r; j++) for (let i = 0; i < r; i++)
+      pxZ(Math.round(p.x) + i - (r >> 1), Math.round(p.y) + j - (r >> 1), p.z - 0.3, 0x11, 0x11, 0x22);
+  }
+}
+
+function drawBattle(time, dt, keys) {
+  battleUpdate(dt, keys);
+  drawArena(time, battle.camPush);
+
+  const idle = Math.sin(time * 2.4) * 0.04;
+  const lunge = battle.state === "anim" ? Math.sin((0.55 - battle.anim) / 0.55 * Math.PI) : 0;
+  const blink = (Math.floor(time * 1.7) % 7) === 0 && (time * 1.7 % 1) < 0.18;
+
+  // Opponent, on its pad, facing the camera.
+  const foeHit = battle.state === "anim" && battle.anim < 0.3 && (Math.floor(time * 30) % 2 === 0);
+  const fx = 1.9, fz = 4.6 - lunge * 0.25;
+  if (battle.foeHP > 0) {
+    drawMesh(MESH_MOSSLING, fx, 0.02 + idle * 0.5, fz, Math.PI, 0.95,
+      foeHit ? [1.6, 1.6, 1.6] : null);
+    drawMonEyes(MESH_MOSSLING, fx, 0.02 + idle * 0.5, fz, Math.PI, 0.95, blink);
+  }
+
+  // Player's, seen from behind and closer, so it reads as bigger.
+  const mx = -1.8 + lunge * 0.9, mz = 0.2 + lunge * 1.6;
+  drawMesh(MESH_EMBERKIT, mx, 0.02 - idle * 0.4, mz, 0.15, 1.25);
+
+  // Ember arc: the extra geometry a worst case frame has to survive.
+  if (battle.state === "anim" && battle.animKind === "EMBER") {
+    const t = (0.55 - battle.anim) / 0.55;
+    for (let i = 0; i < 5; i++) {
+      const tt = Math.max(0, Math.min(1, t - i * 0.06));
+      if (tt <= 0) continue;
+      const ex = mx + (fx - mx) * tt;
+      const ez = mz + (fz - mz) * tt;
+      const ey = 0.8 + Math.sin(tt * Math.PI) * 0.65;
+      const p = project(ex, ey, ez);
+      if (!p) continue;
+      const s = Math.max(1, Math.round(3 * (1 - i * 0.15) * 5 / p.z));
+      for (let j = 0; j < s; j++) for (let k = 0; k < s; k++)
+        pxZ(Math.round(p.x) + k - (s >> 1), Math.round(p.y) + j - (s >> 1), p.z - 0.4,
+          0xFF, i < 2 ? 0xEE : 0x99, 0x33);
+    }
+  }
+
+  hpPlate(3, 4, "MOSSLING", 11, battle.foeHP, battle.foeMax, false);
+  hpPlate(61, 55, "EMBERKIT", 12, battle.myHP, battle.myMax, true);
+
+  // Bottom panel: message, main menu, or move list.
+  frameBox(0, 84, 120, 36, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  if (battle.state === "msg" || battle.state === "anim") {
+    const lines = wrap(battle.msg, 28);
+    for (let i = 0; i < Math.min(3, lines.length); i++)
+      text(lines[i], 5, 90 + i * 9, 0xEE, 0xEE, 0xEE);
+    if (battle.state === "msg" && Math.floor(time * 3) % 2 === 0)
+      text(">", 111, 112, 0xFF, 0xBB, 0x33);
+  } else if (battle.state === "menu") {
+    const labels = ["FIGHT", "BAG", "MON", "RUN"];
+    for (let i = 0; i < 4; i++) {
+      const cx = 14 + (i & 1) * 56, cy = 91 + (i >> 1) * 15;
+      const sel = i === battle.cursor;
+      if (sel) text(">", cx - 7, cy, 0xFF, 0xBB, 0x33);
+      text(labels[i], cx, cy, sel ? 0xFF : 0xCC, sel ? 0xFF : 0xCC, sel ? 0xFF : 0xDD);
+    }
+  } else {
+    for (let i = 0; i < 4; i++) {
+      const cx = 12 + (i & 1) * 56, cy = 89 + (i >> 1) * 11;
+      const sel = i === battle.moveCursor;
+      if (sel) text(">", cx - 7, cy, 0xFF, 0xBB, 0x33);
+      const mv = MOVES[i];
+      text(mv.name.slice(0, 10), cx, cy, sel ? 0xFF : 0xBB, sel ? 0xFF : 0xBB, sel ? 0xFF : 0xCC);
+    }
+    const mv = MOVES[battle.moveCursor];
+    const c = TYPE_COL[mv.type];
+    rect(5, 111, 3, 5, c[0], c[1], c[2]);
+    text(mv.type, 10, 111, c[0], c[1], c[2]);
+    text("PP " + mv.pp + "/" + mv.max, 74, 111, 0xEE, 0xEE, 0xEE);
+  }
+}
+
+/* ==================================================================
+   Scene: Catch
+   ================================================================== */
+
+const capture = {
+  phase: "idle",   // idle, throw, suck, drop, wobble, caught, broke
+  t: 0, wobbles: 0, wobbleDir: 1, result: null, msg: "THROW A BALL. HOLD YOUR NERVE.",
+  ballPos: [0, 0, 0], monScale: 1, monWhite: 0,
+  reset() {
+    this.phase = "idle"; this.t = 0; this.wobbles = 0; this.result = null;
+    this.monScale = 1; this.monWhite = 0;
+    this.msg = "MOSSLING IS WORN DOWN.";
+  }
+};
+capture.reset();
+
+const FOE = { x: 1.6, z: 4.4 };
+const THROW_FROM = [-1.6, 1.1, -0.6];
+
+function captureUpdate(dt, keys) {
+  capture.t += dt;
+  const ph = capture.phase;
+
+  if (ph === "idle") {
+    if (keys.pressed.a) { capture.phase = "throw"; capture.t = 0; capture.msg = ""; }
+    return;
+  }
+  if (ph === "throw") {
+    const d = Math.min(1, capture.t / 0.6);
+    capture.ballPos = [
+      THROW_FROM[0] + (FOE.x - THROW_FROM[0]) * d,
+      THROW_FROM[1] + (0.9 - THROW_FROM[1]) * d + Math.sin(d * Math.PI) * 1.9,
+      THROW_FROM[2] + (FOE.z - THROW_FROM[2]) * d
+    ];
+    if (d >= 1) { capture.phase = "suck"; capture.t = 0; }
+    return;
+  }
+  if (ph === "suck") {
+    const d = Math.min(1, capture.t / 0.4);
+    capture.monScale = 1 - d;
+    capture.monWhite = Math.min(1, d * 1.6);
+    capture.ballPos = [FOE.x, 0.9, FOE.z];
+    if (d >= 1) { capture.phase = "drop"; capture.t = 0; }
+    return;
+  }
+  if (ph === "drop") {
+    const d = Math.min(1, capture.t / 0.35);
+    capture.ballPos = [FOE.x, 0.9 * (1 - d * d) + 0.22, FOE.z];
+    if (d >= 1) { capture.phase = "wobble"; capture.t = 0; capture.wobbles = 0; }
+    return;
+  }
+  if (ph === "wobble") {
+    if (capture.t > 0.75) {
+      capture.t = 0;
+      capture.wobbles++;
+      capture.wobbleDir *= -1;
+      if (capture.wobbles >= 3) {
+        // Four rolls against the threshold, exactly as the design describes.
+        capture.phase = "caught";
+        capture.msg = "GOTCHA! MOSSLING WAS CAUGHT!";
+        capture.t = 0;
+      }
+    }
+    return;
+  }
+  if (ph === "caught") {
+    if (keys.pressed.a || keys.pressed.b) capture.reset();
+  }
+}
+
+function drawCatch(time, dt, keys) {
+  captureUpdate(dt, keys);
+  drawArena(time, 0);
+
+  const idle = Math.sin(time * 2.4) * 0.04;
+  if (capture.monScale > 0.02 && capture.phase !== "caught") {
+    drawMesh(MESH_MOSSLING, FOE.x, 0.02 + idle * 0.5, FOE.z, Math.PI, 0.95 * capture.monScale,
+      capture.monWhite > 0 ? [1 + capture.monWhite * 2, 1 + capture.monWhite * 2, 1 + capture.monWhite * 2] : null);
+    if (capture.monWhite < 0.2)
+      drawMonEyes(MESH_MOSSLING, FOE.x, 0.02 + idle * 0.5, FOE.z, Math.PI, 0.95, false);
+  }
+
+  drawMesh(MESH_EMBERKIT, -1.8, 0.02 - idle * 0.4, 0.2, 0.15, 1.25);
+
+  if (capture.phase !== "idle" && capture.phase !== "caught") {
+    let bx = capture.ballPos[0], by = capture.ballPos[1], bz = capture.ballPos[2];
+    let tilt = 0;
+    if (capture.phase === "wobble") {
+      const w = Math.sin(capture.t / 0.75 * Math.PI * 2) * capture.wobbleDir;
+      tilt = w * 0.45;
+      bx += w * 0.12;
+    }
+    const p = project(bx, by, bz);
+    if (p) {
+      const h = 0.72 * FOCAL / p.z;
+      drawSprite(BALL, p.x, p.y - h / 2, h / BALL.h, p.z - 0.2);
+      if (Math.abs(tilt) > 0.001) {
+        // Nudge a highlight column so the tilt reads at 8 pixels tall.
+        px(Math.round(p.x + tilt * 6), Math.round(p.y - h * 0.6), 0xFF, 0xFF, 0xFF);
+      }
+    }
+    // Shadow under the ball, one flat quad.
+    quadY(bx - 0.25, bz - 0.18, bx + 0.25, bz + 0.18, 0.015, 0x44, 0x66, 0x3A);
+  }
+
+  if (capture.phase === "caught") {
+    const t = Math.min(1, capture.t * 1.6);
+    const p = project(FOE.x, 0.55, FOE.z);
+    if (p) {
+      for (let i = 0; i < 8; i++) {
+        const a = i / 8 * Math.PI * 2 + t;
+        const rr = 4 + t * 22;
+        const sx = Math.round(p.x + Math.cos(a) * rr);
+        const sy = Math.round(p.y + Math.sin(a) * rr * 0.6);
+        for (let j = -1; j <= 1; j++) { px(sx + j, sy, 0xFF, 0xEE, 0x55); px(sx, sy + j, 0xFF, 0xEE, 0x55); }
+      }
+      drawSprite(BALL, p.x, p.y - 4, 1, 0);
+    }
+  }
+
+  // Wobble pips: three slots, filled as the ball settles. Feedback with no
+  // numbers, which is the whole point of the design.
+  frameBox(84, 4, 33, 13, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  for (let i = 0; i < 3; i++) {
+    const on = capture.wobbles > i || capture.phase === "caught";
+    const cx = 90 + i * 9;
+    if (on) rect(cx, 8, 5, 5, 0xFF, 0xBB, 0x33);
+    else { rect(cx, 8, 5, 5, 0x44, 0x44, 0x55); rect(cx + 1, 9, 3, 3, 0x22, 0x22, 0x33); }
+  }
+
+  // The panel only exists when it has something to say. Through the throw and
+  // the wobble the animation gets the whole screen, which is the point.
+  const shown = (capture.phase === "idle" || capture.phase === "caught") ? capture.msg : "";
+  if (shown) {
+    frameBox(0, 96, 120, 24, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+    const lines = wrap(shown, 28);
+    for (let i = 0; i < Math.min(2, lines.length); i++)
+      text(lines[i], 5, 101 + i * 9, 0xEE, 0xEE, 0xEE);
+    if (capture.phase === "caught" && Math.floor(time * 3) % 2 === 0)
+      text(">", 111, 112, 0xFF, 0xBB, 0x33);
+  }
+}
+
+/* ==================================================================
+   Scene: Bag
+   ================================================================== */
+
+const POCKETS = [
+  { name: "BALLS", items: [
+    { n: "PICO BALL", c: 12, d: "A BASIC BALL. ODDS X1." },
+    { n: "GREAT BALL", c: 4, d: "BETTER ODDS. X1.5." },
+    { n: "DUSK BALL", c: 2, d: "X3 IN CAVES AND AT NIGHT." }
+  ]},
+  { name: "MEDICINE", items: [
+    { n: "POTION", c: 6, d: "RESTORES 20 HP." },
+    { n: "SUPER POTION", c: 2, d: "RESTORES 50 HP." },
+    { n: "ANTIDOTE", c: 3, d: "CLEARS POISON." },
+    { n: "REVIVE", c: 1, d: "WAKES A FAINTED PICOMON." }
+  ]},
+  { name: "KEY", items: [
+    { n: "MAP", c: 1, d: "SHOWS THE ZONE YOU ARE IN." },
+    { n: "OLD ROD", c: 1, d: "FISH IN ANY DEEP WATER." },
+    { n: "TOWN KEY", c: 1, d: "OPENS THE NORTH GATE." }
+  ]}
+];
+const bag = { pocket: 0, cursor: 0 };
+
+function drawBag(time, dt, keys) {
+  if (keys.pressed.left)  { bag.pocket = (bag.pocket + 2) % 3; bag.cursor = 0; }
+  if (keys.pressed.right) { bag.pocket = (bag.pocket + 1) % 3; bag.cursor = 0; }
+  const items = POCKETS[bag.pocket].items;
+  if (keys.pressed.up)   bag.cursor = (bag.cursor + items.length - 1) % items.length;
+  if (keys.pressed.down) bag.cursor = (bag.cursor + 1) % items.length;
+  if (keys.pressed.b) setScene("battle");
+
+  clearSky(0x22, 0x22, 0x33, 0x11, 0x11, 0x22);
+
+  // Pocket tabs.
+  for (let i = 0; i < 3; i++) {
+    const x = 3 + i * 39;
+    const on = i === bag.pocket;
+    frameBox(x, 3, 37, 13, on ? [0x44, 0x44, 0x66] : [0x22, 0x22, 0x33], [0x88, 0x88, 0xAA]);
+    textCentred(POCKETS[i].name, x + 18, 7, on ? 0xFF : 0x88, on ? 0xBB : 0x88, on ? 0x33 : 0xAA);
+  }
+
+  frameBox(3, 19, 114, 76, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  for (let i = 0; i < items.length; i++) {
+    const y = 24 + i * 10;
+    const sel = i === bag.cursor;
+    if (sel) { rect(5, y - 2, 110, 9, 0x44, 0x44, 0x66); text(">", 6, y, 0xFF, 0xBB, 0x33); }
+    text(items[i].n, 11, y, sel ? 0xFF : 0xDD, sel ? 0xFF : 0xDD, sel ? 0xFF : 0xEE);
+    const cnt = "X" + items[i].c;
+    text(cnt, 112 - textWidth(cnt), y, 0xAA, 0xAA, 0xCC);
+  }
+
+  frameBox(3, 97, 114, 20, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  const lines = wrap(items[bag.cursor].d, 27);
+  for (let i = 0; i < Math.min(2, lines.length); i++)
+    text(lines[i], 7, 101 + i * 8, 0xEE, 0xEE, 0xEE);
+}
+
+/* ==================================================================
+   Scene: Party
+   ================================================================== */
+
+const PARTY = [
+  { n: "EMBERKIT", lv: 12, hp: 39, max: 39, t: "EMBER", col: [0xEE, 0x88, 0x33] },
+  { n: "MOSSLING", lv: 11, hp: 21, max: 42, t: "LEAF",  col: [0x55, 0xAA, 0x55] },
+  { n: "TIDEPUP",  lv: 10, hp: 8,  max: 36, t: "TIDE",  col: [0x44, 0x99, 0xEE] },
+  { n: "SPARKLET", lv: 9,  hp: 30, max: 30, t: "SPARK", col: [0xEE, 0xCC, 0x33] },
+  { n: "PEBBLIN",  lv: 8,  hp: 0,  max: 34, t: "STONE", col: [0xAA, 0x99, 0x77] },
+  null
+];
+const party = { cursor: 0 };
+
+function drawPartyIcon(x, y, col, faint) {
+  const r = faint ? col[0] * 0.45 : col[0];
+  const g = faint ? col[1] * 0.45 : col[1];
+  const b = faint ? col[2] * 0.45 : col[2];
+  rect(x + 2, y + 4, 10, 8, r, g, b);
+  rect(x + 3, y + 2, 8, 4, r * 1.1, g * 1.1, b * 1.1);
+  rect(x + 1, y + 11, 3, 2, r * 0.8, g * 0.8, b * 0.8);
+  rect(x + 10, y + 11, 3, 2, r * 0.8, g * 0.8, b * 0.8);
+  px(x + 4, y + 4, 0x11, 0x11, 0x22);
+  px(x + 9, y + 4, 0x11, 0x11, 0x22);
+}
+
+function drawParty(time, dt, keys) {
+  if (keys.pressed.up)   party.cursor = (party.cursor + 5) % 6;
+  if (keys.pressed.down) party.cursor = (party.cursor + 1) % 6;
+  if (keys.pressed.b) setScene("battle");
+
+  clearSky(0x22, 0x22, 0x33, 0x11, 0x11, 0x22);
+  frameBox(2, 2, 116, 14, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
+  text("PARTY", 6, 6, 0xEE, 0xEE, 0xEE);
+  text("5/6", 100, 6, 0xFF, 0xBB, 0x33);
+
+  for (let i = 0; i < 6; i++) {
+    const y = 18 + i * 17;
+    const p = PARTY[i];
+    const sel = i === party.cursor;
+    frameBox(2, y, 116, 16, sel ? [0x44, 0x44, 0x66] : [0x22, 0x22, 0x33], [0x99, 0x99, 0xBB]);
+    if (!p) { text("- - -", 20, y + 5, 0x66, 0x66, 0x88); continue; }
+    const faint = p.hp === 0;
+    drawPartyIcon(4, y + 1, p.col, faint);
+    text(p.n, 20, y + 3, faint ? 0x99 : 0xEE, faint ? 0x99 : 0xEE, faint ? 0xAA : 0xEE);
+    text("L" + p.lv, 20, y + 10, 0xAA, 0xAA, 0xCC);
+    const c = TYPE_COL[p.t];
+    rect(41, y + 10, 3, 5, c[0], c[1], c[2]);
+
+    rect(66, y + 3, 48, 5, 0x44, 0x44, 0x55);
+    const frac = p.hp / p.max;
+    const col = faint ? [0x66, 0x66, 0x77] :
+      frac > 0.5 ? [0x55, 0xDD, 0x66] : frac > 0.25 ? [0xEE, 0xCC, 0x33] : [0xEE, 0x44, 0x55];
+    rect(67, y + 4, Math.round(46 * frac), 3, col[0], col[1], col[2]);
+    const s = faint ? "FAINTED" : p.hp + "/" + p.max;
+    text(s, 114 - textWidth(s), y + 10, 0xDD, 0xDD, 0xEE);
+  }
+}
+
+/* ==================================================================
+   Input, scene switching, loop
+   ================================================================== */
+
+const keys = {
+  down: { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false },
+  pressed: { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false },
+  latch: {}
+};
+
+const KEYMAP = {
+  ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+  KeyW: "up", KeyS: "y", KeyA: "x", KeyD: "right",
+  KeyZ: "a", KeyX: "b"
+};
+
+function setKey(name, on) {
+  if (!name) return;
+  if (on && !keys.down[name]) keys.latch[name] = true;
+  keys.down[name] = on;
+}
+
+addEventListener("keydown", e => {
+  const n = KEYMAP[e.code];
+  if (!n) return;
+  if (e.repeat) { e.preventDefault(); return; }
+  setKey(n, true);
+  e.preventDefault();
+}, { passive: false });
+addEventListener("keyup", e => {
+  const n = KEYMAP[e.code];
+  if (!n) return;
+  setKey(n, false);
+  e.preventDefault();
+}, { passive: false });
+
+for (const b of document.querySelectorAll(".btn")) {
+  const n = b.dataset.key;
+  const on = ev => { ev.preventDefault(); setKey(n, true); b.classList.add("held"); };
+  const off = ev => { ev.preventDefault(); setKey(n, false); b.classList.remove("held"); };
+  b.addEventListener("pointerdown", on);
+  b.addEventListener("pointerup", off);
+  b.addEventListener("pointerleave", off);
+  b.addEventListener("pointercancel", off);
+}
+
+const SCENES = {
+  route:  { name: "Route 1",  fn: drawRoute },
+  battle: { name: "Battle",   fn: drawBattle },
+  catch:  { name: "Catch",    fn: drawCatch },
+  bag:    { name: "Bag",      fn: drawBag },
+  party:  { name: "Party",    fn: drawParty }
+};
+let scene = "route";
+
+function setScene(s) {
+  scene = s;
+  document.getElementById("sceneName").textContent = SCENES[s].name;
+  for (const t of document.querySelectorAll(".tabs button"))
+    t.setAttribute("aria-selected", String(t.dataset.scene === s));
+  for (const n of document.querySelectorAll(".note"))
+    n.classList.toggle("on", n.dataset.note === s);
+  if (s === "route") route.flash = 0;
+  if (s === "catch") capture.reset();
+}
+
+for (const t of document.querySelectorAll(".tabs button"))
+  t.addEventListener("click", () => setScene(t.dataset.scene));
+
+const rTris = document.getElementById("rTris");
+const rGround = document.getElementById("rGround");
+const rSprites = document.getElementById("rSprites");
+const rHead = document.getElementById("rHead");
+
+let last = 0;
+function frame(now) {
+  const t = now / 1000;
+  let dt = last ? Math.min(0.05, t - last) : 0.016;
+  last = t;
+
+  for (const k in keys.pressed) { keys.pressed[k] = !!keys.latch[k]; keys.latch[k] = false; }
+
+  triCount = 0; groundQuads = 0; spriteCount = 0;
+  SCENES[scene].fn(t, dt, keys);
+  ctx.putImageData(img, 0, 0);
+
+  rTris.textContent = triCount;
+  rGround.textContent = groundQuads;
+  rSprites.textContent = spriteCount;
+  const head = 640 - triCount;
+  rHead.textContent = head;
+  rHead.className = "v " + (head > 120 ? "ok" : "hot");
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+})();
+</script>
