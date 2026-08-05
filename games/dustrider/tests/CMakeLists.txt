@@ -17,11 +17,15 @@ add_test(NAME dustrider_sim_tests COMMAND dustrider_sim_tests)
 # The preview harness renders real frames through the real engine and the
 # real models, no SDK anywhere, and writes them as PPM images. Not a test: a
 # tool for looking at the game without hardware.
+# It builds the game's own render.cpp, so it needs the game's own model list.
+# Keeping a second copy here is what left rock.hpp ungenerated and main red.
+include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
+
 set(dustrider_models "")
-add_obj_model(dustrider_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/bike.obj dustrider_models)
-add_obj_model(dustrider_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/cactus.obj dustrider_models)
+foreach(model ${dustrider_model_files})
+    add_obj_model(dustrider_preview
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} dustrider_models)
+endforeach()
 
 add_executable(dustrider_preview
     preview.cpp

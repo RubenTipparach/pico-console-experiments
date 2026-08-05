@@ -402,19 +402,31 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [detect, build]
-    # Building is publishing here: every run that gets this far deploys what it
+    needs: [engine-tests, detect, build]
+    # Building is publishing here: a run that gets this far deploys what it
     # built, plus whatever the state branch already carried for held games.
-    # It still runs when `build` was skipped, because a run with every game
-    # held has to republish the site with the previous content intact.
+    #
+    # A skipped `build` is only allowed through when there was nothing to
+    # build, which under build.yaml means every game is held. It used to be
+    # allowed unconditionally, on the reasoning that a skip meant "nothing
+    # changed": that reasoning died with change detection, and the result was
+    # a run whose host tests failed, whose build never ran, and which
+    # published anyway. A red run must not reach the site.
+    #
+    # engine-tests is a dependency for the same reason. It was not one before,
+    # so a failing test suite could deploy as long as the build job had not
+    # been reached yet.
     #
     # Any branch may deploy, because a non default branch only ever writes
     # under preview/<branch>/. Reaching the site root still takes the default
     # branch, or an explicit publish=true dispatch.
     if: >-
       ${{ !cancelled()
+          && needs.engine-tests.result == 'success'
           && needs.detect.result == 'success'
-          && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+          && (needs.build.result == 'success'
+              || (needs.build.result == 'skipped'
+                  && needs.detect.outputs.has_work != 'true')) }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -571,16 +583,34 @@ jobs:
 
       - name: Write the manifest and the gallery
         env:
-          BUILT: ${{ needs.detect.outputs.built }}
+          PLANNED: ${{ needs.detect.outputs.built }}
           PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
           stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           title="$(basename "$GITHUB_REPOSITORY")"
           [ -n "$PREFIX" ] && title="$GITHUB_REF_NAME (preview)"
+
+          # Claim what arrived, not what was planned. The manifest's commit is
+          # what the gallery links and what the shell compares against to
+          # offer a reload, so a game stamped with a commit it was not built
+          # from sends players to a build that does not exist. A run whose
+          # build never happened once published a manifest saying otherwise.
+          built=""
+          for slug in $(echo "$PLANNED" | tr ',' ' '); do
+            [ -n "$slug" ] || continue
+            if [ -d "incoming/web/$slug" ] || [ -f "incoming/uf2/$slug.uf2" ]; then
+              built="${built:+$built,}$slug"
+            else
+              echo "::warning::$slug was planned but produced nothing, so the" \
+                   "manifest keeps its previous commit"
+            fi
+          done
+          echo "manifest claims: ${built:-nothing}"
+
           python3 tools/build_plan.py manifest \
             --published "site/${PREFIX}builds.json" \
-            --built "$BUILT" \
+            --built "$built" \
             --out "site/${PREFIX}builds.json" \
             --timestamp "$stamp" \
             --commit "${GITHUB_SHA::7}"
