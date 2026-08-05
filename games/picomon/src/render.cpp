@@ -8,6 +8,7 @@
 #include "sprites.hpp"
 
 #include "ball.hpp"
+#include "counter.hpp"
 #include "emberkit.hpp"
 #include "house.hpp"
 #include "mossling.hpp"
@@ -19,6 +20,7 @@
 #include "tidepup.hpp"
 #include "tree.hpp"
 #include "tree_far.hpp"
+#include "wall.hpp"
 
 namespace pmr {
 namespace {
@@ -84,6 +86,10 @@ const Glyph k_font[] = {
     {{0, 5, 2, 5, 0}},          // x
     {{4, 2, 1, 2, 4}},          // >
     {{1, 2, 4, 2, 1}},          // <
+    // $ has to be an S with a stem through it, and there is no fourth column
+    // to put the stem in. The middle column carries both: it is the stem on
+    // the top and bottom rows and the S's own turns in between.
+    {{2, 7, 4, 7, 2}},          // $
 };
 
 int glyph_index(char c) {
@@ -103,6 +109,7 @@ int glyph_index(char c) {
         case 'x': return 45;
         case '>': return 46;
         case '<': return 47;
+        case '$': return 48;
         default: return 40;      // anything unmapped shows as a question mark
     }
 }
@@ -296,12 +303,23 @@ const pse::MeshData* mesh_for(uint8_t mesh) {
 
 // ---- the overworld -------------------------------------------------------
 
+// A map row is not a world z. The camera looks along +z and the tile grid
+// counts rows southward from row 0, so laying one straight onto the other
+// renders the world back to front: the top of the frame is south, and
+// pressing up walks the player toward the bottom of the screen. The map is
+// read from the far end instead, which turns the camera round without
+// mirroring x the way a 180 degree yaw would.
+//
+// wz(y) is the far edge of map row y. The row spans z from wz(y) - 1 to
+// wz(y), and anything standing in the middle of it is at wz(y) - 0.5.
+inline float wz_of(const Zone& z, float map_y) { return float(z.h) - map_y; }
+
 void draw_overworld(const World& w, uint32_t t) {
     const Zone& z = zone_of(w);
     int16_t ox = 0, oy = 0;
     player_offset(w, ox, oy);
     const float px = float(w.tx) + 0.5f + float(ox) / 256.0f;
-    const float pz = float(w.ty) + 0.5f + float(oy) / 256.0f;
+    const float pz = wz_of(z, float(w.ty) + 0.5f + float(oy) / 256.0f);
 
     g_renderer.set_fov(k_fov);
     // Bracket the depth range to what this scene occupies. The engine's
@@ -313,7 +331,11 @@ void draw_overworld(const World& w, uint32_t t) {
     g_renderer.set_camera(px, k_cam_height, pz - k_cam_back, 0.0f, k_pitch);
 
     g_raster.begin_frame(g_raster.target());
-    g_raster.clear_gradient(0x66, 0xAA, 0xEE, 0xAA, 0xDD, 0xEE);
+    // Indoors there is no sky. What shows above the far wall is the dark the
+    // room is standing in, and the map's own border tile is wall, so the
+    // window running past the edge draws wall rather than a field.
+    if (z.indoor) g_raster.clear_gradient(0x22, 0x1D, 0x22, 0x33, 0x2C, 0x33);
+    else g_raster.clear_gradient(0x66, 0xAA, 0xEE, 0xAA, 0xDD, 0xEE);
 
     // At this pitch the horizon sits far above the frame, so ground has to
     // cover every row of it. The obvious way is one big quad underneath, and
@@ -326,29 +348,40 @@ void draw_overworld(const World& w, uint32_t t) {
     // the edge of the map is anyway.
     const int x0 = int(px) - 10;
     const int x1 = int(px) + 10;
+    // In world z, not in map rows: the near edge is behind the player and the
+    // far edge is up the frame, whichever way round the map runs.
     const int z0 = int(pz) - 12;
     const int z1 = int(pz) + 20;
 
     // Rows merge runs of the same material, and deepen with distance: a tile
     // eleven rows out is a few pixels tall and never needed its own quad.
-    for (int y = z0; y <= z1; ) {
-        const int step = (y - int(pz)) > 14 ? 4 : (y - int(pz)) > 6 ? 2 : 1;
-        const int y_end = (y + step > z1 + 1) ? z1 + 1 : y + step;
+    for (int zi = z0; zi <= z1; ) {
+        const int step = (zi - int(pz)) > 14 ? 4 : (zi - int(pz)) > 6 ? 2 : 1;
+        const int z_end = (zi + step > z1 + 1) ? z1 + 1 : zi + step;
+        // The row of map that occupies world z from zi to zi + 1.
+        const int y = z.h - zi - 1;
+        // A room stops at its walls. Outdoors the window runs past the border
+        // and reads the edge tile, which is trees and is what the edge of the
+        // map is anyway; indoors that same trick paints the floor colour out
+        // into the void beyond the room, which is worse than showing nothing.
+        if (z.indoor && (y < 0 || y >= z.h)) { zi = z_end; continue; }
         int x = x0;
         while (x <= x1) {
+            if (z.indoor && (x < 0 || x >= z.w)) { x++; continue; }
+            const int x_last = z.indoor && x1 >= z.w ? z.w - 1 : x1;
             const uint8_t tile = tile_clamped(z, x, y);
             int e = x;
-            while (e + 1 <= x1 && tile_clamped(z, e + 1, y) == tile) e++;
+            while (e + 1 <= x_last && tile_clamped(z, e + 1, y) == tile) e++;
             const TileDef& td = k_tiles[tile];
             uint8_t r = td.r, g = td.g, b = td.b;
             if (td.flags & k_tile_water) {
                 const int wave = int(8.0f * sinf(float(t) * 0.002f + float(y)));
                 r = uint8_t(r + wave); g = uint8_t(g + wave); b = uint8_t(b + wave);
             }
-            ground_quad(float(x), float(y), float(e + 1), float(y_end), r, g, b);
+            ground_quad(float(x), float(zi), float(e + 1), float(z_end), r, g, b);
             x = e + 1;
         }
-        y = y_end;
+        zi = z_end;
     }
 
     // A trainer's sight line, while it is still unbeaten. The trap is meant to
@@ -364,8 +397,9 @@ void draw_overworld(const World& w, uint32_t t) {
             const int tx = n.x + k_dx[n.facing] * s;
             const int ty = n.y + k_dy[n.facing] * s;
             if (!tile_walkable(z, tx, ty)) break;
-            ground_quad(float(tx) + 0.2f, float(ty) + 0.2f,
-                        float(tx) + 0.8f, float(ty) + 0.8f, 0xCC, 0x99, 0x55);
+            const float tz = wz_of(z, float(ty));
+            ground_quad(float(tx) + 0.2f, tz - 0.8f,
+                        float(tx) + 0.8f, tz - 0.2f, 0xCC, 0x99, 0x55);
         }
     }
 
@@ -373,12 +407,16 @@ void draw_overworld(const World& w, uint32_t t) {
     // the real map, not the clamped one: scenery outside it is the flat border
     // colour and nothing stands on it.
     const int px0 = x0 < 0 ? 0 : x0, px1 = x1 >= z.w ? z.w - 1 : x1;
-    const int pz0 = z0 < 0 ? 0 : z0, pz1 = z1 >= z.h ? z.h - 1 : z1;
-    for (int y = pz1; y >= pz0; y--) {
+    // The window's near and far edges in world z, turned back into the map
+    // rows they cover. Far is the smaller row number, which is why these look
+    // crossed over.
+    const int my_far = z.h - 1 - (z1 >= z.h ? z.h - 1 : z1);
+    const int my_near = z.h - 1 - (z0 < 0 ? 0 : z0);
+    for (int y = my_far; y <= my_near; y++) {
         for (int x = px0; x <= px1; x++) {
             const uint8_t tile = tile_at(z, x, y);
-            const float wx = float(x) + 0.5f, wz = float(y) + 0.5f;
-            const float far = float(y - int(pz)) > 4.0f ? 1.0f : 0.0f;
+            const float wx = float(x) + 0.5f, wz = wz_of(z, float(y) + 0.5f);
+            const float far = wz - pz > 4.0f ? 1.0f : 0.0f;
             switch (tile) {
                 case tile_tree:
                     g_renderer.draw_mesh(far ? tree_far : tree, wx, 0.0f, wz,
@@ -387,12 +425,26 @@ void draw_overworld(const World& w, uint32_t t) {
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);
                     break;
+                case tile_wall:
+                    // Nothing south of the player. A wall between the camera
+                    // and the player can only stand in the way, and at two
+                    // units tall the near wall of a room ate the bottom third
+                    // of the frame including the doorway the player had just
+                    // walked through. The room reads as a cutaway instead,
+                    // which is how these games have always drawn interiors.
+                    if (wz < pz) break;
+                    g_renderer.draw_mesh(wall, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_counter:
+                    g_renderer.draw_mesh(counter, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
                 case tile_house:
-                    // One mesh per building, on its own top left corner only,
-                    // or a four tile house draws four times.
+                    // One mesh per building, on its own north west corner
+                    // only, or a four tile house draws four times. The z
+                    // offset is southward, which is now the near direction.
                     if (tile_at(z, x - 1, y) != tile_house &&
                         tile_at(z, x, y - 1) != tile_house) {
-                        g_renderer.draw_mesh(house, wx + 1.0f, 0.0f, wz + 0.5f,
+                        g_renderer.draw_mesh(house, wx + 1.0f, 0.0f, wz - 0.5f,
                                              0.0f, 1.0f);
                     }
                     break;
@@ -403,13 +455,12 @@ void draw_overworld(const World& w, uint32_t t) {
     }
     for (int i = 0; i < z.event_count; i++) {
         const EventDef& e = z.events[i];
+        const float ez = wz_of(z, float(e.y) + 0.5f);
         if (EventKind(e.kind) == EventKind::Sign) {
-            g_renderer.draw_mesh(sign, float(e.x) + 0.5f, 0.0f, float(e.y) + 0.5f,
-                                 0.0f, 1.0f);
+            g_renderer.draw_mesh(sign, float(e.x) + 0.5f, 0.0f, ez, 0.0f, 1.0f);
         } else if (EventKind(e.kind) == EventKind::Item &&
                    (e.flag == k_no_flag || !flag_get(w, e.flag))) {
-            g_renderer.draw_mesh(ball, float(e.x) + 0.5f, 0.2f, float(e.y) + 0.5f,
-                                 0.0f, 1.0f);
+            g_renderer.draw_mesh(ball, float(e.x) + 0.5f, 0.2f, ez, 0.0f, 1.0f);
         }
     }
 
@@ -417,7 +468,7 @@ void draw_overworld(const World& w, uint32_t t) {
     for (int i = 0; i < z.npc_count; i++) {
         const NpcDef& n = z.npcs[i];
         if (!npc_present(w, n)) continue;
-        ground_shadow(float(n.x) + 0.5f, float(n.y) + 0.5f, 0.45f);
+        ground_shadow(float(n.x) + 0.5f, wz_of(z, float(n.y) + 0.5f), 0.45f);
     }
     ground_shadow(px, pz, 0.45f);
 
@@ -425,8 +476,8 @@ void draw_overworld(const World& w, uint32_t t) {
         const NpcDef& n = z.npcs[i];
         if (!npc_present(w, n)) continue;
         int sx = 0, sy = 0, sd = 0;
-        if (!g_renderer.project(float(n.x) + 0.5f, 0.0f, float(n.y) + 0.5f,
-                                sx, sy, sd)) continue;
+        if (!g_renderer.project(float(n.x) + 0.5f, 0.0f,
+                                wz_of(z, float(n.y) + 0.5f), sx, sy, sd)) continue;
         const SpriteSheet& sh = k_sheets[n.sheet < k_sheet_art_count ? n.sheet : 0];
         const bool back = n.facing == 0 && sh.frame_count > 4;
         draw_sprite(n.sheet < k_sheet_art_count ? n.sheet : 1,
@@ -723,6 +774,71 @@ void draw_bag(const World& w) {
     }
 }
 
+// The mart counter. Same shape as the bag on purpose: one list, one cursor,
+// one description panel, so a player who has opened the bag already knows how
+// to work this. What changes is the right hand column, which is the price
+// rather than how many are held, and the money above it, which is the only
+// thing that says why a purchase was refused.
+void draw_shop(const World& w) {
+    g_raster.begin_frame(g_raster.target());
+    g_raster.clear_gradient(0x22, 0x22, 0x33, 0x11, 0x11, 0x22);
+
+    const NpcDef* shop = shop_of(w);
+    const int count = shop ? shop->stock_count : 0;
+
+    panel(3, 3, 114, 14);
+    text("MART", 7, 7, 0xEE, 0xEE, 0xEE);
+    char money[12] = "$";
+    char num[8];
+    number(num, w.money);
+    append(money, num);
+    text(money, 113 - text_width(money), 7, 0xFF, 0xBB, 0x33);
+
+    panel(3, 19, 114, 76);
+    int shown = -1;
+    for (int i = 0; i < count; i++) {
+        const uint8_t item = k_stock[shop->stock_first + i];
+        const Item& it = k_items[item];
+        const int y = 24 + i * 10;
+        const bool sel = i == w.menu_cursor;
+        if (sel) {
+            fill_rect(5, y - 2, 110, 9, 0x44, 0x44, 0x66);
+            text(">", 6, y, 0xFF, 0xBB, 0x33);
+            shown = int(item);
+        }
+        // Greyed when it cannot be bought, which is the whole explanation the
+        // refusal ever gets and is on screen before the player presses A.
+        const bool afford = w.money >= it.price;
+        text(it.name, 11, y, afford ? 0xEE : 0x77, afford ? 0xEE : 0x77,
+             afford ? 0xEE : 0x88);
+        // How many are already held, in the row rather than under it: the
+        // description panel below is two full lines of 27 and has no corner
+        // to spare. Nothing is drawn at zero, so the column is quiet until
+        // it has something to say.
+        const int held = bag_count_of(w, item);
+        if (held > 0) {
+            char have[8] = "x";
+            number(num, uint8_t(held));
+            append(have, num);
+            text(have, 72, y, 0x88, 0x88, 0xAA);
+        }
+        char price[12] = "$";
+        number(num, it.price);
+        append(price, num);
+        text(price, 112 - text_width(price), y, afford ? 0xAA : 0x66,
+             afford ? 0xAA : 0x66, afford ? 0xCC : 0x88);
+    }
+
+    panel(3, 97, 114, 20);
+    if (shown >= 0) {
+        char lines[3][32];
+        const int n = wrap_into(k_items[shown].desc, lines);
+        for (int i = 0; i < n && i < 2; i++) {
+            text(lines[i], 7, 101 + i * 8, 0xEE, 0xEE, 0xEE);
+        }
+    }
+}
+
 void draw_party(const World& w) {
     g_raster.begin_frame(g_raster.target());
     g_raster.clear_gradient(0x22, 0x22, 0x33, 0x11, 0x11, 0x22);
@@ -804,6 +920,9 @@ void render_scene(const pm::World& world, const pse::RenderTarget& target,
             return;
         case Mode::Party:
             draw_party(world);
+            return;
+        case Mode::Shop:
+            draw_shop(world);
             return;
         case Mode::Battle:
             draw_battle(world, time_ms);

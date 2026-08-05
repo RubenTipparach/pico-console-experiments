@@ -24,4 +24,6 @@ set(picomon_model_files
     sign.obj
     rock.obj
     ball.obj
+    wall.obj
+    counter.obj
 )

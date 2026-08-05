@@ -51,6 +51,6 @@ event item 17 13 duskball 2
   flag got_duskball_cave
 end
 
-event item 2 2 revive 1
+event item 2 3 revive 1
   flag got_revive_cave
 end

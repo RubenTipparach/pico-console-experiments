@@ -72,6 +72,11 @@ v       ledgesouth  walk ledge_south      8a 7a 55
 | `ledge_<dir>` | walkable only when entered from the opposite side, then the player hops one extra tile. One way shortcuts, and the reason a route can be a loop |
 | `door` | stepping here looks for a warp rather than blocking |
 
+The renderer stands scenery on a tile by its name, not by its flags: `tree`,
+`rock`, `house`, `wall` and `counter` each get a mesh. That is why an
+interior wall is `W` and not `H`: `H` is an outdoor cottage with a roof on
+it, and a room built out of them was a room full of cottages.
+
 Colours are the ground colour the renderer uses for that material. They are
 snapped to four bits per channel by the compiler, because that is what the
 panel shows, and a colour that is not a multiple of 0x11 shifts on the device
@@ -119,11 +124,16 @@ item picoball
   name PICO BALL
   pocket balls             # balls, medicine, key
   effect ball 4            # ball multiplier in quarters: 4 = x1.0, 6 = x1.5
+  price 200                # what a shop charges. Absent means not for sale
   desc A BASIC BALL. ODDS X1.
 end
 ```
 
 `effect` is one of `ball <quarters>`, `heal <hp>`, `cure`, `revive`, `key`.
+
+`price` is optional and defaults to zero, which means the item is not for
+sale. A shop that stocks a zero priced item fails the build rather than
+handing it over for nothing, which is what the key items rely on.
 
 ## zones/*.zone
 
@@ -133,10 +143,21 @@ end
 zone route1
 name ROUTE 1
 size 40 32
+indoor              # optional, and only for rooms
 ```
 
 `zone` must match the filename. `name` is what the banner shows and is capped
 at 16 characters, because that is what fits.
+
+`indoor` says this zone is a room. The renderer drops the sky for it, stops
+the ground at the walls rather than running the border tile out into the
+void, and draws the room as a cutaway with its near wall left off. An indoor
+zone must be sealed: every edge tile has to be solid or a door, and it may
+not carry an encounter table, both checked at build time.
+
+Row 0 is the north edge. Pressing up walks the player toward it and it is
+drawn at the top of the screen, and both of those are tested, because for a
+while only the first was true.
 
 ### tiles
 
@@ -193,9 +214,21 @@ Header is `npc <id> <x> <y> <facing> <sheet>`. Facing is `north`, `south`,
 | `flag <name>` | set when the NPC is beaten, or first talked to |
 | `onlyif <name>` | present only when the flag is set |
 | `hideif <name>` | absent once the flag is set |
+| `stock <item>, ...` | what this NPC sells. Implies `kind shop` |
 
 A trainer's sight line is drawn on the ground while it is unbeaten, so the
-trap is visible and avoidable rather than a gotcha.
+trap is visible and avoidable rather than a gotcha. A trainer with no `sight`
+is challenged by walking up and talking to it, which is what a gym leader is.
+
+A `shop` says its `say` lines first and opens its counter when they finish.
+Every item it stocks needs a `price`, it may stock at most eight (what the
+list shows without scrolling), and it may not stock the same item twice.
+
+An NPC blocks the tile it stands on, which is the whole mechanism behind a
+gate: an NPC with `hideif <badge>` standing on the only tile a warp can be
+reached from is a locked door that needs no lock. The compiler checks that an
+NPC stands on a walkable tile, is not on a warp, is not on top of another
+NPC, and that a trainer with a sight line is not looking into a wall.
 
 ### warp
 

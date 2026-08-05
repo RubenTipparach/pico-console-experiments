@@ -29,6 +29,8 @@ DIALOGUE_COLS = 28          # a dialogue line at a 4 pixel advance
 DIALOGUE_LINES = 3          # what the panel holds
 MAX_FLAGS = 64              # the save block's flag bits
 MAX_PARTY = 6
+MAX_MONEY = 65535           # the wallet is a uint16_t
+MAX_STOCK = 8               # what the shop list shows without scrolling
 
 TYPES = ["ember", "tide", "leaf", "spark", "stone", "mind"]
 MOVE_EFFECTS = ["none", "lower_def", "lower_spd", "raise_def", "raise_spd", "drain"]
@@ -306,7 +308,7 @@ class Data:
             if iid in self.item_ix:
                 fail(where, f"item {iid!r} defined twice")
             it = dict(id=iid, name=None, pocket=None, effect=None, param=0,
-                      desc=None)
+                      desc=None, price=0)
             for w, line in body:
                 k, _, v = line.partition(" ")
                 v = v.strip()
@@ -330,6 +332,13 @@ class Data:
                         fail(w, f"item description is {len(v)} characters, the "
                                 f"panel holds {MAX_ITEM_DESC}")
                     it["desc"] = v
+                elif k == "price":
+                    price = int(v)
+                    # The wallet is a uint16_t and the shop row prints at most
+                    # five digits, so both ends are the same number.
+                    if not 0 <= price <= MAX_MONEY:
+                        fail(w, f"price {price} is outside 0..{MAX_MONEY}")
+                    it["price"] = price
                 else:
                     fail(w, f"unknown key {k!r} in an item block")
             for k in ("name", "pocket", "effect", "desc"):
@@ -388,7 +397,7 @@ class Data:
     def load_zone(self, path):
         expect = os.path.splitext(os.path.basename(path))[0]
         z = dict(id=None, name=None, w=0, h=0, tiles=[], enc=[], npcs=[],
-                 warps=[], events=[], path=path)
+                 warps=[], events=[], indoor=False, path=path)
         lines = list(read_records(path))
         i = 0
         while i < len(lines):
@@ -416,6 +425,11 @@ class Data:
                 z["w"], z["h"] = int(parts[0]), int(parts[1])
                 if not (1 <= z["w"] <= 255 and 1 <= z["h"] <= 255):
                     fail(where, "a zone is at most 255 by 255 tiles")
+                i += 1
+            elif key == "indoor":
+                if rest:
+                    fail(where, "indoor takes no argument")
+                z["indoor"] = True
                 i += 1
             elif key == "tiles":
                 i += 1
@@ -513,7 +527,7 @@ class Data:
         npc = dict(id=nid, x=int(x), y=int(y), facing=facing,
                    sheet=self.sheet(sheet, where), kind="villager", sight=0,
                    party=[], say=[], win=[], lose=[], reward=0, flag=None,
-                   cond=None, cond_hide=False, where=where)
+                   cond=None, cond_hide=False, stock=[], where=where)
         for w, line in body:
             k, _, v = line.partition(" ")
             v = v.strip()
@@ -538,6 +552,13 @@ class Data:
                     npc["party"].append((sp, int(lvl)))
                 if len(npc["party"]) > MAX_PARTY:
                     fail(w, f"a party holds {MAX_PARTY}")
+            elif k == "stock":
+                for entry in v.split(","):
+                    iid = entry.strip()
+                    if iid not in self.item_ix:
+                        fail(w, f"unknown item {iid!r}")
+                    npc["stock"].append(iid)
+                npc["kind"] = "shop"
             elif k == "reward":
                 npc["reward"] = int(v)
             elif k == "flag":
@@ -555,6 +576,21 @@ class Data:
                         "the player again every time they walked past")
         if npc["kind"] != "trainer" and npc["party"]:
             fail(where, f"{nid!r} has a party but is not a trainer")
+        if npc["kind"] == "shop" and not npc["stock"]:
+            fail(where, f"shop {nid!r} sells nothing, so its counter would "
+                        "open on an empty list")
+        if npc["kind"] != "shop" and npc["stock"]:
+            fail(where, f"{nid!r} has stock but is not a shop")
+        if len(npc["stock"]) > MAX_STOCK:
+            fail(where, f"shop {nid!r} stocks {len(npc['stock'])} items, the "
+                        f"list shows {MAX_STOCK} without scrolling")
+        if len(set(npc["stock"])) != len(npc["stock"]):
+            fail(where, f"shop {nid!r} stocks the same item twice")
+        for iid in npc["stock"]:
+            # A price of zero is how an item says it is not for sale, so a
+            # shop stocking one would offer it free and take nothing.
+            if self.items[self.item_ix[iid]]["price"] == 0:
+                fail(where, f"shop {nid!r} stocks {iid!r}, which has no price")
         if not npc["say"]:
             fail(where, f"npc {nid!r} has nothing to say")
         z["npcs"].append(npc)
@@ -621,6 +657,72 @@ class Data:
                 for e in thing:
                     if not (0 <= e["x"] < z["w"] and 0 <= e["y"] < z["h"]):
                         fail(e["where"], f"{name} is outside the zone")
+
+            # An NPC standing in a wall is drawn, blocks nothing the wall was
+            # not already blocking, and cannot be talked to. It reads as an
+            # NPC that does not work, which is a long way from the one
+            # character in the map that actually moved.
+            occupied = {}
+            for n in z["npcs"]:
+                at = (n["x"], n["y"])
+                if not walkable(z["tiles"][n["y"]][n["x"]]):
+                    fail(n["where"], f"npc {n['id']!r} stands on a tile that "
+                                     "is not walkable, so nothing can reach it")
+                if at in seen_warp:
+                    fail(n["where"], f"npc {n['id']!r} stands on a warp tile, "
+                                     "and an npc blocks the tile it is on")
+                if at in occupied:
+                    fail(n["where"], f"npc {n['id']!r} stands on top of "
+                                     f"{occupied[at]!r}")
+                occupied[at] = n["id"]
+
+            # A trainer whose sight line starts in a wall never sees anything,
+            # which looks exactly like a trainer who is simply hard to trip.
+            for n in z["npcs"]:
+                if n["kind"] != "trainer" or n["sight"] == 0:
+                    continue
+                dx, dy = [(0, -1), (1, 0), (0, 1), (-1, 0)][FACINGS.index(n["facing"])]
+                fx, fy = n["x"] + dx, n["y"] + dy
+                if not (0 <= fx < z["w"] and 0 <= fy < z["h"]) or \
+                        not walkable(z["tiles"][fy][fx]):
+                    fail(n["where"], f"trainer {n['id']!r} looks straight into "
+                                     "a wall, so its sight line never fires")
+
+            # A sign nobody can stand next to is a sign nobody can read.
+            for e in z["events"]:
+                if e["kind"] in ("item", "trigger"):
+                    if not walkable(z["tiles"][e["y"]][e["x"]]):
+                        fail(e["where"], f"an {e['kind']} sits on a tile that "
+                                         "is not walkable")
+                    continue
+                near = [(e["x"] + dx, e["y"] + dy)
+                        for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0))]
+                if not any(0 <= x < z["w"] and 0 <= y < z["h"] and
+                           walkable(z["tiles"][y][x]) and (x, y) not in occupied
+                           for x, y in near):
+                    fail(e["where"], "nothing can stand next to this sign, so "
+                                     "it can never be read")
+            # A room the camera can see out of is a room with a hole in it.
+            # The window the renderer draws runs ten tiles past the map on
+            # every side and reads the edge tile out there, so an indoor zone
+            # whose border is walkable shows its floor colour marching off
+            # into a black void.
+            if z["indoor"]:
+                edge = [(x, 0) for x in range(z["w"])] + \
+                       [(x, z["h"] - 1) for x in range(z["w"])] + \
+                       [(0, y) for y in range(z["h"])] + \
+                       [(z["w"] - 1, y) for y in range(z["h"])]
+                for x, y in edge:
+                    t = z["tiles"][y][x]
+                    if walkable(t) and \
+                            not (self.tiles[t]["flags"] & TILE_FLAGS["door"]):
+                        fail(z["path"], f"indoor zone has a walkable edge tile "
+                                        f"at {x},{y}, so the room is open to "
+                                        "the void outside it")
+            if z["indoor"] and z["enc"]:
+                fail(z["path"], "an indoor zone has an encounter table, and "
+                                "nothing wanders into a room")
+
             for e in z["enc"]:
                 ch = e["tile"]
                 if not any(self.tiles[t]["ch"] == ch
@@ -697,7 +799,7 @@ def emit(d, hpp_path, cpp_path):
                      "uint8_t evolve_into", "uint8_t learn_first",
                      "uint8_t learn_count"]),
         ("Item", ["const char* name", "const char* desc", "uint8_t pocket",
-                  "uint8_t effect", "uint8_t param"]),
+                  "uint8_t effect", "uint8_t param", "uint16_t price"]),
         ("EncSlot", ["uint8_t species", "uint8_t min_level",
                      "uint8_t max_level", "uint8_t cumulative"]),
         ("EncTable", ["uint8_t tile", "uint8_t rate", "uint8_t first",
@@ -709,7 +811,8 @@ def emit(d, hpp_path, cpp_path):
                     "uint16_t win_first", "uint8_t win_count",
                     "uint16_t lose_first", "uint8_t lose_count",
                     "uint16_t party_first", "uint8_t party_count",
-                    "uint16_t reward"]),
+                    "uint16_t reward", "uint8_t stock_first",
+                    "uint8_t stock_count"]),
         ("WarpDef", ["uint8_t x", "uint8_t y", "uint8_t dest", "uint8_t dx",
                      "uint8_t dy", "uint8_t facing"]),
         ("EventDef", ["uint8_t x", "uint8_t y", "uint8_t kind", "uint8_t arg0",
@@ -726,6 +829,7 @@ def emit(d, hpp_path, cpp_path):
     w("    const char* name;")
     w("    const uint8_t* tiles;      // w * h tile indices into k_tiles")
     w("    uint8_t w, h;")
+    w("    uint8_t indoor;            // no sky, and the border is wall")
     w("    const EncTable* enc;   uint8_t enc_count;")
     w("    const EncSlot* enc_slots;")
     w("    const NpcDef* npcs;    uint8_t npc_count;")
@@ -775,6 +879,7 @@ def emit(d, hpp_path, cpp_path):
     w("extern const Item k_items[];")
     w("extern const Zone k_zones[];")
     w("extern const PartyEntry k_parties[];")
+    w("extern const uint8_t k_stock[];   // every shop's stock, by item index")
     w("extern const char* const k_text[];")
     w("")
     w("// Where a new game begins, from data/start.txt.")
@@ -834,7 +939,8 @@ def emit(d, hpp_path, cpp_path):
     w("const Item k_items[] = {")
     for it in d.items:
         w(f'    {{"{it["name"]}", "{it["desc"]}", {POCKETS.index(it["pocket"])}, '
-          f'{ITEM_EFFECTS.index(it["effect"])}, {it["param"]}}},   // {it["id"]}')
+          f'{ITEM_EFFECTS.index(it["effect"])}, {it["param"]}, {it["price"]}}},'
+          f'   // {it["id"]}')
     w("};")
     w("")
     w("const char* const k_text[] = {")
@@ -842,6 +948,18 @@ def emit(d, hpp_path, cpp_path):
         w(f'    "{t}",')
     w("};")
     w("")
+    # Every shop's stock in one array, the same way every trainer's party is:
+    # a counter is one byte on an NpcDef and the list itself is shared.
+    stock, stock_span = [], {}
+    for z in d.zones:
+        for npc in z["npcs"]:
+            stock_span[id(npc)] = (len(stock), len(npc["stock"]))
+            stock.extend(d.item_ix[iid] for iid in npc["stock"])
+    w("const uint8_t k_stock[] = {")
+    w("    " + ", ".join(str(i) for i in stock) + ("," if stock else ""))
+    w("};")
+    w("")
+
     parties, party_span = [], {}
     for z in d.zones:
         for npc in z["npcs"]:
@@ -899,12 +1017,14 @@ def emit(d, hpp_path, cpp_path):
                         cond += " | k_cond_hide"
                 else:
                     cond = "k_no_flag"
+                sf, sc = stock_span[id(n)]
                 w(f"    {{{n['x']}, {n['y']}, {FACINGS.index(n['facing'])}, "
                   f"sheet_{ident(d.sheets[n['sheet']])}, "
                   f"(uint8_t)NpcKind::{n['kind'].capitalize()}, {n['sight']}, "
                   f"{flag}, (uint8_t)({cond}), "
                   f"{say[0]}, {say[1]}, {win[0]}, {win[1]}, "
-                  f"{lose[0]}, {lose[1]}, {pf}, {pc}, {n['reward']}}},"
+                  f"{lose[0]}, {lose[1]}, {pf}, {pc}, {n['reward']}, "
+                  f"{sf}, {sc}}},"
                   f"   // {n['id']}")
             w("};")
         if z["warps"]:
@@ -944,7 +1064,8 @@ def emit(d, hpp_path, cpp_path):
         warps = f"k_warps_{zid}, {len(z['warps'])}" if z["warps"] else "nullptr, 0"
         evs = f"k_events_{zid}, {len(z['events'])}" if z["events"] else "nullptr, 0"
         w(f'    {{"{z["name"]}", k_tiles_{zid}, {z["w"]}, {z["h"]}, '
-          f"{enc}, {npcs}, {warps}, {evs}}},   // {z['id']}")
+          f"{1 if z['indoor'] else 0}, {enc}, {npcs}, {warps}, {evs}}},"
+          f"   // {z['id']}")
     w("};")
     w("")
     w("const BagEntry k_start_bag[] = {")
@@ -972,10 +1093,12 @@ def emit(d, hpp_path, cpp_path):
         f.write("\n".join(c) + "\n")
 
     tiles_bytes = sum(z["w"] * z["h"] for z in d.zones)
+    trainers = sum(1 for z in d.zones for n in z["npcs"] if n["kind"] == "trainer")
+    shops = sum(1 for z in d.zones for n in z["npcs"] if n["kind"] == "shop")
     print(f"picomon_data: {len(d.zones)} zones ({tiles_bytes} B of tiles), "
           f"{len(d.species)} species, {len(d.moves)} moves, "
-          f"{len(d.items)} items, {len(d.text)} text pages, "
-          f"{len(flags)}/{MAX_FLAGS} flags")
+          f"{len(d.items)} items, {trainers} trainers, {shops} shops, "
+          f"{len(d.text)} text pages, {len(flags)}/{MAX_FLAGS} flags")
 
 
 def main():

@@ -860,15 +860,70 @@ void overworld_tick(World& w, const Input& in) {
     else if (in.left) try_step(w, 3);
 }
 
+// The counter the player is standing at. Read off talking_npc rather than
+// stored: the shop is only ever open while its keeper is being talked to, so
+// a second copy of that could only ever disagree.
+const NpcDef* shop_at(const World& w) {
+    if (w.talking_npc == 0xFF) return nullptr;
+    const Zone& z = zone_of(w);
+    if (w.talking_npc >= z.npc_count) return nullptr;
+    const NpcDef& n = z.npcs[w.talking_npc];
+    if (NpcKind(n.kind) != NpcKind::Shop || n.stock_count == 0) return nullptr;
+    return &n;
+}
+
 void dialogue_tick(World& w, const Input& in) {
     if (!in.a_pressed && !in.b_pressed) return;
     if (w.text_page + 1 < w.text_count) { w.text_page++; return; }
     w.mode = Mode::Overworld;
     const uint8_t npc = w.battle.trainer_npc;
-    if (npc == 0xFF || w.battle.foe.max_hp != 0) return;
+    if (npc == 0xFF || w.battle.foe.max_hp != 0) {
+        // A shopkeeper greets first and opens the counter afterwards, so the
+        // greeting is not something to press through before the list appears
+        // and is not a second screen once it has.
+        if (shop_at(w)) {
+            w.mode = Mode::Shop;
+            w.menu_cursor = 0;
+        }
+        return;
+    }
     const NpcDef& n = zone_of(w).npcs[npc];
     const PartyEntry& p = k_parties[n.party_first];
     start_battle(w, make_mon(p.species, p.level), false, npc, n.reward);
+}
+
+void shop_tick(World& w, const Input& in) {
+    const NpcDef* shop = shop_at(w);
+    if (!shop) { w.mode = Mode::Overworld; return; }
+    const int count = shop->stock_count;
+
+    if (in.up_pressed) w.menu_cursor = uint8_t((w.menu_cursor + count - 1) % count);
+    if (in.down_pressed) w.menu_cursor = uint8_t((w.menu_cursor + 1) % count);
+    if (in.b_pressed || in.x_pressed) {
+        w.mode = Mode::Overworld;
+        w.talking_npc = 0xFF;
+        w.sfx = Sfx::Cancel;
+        return;
+    }
+    if (!in.a_pressed) return;
+
+    const uint8_t item = k_stock[shop->stock_first + w.menu_cursor % count];
+    const uint16_t price = k_items[item].price;
+    // Three ways to fail, and all of them are silent refusals rather than a
+    // message: the money on the counter says why, and a modal explaining
+    // itself on a 120 pixel screen costs more than it teaches.
+    if (w.money < price) { w.sfx = Sfx::Cancel; return; }
+    if (bag_find(w, item) < 0 && w.bag_count >= k_max_bag) {
+        w.sfx = Sfx::Cancel;
+        return;
+    }
+    const int held = bag_find(w, item);
+    if (held >= 0 && w.bag[held].count >= 99) { w.sfx = Sfx::Cancel; return; }
+
+    w.money = uint16_t(w.money - price);
+    bag_add(w, item, 1);
+    w.sfx = Sfx::Buy;
+    w.save_pending = true;
 }
 
 void bag_tick(World& w, const Input& in) {
@@ -960,6 +1015,13 @@ void party_tick(World& w, const Input& in) {
 
 }  // namespace
 
+const NpcDef* shop_of(const World& w) { return shop_at(w); }
+
+int bag_count_of(const World& w, uint8_t item) {
+    const int at = bag_find(w, item);
+    return at < 0 ? 0 : w.bag[at].count;
+}
+
 void world_tick(World& w, const Input& in) {
     w.sfx = Sfx::None;
     switch (w.mode) {
@@ -971,6 +1033,7 @@ void world_tick(World& w, const Input& in) {
         case Mode::Battle: battle_tick(w, in); return;
         case Mode::Bag: bag_tick(w, in); return;
         case Mode::Party: party_tick(w, in); return;
+        case Mode::Shop: shop_tick(w, in); return;
         case Mode::Faded: w.mode = Mode::Overworld; return;
     }
 }

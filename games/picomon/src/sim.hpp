@@ -34,6 +34,7 @@ enum class Mode : uint8_t {
     Battle,
     Bag,
     Party,
+    Shop,           // the mart counter, opened by talking to a shopkeeper
     Faded,          // a beat of black between zones
 };
 
@@ -51,7 +52,7 @@ enum class BattleState : uint8_t {
 
 enum class Sfx : uint8_t {
     None, Step, Bump, Select, Cancel, Encounter, Hit, SuperHit, Faint,
-    Throw, Click, Caught, Heal, LevelUp, Item,
+    Throw, Click, Caught, Heal, LevelUp, Item, Buy,
 };
 
 struct Mon {
@@ -200,6 +201,11 @@ void player_offset(const World& w, int16_t& ox, int16_t& oy);
 // ---- flags
 bool flag_get(const World& w, uint8_t flag);
 void flag_set(World& w, uint8_t flag);
+
+// ---- the shop, which the renderer draws and therefore has to be able to ask
+// about. The counter the player is standing at, or nullptr when none.
+const NpcDef* shop_of(const World& w);
+int bag_count_of(const World& w, uint8_t item);
 
 // ---- party and stats, shared with the renderer for the HP plates
 uint8_t stat_hp(uint8_t species, uint8_t level);

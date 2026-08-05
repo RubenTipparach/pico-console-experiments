@@ -5,7 +5,7 @@ name ROUTE 1
 size 28 32
 
 tiles
-TTTTTTTTTTpppTTTTTTTTTTTTTTT
+TTTTTTTTTTTpTTTTTTTTTTTTTTTT
 T.........pppT.............T
 T...T.....ppp...T..........T
 T.........pppT.............T
@@ -83,9 +83,13 @@ npc daycare 16 13 south villager
   say Come back when you have two.
 end
 
-npc gatekeeper 11 2 south villager
-  onlyif beat_rival
-  say The cave is open. Mind the dark.
+# The gate. A badge opens the cave, and this is what makes the gym worth
+# walking into: the guard stands on the one tile the warp can be reached
+# from, so there is nothing to squeeze past.
+npc gateguard 11 1 south villager
+  hideif badge_stone
+  say The cave is shut. GYM BADGES ONLY.
+  say GRANITA holds the one you want.
 end
 
 event sign 9 16

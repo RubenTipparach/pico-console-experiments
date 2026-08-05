@@ -20,3 +20,9 @@ d       door        walk door               77 55 33
 v       ledgesouth  walk ledge_south        99 88 66
 c       cave        walk                    55 55 66
 C       cavewall    block                   33 33 44
+
+# Interior walls. A room is not a village: H draws a cottage with a roof on
+# it, which is right outdoors and absurd from the inside, so a room's edge is
+# its own tile and the renderer stands a plain block on it.
+W       wall        block                   77 66 55
+=       counter     block                   99 77 55

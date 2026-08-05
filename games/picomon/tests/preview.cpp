@@ -116,6 +116,64 @@ void battle_shots(const pm::World& at_menu, const std::string& out) {
     }
 }
 
+// Walk the player somewhere and let the fade finish, so a shot of a room is
+// a shot of the room and not of the black beat between zones.
+void go(pm::World& w, uint8_t zone, uint8_t x, uint8_t y, uint8_t facing) {
+    w.mode = pm::Mode::Overworld;
+    w.zone = zone;
+    w.tx = x;
+    w.ty = y;
+    w.facing = facing;
+    w.step = 0;
+    w.fade = 0;
+}
+
+// The town, the mart and the gym: what the first map actually holds.
+void town_shots(const std::string& out) {
+    pm::World w;
+    pm::world_init(w, 20260805);
+    pm::world_tick(w, press_a());
+
+    // The south end of Hometown, with the mart on the left and the gym on
+    // the right. Both doors in one shot.
+    go(w, pm::zone_hometown, 11, 16, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 6000, out + "/town_1_doors.ppm");
+
+    // Inside the mart, at the counter, then the counter open.
+    go(w, pm::zone_picomart, 5, 4, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 6400, out + "/town_2_mart.ppm");
+    for (int i = 0; i < 20 && w.mode != pm::Mode::Shop; i++) {
+        pm::world_tick(w, press_a());
+    }
+    capture(w, 6800, out + "/town_3_counter.ppm");
+    // And what a shelf the player cannot afford looks like.
+    w.money = 250;
+    capture(w, 7000, out + "/town_4_counter_broke.ppm");
+
+    // The gym: the entrance hall, with the first minion's sight line on the
+    // ground, and the leader at the top.
+    go(w, pm::zone_stonegym, 6, 14, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 7200, out + "/town_5_gym.ppm");
+
+    go(w, pm::zone_stonegym, 10, 13, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 7400, out + "/town_6_gym_minion.ppm");
+
+    go(w, pm::zone_stonegym, 6, 3, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 7600, out + "/town_7_gym_leader.ppm");
+    pm::world_tick(w, press_a());
+    capture(w, 7800, out + "/town_8_gym_challenge.ppm");
+
+    // The gate on Route 1 that the badge opens.
+    go(w, pm::zone_route1, 11, 4, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 8000, out + "/town_9_gate.ppm");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -180,6 +238,8 @@ int main(int argc, char** argv) {
     w.mode = pm::Mode::Party;
     w.menu_cursor = 0;
     capture(w, 5200, out + "/preview_8_party.ppm");
+
+    town_shots(out);
 
     return 0;
 }

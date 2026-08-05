@@ -110,6 +110,94 @@ void test_overworld_has_a_map_in_it() {
     check(count_sky(f, 60, 110) == 0, "no sky in the near half of the overworld");
 }
 
+// North is up. This is not a matter of taste: the sim walks the player to a
+// smaller map y when they press up, and for a whole feature the renderer laid
+// map rows straight onto world z, which put larger y (south) at the top. The
+// map came out back to front, pressing up walked toward the bottom of the
+// frame, and every screenshot looked plausible because the maps that existed
+// then were nearly symmetric. It took a gym with a door at one end and a
+// leader at the other to see it.
+//
+// So: stand in the gym one tile north of its door and prove the door is
+// below. The door is the only tile of its colour in the room.
+void test_north_is_up() {
+    pm::World w = fresh();
+    w.zone = pm::zone_stonegym;
+    w.tx = 6;
+    w.ty = 9;                        // the door is at 6,15, six rows south
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    Frame f;
+    render(w, f, 1000);
+
+    // Judged by where the door's pixels sit on average, not by whether any
+    // stray pixel of that shade appears higher up: a mesh face somewhere else
+    // in the room can land on the same colour, and a flipped map would move
+    // the whole patch rather than a couple of pixels of it.
+    const pm::TileDef& door = pm::k_tiles[pm::tile_door];
+    int n = 0;
+    long sum_y = 0;
+    for (int y = 0; y < k_h; y++) {
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, y);
+            if (p[0] != door.r || p[1] != door.g || p[2] != door.b) continue;
+            n++;
+            sum_y += y;
+        }
+    }
+    const int mean_y = n ? int(sum_y / n) : -1;
+    std::printf("  gym: %d door pixels, average row %d\n", n, mean_y);
+    check(n > 20, "the door south of the player is drawn");
+    check(mean_y > 70, "and it is below the player, because north is up");
+}
+
+// A room is not a field. Interiors used to draw the sky gradient and stand a
+// cottage on every wall tile, because the walls were the same tile character
+// as an outdoor house.
+void test_indoors_has_no_sky() {
+    pm::World w = fresh();
+    w.zone = pm::zone_picomart;
+    w.tx = 5;
+    w.ty = 5;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    Frame f;
+    render(w, f, 1000);
+    const int sky = count_sky(f, 0, k_h);
+    std::printf("  mart: %d sky pixels indoors\n", sky);
+    check(sky == 0, "there is no sky inside a building");
+    check(count_distinct_colours(f, 0, k_h) >= 4, "and the room has a room in it");
+}
+
+void test_the_shop_screen_draws() {
+    pm::World w = fresh();
+    w.zone = pm::zone_picomart;
+    w.tx = 5;
+    w.ty = 4;
+    w.facing = 0;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    for (int i = 0; i < 20 && w.mode != pm::Mode::Shop; i++) {
+        pm::Input go{};
+        go.a_pressed = true;
+        pm::world_tick(w, go);
+    }
+    check(w.mode == pm::Mode::Shop, "the clerk opens a counter");
+    Frame f;
+    render(w, f, 1000);
+    // The list, the cursor and the description panel, plus the gold the money
+    // and the cursor are drawn in.
+    check(count_distinct_colours(f, 0, k_h) >= 4, "the shop draws its panels");
+    int gold = 0;
+    for (int y = 0; y < k_h; y++)
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, y);
+            if (p[0] > 0xE0 && p[1] > 0x90 && p[1] < 0xD0 && p[2] < 0x60) gold++;
+        }
+    std::printf("  shop: %d gold pixels\n", gold);
+    check(gold > 10, "the money and the cursor are drawn");
+}
+
 void test_battle_floor_is_solid() {
     pm::World w = fresh();
     w.mode = pm::Mode::Battle;
@@ -156,6 +244,9 @@ void test_menus_draw_something() {
 
 int main() {
     test_overworld_has_a_map_in_it();
+    test_north_is_up();
+    test_indoors_has_no_sky();
+    test_the_shop_screen_draws();
     test_battle_floor_is_solid();
     test_title_shows_its_creature();
     test_menus_draw_something();

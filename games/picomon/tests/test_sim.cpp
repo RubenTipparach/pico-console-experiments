@@ -229,6 +229,161 @@ void test_save_round_trips() {
     check(!pm::world_load(bad, data), "a save naming no zone is refused");
 }
 
+// ---- the mart ------------------------------------------------------------
+
+// Face an NPC and press A until whatever it does has happened.
+const pm::NpcDef* npc_named(const pm::Zone& z, uint8_t x, uint8_t y) {
+    for (int i = 0; i < z.npc_count; i++) {
+        if (z.npcs[i].x == x && z.npcs[i].y == y) return &z.npcs[i];
+    }
+    return nullptr;
+}
+
+pm::World at_the_counter() {
+    pm::World w = start_world(31337);
+    w.zone = pm::zone_picomart;
+    w.tx = 5;
+    w.ty = 4;
+    w.facing = 0;                       // north, at the clerk on (5,3)
+    w.mode = pm::Mode::Overworld;
+    for (int i = 0; i < 20 && w.mode != pm::Mode::Shop; i++) {
+        pm::world_tick(w, press_a());
+    }
+    return w;
+}
+
+void test_the_shop_takes_money_and_gives_goods() {
+    const pm::Zone& mart = pm::k_zones[pm::zone_picomart];
+    const pm::NpcDef* clerk = npc_named(mart, 5, 3);
+    check(clerk != nullptr, "the mart has a clerk");
+    check(clerk && pm::NpcKind(clerk->kind) == pm::NpcKind::Shop,
+          "the clerk keeps a shop");
+    check(clerk && clerk->stock_count > 0, "the shop stocks something");
+
+    pm::World w = at_the_counter();
+    check(w.mode == pm::Mode::Shop, "talking to the clerk opens the counter");
+    check(pm::shop_of(w) == clerk, "the open counter is the clerk's");
+
+    const uint8_t item = pm::k_stock[clerk->stock_first];
+    const uint16_t price = pm::k_items[item].price;
+    check(price > 0, "everything on the shelf has a price");
+
+    const uint16_t money = w.money;
+    const int held = pm::bag_count_of(w, item);
+    w.menu_cursor = 0;
+    pm::world_tick(w, press_a());
+    check(w.money == money - price, "buying takes the price off the money");
+    check(pm::bag_count_of(w, item) == held + 1, "and puts the item in the bag");
+    check(w.save_pending, "a purchase is worth writing down");
+
+    // Broke: the refusal has to be total. Money unchanged, bag unchanged.
+    w.money = uint16_t(price - 1);
+    const int held2 = pm::bag_count_of(w, item);
+    pm::world_tick(w, press_a());
+    check(w.money == price - 1, "a purchase that cannot be afforded costs nothing");
+    check(pm::bag_count_of(w, item) == held2, "and hands over nothing");
+
+    // And it closes.
+    pm::Input b{};
+    b.b_pressed = true;
+    pm::world_tick(w, b);
+    check(w.mode == pm::Mode::Overworld, "B leaves the counter");
+}
+
+// ---- the gym -------------------------------------------------------------
+
+void test_the_gym_is_three_minions_and_a_leader() {
+    const pm::Zone& gym = pm::k_zones[pm::zone_stonegym];
+    int trainers = 0, leaders = 0, biggest = 0;
+    for (int i = 0; i < gym.npc_count; i++) {
+        const pm::NpcDef& n = gym.npcs[i];
+        if (pm::NpcKind(n.kind) != pm::NpcKind::Trainer) continue;
+        trainers++;
+        if (n.sight == 0) leaders++;
+        if (n.party_count > biggest) biggest = n.party_count;
+        check(n.party_count > 0, "every gym trainer has something to send out");
+        check(n.flag != pm::k_no_flag, "and stops challenging once beaten");
+    }
+    check(trainers == 4, "the gym is three minions and a leader");
+    check(leaders == 1, "exactly one of them is walked up to rather than tripped");
+    check(biggest >= 3, "the leader brings more than a minion does");
+
+    // The minions are not optional: each one's sight line covers the only
+    // tile its chamber can be entered through, so the route past them is
+    // visible but not avoidable.
+    int watched = 0;
+    for (int i = 0; i < gym.npc_count; i++) {
+        const pm::NpcDef& n = gym.npcs[i];
+        if (n.sight == 0) continue;
+        static const int dx[4] = {0, 1, 0, -1};
+        static const int dy[4] = {-1, 0, 1, 0};
+        for (int s = 1; s <= n.sight; s++) {
+            const int x = n.x + dx[n.facing] * s;
+            const int y = n.y + dy[n.facing] * s;
+            if (!pm::tile_walkable(gym, x, y)) break;
+            if (pm::tile_at(gym, x, y) == pm::tile_floor) watched++;
+        }
+    }
+    check(watched >= 6, "the minions' sight lines cover real ground");
+}
+
+void test_the_badge_opens_the_cave() {
+    const pm::Zone& gym = pm::k_zones[pm::zone_stonegym];
+    uint8_t badge = pm::k_no_flag;
+    for (int i = 0; i < gym.npc_count; i++) {
+        if (gym.npcs[i].sight == 0 &&
+            pm::NpcKind(gym.npcs[i].kind) == pm::NpcKind::Trainer) {
+            badge = gym.npcs[i].flag;
+        }
+    }
+    check(badge != pm::k_no_flag, "the leader hands out a flag");
+    check(badge == pm::flag_badge_stone, "and it is the badge");
+
+    // The guard stands on the one tile the cave warp can be reached from, so
+    // the gate is a gate and not a suggestion.
+    const pm::Zone& route = pm::k_zones[pm::zone_route1];
+    const pm::NpcDef* guard = nullptr;
+    for (int i = 0; i < route.npc_count; i++) {
+        if (route.npcs[i].cond & pm::k_cond_hide) guard = &route.npcs[i];
+    }
+    check(guard != nullptr, "route 1 has a gate that disappears");
+    if (!guard) return;
+    check((guard->cond & ~pm::k_cond_hide) == pm::flag_badge_stone,
+          "and the badge is what disappears it");
+
+    pm::World w = start_world(4242);
+    w.zone = pm::zone_route1;
+    check(pm::npc_present(w, *guard), "the gate is up before the badge");
+    pm::flag_set(w, pm::flag_badge_stone);
+    check(!pm::npc_present(w, *guard), "and gone after it");
+
+    // Walk into it from below with no badge: the player must not get through.
+    pm::World blocked = start_world(4242);
+    blocked.zone = pm::zone_route1;
+    blocked.tx = guard->x;
+    blocked.ty = uint8_t(guard->y + 1);
+    blocked.mode = pm::Mode::Overworld;
+    blocked.fade = 0;
+    for (int i = 0; i < 200; i++) pm::world_tick(blocked, hold(0));
+    check(blocked.zone == pm::zone_route1,
+          "no badge, no cave, however long the player leans on the d pad");
+
+    // And the other half, which matters more: a gate that never opens is a
+    // worse bug than one that never closes, and closing the top of Route 1
+    // down to a single tile is exactly how that would happen.
+    pm::World through = start_world(4242);
+    through.zone = pm::zone_route1;
+    through.tx = guard->x;
+    through.ty = uint8_t(guard->y + 1);
+    through.mode = pm::Mode::Overworld;
+    through.fade = 0;
+    pm::flag_set(through, pm::flag_badge_stone);
+    for (int i = 0; i < 200 && through.zone == pm::zone_route1; i++) {
+        pm::world_tick(through, hold(0));
+    }
+    check(through.zone == pm::zone_hollowcave, "with the badge, the cave opens");
+}
+
 void test_state_fits_its_budget() {
     // The device numbers, checked here so they cannot drift unnoticed.
     std::printf("  sizeof(World)    = %zu bytes\n", sizeof(pm::World));
@@ -248,6 +403,9 @@ int main() {
     test_damage_is_bounded();
     test_levelling_never_overflows();
     test_save_round_trips();
+    test_the_shop_takes_money_and_gives_goods();
+    test_the_gym_is_three_minions_and_a_leader();
+    test_the_badge_opens_the_cave();
     test_state_fits_its_budget();
 
     if (g_failures) {

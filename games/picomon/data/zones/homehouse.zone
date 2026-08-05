@@ -3,15 +3,16 @@
 zone homehouse
 name HOME
 size 9 7
+indoor
 
 tiles
-HHHHHHHHH
-HfffffffH
-HfffffffH
-HfffffffH
-HfffffffH
-HfffffffH
-HHHHdHHHH
+WWWWWWWWW
+WfffffffW
+WfffffffW
+WfffffffW
+WfffffffW
+WfffffffW
+WWWWdWWWW
 end
 
 warp 4 6 hometown 5 9 south
