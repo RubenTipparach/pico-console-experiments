@@ -1,3 +1,5 @@
+include(${CMAKE_CURRENT_LIST_DIR}/models.cmake)
+
 add_picosystem_game(kingfisher
     SOURCES
         src/game.cpp
@@ -5,8 +7,5 @@ add_picosystem_game(kingfisher
         src/render.cpp
         src/sfx.cpp
     MODELS
-        fish.obj
-        boat.obj
-        bobber.obj
-        tree.obj
+        ${kingfisher_model_files}
 )

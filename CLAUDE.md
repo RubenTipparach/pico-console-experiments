@@ -277,6 +277,11 @@ source when a real model would do.
   come from the model's `usemtl` names.
 - The exception is trivial primitives (a cube, a quad) that the engine already
   generates parametrically. Those stay in code.
+- A game's models are listed once, in `games/<slug>/models.cmake`, and both the
+  game and the host preview harness include that file. They compile the same
+  `src/render.cpp`, so a model named for one and not the other is a missing
+  header, not a missing picture: adding `rock.obj` to the game while the
+  preview kept its own list turned main red. Add a model in one place only.
 
 ### 12. Every game gets its own URL, a gallery entry, and touch controls
 

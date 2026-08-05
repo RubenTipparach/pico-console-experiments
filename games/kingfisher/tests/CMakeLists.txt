@@ -17,15 +17,14 @@ add_test(NAME kingfisher_sim_tests COMMAND kingfisher_sim_tests)
 # The preview harness renders real frames through the real engine and the real
 # models, no SDK anywhere, and writes them as PPM images. Not a test: a tool
 # for looking at the game without hardware.
+# It builds the game's own render.cpp, so it needs the game's own model list.
+include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
+
 set(kingfisher_models "")
-add_obj_model(kingfisher_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/fish.obj kingfisher_models)
-add_obj_model(kingfisher_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/boat.obj kingfisher_models)
-add_obj_model(kingfisher_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/bobber.obj kingfisher_models)
-add_obj_model(kingfisher_preview
-    ${CMAKE_CURRENT_SOURCE_DIR}/../models/tree.obj kingfisher_models)
+foreach(model ${kingfisher_model_files})
+    add_obj_model(kingfisher_preview
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} kingfisher_models)
+endforeach()
 
 add_executable(kingfisher_preview
     preview.cpp
