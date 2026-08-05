@@ -350,6 +350,11 @@ source when a real model would do.
   - Controls are `"key: what it does"`. A key on its own is noise; the half
     after the colon is the whole point. A line with no colon is kept whole,
     for what a game needs to say that is not one button.
+  - Name the console buttons (`A`, `B`, `X`, `Y`, `up`, `left`...). The
+    keyboard key is added beside each one automatically, read out of the
+    on-screen gamepad's own markup, which is what those buttons dispatch.
+    Never write the keyboard key into `game.yml`: `A` is `Z` in exactly one
+    place, and a second copy is a mapping waiting to go stale.
   - `tools/tests/test_gen_shell.py` walks every game in the repo and fails the
     build when one that ships to the web has no objective or no controls. That
     check is the rule; do not weaken it to get a game out.

@@ -380,6 +380,17 @@
     padding: 0 0.25rem;
   }
 
+  /* The keyboard key beside the console button. A game names its controls by
+     the button on the console, which is also what the on-screen pad shows,
+     and someone playing on a keyboard has no way to know A is Z. Dimmer than
+     the button it translates, because on a phone it means nothing. */
+  #tutorial .keys kbd.kb {
+    min-width: 2.2rem;
+    border-style: dashed;
+    color: var(--muted);
+    background: transparent;
+  }
+
   #tutorial .keys span { color: var(--muted); }
 
   .tut-nav {

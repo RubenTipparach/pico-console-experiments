@@ -18,6 +18,7 @@ Usage:
 import argparse
 import html
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,18 +39,69 @@ def escape(value):
     return html.escape(str(value), quote=True)
 
 
+# How a browser key code reads to a person. Everything else is shown as the
+# letter it is: KeyZ is Z.
+KEY_LABELS = {
+    "ArrowUp": "↑",
+    "ArrowDown": "↓",
+    "ArrowLeft": "←",
+    "ArrowRight": "→",
+}
+
+
+def keyboard_map(shell):
+    """What each console button is on a keyboard, read out of the shell.
+
+    The on-screen pad already carries the mapping, one `data-btn`/`data-dir`
+    beside its `data-key`, because that is what its buttons dispatch. Reading
+    it from there rather than writing it down again means the tutorial cannot
+    drift from what the buttons actually do: change the pad and the panels
+    follow on the next build.
+    """
+    pairs = re.findall(r'data-(?:btn|dir)="([a-z]+)"[^>]*?data-key="(\w+)"',
+                       shell)
+    mapping = {}
+    for button, code in pairs:
+        label = KEY_LABELS.get(code)
+        if label is None:
+            label = code[3:] if code.startswith("Key") else code
+        mapping[button] = label
+    return mapping
+
+
+def keyboard_hint(text, mapping):
+    """The keyboard keys named in a control's key half, in the order given.
+
+    "hold A" is Z, "left/right" is the two arrows. Words that are not buttons
+    ("hold", "then") carry no key and are skipped, and a control naming no
+    button at all gets no hint rather than an empty one.
+    """
+    seen = []
+    for word in re.findall(r"[A-Za-z]+", text):
+        label = mapping.get(word.lower())
+        if label and label not in seen:
+            seen.append(label)
+    return " ".join(seen)
+
+
 def split_controls(controls, per_panel=CONTROLS_PER_PANEL):
     return [controls[i:i + per_panel]
             for i in range(0, len(controls), per_panel)]
 
 
-def render_panels(game):
+def render_panels(game, mapping=None):
     """The tutorial panels for one game, innermost markup only.
 
     Panel one is what the game is for. The rest are its controls, in the order
     game.yml lists them, because that order is the game's own idea of which
     button matters most.
+
+    mapping turns the console buttons a game names into the keys a keyboard
+    player actually presses. A game says "A: throttle" because that is the
+    button on the console and on the on-screen pad, and someone at a keyboard
+    has no way to know that is Z.
     """
+    mapping = mapping or {}
     panels = []
 
     objective = game.manifest.get("objective") or game.manifest.get("blurb")
@@ -70,8 +122,12 @@ def render_panels(game):
             # needs to say are not one button.
             key, sep, meaning = str(entry).partition(":")
             if sep:
-                rows.append('<li><kbd>%s</kbd><span>%s</span></li>'
-                            % (escape(key.strip()), escape(meaning.strip())))
+                hint = keyboard_hint(key, mapping)
+                keys = '<kbd>%s</kbd>' % escape(key.strip())
+                if hint:
+                    keys += '<kbd class="kb">%s</kbd>' % escape(hint)
+                rows.append('<li>%s<span>%s</span></li>'
+                            % (keys, escape(meaning.strip())))
             else:
                 rows.append('<li><span>%s</span></li>' % escape(str(entry)))
         heading = "Controls" if len(pages) == 1 else "Controls %d/%d" % (
@@ -108,7 +164,8 @@ def build(game_dir, shell_path, out_path):
     if PLACEHOLDER not in shell:
         raise GameError("%s has no %s to fill in" % (shell_path, PLACEHOLDER))
 
-    page = shell.replace(PLACEHOLDER, render_panels(game))
+    page = shell.replace(PLACEHOLDER,
+                         render_panels(game, keyboard_map(shell)))
     page = page.replace("<title>PicoSystem</title>",
                         "<title>%s</title>" % escape(game.title))
 

@@ -51,6 +51,12 @@ column and the rest is the explanation, so `"A: jump"` reads as a control and
 `"A"` alone reads as noise. A line with no colon is kept whole, for the things
 a game needs to say that are not one button.
 
+Name the console buttons: `A`, `B`, `X`, `Y`, `up`, `down`, `left`, `right`.
+The keyboard key beside each one is added for you, read out of the on-screen
+gamepad in `web/shell.html`, which is what those buttons actually dispatch. Do
+not write `Z` in a control string: the console has no Z, and the mapping would
+then have two homes to drift between.
+
 `tools/tests/test_gen_shell.py` walks every game in the repo and fails if one
 that ships to the web has no objective or no controls. A page a player cannot
 understand is a broken page, and it should not get as far as being published.
