@@ -80,11 +80,55 @@ The battle scene deliberately uses a wider 30 degree lens from lower down,
 because a battle is a different shot. It is the one place the page leaves the
 measured numbers, and it says so.
 
+## Character art
+
+Authored in `art/build_art.py` as character-per-pixel strings, so a change to a
+sleeve shows up in a diff rather than as a binary blob nobody can review. Run
+it to rebuild everything:
+
+    cd art && python3 build_art.py
+
+For each of the four sheets it writes an editable `.aseprite` (three layers:
+fill, shade, outline, plus one animation tag per direction), a `.png` frame
+strip, and `sheets.json` / `sheets.js`. The page embeds the strips as data URIs
+so it stays a single file.
+
+| Sheet    | Frames | Tags            | PNG   |
+|----------|-------:|-----------------|------:|
+| hero     | 12     | down, up, side  | 456 B |
+| trainer  | 8      | down, up        | 379 B |
+| villager | 4      | down            | 306 B |
+| healer   | 4      | down            | 330 B |
+
+Aseprite is a paid GUI application and could not be installed here, so
+`art/aseprite.py` writes the format directly: a small encoder for the
+documented v1.3 spec (RGBA cels, zlib compressed, named layers, tags). Every
+file is parsed back and compared against its own PNG before it ships.
+
+Two constraints shaped the art rather than decorating it:
+
+- **Every colour is a multiple of 0x11**, so it survives four bits per channel
+  unchanged. A colour that does not is one that shifts on the device and
+  nowhere else.
+- **Frames are 12 x 20** because the camera puts a tile at 10 pixels, so a
+  character is exactly two tiles and draws at 1.0 scale with no resampling.
+  Change the tiles across the screen and the art is reauthored, not rescaled.
+
+Walk cycles are four beats (step, pass, step, pass). The profile is drawn
+facing east and mirrored for west, so the hero needs three directions of art
+rather than four. A sheet only carries the poses its character needs: the
+villagers never turn, the trainer has to be seen from behind because it owns a
+line of sight.
+
+Characters sit on a darkened ellipse of ground rather than a drawn shadow
+sprite. It costs no geometry and no art, and it is the one thing that stops a
+billboard looking like a sticker on the screen.
+
 ## Measured
 
 | Scene  | Peak triangles | Ground quads | Sprites |
 |--------|---------------:|-------------:|--------:|
-| Route  | 448            | 118          | 50      |
+| Route  | 448            | 118          | 37      |
 | Battle | 278            | 3            | 0       |
 | Catch  | 275            | 3            | 0       |
 | Bag    | 0              | 0            | 0       |

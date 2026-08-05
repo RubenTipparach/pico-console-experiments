@@ -1,0 +1,58 @@
+{
+  "hero": {
+    "frame_w": 12,
+    "frame_h": 20,
+    "frames": 12,
+    "tags": {
+      "down": [
+        0,
+        3
+      ],
+      "up": [
+        4,
+        7
+      ],
+      "side": [
+        8,
+        11
+      ]
+    }
+  },
+  "villager": {
+    "frame_w": 12,
+    "frame_h": 20,
+    "frames": 4,
+    "tags": {
+      "down": [
+        0,
+        3
+      ]
+    }
+  },
+  "trainer": {
+    "frame_w": 12,
+    "frame_h": 20,
+    "frames": 8,
+    "tags": {
+      "down": [
+        0,
+        3
+      ],
+      "up": [
+        4,
+        7
+      ]
+    }
+  },
+  "healer": {
+    "frame_w": 12,
+    "frame_h": 20,
+    "frames": 4,
+    "tags": {
+      "down": [
+        0,
+        3
+      ]
+    }
+  }
+}

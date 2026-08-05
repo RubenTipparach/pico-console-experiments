@@ -380,9 +380,16 @@
         <p>The player and every NPC is one camera facing billboard, exactly what
         <code>project_billboard</code> already returns a position and scale for. Two triangles
         each if drawn as geometry, or a direct sprite blit with a single depth value, which is
-        what this mockup does and what I would ship. A 12 by 16 sprite in four directions plus a
-        two frame walk cycle is 96 sprites of art for the whole cast, in flash, and no skinning
-        maths on a chip with no FPU.</p>
+        what this mockup does and what I would ship. No skinning maths on a chip with no FPU.</p>
+        <p>The art is real art, not placeholder: 12 by 20 frames authored in
+        <code>art/build_art.py</code>, exported to editable <code>.aseprite</code> files and to
+        PNG strips, and embedded in this page as data URIs so it stays one file. Four sheets, 28
+        frames, 1.5 KB of PNG. Each character has a four beat walk cycle (step, pass, step, pass)
+        and the profile is drawn facing east and mirrored for west, which is why the hero needs
+        three directions of art rather than four.</p>
+        <p>Under each character is a darkened ellipse of ground rather than a drawn shadow
+        sprite. It costs no geometry and no art, it reads at 10 pixels per tile, and it is the
+        single thing that stops a billboard looking like a sticker on the screen.</p>
 
         <h3>NPCs</h3>
         <ul>
@@ -605,6 +612,54 @@
     and it says so rather than drifting quietly.</p>
   </section>
 
+  <!-- ---------------- art ---------------- -->
+  <section id="art">
+    <h2>The art pipeline</h2>
+    <p class="lede">Character art is authored, versioned and rebuilt by a script, and it exports
+    to the format an artist would actually want to open.</p>
+
+    <p><code>mockups/picomon/art/build_art.py</code> holds every character as
+    character-per-pixel strings, which is what makes a change to a sleeve show up in a diff
+    rather than as a binary blob nobody can review. Running it writes, for each of the four
+    sheets:</p>
+    <ul>
+      <li><b>.aseprite</b>, a real Aseprite file with three layers (fill, shade, outline) and
+        one animation tag per direction. It opens in Aseprite and in LibreSprite, and the layer
+        split is by what a pixel is <i>for</i>, so recolouring a jacket or softening an outline
+        is one layer's work.</li>
+      <li><b>.png</b>, a horizontal frame strip, which is what the page actually loads.</li>
+      <li><b>sheets.json</b> and <b>sheets.js</b>, the frame size, frame count and tag ranges,
+        and the same strips as data URIs for embedding.</li>
+    </ul>
+    <p>Aseprite is a paid GUI application and could not be installed here, so the
+    <code>.aseprite</code> files are written directly by <code>art/aseprite.py</code>, a small
+    encoder for the documented v1.3 format: RGBA cels, zlib compressed, named layers, tags. Every
+    file is parsed back and checked against its own PNG before it ships, so a malformed chunk
+    cannot get out.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Sheet</th><th class="n">Frames</th><th>Tags</th><th class="n">PNG</th></tr></thead>
+        <tbody>
+          <tr><td>hero</td><td class="n">12</td><td>down, up, side</td><td class="n">456 B</td></tr>
+          <tr><td>trainer</td><td class="n">8</td><td>down, up</td><td class="n">379 B</td></tr>
+          <tr><td>villager</td><td class="n">4</td><td>down</td><td class="n">306 B</td></tr>
+          <tr><td>healer</td><td class="n">4</td><td>down</td><td class="n">330 B</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Two constraints shaped the art rather than decorating it. Every colour is a multiple of
+    0x11, so it survives four bits per channel unchanged: a colour that does not is a colour that
+    shifts on the device and nowhere else, which is the worst place to find out. And the frame is
+    20 pixels tall because the camera puts a tile at 10 pixels, so a character is exactly two
+    tiles and draws at 1.0 scale with no resampling. Change the tiles across the screen and the
+    art has to be reauthored, not rescaled.</p>
+    <p>A sheet only carries the poses its character needs. The villagers face the camera and
+    never turn, so they have one direction. The trainer owns a line of sight and has to be seen
+    from behind, so it has two. Only the hero needs three, and west is the east art mirrored.</p>
+  </section>
+
   <!-- ---------------- budget ---------------- -->
   <section>
     <h2>What it costs</h2>
@@ -638,7 +693,7 @@
         <tbody>
           <tr><td>Creature meshes, 24 species</td><td class="n">~29,000</td><td>80 faces x 12 B plus vertices</td></tr>
           <tr><td>Species stat blocks, 40</td><td class="n">960</td><td>24 bytes each, const table</td></tr>
-          <tr><td>Overworld sprite sheets</td><td class="n">~12,000</td><td>12 x 16, four ways, two frames</td></tr>
+          <tr><td>Overworld sprite sheets</td><td class="n">~11,000</td><td>12 x 20, measured: 1.5 KB per 10 characters</td></tr>
           <tr><td>Party icons, 40 species</td><td class="n">~7,700</td><td>16 x 16</td></tr>
           <tr><td>Zone tile data, 6 zones</td><td class="n">12,288</td><td>const, read straight from XIP</td></tr>
           <tr><td>Dialogue and names</td><td class="n">~6,000</td><td>plain const char arrays</td></tr>
@@ -1090,110 +1145,135 @@ function wrap(s, cols) {
 
 /* ---- sprites ----------------------------------------------------- */
 
-function sprite(pal, rows) {
-  return { w: rows[0].length, h: rows.length, pal, rows };
+// Two kinds of art end up in the same place. Character art is authored in
+// art/build_art.py, exported to .aseprite and .png, and embedded below as data
+// URIs so this page stays one self contained file. The few non character
+// sprites are still character-per-pixel strings, because a grass tuft does not
+// need an animation tag. Both become the same RGBA frame list, so there is one
+// drawing path and not two.
+
+function sheetFromRows(pal, rows) {
+  const w = rows[0].length, h = rows.length;
+  const px = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const c = pal[rows[y][x]];
+      if (!c) continue;
+      const i = (y * w + x) * 4;
+      px[i] = q4(c[0]); px[i + 1] = q4(c[1]); px[i + 2] = q4(c[2]); px[i + 3] = 255;
+    }
+  }
+  return { w, h, frames: [px], tags: { all: [0, 0] } };
 }
 
-// Palette letters kept short so the art stays readable in source.
-const PAL_HERO = {
-  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0x66, 0x33, 0x11],
-  c: [0xEE, 0x55, 0x77], p: [0x33, 0x44, 0x88], b: [0x44, 0x22, 0x22],
-  w: [0xFF, 0xFF, 0xFF]
+const SHEET_DEFS = {
+"hero": {
+"frame_w": 12,
+"frame_h": 20,
+"frames": 12,
+"tags": {
+"down": [
+0,
+3
+],
+"up": [
+4,
+7
+],
+"side": [
+8,
+11
+]
+},
+"src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJAAAAAUCAYAAABiZ7R2AAABj0lEQVR42u2a7Y3DIAyGs8KtkBVYISuwQlfICrdCV8gst0JX6AqpiAQC1zYkJYdJHcl/8GP6+iNfVYYBHOPPuMY2ZA7llU9Aa1KjApVXPoGdc7ZmMxjkA6XznPXA91r/JOH1755YrkCS+CudADBvyXwI8I4Y8k3DfkAa3/sVKG5WnPdjmUXzIcA54KS5NSphafyVBgjmLJkPQRBEL1eC+ZJmSef35iuFJ5vGvbpJ5EuaJZnvtv7O8bQzatSEKl+XX4wtjhHFc8liAXt4P8U5Pp7uM/VI1c81C9NUm4f69+x/akHP5q+iv/VAHOa1wW31SxmIwwMaJ7w+nqhxBcVY7pZRm+/9FgkbRuVLDURpPc/kQ8IuCDOqQMrX4ym2Bz4EmekXNeqtQfm6/GhuxTHS+CRh/6xQWiDlv5ynnFzQJ4L2nsG5/VV/W/3hcrUZSABbx3wc+8ZDy/GZ/VV/W/0bPJlxvdnpLQG3NiF/wcMYjoV8bCV8bn/V31b/wH2ySPmw9dynj/DzyFL2iBbV/z/6X13axgprA+bkAAAAAElFTkSuQmCC"
+},
+"villager": {
+"frame_w": 12,
+"frame_h": 20,
+"frames": 4,
+"tags": {
+"down": [
+0,
+3
+]
+},
+"src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAUCAYAAADLP76nAAAA+UlEQVR42s2XYQ3DIBCFsTALWJiFWqiFWqgFLMwCFmZhFmphFmhYcoy7cgf8aPJIXkLgexwHlAbnRPEPn2q5ToHhCQjbwqQZoXgCY1h/kiYyovKuzjR9XkxWABS+GDKQ6wRTXQuAwhfDEfdLxrlNC4DCs4xbslYIgTdN2tWFxhfDEt9MzWzReA3WTDN8/eFZfL26s/O5dUJ382VCGkySAUZ5SrrHywWaGZ8FOL6JSQZA5IvB76EpLQAK73rbrN0SMPzMGYXjR+DahMZ3z5s8d2j8fxeePm3r9YeV23KfPHfSY7GSrzXCd8e3nmxaX6u99/STz8NR1mo7AVuRq2XWsPUUAAAAAElFTkSuQmCC"
+},
+"trainer": {
+"frame_w": 12,
+"frame_h": 20,
+"frames": 8,
+"tags": {
+"down": [
+0,
+3
+],
+"up": [
+4,
+7
+]
+},
+"src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAUCAYAAAByKzjvAAABQklEQVR42u2ZgQ2DIBBFXcEVXIFZXMEVukJXYIWu4ArO4go20GDgvDtohfRIzuSnDbwPdxaUwjCAaxqnI9aQuZSvxAdgMyYRZVS+Io+BmFH5Nrw32IkX7EAa75KiWOoGSeG9YTbjsa9PX+E+4++uDnYgkeckmT8Nm13OZINcGdWBNL7bHyCYYLLxyMNeMtL44mQF8mTS3NJJIl+crDTeJ/vCRY5Q5evwHIyZvuHPUZzh49HdMh6J8TcNqDXfffx6g/4bf2I4douKCwhlmSlfm+/9EZcY1seIiupA+Tp8tGTCRa9zla/FJ4bwrCztQPmbPNxvyZVjdRx7959wrv3e4//s3tnF67Krh5RjdRwLeagcn2u/9/g9bNz0mK/bqq7MINMGejgW8rFK+Fz7vcc/cEdmVB1Wnjt6g8dzpewvsfQS/xvMrjb+HzplbgAAAABJRU5ErkJggg=="
+},
+"healer": {
+"frame_w": 12,
+"frame_h": 20,
+"frames": 4,
+"tags": {
+"down": [
+0,
+3
+]
+},
+"src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAUCAYAAADLP76nAAABEUlEQVR42s2XgQ2EIAxFXeFWcAVXcAVWcAVnuRVYwRVY4VZwBe/wUgK1LUUuuZr8xLTvUwpKwjCgZ3yMR66h8pjhAfDeF+KMpngAQwinsAmMVvlkOMKTFFfACl8Y4juA8C4VsMAnw8uvl25jjCtghU8mbsu4n8wSz5qko8sUHxP7vpPiVsgML8GUqYWHVSzyk/sqi+Wr2zqfq4EocHdCBQ8cFsdrGu4qoOC7Fkg5flOBn/Ctn2hl/GTYto0UV8AKn0xuWUlxp4QlvjDAt64t8HeeS0qmngm17oCqgWl2p3ADVJzKSSzmsWp8dfwzOc2Hc8t1Bz6xmCMbyDwSi/lcGr46vnRl43JUvHb1w9dDLSvF3vCAyYs1rWulAAAAAElFTkSuQmCC"
+}
 };
-const HERO_DOWN = sprite(PAL_HERO, [
-  "...kkkk...",
-  "..khhhhk..",
-  "..khhhhk..",
-  "..khsshk..",
-  "..kswwsk..",
-  "...ksskk..",
-  "..kcccck..",
-  ".kcwccwck.",
-  ".kcccccck.",
-  ".kkcccckk.",
-  "..kppppk..",
-  "..kp..pk..",
-  "..kp..pk..",
-  "..kb..bk..",
-  "..kb..bk..",
-  "..kk..kk.."
-]);
-const HERO_UP = sprite(PAL_HERO, [
-  "...kkkk...",
-  "..khhhhk..",
-  "..khhhhk..",
-  "..khhhhk..",
-  "..khhhhk..",
-  "...kkkk...",
-  "..kcccck..",
-  ".kcccccck.",
-  ".kcccccck.",
-  ".kkcccckk.",
-  "..kppppk..",
-  "..kp..pk..",
-  "..kp..pk..",
-  "..kb..bk..",
-  "..kb..bk..",
-  "..kk..kk.."
-]);
-const HERO_SIDE = sprite(PAL_HERO, [
-  "...kkkk...",
-  "..khhhhk..",
-  "..khhhhk..",
-  "..khhssk..",
-  "..khswwk..",
-  "...kssk...",
-  "..kcccck..",
-  "..kccccks.",
-  "..kcccck..",
-  "..kkcckk..",
-  "..kppppk..",
-  "..kppppk..",
-  "..kp..pk..",
-  "..kb..bk..",
-  "..kb..bk..",
-  "..kk..kk.."
-]);
 
-const PAL_NPC = {
-  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0x22, 0x22, 0x33],
-  c: [0x55, 0xBB, 0xDD], p: [0x33, 0x33, 0x44], b: [0x33, 0x22, 0x22],
-  w: [0xFF, 0xFF, 0xFF]
-};
-const PAL_TRAINER = {
-  k: [0x22, 0x11, 0x22], s: [0xEE, 0xBB, 0x88], h: [0x55, 0x22, 0x11],
-  c: [0xEE, 0xAA, 0x22], p: [0x55, 0x44, 0x22], b: [0x33, 0x22, 0x11],
-  w: [0xFF, 0xFF, 0xFF]
-};
-const PAL_HEAL = {
-  k: [0x22, 0x11, 0x22], s: [0xFF, 0xCC, 0x99], h: [0xDD, 0xAA, 0x55],
-  c: [0xEE, 0xEE, 0xEE], p: [0xDD, 0xDD, 0xEE], b: [0x55, 0x55, 0x66],
-  w: [0xEE, 0x33, 0x55]
-};
-const NPC_BODY = [
-  "...kkkk...",
-  "..khhhhk..",
-  "..khhhhk..",
-  "..khsshk..",
-  "..kswwsk..",
-  "...ksskk..",
-  "..kcccck..",
-  ".kcwccwck.",
-  ".kcccccck.",
-  ".kkcccckk.",
-  "..kppppk..",
-  "..kp..pk..",
-  "..kp..pk..",
-  "..kb..bk..",
-  "..kb..bk..",
-  "..kk..kk.."
-];
-const NPC_VILLAGER = sprite(PAL_NPC, NPC_BODY);
-const NPC_TRAINER  = sprite(PAL_TRAINER, NPC_BODY);
-const NPC_HEALER   = sprite(PAL_HEAL, NPC_BODY);
+const SHEETS = {};
+let sheetsReady = false;
+
+(function loadSheets() {
+  const names = Object.keys(SHEET_DEFS);
+  let left = names.length;
+  for (const name of names) {
+    const def = SHEET_DEFS[name];
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement("canvas");
+      cv.width = img.width; cv.height = img.height;
+      const c = cv.getContext("2d", { willReadFrequently: true });
+      c.imageSmoothingEnabled = false;
+      c.drawImage(img, 0, 0);
+      const all = c.getImageData(0, 0, img.width, img.height).data;
+      const fw = def.frame_w, fh = def.frame_h;
+      const frames = [];
+      for (let f = 0; f < def.frames; f++) {
+        const px = new Uint8ClampedArray(fw * fh * 4);
+        for (let y = 0; y < fh; y++) {
+          const src = (y * img.width + f * fw) * 4;
+          px.set(all.subarray(src, src + fw * 4), y * fw * 4);
+        }
+        frames.push(px);
+      }
+      SHEETS[name] = { w: fw, h: fh, frames, tags: def.tags };
+      if (--left === 0) sheetsReady = true;
+    };
+    img.src = def.src;
+  }
+})();
+
+// The stand pose is the second frame of every four beat cycle, so a character
+// standing still is not showing a mid stride.
+const STAND = 1;
+function frameOf(name, tag, phase) {
+  const sh = SHEETS[name];
+  if (!sh) return -1;
+  const t = sh.tags[tag] || sh.tags[Object.keys(sh.tags)[0]];
+  return t[0] + (phase % (t[1] - t[0] + 1));
+}
 
 const PAL_GRASS = { d: [0x22, 0x66, 0x33], m: [0x33, 0x88, 0x44], l: [0x55, 0xAA, 0x55] };
-const TUFT = sprite(PAL_GRASS, [
+const TUFT = sheetFromRows(PAL_GRASS, [
   "..d....d..",
   ".dm...dm..",
   ".dm..dmm.d",
@@ -1208,7 +1288,7 @@ const PAL_BALL = {
   k: [0x11, 0x11, 0x11], r: [0xEE, 0x33, 0x44], d: [0xAA, 0x22, 0x33],
   w: [0xEE, 0xEE, 0xEE], g: [0xAA, 0xAA, 0xBB], h: [0xFF, 0xFF, 0xFF]
 };
-const BALL = sprite(PAL_BALL, [
+const BALL = sheetFromRows(PAL_BALL, [
   "..kkkk..",
   ".krrhrk.",
   "krrrrrrk",
@@ -1219,21 +1299,21 @@ const BALL = sprite(PAL_BALL, [
   "..kkkk.."
 ]);
 
-function drawSprite(sp, cx, topY, scale, depth, tintWhite) {
+function drawSprite(sh, frame, cx, topY, scale, depth, tintWhite, flip) {
+  const px = sh.frames[frame];
+  if (!px) return;
   spriteCount++;
   const s = Math.max(1, scale);
-  const w = Math.round(sp.w * s), h = Math.round(sp.h * s);
+  const w = Math.round(sh.w * s), h = Math.round(sh.h * s);
   const x0 = Math.round(cx - w / 2), y0 = Math.round(topY);
   for (let j = 0; j < h; j++) {
-    const sy = Math.min(sp.h - 1, Math.floor(j / s));
-    const row = sp.rows[sy];
+    const sy = Math.min(sh.h - 1, Math.floor(j / s));
     for (let i = 0; i < w; i++) {
-      const sx = Math.min(sp.w - 1, Math.floor(i / s));
-      const ch = row[sx];
-      if (!ch || ch === "." || ch === " ") continue;
-      const c = sp.pal[ch];
-      if (!c) continue;
-      let r = c[0], g = c[1], b = c[2];
+      let sx = Math.min(sh.w - 1, Math.floor(i / s));
+      if (flip) sx = sh.w - 1 - sx;
+      const k = (sy * sh.w + sx) * 4;
+      if (px[k + 3] === 0) continue;
+      let r = px[k], g = px[k + 1], b = px[k + 2];
       if (tintWhite) {
         r = r + (255 - r) * tintWhite;
         g = g + (255 - g) * tintWhite;
@@ -1244,15 +1324,38 @@ function drawSprite(sp, cx, topY, scale, depth, tintWhite) {
   }
 }
 
+// A blob of darkened ground under a billboard. Nothing plants a sprite in a 3D
+// scene like a shadow does, and reading the framebuffer back to darken it
+// costs no extra geometry: the device can do exactly the same.
+function groundShadow(wx, wz, radius) {
+  const p = project(wx, 0.02, wz);
+  if (!p) return;
+  const rx = Math.max(2, Math.round(radius * FOCAL / p.z));
+  const ry = Math.max(1, Math.round(rx * Math.sin(-cam.pitch)));
+  for (let j = -ry; j <= ry; j++) {
+    for (let i = -rx; i <= rx; i++) {
+      if ((i * i) / (rx * rx) + (j * j) / (ry * ry) > 1) continue;
+      const x = Math.round(p.x) + i, y = Math.round(p.y) + j;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const idx = y * W + x;
+      if (zb[idx] < p.z - 0.1) continue;
+      const o = idx * 4;
+      fb[o] = q4(fb[o] * 0.62);
+      fb[o + 1] = q4(fb[o + 1] * 0.62);
+      fb[o + 2] = q4(fb[o + 2] * 0.66);
+    }
+  }
+}
+
 // Place a billboard by its feet, the way project_billboard is meant to be
 // used: one projected point, one scale, one depth for the whole sprite.
-function drawBillboard(sp, wx, wy, wz, worldHeight, tintWhite) {
+function drawBillboard(sh, frame, wx, wy, wz, worldHeight, tintWhite, flip) {
   const p = project(wx, wy, wz);
   if (!p) return null;
   const pxHeight = worldHeight * FOCAL / p.z;
-  const scale = pxHeight / sp.h;
+  const scale = pxHeight / sh.h;
   if (scale < 0.25) return null;
-  drawSprite(sp, p.x, p.y - pxHeight, scale, p.z - 0.05, tintWhite);
+  drawSprite(sh, frame, p.x, p.y - pxHeight, scale, p.z - 0.05, tintWhite, flip);
   return p;
 }
 
@@ -1392,16 +1495,31 @@ const GROUND_COL = {
 };
 const solid = c => c === "T" || c === "w" || c === "H" || c === "s";
 
+// dir: 0 north, 1 east, 2 south, 3 west. A sheet only carries the poses its
+// character needs, so the villagers face the camera and only the trainer, who
+// has to watch a line of sight, owns a back view.
 const NPCS = [
-  { x: 12.5, z: 11.5, dir: 2, sp: NPC_VILLAGER, kind: "villager",
+  { x: 12.5, z: 11.5, dir: 2, sheet: "villager", kind: "villager",
     say: "The grass to the west moves on its own. Something lives in it." },
-  { x: 16.5, z: 19.5, dir: 0, sp: NPC_TRAINER, kind: "trainer", sight: 5,
+  { x: 16.5, z: 19.5, dir: 0, sheet: "trainer", kind: "trainer", sight: 5,
     say: "You walked into my line. Send one out!" },
-  { x: 20.5, z: 9.5, dir: 2, sp: NPC_HEALER, kind: "healer",
+  { x: 20.5, z: 9.5, dir: 2, sheet: "healer", kind: "healer",
     say: "Come inside. Your team looks tired." },
-  { x: 8.5, z: 14.5, dir: 1, sp: NPC_VILLAGER, kind: "villager",
+  { x: 8.5, z: 14.5, dir: 1, sheet: "villager", kind: "villager",
     say: "A ball works better on something worn down." }
 ];
+
+// Which way a sheet can actually face, and whether the art has to be mirrored
+// to get there. Only "side" is ever mirrored, which is why the hero's profile
+// is drawn facing east and nothing else is.
+function poseFor(sheetName, dir) {
+  const sh = SHEETS[sheetName];
+  if (!sh) return null;
+  const want = dir === 0 ? "up" : dir === 2 ? "down" : "side";
+  if (sh.tags[want]) return { tag: want, flip: dir === 3 };
+  if (sh.tags.down) return { tag: "down", flip: false };
+  return { tag: Object.keys(sh.tags)[0], flip: false };
+}
 
 // The measured Black and White field camera, retargeted from the DS's 256x192
 // to this 120x120 screen.
@@ -1425,9 +1543,10 @@ const CAM_BACK = CAM_Q * Math.cos(-CAM_PITCH);
 // be authored against. Characters are 16 pixel tall sprites, so their world
 // height is set to land them at exactly 1.0 scale: no resampling, no soft
 // edges, and the same reason a real build would size its art from the camera
-// rather than the other way round.
+// rather than the other way round. The 20 is the authored frame height in
+// art/build_art.py; change one and change the other.
 const TILE_PX = W / TILES_ACROSS;
-const CHAR_H = 16 / TILE_PX;
+const CHAR_H = 20 / TILE_PX;   // art/build_art.py authors characters 12 x 20
 
 const route = {
   px: 14.9, pz: 11.0, dir: 2, step: 0, moving: 0, grassSteps: 0,
@@ -1456,6 +1575,7 @@ function routeUpdate(dt, keys) {
     if (!solid(at(tx, Math.floor(route.pz)))) route.px = nx;
     if (!solid(at(Math.floor(route.px), tz))) route.pz = nz;
     route.step += speed * 2.4;
+    route.moving = 0.12;
     const nowTile = Math.floor(route.px) + "," + Math.floor(route.pz);
     if (nowTile !== wasTile) {
       if (at(Math.floor(route.px), Math.floor(route.pz)) === "G") {
@@ -1575,21 +1695,28 @@ function drawRoute(time, dt, keys) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, z) !== "G") continue;
       const sway = Math.sin(time * 2.1 + x * 0.7 + z * 0.4) * 0.06;
-      drawBillboard(TUFT, x + 0.5 + sway, 0, z + 0.5, 8 / TILE_PX);
+      drawBillboard(TUFT, 0, x + 0.5 + sway, 0, z + 0.5, 8 / TILE_PX);
     }
   }
 
-  const bob = Math.sin(route.step) > 0 ? 0 : 1;
-  const drawn = [];
-  for (const n of NPCS) drawn.push({ z: n.z, f: () => drawBillboard(n.sp, n.x, 0, n.z, CHAR_H) });
-  drawn.push({
-    z: route.pz, f: () => {
-      const sp = route.dir === 0 ? HERO_UP : (route.dir === 2 ? HERO_DOWN : HERO_SIDE);
-      drawBillboard(sp, route.px, bob * 0.03, route.pz, CHAR_H);
-    }
+  // Cast, sorted back to front. Shadows go down first so a character never
+  // darkens the one standing behind it.
+  const cast = [];
+  for (const n of NPCS) cast.push({ z: n.z, x: n.x, sheet: n.sheet, dir: n.dir, phase: STAND });
+  route.moving = Math.max(0, route.moving - dt);
+  cast.push({
+    z: route.pz, x: route.px, sheet: "hero", dir: route.dir,
+    phase: route.moving > 0 ? (Math.floor(route.step * 0.9) & 3) : STAND
   });
-  drawn.sort((a, b) => b.z - a.z);
-  for (const d of drawn) d.f();
+  cast.sort((a, b) => b.z - a.z);
+  for (const c of cast) groundShadow(c.x, c.z, 0.45);
+  for (const c of cast) {
+    const pose = poseFor(c.sheet, c.dir);
+    if (!pose) continue;
+    const f = frameOf(c.sheet, pose.tag, c.phase);
+    if (f < 0) continue;
+    drawBillboard(SHEETS[c.sheet], f, c.x, 0, c.z, CHAR_H, 0, pose.flip);
+  }
 
   // 2D layer.
   frameBox(2, 2, 52, 13, [0x22, 0x22, 0x33], [0xEE, 0xEE, 0xEE]);
@@ -1948,7 +2075,7 @@ function drawCatch(time, dt, keys) {
     const p = project(bx, by, bz);
     if (p) {
       const h = 0.72 * FOCAL / p.z;
-      drawSprite(BALL, p.x, p.y - h / 2, h / BALL.h, p.z - 0.2);
+      drawSprite(BALL, 0, p.x, p.y - h / 2, h / BALL.h, p.z - 0.2);
       if (Math.abs(tilt) > 0.001) {
         // Nudge a highlight column so the tilt reads at 8 pixels tall.
         px(Math.round(p.x + tilt * 6), Math.round(p.y - h * 0.6), 0xFF, 0xFF, 0xFF);
@@ -1969,7 +2096,7 @@ function drawCatch(time, dt, keys) {
         const sy = Math.round(p.y + Math.sin(a) * rr * 0.6);
         for (let j = -1; j <= 1; j++) { px(sx + j, sy, 0xFF, 0xEE, 0x55); px(sx, sy + j, 0xFF, 0xEE, 0x55); }
       }
-      drawSprite(BALL, p.x, p.y - 4, 1, 0);
+      drawSprite(BALL, 0, p.x, p.y - 4, 1, 0);
     }
   }
 
