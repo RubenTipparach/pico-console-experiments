@@ -18,4 +18,4 @@ A demake of the hit game Tom Lander, set on Mars, the red planet.
 
 - Pom tries to make his daily wages by lifting cargo
 - Land cargo on landing pads with limited fuel
-- A slowly breaking down bucket of bolts — your ship degrades over time
+- A slowly breaking down bucket of bolts, your ship degrades over time
