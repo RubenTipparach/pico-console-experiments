@@ -49,6 +49,24 @@ enum class Mode : uint8_t {
     Landed,     // catch card showing
 };
 
+// What the fishing is for.
+//
+// Free is the pond as it was: cast, catch, keep records, stop when you like.
+// Tournament puts a clock and a quota on it: ten days, a weight to make each
+// day, and one bad day ends it. Both run the same pond and the same fight;
+// the tournament only watches what comes out of it.
+enum class GameMode : uint8_t { Free, Tournament };
+
+// Where a tournament is up to. Idle means none is running, which is also
+// what Free mode leaves this in.
+enum class TourState : uint8_t {
+    Idle,
+    Running,
+    DayPassed,   // made the quota, the card is showing before the next day
+    Lost,        // missed a quota, the run is over
+    Won,         // all ten days made
+};
+
 enum class FishState : uint8_t {
     Gone,       // slot free
     Wander,
@@ -73,22 +91,29 @@ struct Fish {
     uint8_t reserved;
 };
 
+constexpr int k_tour_days = 10;
+constexpr int k_high_scores = 10;
+
 struct Records {
     int16_t best_cm[k_species_count];
     uint16_t caught[k_species_count];
     uint32_t score;
+    // Best tournament runs, highest first, zero for an empty slot.
+    uint32_t high[k_high_scores];
 };
 
 // What write_save persists. Bump the magic when the layout changes so a stale
 // save is ignored instead of misread. sound_off belongs to the shell, not the
 // sim: world_make_save zeroes it and the game layer stamps it before writing.
 struct SaveData {
-    uint32_t magic;        // 'K','F','R','2'
+    uint32_t magic;        // 'K','F','R','3'
     Records records;
     uint8_t sound_off;
     uint8_t reserved[3];
 };
-constexpr uint32_t k_save_magic = 0x3252464Bu;
+// Bumped from R2 when the high score board joined Records: an R2 save read
+// as an R3 would put whatever followed the old struct into the board.
+constexpr uint32_t k_save_magic = 0x3352464Bu;
 
 // One tick's worth of input, already edge detected by the caller.
 struct Input {
@@ -117,6 +142,9 @@ struct Events {
     bool leap;             // hooked fish broke the surface
     bool wiggle;           // rod wiggle registered during a fight
     bool reel_click;       // the ratchet: a chunk of line came in
+    bool tour_day_passed;  // a tournament day's quota was made
+    bool tour_won;         // all ten days made
+    bool tour_lost;        // a day's quota was missed
 };
 
 struct World {
@@ -166,6 +194,16 @@ struct World {
     int16_t card_size;
     bool card_record;
 
+    // ---- the tournament ----
+    GameMode game_mode;
+    TourState tour_state;
+    uint8_t tour_day;         // 1..k_tour_days while running
+    uint32_t tour_target_g;   // what today asks for
+    uint32_t tour_today_g;    // landed so far today
+    uint32_t tour_over_g;     // total made over quota across the days survived
+    uint32_t tour_score;      // final, set when the run ends
+    uint16_t tour_card_timer; // day result card
+
     Fish fish[k_max_fish];
     Records records;
     bool save_pending;
@@ -200,5 +238,23 @@ int hook_distance_dm(const World& world);
 // Test hook: force a bite-ready fish of the given species and size so fight
 // tuning can be exercised directly. Returns the fish index.
 int world_test_hook(World& world, int species, int size_cm);
+
+// ---- the tournament ----
+
+// What a fish that long weighs, in grams. Length cubed against a condition
+// factor, which is how a real fish's weight is estimated and what makes the
+// difference between a perch and a sturgeon a matter of kilograms rather
+// than centimetres. This is the number the quota is counted in.
+uint32_t fish_weight_g(int species, int size_cm);
+
+// What day n of a tournament asks for, in grams.
+uint32_t tour_target_for_day(int day);
+
+// Start a run. Free mode resets the tournament state and leaves it alone.
+void world_start(World& world, GameMode mode);
+
+// Record a run's score into the board, highest first. Exposed because the
+// board outlives a run and the shell owns saving it.
+void records_add_score(Records& records, uint32_t score);
 
 }  // namespace kf

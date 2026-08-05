@@ -332,6 +332,168 @@ void test_wiggle_spam_cannot_pin_a_fish() {
 }
 
 
+// ---- the tournament ----
+
+// Weight is what a quota is counted in, so the curve from a minnow to a
+// legend has to be worth caring about. Cubed length means it is: a fish twice
+// as long is eight times the fish.
+void test_weight_grows_with_the_cube_of_length() {
+    const uint32_t small = kf::fish_weight_g(0, 20);
+    const uint32_t twice = kf::fish_weight_g(0, 40);
+    CHECK(twice >= small * 7 && twice <= small * 9);
+    CHECK(kf::fish_weight_g(0, 0) == 0);
+    CHECK(kf::fish_weight_g(-1, 50) == 0);
+
+    // Longer always weighs more, or a card would lie about which fish was the
+    // better catch.
+    uint32_t last = 0;
+    for (int cm = 10; cm <= 200; cm += 10) {
+        const uint32_t w = kf::fish_weight_g(0, cm);
+        CHECK(w > last);
+        last = w;
+    }
+}
+
+// The quota climbs, and day one is the easiest day. A curve that started hard
+// would end a run before it began.
+void test_the_quota_climbs_every_day() {
+    uint32_t last = 0;
+    for (int day = 1; day <= kf::k_tour_days; day++) {
+        const uint32_t target = kf::tour_target_for_day(day);
+        CHECK(target > last);
+        last = target;
+    }
+    CHECK(kf::tour_target_for_day(0) == kf::tour_target_for_day(1));
+    CHECK(kf::tour_target_for_day(99) ==
+          kf::tour_target_for_day(kf::k_tour_days));
+}
+
+// A day that misses its quota ends the run there and then.
+void test_a_missed_quota_ends_the_run() {
+    kf::World world;
+    kf::world_init(world, 3);
+    kf::world_start(world, kf::GameMode::Tournament);
+    CHECK(world.tour_state == kf::TourState::Running);
+    CHECK(world.tour_day == 1);
+
+    for (uint32_t t = 0; t <= kf::k_day_length; t++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.tour_state == kf::TourState::Lost);
+    CHECK(world.tour_score == 0);   // nothing over quota, no days survived
+
+    // A finished run stops the pond. The day clock in particular must not
+    // roll on, or a lost run would keep ending days forever.
+    const uint32_t day_tick = world.day_tick;
+    for (int t = 0; t < 50; t++) kf::world_tick(world, kf::Input{});
+    CHECK(world.tour_state == kf::TourState::Lost);
+    CHECK(world.day_tick == day_tick);
+}
+
+// Making the quota carries the run to a harder day and banks the surplus.
+void test_making_the_quota_carries_the_run() {
+    kf::World world;
+    kf::world_init(world, 4);
+    kf::world_start(world, kf::GameMode::Tournament);
+    const uint32_t day_one = world.tour_target_g;
+
+    world.tour_today_g = day_one + 1000;
+    for (uint32_t t = 0; t <= kf::k_day_length; t++) {
+        kf::world_tick(world, kf::Input{});
+        if (world.tour_state != kf::TourState::Running) break;
+    }
+    CHECK(world.tour_state == kf::TourState::DayPassed);
+    CHECK(world.tour_day == 2);
+    CHECK(world.tour_target_g > day_one);
+    CHECK(world.tour_over_g == 1000);
+    CHECK(world.tour_today_g == 0);
+    CHECK(world.tour_card_timer > 0);
+
+    // The card holds the run still, then the next day starts, and it starts
+    // at dawn rather than wherever the last one ran out: a quota measured in
+    // a day has to get a whole day.
+    for (int t = 0; t < kf::k_tour_card_ticks + 2; t++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.tour_state == kf::TourState::Running);
+    CHECK(world.day_tick < 8);
+}
+
+// Ten days made is a win, scored as the surplus times the days.
+void test_ten_days_wins_and_scores() {
+    kf::World world;
+    kf::world_init(world, 5);
+    kf::world_start(world, kf::GameMode::Tournament);
+
+    uint32_t expected_over = 0;
+    for (int day = 1; day <= kf::k_tour_days; day++) {
+        CHECK(world.tour_day == day);
+        world.tour_today_g = world.tour_target_g + 500;
+        expected_over += 500;
+        for (uint32_t t = 0; t < kf::k_day_length + kf::k_tour_card_ticks + 4;
+             t++) {
+            kf::world_tick(world, kf::Input{});
+            if (world.tour_state == kf::TourState::Won ||
+                world.tour_state == kf::TourState::Lost) break;
+            if (world.tour_state == kf::TourState::Running &&
+                world.tour_day != day) break;
+        }
+        if (world.tour_state != kf::TourState::Running) break;
+    }
+    CHECK(world.tour_state == kf::TourState::Won);
+    CHECK(world.tour_over_g == expected_over);
+    CHECK(world.tour_score ==
+          (expected_over / kf::k_tour_score_div) * kf::k_tour_days);
+}
+
+// Free fishing is the pond it always was: no quota, no clock, nothing that
+// can end it.
+void test_free_fishing_has_no_tournament() {
+    kf::World world;
+    kf::world_init(world, 6);
+    kf::world_start(world, kf::GameMode::Free);
+    CHECK(world.tour_state == kf::TourState::Idle);
+
+    for (uint32_t t = 0; t < kf::k_day_length * 2 + 10; t++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.tour_state == kf::TourState::Idle);
+    CHECK(world.tour_today_g == 0);
+    CHECK(world.tick == kf::k_day_length * 2 + 10);
+}
+
+// The board keeps the ten best, highest first.
+void test_the_score_board_keeps_the_best_ten() {
+    kf::Records records{};
+    for (int i = 1; i <= 12; i++) kf::records_add_score(records, i * 10);
+    CHECK(records.high[0] == 120);
+    CHECK(records.high[1] == 110);
+    CHECK(records.high[kf::k_high_scores - 1] == 30);
+    for (int i = 1; i < kf::k_high_scores; i++) {
+        CHECK(records.high[i - 1] >= records.high[i]);
+    }
+
+    kf::records_add_score(records, 5);    // worse than everything on it
+    CHECK(records.high[kf::k_high_scores - 1] == 30);
+    kf::records_add_score(records, 0);    // a run worth nothing is not a run
+    CHECK(records.high[kf::k_high_scores - 1] == 30);
+
+    kf::records_add_score(records, 115);  // slots into the middle
+    CHECK(records.high[0] == 120);
+    CHECK(records.high[1] == 115);
+    CHECK(records.high[2] == 110);
+
+    // Two runs worth the same both belong on the board, so an equal score
+    // does go on again. That makes it the caller's job to add a run exactly
+    // once, which is a real trap: a finished run stops the pond, so the event
+    // that says it ended is not cleared by anything and a shell that adds on
+    // the flag rather than on the edge fills the board with one score.
+    kf::records_add_score(records, 115);
+    CHECK(records.high[1] == 115);
+    CHECK(records.high[2] == 115);
+    CHECK(records.high[3] == 110);
+}
+
 // Wear a hooked fish down to its second wind the way a player does: work the
 // reel while the meter is out of the red and come off it when it climbs.
 //
@@ -946,7 +1108,7 @@ void test_records_and_save_roundtrip() {
 void test_memory_budget() {
     CHECK(sizeof(kf::World) <= 768);
     CHECK(sizeof(kf::Fish) <= 44);
-    CHECK(sizeof(kf::SaveData) <= 64);
+    CHECK(sizeof(kf::SaveData) <= 128);
 }
 
 }  // namespace
@@ -970,6 +1132,13 @@ int main() {
     test_patient_bot_lands_everything();
     test_greedy_bot_pays_for_it();
     test_break_needs_sustained_danger();
+    test_weight_grows_with_the_cube_of_length();
+    test_the_quota_climbs_every_day();
+    test_a_missed_quota_ends_the_run();
+    test_making_the_quota_carries_the_run();
+    test_ten_days_wins_and_scores();
+    test_free_fishing_has_no_tournament();
+    test_the_score_board_keeps_the_best_ten();
     test_stamina_drains_and_regens();
     test_second_wind_opens_and_closes();
     test_wiggle_spam_cannot_pin_a_fish();
