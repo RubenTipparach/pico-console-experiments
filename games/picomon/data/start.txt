@@ -1,0 +1,14 @@
+# Where a new game begins. See FORMAT.md.
+#
+# Kept here rather than in the code so that moving the start, changing the
+# starter, or handing the player a different bag is a data change and not a
+# rebuild of the sim.
+
+start
+  zone hometown
+  at 11 9 south
+  party emberkit 5
+  bag picoball 5
+  bag potion 1
+  money 300
+end

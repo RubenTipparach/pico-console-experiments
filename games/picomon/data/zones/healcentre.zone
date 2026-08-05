@@ -1,0 +1,28 @@
+# The Picomon Centre.
+
+zone healcentre
+name CENTRE
+size 11 8
+
+tiles
+HHHHHHHHHHH
+HffRRRRRffH
+HffRRRRRffH
+HfffffffffH
+HfffffffffH
+HfffffffffH
+HfffffffffH
+HHHHHdHHHHH
+end
+
+warp 5 7 hometown 17 9 south
+
+npc nurse 5 3 south healer
+  kind healer
+  say Rest here any time. It is free.
+end
+
+npc visitor 2 5 east villager
+  say A fainted PICOMON will not fight.
+  say Bring it here, or use a REVIVE.
+end

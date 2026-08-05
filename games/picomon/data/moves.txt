@@ -1,0 +1,206 @@
+# Moves. See FORMAT.md.
+#
+# Names are capped at 10 characters because that is what fits in the move list
+# at a 4 pixel advance. The cap is checked at build time rather than trimmed at
+# draw time, so a name that does not fit fails the build instead of printing
+# through the edge of its own panel.
+
+move tackle
+  name TACKLE
+  type mind
+  power 40
+  pp 35
+  effect none
+end
+
+move scratch
+  name SCRATCH
+  type mind
+  power 40
+  pp 35
+  effect none
+end
+
+move tailwhip
+  name TAIL WHIP
+  type mind
+  power 0
+  pp 30
+  effect lower_def
+end
+
+move harden
+  name HARDEN
+  type stone
+  power 0
+  pp 30
+  effect raise_def
+end
+
+move quickstep
+  name QUICKSTEP
+  type spark
+  power 0
+  pp 30
+  effect raise_spd
+end
+
+move hush
+  name HUSH
+  type mind
+  power 0
+  pp 20
+  effect lower_spd
+end
+
+move ember
+  name EMBER
+  type ember
+  power 40
+  pp 25
+  effect none
+end
+
+move flareup
+  name FLARE UP
+  type ember
+  power 75
+  pp 10
+  effect none
+end
+
+move firefang
+  name FIRE FANG
+  type ember
+  power 95
+  pp 8
+  effect none
+end
+
+move vinesnap
+  name VINE SNAP
+  type leaf
+  power 40
+  pp 25
+  effect none
+end
+
+move leafblade
+  name LEAF BLADE
+  type leaf
+  power 75
+  pp 10
+  effect none
+end
+
+move leechseed
+  name LEECHSEED
+  type leaf
+  power 25
+  pp 15
+  effect drain
+end
+
+move rootbind
+  name ROOT BIND
+  type leaf
+  power 95
+  pp 8
+  effect none
+end
+
+move bubble
+  name BUBBLE
+  type tide
+  power 40
+  pp 25
+  effect none
+end
+
+move aquajet
+  name AQUA JET
+  type tide
+  power 75
+  pp 10
+  effect none
+end
+
+move tidalcrash
+  name TIDALCRASH
+  type tide
+  power 95
+  pp 8
+  effect none
+end
+
+move zap
+  name ZAP
+  type spark
+  power 40
+  pp 25
+  effect none
+end
+
+move thunderjolt
+  name THUNDERBOL
+  type spark
+  power 75
+  pp 10
+  effect none
+end
+
+move stormbite
+  name STORMBITE
+  type spark
+  power 95
+  pp 8
+  effect none
+end
+
+move pebblethrow
+  name PEBBLE
+  type stone
+  power 40
+  pp 25
+  effect none
+end
+
+move rockslam
+  name ROCK SLAM
+  type stone
+  power 75
+  pp 10
+  effect none
+end
+
+move quakestep
+  name QUAKESTEP
+  type stone
+  power 95
+  pp 8
+  effect none
+end
+
+move dazzle
+  name DAZZLE
+  type mind
+  power 40
+  pp 25
+  effect none
+end
+
+move mindbeam
+  name MIND BEAM
+  type mind
+  power 75
+  pp 10
+  effect none
+end
+
+move moonhaze
+  name MOON HAZE
+  type mind
+  power 95
+  pp 8
+  effect none
+end

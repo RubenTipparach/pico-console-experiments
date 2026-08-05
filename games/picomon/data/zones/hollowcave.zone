@@ -1,0 +1,56 @@
+# Hollow Cave. Dark, and full of sparks.
+
+zone hollowcave
+name HOLLOW CAVE
+size 20 16
+
+tiles
+CCCCCCCCCCCCCCCCCCCC
+CCCCCCCCCCCCCCCCCCCC
+CCCCCCCCCCCCCCRRRCCC
+CcccccccccccccRRRccC
+CccGGGGGcccccccccccC
+CccGGGGGcRcccccccccC
+CccGGGGGccccGGGGGccC
+CccGGGGGccccGGGGGccC
+CccccccccRccGGGGGRcC
+CcccccRcccccGGGGGcRC
+CccccRRRccccGGGGGccC
+CccRcRRRcccRccccccRC
+CccccccccccccccccccC
+CccccccccccccccccccC
+CccccRcRcccccccccccC
+CCCCCCCCcccCCCCCCCCC
+end
+
+warp 9 15 route1 11 1 south
+
+encounter G
+  rate 13
+  dustbug  4 6 35
+  pebblin  4 7 30
+  sparklet 5 8 25
+  mothlet  5 8 10
+end
+
+npc spelunker 9 9 south trainer
+  sight 3
+  party pebblin 7, sparklet 7
+  say Nobody comes down here without a fight.
+  win You have a good team.
+  lose The dark is not for everyone.
+  reward 200
+  flag beat_spelunker
+end
+
+event sign 9 12
+  say HOLLOW CAVE. A DUSK BALL WORKS BEST HERE.
+end
+
+event item 17 13 duskball 2
+  flag got_duskball_cave
+end
+
+event item 2 2 revive 1
+  flag got_revive_cave
+end

@@ -1,0 +1,61 @@
+# Hometown. Where the game starts.
+
+zone hometown
+name HOMETOWN
+size 24 20
+
+tiles
+TTTTTTTTTTpppTTTTTTTTTTT
+TTTTTTTTTTpppTTTTTTTTTTT
+TTTTTTTTTTpppTTTTTTTTTTT
+T.T.......ppp.......T..T
+T.........ppp..........T
+T..HHHHHT.ppp..HHHHH...T
+T.THHHHH..ppp..HHHHH...T
+T..HHHHHT.ppp..HHHHH...T
+T..HHdHHT.ppp.THHdHH...T
+T.........ppp..........T
+T......T..ppp..........T
+T...T.....ppp..........T
+TppppppppppppppppppppppT
+T.........ppp..........T
+T..T......ppp.T........T
+T..wwww...ppp...,,,,,..T
+T..wwww...ppp...,,,,,..T
+T..wwww...ppp...,,,,,..T
+T...T.....ppp..........T
+TTTTTTTTTTTTTTTTTTTTTTTT
+end
+
+warp 10 0 route1 10 30 north
+warp 11 0 route1 11 30 north
+warp 12 0 route1 12 30 north
+
+warp 5 8 homehouse 4 5 north
+warp 17 8 healcentre 5 6 north
+
+npc oldman 14 13 west villager
+  say A ball works better on something worn down.
+  say Take its health off first.
+end
+
+npc kid 19 16 north villager
+  say I saw a SPARKLET in the cave up north!
+  say It moved too fast to catch.
+end
+
+event sign 9 11
+  say HOMETOWN. THE ROAD NORTH IS ROUTE 1.
+end
+
+event sign 4 9
+  say YOUR HOUSE.
+end
+
+event sign 18 9
+  say PICOMON CENTRE. FREE REST.
+end
+
+event item 4 17 potion 1
+  flag got_potion_home
+end

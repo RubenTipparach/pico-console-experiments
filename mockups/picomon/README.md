@@ -82,11 +82,13 @@ measured numbers, and it says so.
 
 ## Character art
 
-Authored in `art/build_art.py` as character-per-pixel strings, so a change to a
-sleeve shows up in a diff rather than as a binary blob nobody can review. Run
-it to rebuild everything:
+Authored in `games/picomon/art/build_art.py` as character-per-pixel strings, so
+a change to a sleeve shows up in a diff rather than as a binary blob nobody can
+review. The art moved to the game when the game started using it; this page
+carries a frozen copy embedded as data URIs, which is what keeps it one file.
+Run it to rebuild everything:
 
-    cd art && python3 build_art.py
+    cd games/picomon/art && python3 build_art.py
 
 For each of the four sheets it writes an editable `.aseprite` (three layers:
 fill, shade, outline, plus one animation tag per direction), a `.png` frame
@@ -101,7 +103,7 @@ so it stays a single file.
 | healer   | 4      | down            | 330 B |
 
 Aseprite is a paid GUI application and could not be installed here, so
-`art/aseprite.py` writes the format directly: a small encoder for the
+`games/picomon/art/aseprite.py` writes the format directly: a small encoder for the
 documented v1.3 spec (RGBA cels, zlib compressed, named layers, tags). Every
 file is parsed back and compared against its own PNG before it ships.
 

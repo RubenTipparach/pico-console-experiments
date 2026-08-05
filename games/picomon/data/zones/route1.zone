@@ -1,0 +1,107 @@
+# Route 1. Tall grass both sides.
+
+zone route1
+name ROUTE 1
+size 28 32
+
+tiles
+TTTTTTTTTTpppTTTTTTTTTTTTTTT
+T.........pppT.............T
+T...T.....ppp...T..........T
+T.........pppT.............T
+T..GGGGGGTpppT.............T
+T..GGGGGG.ppp..T...GGGGG...T
+T..GGGGGG.ppp......GGGGG...T
+TT.GGGGGG.ppp......GGGGG...T
+T..GGGGGG.ppp......GGGGG...T
+T..GGGGGGTppp..T...........T
+T..GGGGGG.ppp..HHHH........T
+TT........ppp..HHHH.TTT....T
+T....T....ppp..HHHH........T
+T.........ppp.T............T
+TppppppppppppppppppppppppppT
+TppppppppppppppppppppppppppT
+TT........ppp..........T...T
+T.........ppp..............T
+T...T..T..ppp.....GGGGGGG..T
+T.........ppp.....GGGGGGG..T
+T.........ppp.....GGGGGGG..T
+T.........ppp.....GGGGGGG..T
+T.........ppp..T..GGGGGGG..T
+T.........pppT....GGGGGGG..T
+T.wwwwwww.ppp..............T
+T.wwwwwww.ppp........T.....T
+T.wwwwwww.ppp.......vvvv...T
+T.wwwwwww.ppp..............T
+T.wwwwwww.ppp..............T
+T.........ppp..............T
+T.........ppp........T.....T
+TTTTTTTTTTpppTTTTTTTTTTTTTTT
+end
+
+warp 10 31 hometown 10 1 south
+warp 11 31 hometown 11 1 south
+warp 12 31 hometown 12 1 south
+warp 11 0 hollowcave 9 14 north
+
+encounter G
+  rate 11
+  nibble   2 4 30
+  flicker  2 4 20
+  puddlin  3 5 20
+  emberkit 3 5 15
+  mossling 3 5 15
+end
+
+npc walker 8 17 east villager
+  say The grass to the west moves on its own.
+  say Something lives in it.
+end
+
+npc rival 11 22 north trainer
+  sight 4
+  party mossling 5, sparklet 4
+  say You walked into my line. Send one out!
+  win You are stronger than you look.
+  lose Told you. Come back when you are ready.
+  reward 120
+  flag beat_rival
+end
+
+npc camper 21 20 west trainer
+  sight 3
+  party nibble 4, dustbug 5
+  say Anything in this grass is mine!
+  win Fine. Take the road.
+  lose Told you it was mine.
+  reward 90
+  flag beat_camper
+end
+
+npc daycare 16 13 south villager
+  say The DAY CARE is closed today.
+  say Come back when you have two.
+end
+
+npc gatekeeper 11 2 south villager
+  onlyif beat_rival
+  say The cave is open. Mind the dark.
+end
+
+event sign 9 16
+  say ROUTE 1. TALL GRASS BOTH SIDES.
+  say WATCH YOUR STEP.
+end
+
+event item 5 6 greatball 1
+  flag got_greatball_r1
+end
+
+event item 23 22 superpotion 1
+  flag got_superpotion_r1
+end
+
+event trigger 11 27
+  flag saw_the_road
+  say The road north runs a long way.
+end
