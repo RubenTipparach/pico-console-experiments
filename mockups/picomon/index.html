@@ -276,15 +276,16 @@
     and menus that are pure 2D on top. Everything on this page renders live at
     <b>120 by 120</b>, in four bits per channel, through a software rasterizer that copies
     what <code>pse::Renderer3D</code> already does. The triangle counter under the screen is
-    the real one.
+    the real one, and the camera is not a guess: it was measured out of Black and White,
+    <a href="#camera">three ways</a>, and it is 31 degrees through a 16.2 degree lens.
   </p>
 
   <div class="specstrip">
     <div><span>Render</span><b>120 x 120</b></div>
     <div><span>Colour</span><b>4 bit / ch</b></div>
     <div><span>Queue</span><b>640 tris</b></div>
-    <div><span>Font</span><b>3 x 5</b></div>
-    <div><span>SRAM</span><b>264 KB</b></div>
+    <div><span>Camera</span><b>31 deg</b></div>
+    <div><span>Lens</span><b>16.2 deg</b></div>
   </div>
 
   <div class="stage">
@@ -337,27 +338,43 @@
         <p class="lede">Walk, talk, and get ambushed. The camera never rotates, which is what
         keeps the whole thing inside budget.</p>
 
-        <p>The world is a tile grid on a flat plane, seen from a fixed three quarter angle
-        (35 degrees down, no yaw). Locking the yaw is the single biggest saving here: with a
-        fixed heading the visible window of tiles is a rectangle in map space, so culling is
-        two comparisons instead of a frustum test, and props can be sorted once at load rather
-        than every frame.</p>
+        <p>The world is a tile grid on a flat plane under the camera measured out of Black and
+        White itself: <b>31 degrees below horizontal</b> through a <b>16.2 degree</b> lens, yaw
+        locked to the tile grid. That measurement is the section below this one. Locking the yaw
+        is the single biggest saving: with a fixed heading the visible window of tiles is a
+        rectangle in map space, so culling is two comparisons instead of a frustum test, and
+        props can be sorted once at load rather than every frame.</p>
+        <p>Everything else here is sized from that camera rather than dialled in by eye. Twelve
+        tiles across a 120 pixel screen puts one tile at 10 pixels, which is what makes a 16 pixel
+        tall character sprite draw at exactly 1.0 scale, with no resampling and no soft edges.
+        The camera's height and setback then fall out of the lens: 21.7 tiles up and 36.2 back.</p>
 
         <h3>Ground, and why it is cheap</h3>
-        <p>The visible window is 19 tiles across by 21 deep. Drawing each one as its own quad is
-        399 quads, 798 triangles, before a single tree is placed: more than the whole 640
+        <p>The visible window is 15 tiles across by 31 deep, deeper than it is wide because a
+        31 degree camera squashes depth by sin(31) = 0.52. Drawing each tile as its own quad is
+        465 quads, 930 triangles, before a single tree is placed: more than the whole 640
         triangle queue, on the ground alone.</p>
         <p>Two things fix that. Each row merges runs of the same material into one long quad, and
-        rows more than seven tiles out are drawn two deep instead of one, because at that
-        distance a tile is about three pixels tall and the detail was never visible. Together
-        they take the same picture to <b>127 quads, 254 triangles</b>. The counter next to the
+        rows get deeper with distance: one tile deep up close, two past six tiles, four past
+        fourteen, because by then a tile is a few pixels tall and the detail was never visible.
+        Together they take the same picture to about <b>118 quads</b>. The counter next to the
         screen is measuring exactly this, so you can watch it move as you walk from open grass
         onto the crossroads.</p>
         <p>The cost of merging is that a checkerboard texture would defeat it, every tile would
         break its own run. So ground detail comes from a handful of scattered decal quads
         instead: darker grass tufts, stones on the path, ripples on the pond. Detail you place
         rather than detail you tile.</p>
-        <p>The whole scene peaks at <b>354 triangles</b>, which leaves 286 spare in the queue.</p>
+        <p>One more quad sits under all of them. At this pitch the horizon is 257 pixels above a
+        120 pixel frame, so ground covers every row of the screen and any sky showing through is
+        the map running out, not the camera. Two triangles are cheaper than widening the tile
+        window until the leak stops.</p>
+        <p>Trees are the other half of the bill, and the long lens is why. A far tree is only
+        about 15 percent smaller than a near one, so it never quietly stops costing anything the
+        way it would under a wide lens. Past four tiles a tree drops its trunk and its second
+        canopy and becomes a single four sided cone: 4 triangles instead of 20.</p>
+        <p>The whole scene peaks at <b>448 triangles</b>, which leaves 192 spare in the queue.
+        This is the scene that will fight for the budget, and the two levers are already in the
+        code: the depth of the tile window, and how early a tree drops to its cone.</p>
 
         <h3>Characters are sprites, not meshes</h3>
         <p>The player and every NPC is one camera facing billboard, exactly what
@@ -487,6 +504,107 @@
     </div>
   </div>
 
+  <!-- ---------------- camera ---------------- -->
+  <section id="camera">
+    <h2>The camera, measured</h2>
+    <p class="lede">The first version of this page guessed the angle and it read as top down.
+    So the angle was measured out of the game instead, three ways, and the three agree.</p>
+
+    <p>The surprise is that the pitch was never the main problem. The <b>lens</b> was. A wide
+    lens at a shallow pitch still looks near vertical at the bottom of the frame, because the
+    bottom of a 60 degree lens is looking 30 degrees further down than the middle. Black and
+    White uses a very long lens, so every row of the screen sees the ground at nearly the same
+    angle, and that uniformity is most of what makes it read as a world rather than a plan.</p>
+
+    <h3>1. Where the horizon is</h3>
+    <p>A frame of the Nacrene City museum plaza has a paved road whose two edges run along the
+    world depth axis. Fitting a line to each edge gives 0.62 and 0.72 pixels of RMS error, and
+    the two lines meet at <code>x = 128.26, y = -314.9</code> on a 256 by 192 frame.</p>
+    <p>That intersection is the vanishing point of the depth axis, so two things fall straight
+    out of it. Its x lands on 128.26 against a frame centre of 128.0, which says the <b>camera
+    yaw is locked to the tile grid</b> to within a quarter of a pixel. And its y is the horizon,
+    which gives <code>f * tan(pitch) = 96 + 314.9 = 410.9 px</code>.</p>
+    <p>One frame of a flat plane cannot do better than that. Every focal length and pitch
+    satisfying that product projects the ground identically; they differ only in how tall
+    vertical things look. So the pitch needs one more fact from somewhere else.</p>
+
+    <h3>2. What the lens is</h3>
+    <p>pret's <code>pokeplatinum</code> decompilation carries Gen IV's whole field camera table
+    in degrees, and DSPRE reads the same table out of the ROM and agrees with it byte for byte.
+    The stored vertical half angle is <b>8.0914306640625 degrees</b>, so the full vertical field
+    of view is 16.18 degrees. Gen V's camera config is a NARC whose format nobody has published,
+    but Gen V inherited the field engine, and the number checks out below.</p>
+    <p>Feeding that lens into the measured horizon gives the pitch:</p>
+    <div class="tablewrap">
+      <table>
+        <tbody>
+          <tr><td>f, on a 192 tall frame</td><td class="n">675.3 px</td><td>96 / tan(8.0914 deg)</td></tr>
+          <tr><td>tan(pitch)</td><td class="n">0.6088</td><td>410.9 / 675.3</td></tr>
+          <tr><td><b>pitch</b></td><td class="n"><b>31.32 deg</b></td><td>below horizontal</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>3. An independent check, and a coincidence that is not one</h3>
+    <p>Bulbapedia's top down map render of the same Route 3 scene turns out to be a tilted
+    orthographic view, not a straight down one. Two repeating decorations in it, a flower hedge
+    and a forest, both repeat about 0.80 as far along depth as across width, which puts the map's
+    own tilt at 53.5 degrees.</p>
+    <p>The Day Care building appears in both that map and the game frame. The ratio of its wall
+    height to its wall width is 1.43 times larger in the game frame than in the map, and that
+    ratio is exactly <code>cos(pitch_game) / cos(pitch_map)</code>, because the width cancels.
+    That gives <b>31.75 degrees</b>, within half a degree of the horizon result.</p>
+    <p>And the number it lands on is worth noticing. Platinum's documented camera sits 571.97
+    units above its target and 342.98 behind it, which is 59.05 degrees. Black and White's
+    measured 31.3 is the complement, 30.95, to within the measurement error: the same camera
+    vector with its two components swapped. Gen V appears to have kept Gen IV's projection
+    exactly and swung the camera down to the other side of the diagonal.</p>
+
+    <h3>The camera this page uses</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Parameter</th><th class="n">Value</th><th>Where it comes from</th></tr></thead>
+        <tbody>
+          <tr><td>Pitch</td><td class="n">31.0 deg</td><td>measured, below horizontal</td></tr>
+          <tr><td>Yaw</td><td class="n">0 deg</td><td>measured, locked to the tile grid</td></tr>
+          <tr><td>Vertical FOV</td><td class="n">16.18 deg</td><td>Gen IV decomp, confirmed by the horizon</td></tr>
+          <tr><td>Projection</td><td class="n">perspective</td><td>the road edges converge</td></tr>
+          <tr><td>Tiles across</td><td class="n">12</td><td>chosen: holds a character at one tile</td></tr>
+          <tr><td>Camera height</td><td class="n">21.7 tiles</td><td>follows from the lens</td></tr>
+          <tr><td>Camera setback</td><td class="n">36.2 tiles</td><td>follows from the lens</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Black and White shows 15.8 tiles across its 256 pixel screen, its own 16 pixels per tile.
+    This screen is 120 wide, and holding a character sprite at about one tile puts 12 across
+    instead. That is the one number here chosen rather than measured, and it is a consequence of
+    the smaller screen.</p>
+
+    <h3>How to tell whether it is right</h3>
+    <ul>
+      <li>A square world tile at the middle of the screen is about <b>twice as wide as it is
+        deep</b>, because sin(31) = 0.52.</li>
+      <li>The horizon is <b>257 pixels above</b> a 120 pixel frame, so it is never in shot and
+        ground fills every row.</li>
+      <li>A tree at the far edge of the window is only about <b>15 percent smaller</b> than the
+        same tree next to the player. Under the old 60 degree lens it was less than half the
+        size, and that falling away is exactly what a wide lens does and this camera does not.</li>
+      <li>Two ground lines that run along the depth axis meet on the vertical centre line of the
+        screen, not off to one side.</li>
+    </ul>
+
+    <h3>What this costs the device</h3>
+    <p>A long lens flattens the depth range, which matters for a 16 bit depth buffer: with the
+    camera 42 tiles from the player and the whole scene inside a few tiles of that, the projected
+    depth values sit in a narrow band. That wants checking against the rasterizer's fixed point
+    depth range before anyone trusts the z buffer to sort two creatures standing near each other.
+    It is on the list, not solved.</p>
+    <p>The battle scene deliberately does not use this camera. A battle is a different shot, so it
+    runs a wider 30 degree lens from lower down, which is how Black and White stages its own
+    battles against its field camera. It is the one place this page leaves the measured numbers,
+    and it says so rather than drifting quietly.</p>
+  </section>
+
   <!-- ---------------- budget ---------------- -->
   <section>
     <h2>What it costs</h2>
@@ -602,8 +720,16 @@ const zb  = new Float32Array(W * H);
 
 let triCount = 0, groundQuads = 0, spriteCount = 0;
 
-const FOV = 1.05;                       // radians, vertical
-const FOCAL = (H / 2) / Math.tan(FOV / 2);
+// Lens. Black and White's field projection is a long lens, not a wide one:
+// a vertical half angle of 8.0914 degrees, which pret/pokeplatinum's
+// decompilation shows Gen IV storing verbatim and which falls out of the
+// horizon measurement here to within 0.2 degrees. Getting this wrong is what
+// makes a three quarter camera read as top down, because a wide lens looks
+// far steeper at the bottom of the frame than it does at the middle.
+const HALF_FOV_BW = 8.0914306640625 * Math.PI / 180;
+
+let FOCAL = (H / 2) / Math.tan(HALF_FOV_BW);
+function setLens(halfFovRad) { FOCAL = (H / 2) / Math.tan(halfFovRad); }
 
 const cam = { x: 0, y: 6, z: -8, yaw: 0, pitch: -0.6 };
 
@@ -1181,6 +1307,15 @@ const MESH_TREE = (() => {
   mergeMesh(m, makeCone(0, 0, 0, 0.6, 0.9, 6, 0x44, 0x99, 0x4A), 0, 1.32, 0);
   return m;
 })();
+// Distant trees drop the trunk and the second canopy: 6 triangles instead of
+// 20. Under a 16 degree lens a far tree is only about 15 percent smaller than
+// a near one, so the saving has to come from the model rather than from the
+// thing quietly becoming too small to notice.
+const MESH_TREE_FAR = (() => {
+  const m = { v: [], f: [] };
+  mergeMesh(m, makeCone(0, 0, 0, 0.85, 2.0, 4, 0x3A, 0x8A, 0x46), 0, 0.25, 0);
+  return m;
+})();
 const MESH_HOUSE = (() => {
   const m = { v: [], f: [] };
   mergeMesh(m, makeBox(0, 0, 0, 3.4, 1.9, 2.8, 0xEE, 0xDD, 0xBB), 0, 0.95, 0);
@@ -1237,7 +1372,7 @@ const setTile = (x, z, c) => { if (x >= 0 && z >= 0 && x < MAP_W && z < MAP_H) m
       if (at(x + i, z + j) === "p") return true;
     return false;
   };
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 62; i++) {
     const x = 1 + Math.floor(rnd() * (MAP_W - 2));
     const z = 1 + Math.floor(rnd() * (MAP_H - 2));
     // Trees keep off the path and its verges, so one is never standing
@@ -1267,6 +1402,32 @@ const NPCS = [
   { x: 8.5, z: 14.5, dir: 1, sp: NPC_VILLAGER, kind: "villager",
     say: "A ball works better on something worn down." }
 ];
+
+// The measured Black and White field camera, retargeted from the DS's 256x192
+// to this 120x120 screen.
+//
+//   pitch          31 degrees below horizontal (59 from straight down)
+//   vertical FOV   16.18 degrees, half angle 8.0914
+//   yaw            0, locked to the tile grid
+//
+// Tiles across the frame: BW fits 15.8 across 256 pixels, which is its 16
+// pixels per tile. This screen is 120 wide and its character sprites are 10
+// pixels wide, so holding a character at about one tile puts 12 tiles across.
+// Camera height and setback then follow from the lens rather than being dialled
+// in by eye: at the player, view depth Q = FOCAL * (tiles_across / 2) / (W / 2).
+const CAM_PITCH = -31.0 * Math.PI / 180;
+const TILES_ACROSS = 12;
+const CAM_Q = ((H / 2) / Math.tan(HALF_FOV_BW)) * (TILES_ACROSS / 2) / (W / 2);
+const CAM_HEIGHT = CAM_Q * Math.sin(-CAM_PITCH);
+const CAM_BACK = CAM_Q * Math.cos(-CAM_PITCH);
+
+// Screen pixels per world tile at the player, which is what sprite art has to
+// be authored against. Characters are 16 pixel tall sprites, so their world
+// height is set to land them at exactly 1.0 scale: no resampling, no soft
+// edges, and the same reason a real build would size its art from the camera
+// rather than the other way round.
+const TILE_PX = W / TILES_ACROSS;
+const CHAR_H = 16 / TILE_PX;
 
 const route = {
   px: 14.9, pz: 11.0, dir: 2, step: 0, moving: 0, grassSteps: 0,
@@ -1322,15 +1483,24 @@ function drawGroundMerged(px, pz, time) {
   // Only the tiles inside the fixed window can be on screen, because the
   // camera never rotates. Rows merge runs of the same material into one
   // quad, which is where the triangle count actually comes from.
-  const x0 = Math.max(0, Math.floor(px) - 9), x1 = Math.min(MAP_W - 1, Math.floor(px) + 9);
-  const z0 = Math.max(0, Math.floor(pz) - 9), z1 = Math.min(MAP_H - 1, Math.floor(pz) + 14);
+  // The window the long lens actually reaches: about 12 tiles across, and
+  // deeper than it is wide because a 31 degree camera squashes depth by
+  // sin(31) = 0.52. Both numbers come from the lens, not from taste.
+  const x0 = Math.max(0, Math.floor(px) - 7), x1 = Math.min(MAP_W - 1, Math.floor(px) + 7);
+  const z0 = Math.max(0, Math.floor(pz) - 11), z1 = Math.min(MAP_H - 1, Math.floor(pz) + 19);
   const here = Math.floor(pz);
+
+  // One quad under everything. At this pitch the horizon sits 257 pixels above
+  // a 120 pixel frame, so ground covers every row of the screen and any sky
+  // showing through is the map running out, not the camera. Two triangles is
+  // cheaper than widening the tile window until the leak stops.
+  quadY(px - 30, pz - 26, px + 30, pz + 44, -0.02, 0x4A, 0x88, 0x40);
   let z = z0;
   while (z <= z1) {
     // Rows past the near band are two tiles deep. At that distance a tile is
     // three pixels tall, so the detail was never visible and the row count
     // halves.
-    const step = (z - here) > 7 ? 2 : 1;
+    const step = (z - here) > 14 ? 4 : (z - here) > 6 ? 2 : 1;
     const zEnd = Math.min(z1 + 1, z + step);
     let x = x0;
     while (x <= x1) {
@@ -1363,8 +1533,9 @@ function drawGroundMerged(px, pz, time) {
 function drawRoute(time, dt, keys) {
   routeUpdate(dt, keys);
 
-  cam.yaw = 0; cam.pitch = -0.62;
-  cam.x = route.px; cam.y = 6.6; cam.z = route.pz - 7.4;
+  setLens(HALF_FOV_BW);
+  cam.yaw = 0; cam.pitch = CAM_PITCH;
+  cam.x = route.px; cam.y = CAM_HEIGHT; cam.z = route.pz - CAM_BACK;
 
   clearSky(0x66, 0xAA, 0xEE, 0xAA, 0xDD, 0xEE);
   drawGroundMerged(route.px, route.pz, time);
@@ -1381,14 +1552,16 @@ function drawRoute(time, dt, keys) {
   }
 
   // Props, back to front so the sprites layered on top stay sane.
-  const x0 = Math.max(0, Math.floor(route.px) - 9), x1 = Math.min(MAP_W - 1, Math.floor(route.px) + 9);
-  const z0 = Math.max(0, Math.floor(route.pz) - 6), z1 = Math.min(MAP_H - 1, Math.floor(route.pz) + 14);
+  const x0 = Math.max(0, Math.floor(route.px) - 7), x1 = Math.min(MAP_W - 1, Math.floor(route.px) + 7);
+  const z0 = Math.max(0, Math.floor(route.pz) - 11), z1 = Math.min(MAP_H - 1, Math.floor(route.pz) + 19);
   for (let z = z1; z >= z0; z--) {
     for (let x = x0; x <= x1; x++) {
       const m = at(x, z);
       if (m === "T") {
-        const s = 0.72 + ((x * 13 + z * 7) % 5) * 0.05;
-        drawMesh(MESH_TREE, x + 0.5, 0, z + 0.5, (x * 37 + z * 11) % 6, s);
+        const s = 1.05 + ((x * 13 + z * 7) % 5) * 0.07;
+        const far = (z - Math.floor(route.pz)) > 4;
+        drawMesh(far ? MESH_TREE_FAR : MESH_TREE,
+          x + 0.5, 0, z + 0.5, (x * 37 + z * 11) % 6, s);
       } else if (m === "s") {
         drawMesh(MESH_SIGN, x + 0.5, 0, z + 0.5, 0, 1);
       } else if (m === "H" && x === 20 && z === 5) {
@@ -1402,17 +1575,17 @@ function drawRoute(time, dt, keys) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, z) !== "G") continue;
       const sway = Math.sin(time * 2.1 + x * 0.7 + z * 0.4) * 0.06;
-      drawBillboard(TUFT, x + 0.5 + sway, 0, z + 0.5, 0.5);
+      drawBillboard(TUFT, x + 0.5 + sway, 0, z + 0.5, 8 / TILE_PX);
     }
   }
 
   const bob = Math.sin(route.step) > 0 ? 0 : 1;
   const drawn = [];
-  for (const n of NPCS) drawn.push({ z: n.z, f: () => drawBillboard(n.sp, n.x, 0, n.z, 1.35) });
+  for (const n of NPCS) drawn.push({ z: n.z, f: () => drawBillboard(n.sp, n.x, 0, n.z, CHAR_H) });
   drawn.push({
     z: route.pz, f: () => {
       const sp = route.dir === 0 ? HERO_UP : (route.dir === 2 ? HERO_DOWN : HERO_SIDE);
-      drawBillboard(sp, route.px, bob * 0.03, route.pz, 1.4);
+      drawBillboard(sp, route.px, bob * 0.03, route.pz, CHAR_H);
     }
   });
   drawn.sort((a, b) => b.z - a.z);
@@ -1558,21 +1731,34 @@ function hpPlate(x, y, name, lvl, hp, max, right) {
   }
 }
 
+// A battle is a different shot from the overworld, so it gets a different lens:
+// wider, lower, and closer, the way BW's battles are staged against its field
+// camera. It is the one place this mockup deliberately leaves the measured
+// numbers, and it says so rather than quietly drifting.
+const BATTLE_HALF_FOV = 15.0 * Math.PI / 180;
+
 function drawArena(time, pushT) {
+  setLens(BATTLE_HALF_FOV);
   clearSky(0x44, 0x77, 0xCC, 0xCC, 0xDD, 0xEE);
   const shakeX = battle.shake > 0 ? Math.sin(time * 60) * battle.shake * 0.06 : 0;
+  // Solved rather than nudged: this pitch and height put the player's creature
+  // just above the message panel and the foe just below its own plate, with
+  // both reading at the sizes a 120 pixel screen can carry.
   cam.yaw = 0.0 + shakeX;
-  cam.pitch = -0.30 - pushT * 0.04;
-  cam.x = 0; cam.y = 2.5 - pushT * 0.25; cam.z = -5.4 + pushT * 0.8;
+  cam.pitch = -0.3735 - pushT * 0.02;
+  cam.x = 0; cam.y = 6.54 - pushT * 0.5; cam.z = -13.44 + pushT * 2.0;
 
-  // Arena floor as three merged bands rather than tiles.
-  quadY(-14, -6, 14, 2, 0, 0x77, 0xAA, 0x55);
-  quadY(-14, 2, 14, 9, 0, 0x66, 0x99, 0x4A);
-  quadY(-14, 9, 14, 26, 0, 0x55, 0x88, 0x55);
-  // Distant treeline: cheap, and it stops the horizon reading as a void.
+  // Arena floor as merged bands rather than tiles.
+  quadY(-16, -11, 16, 2, 0, 0x77, 0xAA, 0x55);
+  quadY(-16, 2, 16, 9, 0, 0x66, 0x99, 0x4A);
+  quadY(-16, 9, 16, 44, 0, 0x55, 0x88, 0x55);
+  // Treeline. The horizon sits 28 pixels above this frame, so anything far
+  // enough away climbs off the top of the screen and shows nothing but trunks.
+  // A backdrop under this lens has to be near enough to stay in shot, not
+  // merely small.
   for (let i = 0; i < 9; i++) {
-    const x = -12 + i * 3 + ((i * 7) % 3);
-    drawMesh(MESH_TREE, x, 0, 15 + (i % 3) * 2, i, 1.4);
+    const x = -10 + i * 2.5 + ((i * 7) % 3) * 0.4;
+    drawMesh(MESH_TREE, x, 0, 16 + (i % 3) * 2, i, 1.6);
   }
   drawMesh(MESH_PAD, 1.9, 0.02, 4.6, 0, 1);
   drawMesh(MESH_PAD, -1.8, 0.02, 0.2, 0, 1.25);
