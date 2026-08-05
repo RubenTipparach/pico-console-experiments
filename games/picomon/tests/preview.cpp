@@ -56,6 +56,66 @@ void run(pm::World& w, const pm::Input& in, int ticks) {
     for (int i = 0; i < ticks; i++) pm::world_tick(w, in);
 }
 
+// The battle from the inside: every state it can be in, each shot from a copy
+// of the same encounter so the sequence reads as one fight rather than five
+// unrelated ones. Copies, because a battle only goes one way: the capture line
+// and the attack line cannot both be walked from the same world.
+void battle_shots(const pm::World& at_menu, const std::string& out) {
+    // The menu itself, with the foe's plate and the four commands.
+    {
+        pm::World w = at_menu;
+        w.battle.state = pm::BattleState::Menu;
+        capture(w, 5000, out + "/battle_1_menu.ppm");
+    }
+
+    // Fight, then the lunge. Attack holds for a handful of ticks, so take it
+    // partway through rather than on its first frame.
+    {
+        pm::World w = at_menu;
+        w.battle.state = pm::BattleState::Moves;
+        w.battle.move_cursor = 0;
+        pm::world_tick(w, press_a());
+        for (int i = 0; i < 40 && w.battle.state != pm::BattleState::Attack; i++)
+            pm::world_tick(w, pm::Input{});
+        run(w, pm::Input{}, 3);
+        capture(w, 5400, out + "/battle_2_attack.ppm");
+        // And what it said afterwards.
+        for (int i = 0; i < 40 && w.battle.state == pm::BattleState::Attack; i++)
+            pm::world_tick(w, pm::Input{});
+        capture(w, 5800, out + "/battle_3_damage.ppm");
+    }
+
+    // The capture line: bag, ball, air, wobble, caught.
+    {
+        pm::World w = at_menu;
+        w.battle.state = pm::BattleState::Menu;
+        w.battle.cursor = 1;                 // BAG
+        pm::world_tick(w, press_a());        // into the bag
+        w.menu_pocket = 0;                   // balls
+        w.menu_cursor = 0;
+        capture(w, 6000, out + "/battle_4_bag.ppm");
+        pm::world_tick(w, press_a());        // throw it
+        run(w, pm::Input{}, 8);
+        capture(w, 6400, out + "/battle_5_throw.ppm");
+        for (int i = 0; i < 60 && w.battle.state != pm::BattleState::Wobble; i++)
+            pm::world_tick(w, pm::Input{});
+        run(w, pm::Input{}, 6);
+        capture(w, 6800, out + "/battle_6_wobble.ppm");
+        // Force the good ending: whether a real throw sticks is the RNG's
+        // business, and a preview shot should not be at its mercy.
+        for (int i = 0; i < 400 && w.battle.state != pm::BattleState::Caught; i++) {
+            if (w.battle.state == pm::BattleState::Wobble) w.battle.wobbles = 3;
+            pm::world_tick(w, press_a());
+        }
+        if (w.battle.state == pm::BattleState::Caught) {
+            run(w, pm::Input{}, 4);
+            capture(w, 7200, out + "/battle_7_caught.ppm");
+        } else {
+            std::printf("the ball never stuck, skipping the caught shot\n");
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -105,6 +165,7 @@ int main(int argc, char** argv) {
             pm::world_tick(w, press_a());
         }
         capture(w, 4200, out + "/preview_6_moves.ppm");
+        battle_shots(w, out);
     } else {
         std::printf("no encounter in 40000 ticks, skipping the battle shots\n");
     }

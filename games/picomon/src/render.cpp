@@ -552,20 +552,50 @@ void draw_battle(const World& w, uint32_t t) {
                              16.0f + float(i % 3) * 2.0f, float(i), 1.6f);
     }
 
+    // Where the two of them stand. The foe is further out than it looks like
+    // it should be: it has to clear the player's own plate, which starts at
+    // y 55, and standing it nearer put it behind the plate rather than above
+    // it. The extra distance is paid back in scale so it still reads as a
+    // creature and not as a distant speck.
+    const float foe_x = 2.5f, foe_z = 6.0f;
+    const float me_x = -1.8f, me_z = 0.2f;
+
+    // The lunge. The whole turn is already resolved by the time the sim
+    // reaches Attack, so this beat covers both moves; it shows whoever went
+    // first stepping in, which is the part a player is watching for.
+    float lunge_me = 0.0f, lunge_foe = 0.0f;
+    if (b.state == BattleState::Attack) {
+        const float k = sinf((1.0f - float(b.timer) / 14.0f) * 3.14159f);
+        (b.player_first ? lunge_me : lunge_foe) = k * 0.9f;
+    }
+    const float ux = 0.595f, uz = 0.803f;   // player to foe, normalised
+
     const float bob = 0.04f * sinf(float(t) * 0.0024f);
+
+    // Both shadows before either creature: they are ground level and the
+    // meshes have to win the depth test against them, not the other way round.
+    const bool foe_out = b.state != BattleState::Wobble &&
+                         b.state != BattleState::Caught;
+    if (foe_out && b.foe.hp > 0) {
+        ground_shadow(foe_x - lunge_foe * ux, foe_z - lunge_foe * uz, 0.5f);
+    }
+    ground_shadow(me_x + lunge_me * ux, me_z + lunge_me * uz, 0.8f);
+
     if (b.foe.hp > 0 || b.state == BattleState::Throw ||
         b.state == BattleState::Wobble) {
         const Species& fs = k_species[b.foe.species];
         const float scale = float(fs.scale) / 100.0f;
-        if (b.state != BattleState::Wobble && b.state != BattleState::Caught) {
-            g_renderer.draw_mesh(*mesh_for(fs.mesh), 1.9f, 0.02f + bob, 2.9f,
-                                 3.14159f, scale * 1.45f,
+        if (foe_out) {
+            g_renderer.draw_mesh(*mesh_for(fs.mesh), foe_x - lunge_foe * ux,
+                                 0.02f + bob, foe_z - lunge_foe * uz,
+                                 3.14159f, scale * 2.15f,
                                  fs.tint_r, fs.tint_g, fs.tint_b);
         }
     }
     {
         const Species& ms = k_species[me.species];
-        g_renderer.draw_mesh(*mesh_for(ms.mesh), -1.8f, 0.02f - bob, 0.2f, 0.15f,
+        g_renderer.draw_mesh(*mesh_for(ms.mesh), me_x + lunge_me * ux,
+                             0.02f - bob, me_z + lunge_me * uz, 0.15f,
                              float(ms.scale) / 100.0f * 1.25f,
                              ms.tint_r, ms.tint_g, ms.tint_b);
     }
@@ -573,8 +603,8 @@ void draw_battle(const World& w, uint32_t t) {
         b.state == BattleState::Caught) {
         const float arc = b.state == BattleState::Throw
                               ? 1.0f - float(b.timer) / 20.0f : 1.0f;
-        const float bx = -1.6f + (1.9f + 1.6f) * arc;
-        const float bz = -0.6f + (4.6f + 0.6f) * arc;
+        const float bx = -1.6f + (foe_x + 1.6f) * arc;
+        const float bz = -0.6f + (foe_z + 0.6f) * arc;
         const float by = 0.4f + sinf(arc * 3.14159f) * 1.4f;
         g_renderer.draw_mesh(ball, bx, by, bz, float(t) * 0.01f, 1.0f);
     }
@@ -619,6 +649,19 @@ void draw_battle(const World& w, uint32_t t) {
                 append(line, num);
                 text(line, 70, 111, 0xEE, 0xEE, 0xEE);
             }
+            break;
+        }
+        case BattleState::Throw:
+        case BattleState::Wobble: {
+            // The sim has nothing queued through the throw, and a blank panel
+            // under a ball in mid air reads as a game that has stopped. Said
+            // here rather than pushed as a message: a message would need
+            // dismissing, and this beat runs on its own timer.
+            line[0] = 0;
+            append(line, "YOU THREW A ");
+            append(line, k_items[b.ball_item].name);
+            append(line, "!");
+            text(line, 5, 90, 0xEE, 0xEE, 0xEE);
             break;
         }
         default: {
