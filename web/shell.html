@@ -310,8 +310,105 @@
   }
   .face button.held { translate: 0 2px; box-shadow: 0 2px 0 #00000066; }
 
-  #hint { color: var(--muted); font-size: 0.625rem; letter-spacing: 0.06em; }
-  body.show-pad #hint { display: none; }
+  /* ---- the mini tutorial ----
+
+     What the game wants and what each button does, as panels. It sits between
+     the screen and the pad, which is the one place a thumb is not already
+     going, and it holds a fixed height so paging through it cannot move the
+     gamepad under the player's fingers. */
+  #tutorial {
+    flex: 0 0 auto;
+    width: min(100%, 30rem);
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.6875rem;
+  }
+
+  #tutorial .panels {
+    position: relative;
+    min-height: 4.5rem;
+    display: grid;
+  }
+
+  /* Every panel is stacked in the same cell and only one is shown, so the
+     block never changes height as you page and nothing below it moves. */
+  #tutorial .panel {
+    grid-area: 1 / 1;
+    visibility: hidden;
+    border: 2px solid var(--line);
+    background: var(--panel);
+    padding: 0.4rem 0.6rem;
+  }
+  #tutorial .panel[data-shown] { visibility: visible; }
+
+  #tutorial h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  #tutorial p { margin: 0; color: var(--ink); line-height: 1.35; }
+
+  #tutorial .keys {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  #tutorial .keys li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+
+  #tutorial .keys kbd {
+    flex: 0 0 auto;
+    min-width: 3.2rem;
+    font: inherit;
+    text-align: center;
+    border: 1px solid var(--line);
+    background: var(--ground);
+    color: var(--ink);
+    padding: 0 0.25rem;
+  }
+
+  #tutorial .keys span { color: var(--muted); }
+
+  .tut-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    min-height: 1.1rem;
+  }
+
+  .tut-arrow {
+    font: inherit;
+    font-size: 0.625rem;
+    line-height: 1;
+    color: var(--ink);
+    background: var(--panel);
+    border: 2px solid var(--line);
+    padding: 0.2rem 0.5rem;
+    cursor: pointer;
+  }
+  .tut-arrow:active { background: var(--line); }
+  .tut-arrow:focus-visible { outline: 2px solid var(--play); outline-offset: 2px; }
+
+  .dots { display: flex; gap: 0.25rem; }
+  .dot {
+    width: 5px; height: 5px;
+    background: var(--line);
+  }
+  .dot[data-on] { background: var(--accent); }
 
   /* In landscape the pad flanks the screen instead of sitting under it. */
   @media (orientation: landscape) and (max-height: 560px) {
@@ -353,7 +450,10 @@
     </div>
   </div>
 
-  <div id="hint">Arrows or WASD &middot; Z X C V</div>
+  <!-- Filled in per game by tools/gen_shell.py from that game's game.yml.
+       Left empty for a local build opened straight off disk, which is why the
+       nav script below tolerates finding no panels. -->
+  <!--PSE_TUTORIAL-->
 
   <div id="pad">
     <div class="dpad">
@@ -513,6 +613,40 @@
   padElement.addEventListener('touchstart',
     function (e) { e.preventDefault(); }, { passive: false });
   padElement.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // ---- the mini tutorial --------------------------------------------------
+  //
+  // Paging only. The panels themselves are written into this page per game by
+  // tools/gen_shell.py, so this knows nothing about any particular game and
+  // does nothing at all when a build has no panels, which is the case for a
+  // shell opened straight off disk.
+
+  (function () {
+    var panels = Array.prototype.slice.call(
+      document.querySelectorAll('#tutorial [data-panel]'));
+    if (!panels.length) return;
+    var dots = Array.prototype.slice.call(
+      document.querySelectorAll('#tutorial [data-dot]'));
+    var at = 0;
+
+    function show(index) {
+      at = (index + panels.length) % panels.length;
+      panels.forEach(function (panel, i) {
+        if (i === at) panel.setAttribute('data-shown', '');
+        else panel.removeAttribute('data-shown');
+      });
+      dots.forEach(function (dot, i) {
+        if (i === at) dot.setAttribute('data-on', '');
+        else dot.removeAttribute('data-on');
+      });
+    }
+
+    var prev = document.getElementById('tut-prev');
+    var next = document.getElementById('tut-next');
+    if (prev) prev.addEventListener('click', function () { show(at - 1); });
+    if (next) next.addEventListener('click', function () { show(at + 1); });
+    show(0);
+  })();
 
   // ---- pad visibility -----------------------------------------------------
 

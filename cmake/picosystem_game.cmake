@@ -48,8 +48,30 @@ function(add_picosystem_game NAME)
     # reaches blit_executable without leaking to anything else. Rewriting
     # LINK_FLAGS after the fact would clobber the SDK's other link flags,
     # including the SDL2 ports and the IndexedDB filesystem.
+    #
+    # The shell is shared, so anything game specific has to be put into it
+    # here: the mini tutorial panels come from this game's own game.yml, which
+    # is why the page each game ships is generated rather than the file in
+    # web/. Generating at configure time keeps it out of the link's way, and
+    # game.yml is a configure dependency so editing it reconfigures.
     if(EMSCRIPTEN)
-        set(EMSCRIPTEN_SHELL ${PICO_WEB_SHELL})
+        set(shell_out ${CMAKE_CURRENT_BINARY_DIR}/generated/shell.html)
+        set(game_yml ${CMAKE_CURRENT_SOURCE_DIR}/game.yml)
+        set_property(DIRECTORY APPEND PROPERTY
+                     CMAKE_CONFIGURE_DEPENDS ${game_yml} ${PICO_WEB_SHELL})
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E env python3
+                    ${CMAKE_CURRENT_LIST_DIR}/../tools/gen_shell.py
+                    --game ${CMAKE_CURRENT_SOURCE_DIR}
+                    --shell ${PICO_WEB_SHELL}
+                    --out ${shell_out}
+            RESULT_VARIABLE shell_result)
+        if(NOT shell_result EQUAL 0)
+            message(FATAL_ERROR
+                    "gen_shell.py failed for ${NAME}: a game's web page cannot "
+                    "ship without its tutorial")
+        endif()
+        set(EMSCRIPTEN_SHELL ${shell_out})
     endif()
 
     blit_executable(${NAME} ${GAME_SOURCES} ${generated_sources})

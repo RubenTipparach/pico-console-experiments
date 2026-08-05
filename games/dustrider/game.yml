@@ -7,6 +7,8 @@ target: dustrider
 sdk: 32blit
 web: true
 
+objective: "Stay ahead of the screen. Weave through the cactus and rocks, keep the throttle down where the road is clear, and brake before the turns you cannot take."
+
 controls:
   - "A: throttle"
   - "B: brake"

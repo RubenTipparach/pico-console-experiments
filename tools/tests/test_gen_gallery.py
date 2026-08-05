@@ -80,22 +80,37 @@ def test_a_given_title_is_left_alone():
         shutil.rmtree(site, ignore_errors=True)
 
 
-def test_held_games_are_archived_not_shown():
-    """Held games belong under Archived, and must not be counted as part of
-    the shelf the stats describe."""
+def test_held_games_leave_the_shelf_for_the_archive():
+    """The front page is a shelf of what is live. Held games are not on it at
+    all: they get a link to their own page and nothing more."""
     site = tempfile.mkdtemp()
     try:
         page = render(site, [])
-        check('class="archived-section"' in page,
-              "the archived section is rendered")
-        archived = page.split('class="archived-section"')[1]
-        shelf = page.split('class="archived-section"')[0]
         for held in ("Chicken", "Pico Santa"):
-            check(held in archived, "%s is archived" % held)
-            check(held not in shelf, "%s is not on the main shelf" % held)
+            check(held not in page, "%s is off the front page" % held)
         for active in ("Dust Rider", "Kingfisher"):
-            check(active in shelf, "%s is on the main shelf" % active)
-        check("2 games" in shelf, "the stats count only the active games")
+            check(active in page, "%s is on the shelf" % active)
+        check('href="archived/"' in page, "the archive has a door")
+        check("2 games" in page, "the stats count only the shelf")
+
+        archive = os.path.join(site, "archived", "index.html")
+        check(os.path.isfile(archive), "the archive page is written")
+        with open(archive, encoding="utf-8") as handle:
+            listing = handle.read()
+        for held in ("Chicken", "Pico Santa"):
+            check(held in listing, "%s is listed in the archive" % held)
+        for active in ("Dust Rider", "Kingfisher"):
+            check(active not in listing, "%s is not in the archive" % active)
+
+        # A list, not a shelf: no screenshots, and every link has to climb out
+        # of archived/ to reach the site root.
+        check("<img" not in listing, "the archive shows no screenshots")
+        check('href="../"' in listing, "the archive links back to the shelf")
+        check('href="../gallery.css"' in listing,
+              "the archive finds the stylesheet from its subdirectory")
+        for bad in ('href="chicken/', 'href="pico-santa/'):
+            check(bad not in listing,
+                  "archive game links are not relative to the wrong root")
     finally:
         shutil.rmtree(site, ignore_errors=True)
 
@@ -104,7 +119,7 @@ def main():
     test_repo_name_loses_its_dashes()
     test_an_empty_title_still_derives_one()
     test_a_given_title_is_left_alone()
-    test_held_games_are_archived_not_shown()
+    test_held_games_leave_the_shelf_for_the_archive()
     if failures:
         print("gen_gallery: %d check(s) failed" % len(failures))
         return 1

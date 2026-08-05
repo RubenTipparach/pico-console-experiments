@@ -68,6 +68,7 @@ jobs:
           python3 tools/tests/test_make_bundle.py
           python3 tools/tests/test_make_thumbnail.py
           python3 tools/tests/test_gen_gallery.py
+          python3 tools/tests/test_gen_shell.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
