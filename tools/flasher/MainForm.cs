@@ -1,7 +1,8 @@
 namespace PicoFlasher;
 
 /// <summary>
-/// One window: what is plugged in, what to flash, and a button.
+/// One window, two tabs: flash a single .uf2, or build a library onto the
+/// console.
 ///
 /// Quick and dirty on purpose. No installer, no settings, no framework. This is
 /// a tool, not a product, and every feature added here is a feature that has to
@@ -20,13 +21,15 @@ public sealed class MainForm : Form
     private readonly ProgressBar _progress = new();
     private readonly Label _status = new();
     private readonly TextBox _root = new();
+    private readonly TabControl _tabs = new();
+    private readonly LibraryTab _library;
 
     public MainForm()
     {
         Text = "PicoFlasher";
-        Width = 620;
-        Height = 460;
-        MinimumSize = new Size(520, 400);
+        Width = 820;
+        Height = 560;
+        MinimumSize = new Size(680, 460);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
 
@@ -100,7 +103,18 @@ public sealed class MainForm : Form
         layout.Controls.Add(_status, 0, 5);
         layout.SetColumnSpan(_status, 3);
 
-        Controls.Add(layout);
+        var flashPage = new TabPage("Flash one game");
+        flashPage.Controls.Add(layout);
+
+        _library = new LibraryTab(GuessRepositoryRoot(),
+                                  () => _devices.SelectedItem as BootselDrive);
+        var libraryPage = new TabPage("Library");
+        libraryPage.Controls.Add(_library);
+
+        _tabs.Dock = DockStyle.Fill;
+        _tabs.TabPages.Add(flashPage);
+        _tabs.TabPages.Add(libraryPage);
+        Controls.Add(_tabs);
 
         _watcher.DrivesChanged += OnDrivesChanged;
         _watcher.Start();
@@ -144,6 +158,7 @@ public sealed class MainForm : Form
         }
 
         UpdateFlashEnabled();
+        _library.DeviceChanged(drives.Count);
     }
 
     private void ReloadFiles()
