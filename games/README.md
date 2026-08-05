@@ -16,7 +16,7 @@ games/<slug>/
   src/               game sources
   assets/            images, referenced from assets.yml if you use the pipeline
   models/            .obj plus optional .mtl, converted at build time
-  thumbnail.png      written once by CI, then left alone forever
+  thumbnail.png      the gallery card and the launcher icon, both from here
 ```
 
 ## game.yml
@@ -52,8 +52,28 @@ dead URL.
 
 ## Thumbnails
 
-CI captures `thumbnail.png` once, the first time a game is published, and then
-never touches it again. Changing a game does not refresh its thumbnail.
+A game has one picture, `thumbnail.png`, and it is used twice: the gallery
+shows it on the card, and `tools/game_meta.py` resamples it to the 48x48 icon
+compiled into the `.uf2` for the on-device launcher. Committing it is what
+gives a game a face in the menu, because a device never sees the site.
 
-To refresh one deliberately, run the `Capture thumbnails` workflow and name the
-game, or just commit a new PNG.
+CI captures one from the web build the first time a game is published and then
+never touches it again. Changing a game does not refresh its thumbnail. A
+committed PNG wins over a captured one, always.
+
+The better shot comes from the game's own preview harness, which renders real
+frames through the real engine at the console's native 120x120:
+
+```
+cmake -S . -B build.test -DBUILD_ENGINE_TESTS=ON
+cmake --build build.test --parallel --target dustrider_preview
+./build.test/games/dustrider/tests/dustrider_preview /tmp/dr
+python3 tools/make_thumbnail.py --ppm /tmp/dr/preview_4_bend.ppm \
+    --out games/dustrider/thumbnail.png
+```
+
+`make_thumbnail.py` doubles it to 240x240 with no filtering, which is what the
+PicoSystem does to reach its panel. Pick the frame that says what the game is;
+they are named for what they show.
+
+Failing all that, run the `Capture thumbnails` workflow and name the game.
