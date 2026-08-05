@@ -22,8 +22,15 @@ public:
     Renderer3D& operator=(const Renderer3D&) = delete;
 
     // Place the camera behind and above a target, looking at it.
+    //
+    // The aim point sits look_lift above the target rather than on it, which
+    // is what drops a followed subject into the lower half of the frame and
+    // leaves the scene ahead of it in shot. That is the framing a chase camera
+    // wants and the reason the default is a whole unit; a camera studying one
+    // object wants 0, or the object hangs low enough to leave the frame.
     void set_orbit_camera(float target_x, float target_y, float target_z,
-                          float yaw, float distance, float height);
+                          float yaw, float distance, float height,
+                          float look_lift = 1.0f);
 
     // Place the camera explicitly.
     void set_camera(float x, float y, float z, float yaw, float pitch);

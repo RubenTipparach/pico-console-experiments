@@ -20,22 +20,76 @@ namespace kf {
 // ---- stamina: how long a fish can fight ----
 //
 // stamina_max = base + size_cm * per_cm + strength * per_strength.
-// Rough conversion: constant tugging drains about 2 per tick, so seconds of
-// fight in a fish is roughly stamina_max / 200. The minnow (5 cm, strength
-// 1) works out to 975, about five seconds of nonstop tugging; THE OLD ONE
-// at 200 cm carries 2850, and resting lets any fish claw stamina back.
-constexpr int k_stamina_base = 850;
-constexpr int k_stamina_per_cm = 5;
-constexpr int k_stamina_per_strength = 100;
+// Rough conversion: constant tugging drains about 7 per tick, so seconds of
+// fight in a fish is roughly stamina_max / 700. The minnow (12 cm, strength
+// 1) works out to 2020, about three seconds of nonstop tugging; THE OLD ONE
+// at 200 cm carries 5700, about eight.
+//
+// This pool is deliberately twice what a fish needs to make one good stand.
+// A fish that could only be worn down once would be a countdown; one that
+// can come back at the line twice over is a fight, and the second wind
+// below is what it comes back with.
+constexpr int k_stamina_base = 1700;
+constexpr int k_stamina_per_cm = 10;
+constexpr int k_stamina_per_strength = 200;
 
 // What working costs the fish, per tick: its own effort at full tilt costs
 // k_drain_effort, and being cranked on costs k_drain_reel on top. A wiggle
 // against the fish's direction costs it k_wiggle_drain outright. Regen is
 // per tick while it is left alone.
+//
+// Regen is high on purpose. A fish left alone gets its wind back faster than
+// idle effort burns it, so waiting is never the answer: stop working the rod
+// and the fish is fresh again in seconds. That is what keeps a hand on the
+// reel the whole fight instead of parked between runs.
+//
+// Which is why k_drain_reel has to beat k_stamina_regen on its own. If it did
+// not, a fish would win back everything the player took the moment the reel
+// stopped, exhaustion would never arrive, and the second wind below would be
+// dead code. Working the reel is the only thing that wears a fish down: that
+// is the whole economy, and the wiggle is the one relief valve on it.
 constexpr int k_drain_effort = 5;
-constexpr int k_drain_reel = 2;
-constexpr int k_wiggle_drain = 14;
-constexpr int k_stamina_regen = 1;
+constexpr int k_drain_reel = 11;
+constexpr int k_wiggle_drain = 60;
+constexpr int k_stamina_regen = 7;
+
+static_assert(k_drain_reel > k_stamina_regen,
+              "cranking must cost a fish more than resting gives back, or no "
+              "fish can ever be run out of stamina");
+
+// ---- the second wind: what a spent fish does next ----
+//
+// Running a fish out of stamina is the payoff. Its effort collapses, the
+// line goes quiet, and the reel finally bites: this is the window the whole
+// fight is played for, and it is when line actually comes in.
+//
+// It does not last. A spent fish gets a second wind, refilling over
+// k_spent_recharge_ticks whatever the player does, and the window closes as
+// the bar climbs. The rate is a share of the fish's own pool rather than a
+// flat number, so every fish takes the same two and a half seconds to come
+// back and a legend does not get to lie limp longer than a perch.
+//
+// Each wind comes back smaller than the last: the cap falls by a quarter
+// every time. That is what turns the cycle into progress instead of a
+// treadmill. A fish is dangerous on its first stand, workable on its third,
+// and beaten by its sixth, and the fight ends because the fish runs out of
+// comebacks rather than because a timer said so.
+constexpr int k_spent_recharge_ticks = 250;   // 2.5 s, floor to fill
+constexpr int k_wind_cap_num = 3;             // each wind refills to 3/4
+constexpr int k_wind_cap_den = 4;             // of the previous ceiling
+
+// The decay stops here. A fish whose ceiling fell to nothing would flicker
+// between spent and refilled every few ticks, which reads as a broken meter
+// rather than a tired fish. At a quarter of its pool a fish still surges
+// enough to be worth watching, but never enough to take the line back, so
+// the end of a long fight is a beaten fish being walked in rather than a
+// stutter.
+constexpr int k_wind_cap_floor_num = 1;
+constexpr int k_wind_cap_floor_den = 4;
+
+static_assert(k_wind_cap_num < k_wind_cap_den,
+              "every second wind must be weaker than the one before it, or "
+              "the fish never tires and the fight cannot be won");
 
 // ---- the line: forces, not phases ----
 //
@@ -106,14 +160,20 @@ static_assert(10 * k_stress_per_strength < k_rod_starter_max,
 // maths (fp8 units, one tick is 10 ms: 1 m/s = 655). The empty hook's rate
 // is k_retrieve_max_fp256, in the retrieve section below, because it is the
 // same reel doing the same job with nothing fighting it.
-constexpr int k_fight_reel_max_fp256 = 1311;  // 2 m/s, a spent minnow
+// Running a fish out of stamina has to pay, and it only pays if the reel
+// actually bites while the fish is spent. A beaten fish that still crawled in
+// would make the exhaustion window a formality; at these rates the window is
+// where the line genuinely comes home, which is what the player is working
+// the whole cycle for.
+constexpr int k_fight_reel_max_fp256 = 1450;  // 2.2 m/s, a spent minnow
 constexpr int k_fight_reel_min_fp256 = 66;    // 0.1 m/s, a fish fighting
 
 // Mass costs speed even when the fish has given up: dead weight still has to
 // be dragged. This is what makes a big fish a long fight rather than just a
-// dangerous one. THE OLD ONE at 200 cm gives up 800 of the 1311, so a beaten
-// legend still only comes in at about 0.8 m/s.
-constexpr int k_reel_mass_drag = 4;           // fp<<8 per tick, per cm
+// dangerous one. THE OLD ONE at 200 cm gives up 600 of the 1450, so a beaten
+// legend still comes in at about 1.3 m/s: well short of a spent minnow, but
+// no longer the crawl that made an exhaustion window a formality.
+constexpr int k_reel_mass_drag = 3;           // fp<<8 per tick, per cm
 
 // What the fish takes when it swims away, at full effort and full strength.
 // A strong fish outruns the reel; a small one cannot.
@@ -163,6 +223,18 @@ constexpr uint16_t k_tension_full = 1023;     // the rod's limit, on the bar
 constexpr uint16_t k_danger_ticks = 110;
 constexpr int k_tension_slew = 26;            // per tick, toward the truth
 constexpr int k_wiggle_effort_drop = 40;      // effort a wiggle costs
+
+// The rod has to load again between wiggles. Without this the wiggle is not
+// a relief valve, it is an off switch: alternating left and right every few
+// ticks sheds effort faster than k_effort_step can rebuild it, so the fish
+// never gets to pull, the meter never climbs, and the reel can simply be
+// held down from hook to net. The cooldown is what makes a wiggle a decision
+// with a cost, taken when the meter is climbing and not before.
+constexpr int k_wiggle_cooldown = 45;         // ticks before the next one bites
+
+static_assert(k_wiggle_effort_drop < k_effort_step * k_wiggle_cooldown,
+              "effort must out-climb a perfectly timed wiggle chain, or the "
+              "fish can be held at zero effort for the whole fight");
 
 // ---- the pond and the cast ----
 //

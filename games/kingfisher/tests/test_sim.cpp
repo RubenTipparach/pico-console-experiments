@@ -114,8 +114,16 @@ void test_determinism() {
 }
 
 // A patient angler with full technique must land every species at maximum
-// size without ever losing one: reel while the fish is tired and the tension
-// is safe, wiggle the rod throughout to shed tension and wear down runs.
+// size without ever losing one: work the reel whenever the meter is out of
+// the red and come off it the moment it climbs, wiggling throughout to shed
+// what builds anyway.
+//
+// The policy reads the tension meter alone, which is the instrument the
+// player actually has on screen. An earlier version gated on the fight phase
+// and on stamina hitting exactly zero; the second wind turned that zero into
+// a single tick rather than a window, so the bot stopped reeling and the
+// legend took all the line. Reading the meter is both what a player does and
+// the technique the fight is built to teach.
 void test_patient_bot_lands_everything() {
     for (int species = 0; species < kf::k_species_count; species++) {
         kf::World world;
@@ -131,9 +139,7 @@ void test_patient_bot_lands_everything() {
         bool caught = false;
         for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight; t++) {
             kf::Input input{};
-            const bool tired = world.fight_phase == kf::FightPhase::Tire ||
-                               world.stamina == 0;
-            input.a = tired && world.tension < kf::k_tension_danger - 80;
+            input.a = world.tension < kf::k_tension_danger - 80;
             if (t % 3 == 0) {
                 if ((t / 3) % 2 == 0) input.left_pressed = true;
                 else input.right_pressed = true;
@@ -279,26 +285,98 @@ void test_wiggle_relieves_and_tires() {
     // Two wiggles minus at most a few ticks of drift beats one relief worth.
     CHECK(world.tension + 40 < loaded);
 
-    // Counter wiggles during a run drain stamina faster than resting does.
-    while (world.mode == kf::Mode::Fight &&
-           world.fight_phase != kf::FightPhase::Run) {
+    // A wiggle costs the fish stamina. Measured against the same world doing
+    // the same tick without one, rather than over a window: the cooldown
+    // means a run of ticks contains only one live wiggle, and the regen in
+    // the ticks around it would swamp the reading.
+    while (world.mode == kf::Mode::Fight && world.wiggle_cd > 0) {
         kf::world_tick(world, kf::Input{});
     }
     CHECK(world.mode == kf::Mode::Fight);
-    const uint16_t before = world.stamina;
-    int flips = 0;
-    for (int t = 0; t < 30 && world.mode == kf::Mode::Fight &&
-                    world.fight_phase == kf::FightPhase::Run; t++) {
-        kf::Input input{};
-        if (t % 3 == 0) {
-            if (flips++ % 2 == 0) input.left_pressed = true;
-            else input.right_pressed = true;
-        }
-        kf::world_tick(world, input);
-    }
-    CHECK(world.mode != kf::Mode::Fight || world.stamina < before);
+    kf::World idle = world;
+    kf::Input flick{};
+    flick.left_pressed = world.last_wiggle >= 0;
+    flick.right_pressed = !flick.left_pressed;
+    kf::world_tick(world, flick);
+    kf::world_tick(idle, kf::Input{});
+    CHECK(world.ev.wiggle);
+    CHECK(world.stamina < idle.stamina);
 }
 
+// The cooldown is what keeps the wiggle a relief valve instead of an off
+// switch. Alternating left and right every other tick must not be able to
+// hold a fresh fish at zero effort: if it can, the reel can be held down
+// from hook to net and the tension meter never means anything.
+void test_wiggle_spam_cannot_pin_a_fish() {
+    kf::World world;
+    kf::world_init(world, 77);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    int live = 0;
+    uint16_t peak_effort = 0;
+    for (int t = 0; t < 600 && world.mode == kf::Mode::Fight; t++) {
+        kf::Input input{};
+        if (t % 2 == 0) input.left_pressed = true;
+        else input.right_pressed = true;
+        kf::world_tick(world, input);
+        if (world.ev.wiggle) live++;
+        if (world.fish_effort > peak_effort) peak_effort = world.fish_effort;
+    }
+    // Spamming buys no more wiggles than the cooldown allows.
+    CHECK(live <= 600 / kf::k_wiggle_cooldown + 1);
+    // And the fish still gets to fight: effort climbs through it.
+    CHECK(peak_effort > 150);
+}
+
+
+// Running a fish out of stamina must open a real window and then close it
+// again on its own: the fish goes limp, refills over about two and a half
+// seconds whatever the player does, and comes back weaker than it was. That
+// cycle is the fight, so all three halves of it are pinned here.
+void test_second_wind_opens_and_closes() {
+    kf::World world;
+    kf::world_init(world, 91);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    const uint16_t first_cap = world.stamina_cap;
+    CHECK(first_cap == world.stamina_max);
+
+    // Work it down. Cranking is the only thing that empties a fish.
+    kf::Input reel{};
+    reel.a = true;
+    int guard = 0;
+    while (world.mode == kf::Mode::Fight && world.spent_timer == 0 &&
+           guard++ < 30000) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode == kf::Mode::Fight);
+    CHECK(world.spent_timer > 0);          // the window opened
+    CHECK(world.stamina_cap < first_cap);  // and cost the fish its ceiling
+
+    // The window is the payoff: a spent fish cannot hold the line.
+    CHECK(world.fish_effort < 60);
+
+    // It refills on its own, even while the player keeps cranking, and it
+    // does not last: within the recharge window the fish is back on its feet.
+    const uint16_t low = world.stamina;
+    for (int t = 0; t < kf::k_spent_recharge_ticks &&
+                    world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode != kf::Mode::Fight || world.stamina > low);
+    CHECK(world.mode != kf::Mode::Fight || world.spent_timer == 0);
+
+    // And the comeback is smaller than the stand before it, every time, down
+    // to a floor. Without that the cycle would never converge.
+    CHECK(world.stamina_cap <= first_cap);
+    CHECK(world.stamina_cap >= (world.stamina_max * kf::k_wind_cap_floor_num) /
+                                   kf::k_wind_cap_floor_den);
+}
 
 // The reel is opposed by the fish, scaled by its stamina: a fresh strong
 // fish gives up almost no line to the crank, a spent one comes in at full
@@ -783,6 +861,8 @@ int main() {
     test_greedy_bot_pays_for_it();
     test_break_needs_sustained_danger();
     test_stamina_drains_and_regens();
+    test_second_wind_opens_and_closes();
+    test_wiggle_spam_cannot_pin_a_fish();
     test_wiggle_relieves_and_tires();
     test_fresh_fish_resists_the_reel();
     test_tension_climbs_hard_against_a_run();
