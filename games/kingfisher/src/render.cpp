@@ -5,6 +5,7 @@
 #include "pse/parallel.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
+#include "pse/shared_render.hpp"
 
 #include "boat.hpp"
 #include "bobber.hpp"
@@ -16,14 +17,18 @@ namespace {
 
 using kf::World;
 
-// Rendering state. Static because dynamic allocation is banned, and it is the
-// documented RAM cost of drawing this game:
-//   Rasterizer  ~14.5 KB (depth buffer)
-//   FrameQueue  ~18 KB (640 triangles shared by the two scenes)
+// Rendering state. The Rasterizer and the FrameQueue come from the engine
+// rather than being declared here: on the console every game is linked into
+// one binary, and a 14 KB depth buffer plus a 15 KB triangle queue per game
+// is RAM spent on scenes that nothing is rendering. Only one game runs at a
+// time and none of this survives leaving it. A standalone build of this game
+// gets exactly one instance, same as it always had.
+//   Rasterizer  ~14.4 KB (depth buffer)   shared
+//   FrameQueue  ~15.4 KB (640 triangles)  shared
 //   the rest    well under 1 KB
-pse::Rasterizer g_raster;
+pse::Rasterizer& g_raster = pse::shared_rasterizer();
 pse::Renderer3D g_renderer(g_raster);
-pse::FrameQueue g_queue;
+pse::FrameQueue& g_queue = pse::shared_queue();
 
 // The screen is two stacked scenes: the world above the surface in the top
 // band, the water below it in the bottom band. Each band is one core's whole

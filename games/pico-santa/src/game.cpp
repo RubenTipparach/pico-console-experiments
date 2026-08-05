@@ -3,8 +3,10 @@
 #include <cmath>
 
 #include "pse/blit_target.hpp"
+#include "pse/game.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
+#include "pse/shared_render.hpp"
 
 #include "city.hpp"
 #include "gem.hpp"
@@ -28,7 +30,9 @@ struct Player {
     float yaw;
 };
 
-pse::Rasterizer g_rasterizer;
+// The engine's, not ours: on the console every game is in one binary, and a
+// 14 KB depth buffer per game is RAM spent on scenes nothing is rendering.
+pse::Rasterizer& g_rasterizer = pse::shared_rasterizer();
 pse::Renderer3D g_renderer(g_rasterizer);
 santa::City g_city;
 Player g_player;
@@ -54,15 +58,13 @@ void reset_player() {
     g_score = 0;
 }
 
-}  // namespace
-
-void init() {
+void game_init() {
     set_screen_mode(ScreenMode::lores);
     g_city.reset(12345);
     reset_player();
 }
 
-void update(uint32_t time) {
+void game_update(uint32_t time) {
     const float previous_x = g_player.x;
     const float previous_z = g_player.z;
 
@@ -105,7 +107,7 @@ void update(uint32_t time) {
     g_score += g_city.collect_gems(g_player.x, g_player.z, 1.5f);
 }
 
-void render(uint32_t time) {
+void game_render(uint32_t time) {
     const uint32_t frame_start = now_us();
 
     g_rasterizer.begin_frame(pse::target_from_screen());
@@ -154,3 +156,9 @@ void render(uint32_t time) {
                     minimal_font, Point(3, screen.bounds.h - 9));
     }
 }
+
+}  // namespace
+
+// The one symbol this game exports. Everything above is internal linkage, so
+// the console can link it beside three other games that also have a g_player.
+PSE_GAME(pico_santa, game_init, game_update, game_render);

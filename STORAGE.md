@@ -114,43 +114,30 @@ a frame. Never move the worker loop into flash, never save from render.
 
 ## Game library: many games on one device
 
-Today the device holds exactly one game: the pico port runs a single fixed
-XIP image and stubs out the whole launcher API (`launch`, `erase_game`,
-`flash_to_tmp`, `list_installed_games`, `can_launch` are all null in
-`32blit-pico/main.cpp`). The 32blit console proper ships a launcher and a
-relocatable `.blit` format; none of that is ported to the RP2040. So a
-multi-game PicoSystem is ours to build, and there are three credible
-designs:
+Built, and covered in `CONSOLE.md`. The short version: the pico port runs a
+single fixed XIP image and stubs out the whole launcher API (`launch`,
+`erase_game`, `flash_to_tmp`, `list_installed_games`, `can_launch` are all
+null in `32blit-pico/main.cpp`), so a game cannot hand the machine to another
+image. It does not need to. Every game is linked into one binary next to a
+menu, and picking a game is an indirect call through three function pointers.
+Nothing is copied, nothing is relocated, no flash is written, and switching is
+instant.
 
-1. **Copy-down launcher (recommended).** A small launcher owns
-   `0x10000000`. Game images are stored high, either in a raw reserved
-   region or as ordinary files on the 4 MB FAT partition (put there over
-   USB, or shipped in the launcher image). To boot a game the launcher runs
-   a RAM-resident routine that erases and reprograms the program region
-   with the selected image, then resets via the watchdog. Games come back
-   to the launcher by a held-button-at-boot convention or by writing a flag
-   file and resetting.
-   - Cost: a few seconds of flash programming per switch, wear on the low
-     sectors, and the copy routine must live entirely in RAM.
-   - Payoff: stock, unmodified game images work; every game still believes
-     it owns `0x10000000`; our existing `.uf2` outputs are already the
-     right artifact. At current build sizes (about 135 KB per game, see
-     below) the FAT partition alone could hold about two dozen games and
-     their saves; a raw high-flash region could hold far more.
-2. **Fixed-slot multiboot.** Link N games at N distinct XIP offsets with
-   custom linker scripts; a tiny launcher sets the vector table and stack
-   pointer and jumps. Switching is instant and wear free, but every game
-   must be rebuilt per slot, boot2 and vector table assumptions get fragile
-   across SDK updates, and a stock image no longer works. Not worth it
-   while builds are this small.
-3. **Port the `.blit` relocation format.** The full-fat 32blit firmware
-   relocates position-annotated binaries at install time. Porting that
-   machinery to the pico backend is the cleanest end state and by far the
-   most work. Revisit if option 1 outgrows itself.
+That rules out the two designs this file used to recommend, and it is worth
+saying why, because both sound reasonable:
 
-Whichever design lands, saves already cooperate: every game keeps its own
-`.blit/<title>/` directory on the shared partition, so a library switch
-never touches another game's records.
+- **Copy-down launcher.** Erase and reprogram the program region with the
+  selected image, then reset. Works in principle, costs seconds per switch and
+  flash wear on the low sectors, needs a RAM resident copy routine, and buys
+  nothing over linking the games together at our sizes.
+- **Fixed-slot multiboot.** Link N games at N addresses and jump. This is what
+  was specified here before and it never booted anything. Every game needs a
+  second build per slot, boot2 and vector table assumptions get fragile across
+  SDK updates, and a stock image no longer works.
+
+Saves cooperate either way: every game keeps its own `.blit/<title>/`
+directory on the shared partition, so nothing a console does touches another
+game's records.
 
 ## Larger games: the actual budget
 
@@ -188,6 +175,7 @@ constraint, and reads from XIP cost no RAM, so the way to a bigger game is:
 - Anything touching flash layout, save formats, or the storage partition
   states its cost and its wear behavior in the PR body, same as RAM and
   flash deltas under rule 8.
-- A future launcher lives in its own directory as its own build target and
-  must not leak into the engine or the games (rule 7): a game must not know
-  whether it was booted by a launcher or flashed directly.
+- The console lives in its own directory as its own build target and must not
+  leak into the engine or the games (rule 7): a game must not know whether it
+  is running under the console or flashed on its own. What it exports is a
+  `pse::Game`, and that is all either caller sees.

@@ -3,6 +3,7 @@
 #include "32blit.hpp"
 
 #include "pse/blit_target.hpp"
+#include "pse/game.hpp"
 
 #include "bot.hpp"
 #include "render.hpp"
@@ -144,11 +145,17 @@ void start_run() {
     g_shell = Shell::Play;
 }
 
-}  // namespace
-
-void init() {
+void game_init() {
     DIAG_LED_RED();
     set_screen_mode(ScreenMode::lores);
+
+    // Every entry, not once per boot: the console calls this each time the
+    // game is picked, so the shell goes back to its title and attract run
+    // rather than resuming a wreck from a previous session.
+    g_shell = Shell::Title;
+    g_dead_ticks = 0;
+    g_attract_dead = 0;
+    g_new_record = false;
 
     dr::SaveData data;
     uint32_t seed = blit::now() ^ 0xD057D057u;
@@ -158,7 +165,7 @@ void init() {
     if (have_save) dr::world_load(g_world, data);
 }
 
-void update(uint32_t time) {
+void game_update(uint32_t time) {
     if (g_shell == Shell::Title) {
         // The desert rides itself behind the title.
         dr::world_tick(g_world, dr::bot_input(g_world));
@@ -193,7 +200,7 @@ void update(uint32_t time) {
     }
 }
 
-void render(uint32_t time) {
+void game_render(uint32_t time) {
     DIAG_LED_GREEN();
     drr::render_scene(g_world, pse::target_from_screen(), time);
 
@@ -207,3 +214,9 @@ void render(uint32_t time) {
     }
     draw_hud();
 }
+
+}  // namespace
+
+// The one symbol this game exports. Everything above is internal linkage, so
+// the console can link it beside three other games that also have a g_world.
+PSE_GAME(dustrider, game_init, game_update, game_render);

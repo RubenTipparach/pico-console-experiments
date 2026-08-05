@@ -1,0 +1,29 @@
+# What is on the console, and in what order.
+#
+# The console is one .uf2 holding every game listed here plus a menu that
+# picks between them. This file is the whole decision: tools/gen_library.py
+# turns it into the menu table and into the list of games the build compiles,
+# so the binary and the menu cannot disagree about what is installed.
+#
+# This is a different question from build.yaml, which says what CI builds for
+# the web gallery. A game held out of the web rotation can still be on the
+# console, and usually should be: the device is where a finished game lives.
+#
+# Entries are one of:
+#   - heading: TEXT      a row the cursor steps over, for grouping
+#   - game: <slug>       a directory under games/
+#       name: TEXT       optional, defaults to the title in its game.yml
+#
+# Names are drawn with engine/font/console5x7.txt, which carries A-Z, 0-9,
+# space and a little punctuation. A name outside that, or one too wide for a
+# row, fails the build with a message saying so.
+
+title: PICO CONSOLE
+
+menu:
+  - heading: 3D
+  - game: dustrider
+  - game: kingfisher
+  - game: pico-santa
+  - heading: ARCADE
+  - game: chicken

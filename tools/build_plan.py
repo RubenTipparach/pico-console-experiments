@@ -25,9 +25,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAMES_DIR = os.path.join(REPO_ROOT, "games")
 CONFIG_PATH = os.path.join(REPO_ROOT, "build.yaml")
 
-# Slots a bundle can hold, matching cmake/slot.cmake and the launcher.
-MAX_SLOTS = 23
-
 
 class GameError(Exception):
     """Raised when a game directory or the build config is malformed."""
@@ -210,21 +207,8 @@ def cmd_plan(args):
         selected = [game for game in games if game.slug not in hold]
 
     chosen = {game.slug for game in selected}
-    # Slot 0 is the launcher, so games start at 1. The slot is the game's
-    # position in this run's list, which means a bundle is reproducible from
-    # the config and a game's slot only moves when the list does. That is
-    # harmless: a bundle is flashed whole, and saves are keyed by title
-    # rather than by address.
-    include = []
-    for index, game in enumerate(selected):
-        entry = game.describe()
-        entry["slot"] = index + 1
-        include.append(entry)
+    include = [game.describe() for game in selected]
     held = [game.slug for game in games if game.slug not in chosen]
-
-    if len(include) > MAX_SLOTS:
-        raise GameError("%d games enabled but only %d slots exist"
-                        % (len(include), MAX_SLOTS))
 
     matrix = json.dumps({"include": include}, separators=(",", ":"))
     emit_output("matrix", matrix)
@@ -251,10 +235,9 @@ def _plan_report(include, held, unlisted, explicit):
     if include:
         lines.append("Building %d game(s):\n\n" % len(include))
         for entry in include:
-            lines.append("- `%s` (%s, %s), bundle slot %d\n" % (
+            lines.append("- `%s` (%s, %s)\n" % (
                 entry["slug"], entry["sdk"],
-                "web + device" if entry["web"] else "device only",
-                entry["slot"]))
+                "web + device" if entry["web"] else "device only"))
     else:
         lines.append("Nothing to build. Every game is held in `build.yaml`.\n")
     if held:

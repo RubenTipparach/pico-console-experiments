@@ -65,7 +65,7 @@ jobs:
       - name: Test the build tooling
         run: |
           python3 tools/tests/test_game_meta.py
-          python3 tools/tests/test_make_bundle.py
+          python3 tools/tests/test_gen_library.py
           python3 tools/tests/test_make_thumbnail.py
           python3 tools/tests/test_gen_gallery.py
           python3 tools/tests/test_gen_shell.py
@@ -216,29 +216,6 @@ jobs:
           python3 tools/game_meta.py extract --uf2 "$(find build.pico -name "$TARGET.uf2" -print -quit)"
           ccache --show-stats
 
-      # The same game again, linked where the launcher expects to find it.
-      # Both artifacts come out of one job so a slot build can never be from a
-      # different commit than the standalone .uf2 beside it.
-      - name: Build the .uf2 for the launcher bundle
-        env:
-          GAME: ${{ matrix.slug }}
-          TARGET: ${{ matrix.target }}
-          SLOT: ${{ matrix.slot }}
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          cmake -S . -B build.slot -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
-            -DPICO_BOARD=pimoroni_picosystem \
-            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DPICO_ONLY_GAME="$GAME" \
-            -DPICO_SLOT="$SLOT" \
-            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
-          cmake --build build.slot --parallel
-          python3 tools/game_meta.py extract --uf2 "$(find build.slot -name "$TARGET.uf2" -print -quit)"
-
       - name: Build for the browser
         if: matrix.web
         env:
@@ -273,14 +250,6 @@ jobs:
           fi
           cp "$uf2" "out/uf2/$GAME.uf2"
 
-          mkdir -p out/slot
-          slot_uf2=$(find build.slot -name "$TARGET.uf2" -print -quit)
-          if [ -z "$slot_uf2" ]; then
-            echo "::error::no slot .uf2 produced for $GAME"
-            exit 1
-          fi
-          cp "$slot_uf2" "out/slot/$GAME.uf2"
-
           if [ "$WANTS_WEB" = "true" ]; then
             # add_picosystem_game renames the Emscripten target to `index`,
             # because GitHub Pages has no directory listing and only
@@ -302,15 +271,18 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # The launcher plus every game, in one flashable file. Separate from the
-  # matrix because it needs every game's slot build at once, and separate from
-  # publish because a bundle is a download, not a page.
-  bundle:
-    needs: [detect, build]
-    if: >-
-      ${{ !cancelled()
-          && needs.detect.result == 'success'
-          && needs.build.result == 'success' }}
+  # The console: the menu and every game console.yaml lists, in one .uf2.
+  #
+  # One build, not one per game plus a composition step afterwards. There are
+  # no slots to line up and nothing to relocate, because the games are linked
+  # together and the menu calls one of them. That is why this job is short
+  # where the bundle job it replaces was long, and why what it produces has
+  # actually been seen to run.
+  #
+  # It does not depend on the build matrix: console.yaml is its own list, and a
+  # game held out of the web rotation still belongs on the device.
+  console:
+    needs: [engine-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -346,61 +318,67 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-launcher-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-${{ github.sha }}
+          key: ccache-console-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-${{ github.sha }}
           restore-keys: |
-            ccache-launcher-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-
+            ccache-console-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-
 
-      - name: Build the launcher
+      - name: Build the console
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          cmake -S . -B build.launcher -G Ninja \
+          cmake -S . -B build.console -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
             -DPICO_BOARD=pimoroni_picosystem \
             -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DPICO_LAUNCHER_ONLY=ON
-          cmake --build build.launcher --parallel
+            -DPSE_CONSOLE=ON \
+            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
+          cmake --build build.console --parallel
 
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: game-*
-          path: incoming
-          merge-multiple: true
-
-      - name: Compose the bundle
-        env:
-          MATRIX: ${{ needs.detect.outputs.matrix }}
+      - name: Report what it costs
         run: |
           set -euo pipefail
-          launcher=$(find build.launcher -name "launcher.uf2" -print -quit)
-          if [ -z "$launcher" ]; then
-            echo "::error::the launcher did not build"
+          uf2=$(find build.console -name "console.uf2" -print -quit)
+          if [ -z "$uf2" ]; then
+            echo "::error::the console did not build"
+            exit 1
+          fi
+          cp "$uf2" console.uf2
+          elf=$(find build.console -name "console.elf" -print -quit)
+          bytes=$(stat -c%s console.uf2)
+
+          # RAM and flash in the run summary, because rule 8 asks for the
+          # numbers and a number nobody prints is a number nobody checks. A
+          # .uf2 carries 256 bytes of real flash per 512 byte block, so the
+          # file on disk is twice what it programs.
+          {
+            echo "## Console"
+            echo
+            echo '```'
+            arm-none-eabi-size "$elf"
+            echo '```'
+            echo
+            echo "console.uf2 is $bytes bytes, which programs $((bytes / 2)) bytes of flash."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # The PicoSystem has 264 KB of SRAM and the SDK has already spent
+          # 115,200 of it on the framebuffer. The console is the build where
+          # what is left gets tight, because every game's state is resident at
+          # once, so the number is a check and not just a note.
+          read -r _ _ data bss _ < <(arm-none-eabi-size "$elf" | tail -1)
+          ram=$((data + bss))
+          echo "static RAM: $ram bytes"
+          if [ "$ram" -gt 140000 ]; then
+            echo "::error::the console wants $ram bytes of static RAM. With the"
+            echo "::error::SDK's 115,200 byte framebuffer that leaves no stack."
             exit 1
           fi
 
-          # Slots come from the same plan the build matrix came from, so the
-          # address a game was linked at and the slot it lands in cannot
-          # disagree. make_bundle refuses the bundle if they ever do.
-          printf '%s' "$MATRIX" > matrix.json
-          python3 tools/make_bundle.py \
-            --launcher "$launcher" \
-            --plan matrix.json \
-            --slot-dir incoming/slot \
-            --out bundle.uf2
-          {
-            echo "## Launcher bundle"
-            echo
-            echo '```'
-            python3 tools/make_bundle.py --list bundle.uf2
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - uses: actions/upload-artifact@v4
         with:
-          name: launcher-bundle
-          path: bundle.uf2
+          name: console
+          path: console.uf2
           retention-days: 7
           if-no-files-found: error
 
@@ -675,7 +653,7 @@ jobs:
   # skipped matrix job never reports, which silently blocks branch protection if
   # `build` is the required check. Make this the required check instead.
   gate:
-    needs: [engine-tests, detect, build, bundle]
+    needs: [engine-tests, detect, build, console]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -689,4 +667,4 @@ jobs:
           if [ "${{ needs.engine-tests.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.detect.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.build.result }}" = "failure" ]; then exit 1; fi
-          if [ "${{ needs.bundle.result }}" = "failure" ]; then exit 1; fi
+          if [ "${{ needs.console.result }}" = "failure" ]; then exit 1; fi

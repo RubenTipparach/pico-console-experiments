@@ -12,6 +12,8 @@ each one to its own URL, and leaves everything else alone.
 ```
 engine/            shared renderer, no SDK dependency except one adapter file
 games/<slug>/      one game: game.yml, CMakeLists.txt, src/, assets/, models/
+console/           the multi game console: menu, dispatch, its own tests
+console.yaml       which games are on the console, and in what order
 cmake/             reusable CMake helpers (game registration, obj packaging)
 tools/             build tooling, gallery generator, flasher utility
 web/               gallery stylesheet and the Emscripten page shell
@@ -128,10 +130,11 @@ See [`games/README.md`](games/README.md) for the field reference.
 
 ## Thumbnails
 
-One picture per game, `games/<slug>/thumbnail.png`, doing two jobs: the gallery
-card shows it, and the 48x48 icon the launcher draws is resampled from it into
-the `.uf2`. A device never reaches the site, so a game with no committed
-thumbnail has a generated placeholder in the menu.
+One picture per game, `games/<slug>/thumbnail.png`, doing three jobs: the
+gallery card shows it, the 48x48 icon inside the `.uf2` is resampled from it,
+and so is the 24x24 icon on the console's menu row. A device never reaches the
+site, so a game with no committed thumbnail has a generated placeholder in the
+menu.
 
 CI screenshots a game once, the first time it is published, and then never
 touches it again. Rebuilding a game does not refresh its thumbnail, so the
@@ -172,6 +175,18 @@ By hand: drop the `.uf2` onto the `RPI-RP2` drive. Windows may report an error
 at the end of the copy. That is expected and means it worked, see the flasher
 README for why.
 
+## Every game at once
+
+`console.uf2` is one file holding the menu and every game `console.yaml`
+lists. Flash it the same way. Up and down move, any button starts a game, and
+holding up and down together for a moment comes back to the menu.
+
+There are no slots and nothing is relocated: the games are linked together and
+the menu calls one of them, which is how the two projects that have shipped a
+multi-game PicoSystem do it. [CONSOLE.md](CONSOLE.md) has the details and the
+RAM numbers. `build_console.bat` builds it locally; CI attaches it to every
+run as the `console` artifact.
+
 ## Building locally
 
 You need the 32blit SDK and the Pico SDK checked out next to this repo.
@@ -209,6 +224,20 @@ cmake --build build.web
 ```
 
 Add `-DPICO_ONLY_GAME=<slug>` to any of these to build a single game.
+
+The console, every game plus the menu in one `.uf2`:
+
+```
+cmake -S . -B build.console -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=../32blit-sdk/pico.toolchain \
+  -DPICO_BOARD=pimoroni_picosystem \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPSE_CONSOLE=ON
+cmake --build build.console
+```
+
+Drop the toolchain lines for a desktop build you can actually sit and play,
+which is how the menu and the game switching were checked.
 
 ## Repository settings this depends on
 
