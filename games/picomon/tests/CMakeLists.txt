@@ -81,3 +81,22 @@ target_include_directories(picomon_preview PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 target_link_libraries(picomon_preview pse-core)
+
+# What a frame contains, asserted by rendering one. Three bugs on this branch
+# were invisible to the sim tests and obvious in a picture, so these render real
+# frames and fail on the pixels.
+add_executable(picomon_render_tests
+    test_render.cpp
+    ${picomon_root}/src/sim.cpp
+    ${picomon_root}/src/render.cpp
+    ${picomon_gen}/picomon_data.cpp
+    ${picomon_gen}/sprites.cpp
+    ${picomon_models}
+)
+target_include_directories(picomon_render_tests PRIVATE
+    ${picomon_root}/src
+    ${picomon_gen}
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(picomon_render_tests pse-core)
+add_test(NAME picomon_render_tests COMMAND picomon_render_tests)

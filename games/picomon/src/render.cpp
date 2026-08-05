@@ -532,7 +532,13 @@ void draw_battle(const World& w, uint32_t t) {
     // A battle is a different shot from the overworld, so it gets a different
     // lens: wider and lower, the way these games have always staged them.
     g_renderer.set_fov(30.0f);
-    g_renderer.set_depth_range(3.0f, 48.0f);
+    // Both ends matter and neither is obvious. Too near a far plane drops the
+    // band that covers the top of the frame; too far a near plane drops the one
+    // under the player's feet. Either way ground_quad loses a whole quad,
+    // because it drops the quad if any corner fails to project, and sky shows
+    // through. These two were found by probing the projector rather than by
+    // reasoning about it.
+    g_renderer.set_depth_range(2.0f, 68.0f);
     g_renderer.set_camera(0.0f, 6.54f, -13.44f, 0.0f, -0.3735f);
 
     g_raster.begin_frame(g_raster.target());
@@ -540,7 +546,7 @@ void draw_battle(const World& w, uint32_t t) {
 
     ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
     ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
-    ground_quad(-16.0f, 9.0f, 16.0f, 44.0f, 0x55, 0x88, 0x55);
+    ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
     for (int i = 0; i < 9; i++) {
         g_renderer.draw_mesh(tree, -10.0f + float(i) * 2.5f, 0.0f,
                              16.0f + float(i % 3) * 2.0f, float(i), 1.6f);
@@ -713,16 +719,29 @@ void draw_party(const World& w) {
 void draw_title(uint32_t t) {
     g_raster.begin_frame(g_raster.target());
     g_raster.clear_gradient(0x22, 0x33, 0x66, 0x66, 0x99, 0xDD);
-    g_renderer.set_fov(34.0f);
-    g_renderer.set_depth_range(2.0f, 40.0f);
-    g_renderer.set_camera(0.0f, 2.6f, -7.4f, 0.0f, -0.22f);
-    ground_quad(-20.0f, -8.0f, 20.0f, 40.0f, 0x55, 0x99, 0x44);
-    for (int i = 0; i < 7; i++) {
-        g_renderer.draw_mesh(tree, -9.0f + float(i) * 3.0f, 0.0f,
-                             11.0f + float(i % 3) * 2.0f, float(i), 1.4f);
+    // The same camera the arena uses, because it is the one configuration in
+    // this game whose depth range is known to separate a creature from the
+    // ground it stands on. A title screen is not worth a second set of numbers
+    // to keep in step with the first.
+    g_renderer.set_fov(30.0f);
+    g_renderer.set_depth_range(2.0f, 68.0f);
+    g_renderer.set_camera(0.0f, 6.54f, -13.44f, 0.0f, -0.3735f);
+
+    // Split into bands, and not for the colour. Depth is interpolated linearly
+    // in screen space, and across one huge quad seen at this grazing angle that
+    // is a poor approximation of the real perspective depth: the middle of the
+    // quad reads far nearer than the ground actually is, and swallows anything
+    // standing on it. The arena is banded for the same reason.
+    ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
+    ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
+    ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
+    for (int i = 0; i < 9; i++) {
+        g_renderer.draw_mesh(tree, -10.0f + float(i) * 2.5f, 0.0f,
+                             16.0f + float(i % 3) * 2.0f, float(i), 1.6f);
     }
-    g_renderer.draw_mesh(emberkit, -1.3f, 0.0f, 1.2f, 0.5f, 1.0f);
-    g_renderer.draw_mesh(ball, 1.4f, 0.3f, 1.0f, float(t) * 0.003f, 1.0f);
+    g_renderer.draw_mesh(emberkit, -1.6f, 0.02f, 1.4f, 0.5f, 1.4f);
+    g_renderer.draw_mesh(ball, 1.6f, 0.35f, 1.2f, float(t) * 0.003f, 1.2f);
+
     panel(14, 22, 92, 20);
     text_centred("PICOMON", 60, 28, 0xFF, 0xEE, 0x88);
     if ((t / 500) & 1) text_centred("PRESS ANY BUTTON", 60, 96, 0xEE, 0xEE, 0xEE);
