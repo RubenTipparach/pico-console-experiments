@@ -404,11 +404,20 @@ void draw_fish_glyph(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
 // charge toward breaking are both visible.
 void draw_fight_meters(const World& world) {
     // Stamina, vertical on the left of the underwater view.
+    //
+    // It goes dark blue while the fish is taking its second wind. That window
+    // is the one time pulling is free, and it ends by itself, so it has to be
+    // legible at a glance rather than inferred from a bar that happens to be
+    // climbing: the colour says spend this now, the bright bar says stop.
     const int stam_h = 40;
     const int fill = world.stamina_max > 0
         ? (world.stamina * stam_h) / world.stamina_max : 0;
+    const bool recovering = world.spent_timer > 0;
+    const uint8_t sr = recovering ? 30 : 120;
+    const uint8_t sg = recovering ? 70 : 220;
+    const uint8_t sb = recovering ? 160 : 250;
     draw_fish_glyph(3, k_split + 4, 240, 240, 250);
-    draw_bar(3, k_split + 9, stam_h, fill, 120, 220, 250);
+    draw_bar(3, k_split + 9, stam_h, fill, sr, sg, sb);
 
     // Tension, horizontal along the bottom. The red zone begins where the
     // danger counter starts charging.

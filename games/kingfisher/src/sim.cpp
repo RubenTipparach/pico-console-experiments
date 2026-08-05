@@ -396,6 +396,7 @@ void start_fight(World& world, int fish_index) {
     // than at an arbitrary number: a hooked fish is already pulling.
     world.tension = 0;
     world.line_stress = 0;
+    world.strain = 0;
     world.line_frac = 0;
     world.fish_effort = 0;
     world.fish_dir = 1;
@@ -507,6 +508,12 @@ void update_fight(World& world, const Input& input) {
         world.fish_effort = static_cast<uint8_t>(
             world.fish_effort > k_wiggle_effort_drop
                 ? world.fish_effort - k_wiggle_effort_drop : 0);
+        // It dumps the rod's accumulated load too. Without this a wiggle can
+        // only stop the strain climbing, never undo it, and a player who has
+        // let it build has no move left except to stop reeling entirely.
+        world.strain = static_cast<uint16_t>(
+            world.strain > k_strain_wiggle_shed
+                ? world.strain - k_strain_wiggle_shed : 0);
         // Countering the way the fish is running costs it most, but a jerked
         // rod tires a fish whatever it is doing. Without the second half a
         // holding fish regenerates through a wiggle for free, and the rod
@@ -555,15 +562,37 @@ void update_fight(World& world, const Input& input) {
     // over, so a break is always something the player did.
     const int fish_stress =
         (s.strength * k_stress_per_strength * world.fish_effort) / 255;
-    const int tow_stress = reeling
-        ? k_tow_stress_base + (fish.size_cm * k_tow_stress_num) /
-                                  k_tow_stress_den
-        : 0;
+    const int tow_stress = reeling ? k_tow_stress_base : 0;
     // Only a fish that is actually pulling against the rod loads it. One
     // swimming at the boat is slack line, however hard it is working.
     const int loaded = world.fish_dir >= 0 ? fish_stress : fish_stress / 4;
-    world.line_stress = static_cast<uint16_t>(clamp32(loaded + tow_stress, 0,
-                                                      65535));
+
+    // Strain is the part of the reading that remembers. Pulling against a
+    // fish with something left loads the rod further every tick it goes on,
+    // so what breaks the line is the length of the haul rather than any one
+    // moment of it. Nothing accumulates against a spent fish, which is what
+    // keeps the exhaustion window worth playing for.
+    const bool fighting = world.stamina > 0;
+    if (reeling) {
+        // A rod under load does not unload because the fish stopped pulling.
+        // Holding through a spent fish holds the strain where it is, and only
+        // easing off sheds it, which is what makes the length of a pull the
+        // thing that costs: hold long enough, through enough of the fish's
+        // comebacks, and even something small eventually takes the line past
+        // what it will stand.
+        if (fighting) {
+            const int gain = (loaded * k_strain_gain_effort +
+                              fish.size_cm * k_strain_gain_mass) / 64;
+            world.strain = static_cast<uint16_t>(
+                clamp32(world.strain + gain, 0, k_strain_max));
+        }
+    } else {
+        world.strain = static_cast<uint16_t>(
+            world.strain > k_strain_relief ? world.strain - k_strain_relief : 0);
+    }
+
+    world.line_stress = static_cast<uint16_t>(
+        clamp32(loaded + tow_stress + world.strain / k_strain_fp, 0, 65535));
 
     // The meter is that stress against the rod, slewed: the climb is the
     // warning, and a bar that jumped would not be one.
