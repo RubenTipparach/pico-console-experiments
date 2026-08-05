@@ -3,6 +3,7 @@
 #include "32blit.hpp"
 
 #include "pse/blit_target.hpp"
+#include "pse/game.hpp"
 
 #include "render.hpp"
 #include "sfx.hpp"
@@ -160,10 +161,15 @@ bool update_shell() {
     return true;
 }
 
-}  // namespace
-
-void init() {
+void game_init() {
     set_screen_mode(ScreenMode::lores);
+
+    // Every entry, not once per boot: the console calls this each time the
+    // game is picked, so the shell has to be put back to its title screen
+    // rather than resuming wherever the last session was left.
+    g_shell = Shell::Title;
+    g_cursor = 0;
+    g_show_records = false;
 
     kfs::sfx_init();
 
@@ -181,7 +187,7 @@ void init() {
     }
 }
 
-void update(uint32_t time) {
+void game_update(uint32_t time) {
     if (update_shell()) {
         // The pond idles behind the menu.
         kf::world_tick(g_world, kf::Input{});
@@ -217,7 +223,7 @@ void update(uint32_t time) {
     save_if_safe();
 }
 
-void render(uint32_t time) {
+void game_render(uint32_t time) {
     kfr::render_scene(g_world, pse::target_from_screen(), time);
 
     if (g_shell == Shell::Title) { draw_title(); return; }
@@ -227,3 +233,9 @@ void render(uint32_t time) {
     draw_card();
     if (g_show_records) draw_records_overlay();
 }
+
+}  // namespace
+
+// The one symbol this game exports. Everything above is internal linkage, so
+// the console can link it beside three other games that also have a g_world.
+PSE_GAME(kingfisher, game_init, game_update, game_render);

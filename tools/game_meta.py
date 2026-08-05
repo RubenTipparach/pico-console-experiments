@@ -193,12 +193,13 @@ def resample(rows, src_w, src_h, out_w, out_h):
     return out
 
 
-def placeholder_icon(slug):
+def placeholder_icon(slug, size=None):
     """A generated icon for a game with no picture yet.
 
     Deterministic from the slug, so a game keeps the same colour between
     builds, and clearly synthetic so nobody mistakes it for a screenshot.
     """
+    side = ICON_W if size is None else size
     seed = 0
     for char in slug.encode("utf-8"):
         seed = (seed * 131 + char) & 0xFFFFFFFF
@@ -207,11 +208,11 @@ def placeholder_icon(slug):
     hue_b = 80 + ((seed >> 16) & 0x5F)
 
     rows = []
-    for y in range(ICON_H):
+    for y in range(side):
         row = []
-        for x in range(ICON_W):
-            edge = x < 2 or y < 2 or x >= ICON_W - 2 or y >= ICON_H - 2
-            fade = (y * 40) // ICON_H
+        for x in range(side):
+            edge = x < 2 or y < 2 or x >= side - 2 or y >= side - 2
+            fade = (y * 40) // side
             if edge:
                 row.append((hue_r // 2, hue_g // 2, hue_b // 2))
             else:
@@ -220,20 +221,26 @@ def placeholder_icon(slug):
         rows.append(row)
 
     # A diagonal slash so an unset icon is unmistakable at a glance.
-    for i in range(6, ICON_W - 6):
+    margin = max(2, side // 8)
+    for i in range(margin, side - margin):
         for w in range(2):
             y = i + w
-            if 0 <= y < ICON_H:
+            if 0 <= y < side:
                 rows[y][i] = (235, 235, 240)
     return rows
 
 
-def icon_for(game_dir, slug):
+def icon_for(game_dir, slug, size=None):
     """icon.png beats thumbnail.png beats a generated placeholder.
 
     icon.png is the authored square art; thumbnail.png is the screenshot the
     gallery already uses, which crops acceptably at this size.
+
+    `size` is the square to produce. The .uf2 metadata block wants 48; the
+    console menu wants 24, and takes the same path so one picture keeps the
+    launcher icon and the menu row honest.
     """
+    side_out = ICON_W if size is None else size
     for name in ("icon.png", "thumbnail.png"):
         path = os.path.join(game_dir, name)
         if os.path.isfile(path):
@@ -244,8 +251,8 @@ def icon_for(game_dir, slug):
             x0 = (width - side) // 2
             y0 = (height - side) // 2
             square = [row[x0:x0 + side] for row in rows[y0:y0 + side]]
-            return resample(square, side, side, ICON_W, ICON_H), name
-    return placeholder_icon(slug), "generated"
+            return resample(square, side, side, side_out, side_out), name
+    return placeholder_icon(slug, side_out), "generated"
 
 
 def to_rgb565(rows):

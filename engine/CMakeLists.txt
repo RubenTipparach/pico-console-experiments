@@ -9,11 +9,34 @@
 # it is one small file, and splitting further would be interface segregation
 # taken past the point of being useful.
 
+# The console's font is a picture file, not a hex table (rule 11's reasoning
+# applied to glyphs). tools/gen_font.py packs it at configure time into the
+# build tree, where every generated file in this repo lives.
+set(PSE_FONT_ART ${CMAKE_CURRENT_SOURCE_DIR}/font/console5x7.txt)
+set(PSE_FONT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PSE_FONT_ART})
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env python3
+            ${CMAKE_CURRENT_SOURCE_DIR}/../tools/gen_font.py
+            --art ${PSE_FONT_ART} --out ${PSE_FONT_DIR}
+    RESULT_VARIABLE pse_font_result)
+if(NOT pse_font_result EQUAL 0)
+    message(FATAL_ERROR "gen_font.py failed: the console cannot draw a name it "
+                        "has no letters for")
+endif()
+
 add_library(pse-core STATIC
     src/raster.cpp
     src/renderer3d.cpp
     src/parallel.cpp
+    src/text.cpp
+    # Its own translation unit on purpose: a 2D game that never asks for the
+    # shared rasterizer never links its 30 KB of scratch space, because an
+    # archive member nothing references is never pulled in.
+    src/shared_render.cpp
 )
+
+target_include_directories(pse-core PRIVATE ${PSE_FONT_DIR})
 
 # run_split has one implementation per platform class. On the pico targets it
 # hands the bottom half of the screen to core 1; everywhere else it runs both

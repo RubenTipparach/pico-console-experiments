@@ -8,6 +8,12 @@
 # a .uf2 for the PicoSystem, a native binary for desktop, and an .html/.js/.wasm
 # triple for Emscripten, depending only on the toolchain the build was
 # configured with.
+#
+# There is a fourth thing it can become, and it is why a game exports a
+# pse::Game rather than defining the SDK's init/update/render itself. In a
+# console build (PSE_CONSOLE) this makes no target at all: the game's sources
+# are compiled into the one console binary alongside every other game on the
+# menu. A game's CMakeLists.txt is identical either way, which is the point.
 
 include_guard(GLOBAL)
 
@@ -27,12 +33,14 @@ set(PICO_WEB_SHELL ${CMAKE_CURRENT_LIST_DIR}/../web/shell.html
     CACHE INTERNAL "Emscripten shell with touch controls")
 set(PICO_GEN_SHELL ${CMAKE_CURRENT_LIST_DIR}/../tools/gen_shell.py
     CACHE INTERNAL "Builds one game's page from the shell and its game.yml")
+set(PICO_STANDALONE_MAIN ${CMAKE_CURRENT_LIST_DIR}/standalone_main.cpp.in
+    CACHE INTERNAL "Forwards the SDK entry points to a game's pse::Game")
 
 # Checked on every configure, not just Emscripten ones. The bad path above
 # only failed on the web build, which is the one configuration a host build
 # and the test suite never run, so it reached main green. A missing tool is
 # now a hard error everywhere, and a laptop finds it in seconds.
-foreach(required ${PICO_WEB_SHELL} ${PICO_GEN_SHELL})
+foreach(required ${PICO_WEB_SHELL} ${PICO_GEN_SHELL} ${PICO_STANDALONE_MAIN})
     if(NOT EXISTS ${required})
         message(FATAL_ERROR "picosystem_game.cmake: missing ${required}")
     endif()
@@ -49,6 +57,46 @@ function(add_picosystem_game NAME)
     foreach(model ${GAME_MODELS})
         add_obj_model(${NAME} ${model} generated_sources)
     endforeach()
+
+    # A console build: no executable of our own, no metadata block, no web
+    # shell. Hand the sources to the console target that is already there and
+    # stop. Everything below this line is about being a program, and in a
+    # console build this game is not one.
+    if(PSE_CONSOLE)
+        # The model tables are generated in this directory and consumed by a
+        # target in another one, and a cross directory custom command carries
+        # no ordering with it. Without this, ninja is free to compile
+        # render.cpp while obj2cpp is still writing the header it includes,
+        # which it duly did. A target level dependency is the ordering.
+        if(generated_sources)
+            add_custom_target(${NAME}_models DEPENDS ${generated_sources})
+            add_dependencies(console ${NAME}_models)
+        endif()
+
+        target_sources(console PRIVATE ${GAME_SOURCES} ${generated_sources})
+        target_include_directories(console PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_BINARY_DIR}/generated
+        )
+        if(GAME_DEFINES)
+            target_compile_definitions(console PRIVATE ${GAME_DEFINES})
+        endif()
+        if(GAME_ASSETS)
+            blit_assets_yaml(console ${GAME_ASSETS})
+        endif()
+        return()
+    endif()
+
+    # Standalone: the SDK wants three global functions, and the game exports a
+    # pse::Game. Generate the four lines that connect them rather than asking
+    # every game to write them out.
+    string(REPLACE "-" "_" PSE_GAME_SYMBOL ${NAME})
+    set(PSE_GAME_SLUG ${NAME})
+    configure_file(${PICO_STANDALONE_MAIN}
+                   ${CMAKE_CURRENT_BINARY_DIR}/generated/standalone_main.cpp
+                   @ONLY)
+    list(APPEND generated_sources
+         ${CMAKE_CURRENT_BINARY_DIR}/generated/standalone_main.cpp)
 
     # The name and icon block, for the launcher and the desktop tool. Device
     # builds only: on the web the gallery already says what a game is, and the

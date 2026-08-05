@@ -1,12 +1,18 @@
 namespace PicoFlasher;
 
 /// <summary>
-/// One window, two tabs: flash a single .uf2, or build a library onto the
-/// console.
+/// One window: pick a .uf2, pick the board, copy it across.
 ///
-/// Quick and dirty on purpose. No installer, no settings, no framework. This is
-/// a tool, not a product, and every feature added here is a feature that has to
-/// keep working.
+/// It used to have a second tab that composed a multi game bundle out of
+/// per slot builds, assigned slots, and wrote the result. None of that is
+/// needed now and none of it ever produced a console that booted: the games
+/// are linked into one console.uf2 at build time, so what reaches the device
+/// is a file, and copying a file is all a flasher has to do. The library is a
+/// decision in console.yaml, not a thing to assemble on a desktop.
+///
+/// Quick and dirty on purpose (rule 13). No installer, no settings, no
+/// framework. This is a tool, not a product, and every feature added here is a
+/// feature that has to keep working.
 /// </summary>
 public sealed class MainForm : Form
 {
@@ -21,15 +27,13 @@ public sealed class MainForm : Form
     private readonly ProgressBar _progress = new();
     private readonly Label _status = new();
     private readonly TextBox _root = new();
-    private readonly TabControl _tabs = new();
-    private readonly LibraryTab _library;
 
     public MainForm()
     {
         Text = "PicoFlasher";
-        Width = 820;
-        Height = 560;
-        MinimumSize = new Size(680, 460);
+        Width = 620;
+        Height = 480;
+        MinimumSize = new Size(520, 400);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
 
@@ -103,18 +107,7 @@ public sealed class MainForm : Form
         layout.Controls.Add(_status, 0, 5);
         layout.SetColumnSpan(_status, 3);
 
-        var flashPage = new TabPage("Flash one game");
-        flashPage.Controls.Add(layout);
-
-        _library = new LibraryTab(GuessRepositoryRoot(),
-                                  () => _devices.SelectedItem as BootselDrive);
-        var libraryPage = new TabPage("Library");
-        libraryPage.Controls.Add(_library);
-
-        _tabs.Dock = DockStyle.Fill;
-        _tabs.TabPages.Add(flashPage);
-        _tabs.TabPages.Add(libraryPage);
-        Controls.Add(_tabs);
+        Controls.Add(layout);
 
         _watcher.DrivesChanged += OnDrivesChanged;
         _watcher.Start();
@@ -158,7 +151,6 @@ public sealed class MainForm : Form
         }
 
         UpdateFlashEnabled();
-        _library.DeviceChanged(drives.Count);
     }
 
     private void ReloadFiles()

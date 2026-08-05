@@ -227,9 +227,12 @@ Before adding anything, ask what it costs:
   a 4 MB FAT partition the SDK mounts for saves and loose files. How to use
   both, and how a multi-game library would work, is documented in
   `STORAGE.md`. Read it before touching persistence, the storage partition,
-  a launcher, or any game big enough to care about asset budgets. `LAUNCHER.md`
-  is the design built on top of it: the flash map, the metadata block every
-  game now carries, and how a launcher would boot one game from another.
+  the console, or any game big enough to care about asset budgets.
+  `CONSOLE.md` is the design built on top of it: every game linked into one
+  binary next to a menu that calls one of them, which is how both projects
+  that have shipped a multi-game PicoSystem do it. There is no relocation,
+  no slot linking and no bundle composer, and there should not be one again:
+  that was tried, specified in detail, and never booted.
 - **The whole device maxes out at 16 MB total** (confirmed against Pimoroni's
   own spec for the PicoSystem's QSPI flash chip, not assumed). That is the
   entire chip, the 12 MB program region and the 4 MB storage partition
@@ -238,21 +241,20 @@ Before adding anything, ask what it costs:
   ceiling, and the UF2 format costs 512 bytes on disk per 256 bytes of real
   flash data, exactly doubling a payload's size, so a single flash operation
   cannot represent more than about 8 MB of actual flash content before the
-  `.uf2` file itself exceeds what the drive can hold. `tools/flasher`'s
-  bundle composer learned this the hard way: an early "clear every game slot"
-  action wrote the full 512 KB of all 23 slots in one UF2. Fully blanking a
-  slot is not needed to make it stop being listed as installed, only reaching
-  past wherever its metadata block landed is, and every game this project
-  builds or has imported is well under that: measured real flash content
-  (uf2 file size / 2) of everything in the library as of this writing is
-  launcher.uf2 101,376 B, chicken.uf2 110,080 B, pico-santa.uf2 118,528 B,
-  dustrider.uf2 132,096 B, kingfisher.uf2 141,056 B (the largest game this
-  project actually builds), raycaster.uf2 146,432 B, Daft-Freak.uf2
-  153,344 B, celeste.uf2 300,288 B, pico3d.uf2 323,584 B. Clearing 512 KB
-  per slot when 256 KB (double the largest real game) would do produced a
-  23.0 MB file (measured: `WriteBlocks` returned exactly 24,117,248 bytes),
-  bigger than the 16 MB drive it had to fit through, so the write could not
-  physically complete: not slow, not stuck, too large to write at all.
+  `.uf2` file itself exceeds what the drive can hold. The bundle composer
+  that used to live in `tools/flasher` learned this the hard way: an early
+  "clear every game slot" action wrote the full 512 KB of all 23 slots in one
+  UF2, producing a file bigger than the drive it had to fit through. Both the
+  composer and the slots are gone, but the ceiling is not, and anything that
+  ever writes many blocks at once has to budget against it. For scale, the
+  measured real flash content (uf2 file size / 2) of everything this project
+  builds or has imported:
+  chicken.uf2 110,080 B, pico-santa.uf2 118,528 B,
+  dustrider.uf2 132,096 B, kingfisher.uf2 141,056 B (the largest single game
+  this project builds), raycaster.uf2 146,432 B, Daft-Freak.uf2 153,344 B,
+  celeste.uf2 300,288 B, pico3d.uf2 323,584 B. The console, which holds four
+  of those games and a menu, is one file of about the same order, because
+  what four games cost is four games and not four slots.
   Anything that touches many slots at once has to budget its `.uf2` file
   size against the 16 MB drive ceiling, using a real measured figure for how
   much of a slot actually needs reaching, not a guessed one.
@@ -364,9 +366,9 @@ source when a real model would do.
   Refreshing a thumbnail is an explicit user request, done by running the
   `Capture thumbnails` workflow with the game named, or by committing a new PNG.
   Never refresh thumbnails on your own initiative.
-- **One picture, two places.** `games/<slug>/thumbnail.png` is the gallery card
-  and, resampled to 48x48 by `game_meta.py`, the launcher icon inside the
-  `.uf2`. A device never reaches the site, so a screenshot that exists only on
+- **One picture, three places.** `games/<slug>/thumbnail.png` is the gallery
+  card, the 48x48 icon `game_meta.py` puts inside the standalone `.uf2`, and
+  the 24x24 row icon `gen_library.py` puts in the console menu. A device never reaches the site, so a screenshot that exists only on
   `gh-pages` leaves the menu showing a coloured rectangle. When a thumbnail is
   asked for, commit it: the publish step copies a committed PNG over whatever
   was captured, so one file keeps both honest.
@@ -403,8 +405,10 @@ cmake/             reusable CMake helpers (game registration, obj packaging)
 tools/             build tooling, gallery generator, flasher utility
 web/               gallery templates and the emscripten page shell
 .github/workflows/ the build and publish pipeline
+console/           the multi game console: menu, dispatch, its own tests
+console.yaml       which games are on the console, and in what order
 STORAGE.md         the 16 MB flash: persistence, game library, larger games
-LAUNCHER.md        the multi-game plan: flash map, metadata block, tool
+CONSOLE.md         the console: one binary, every game in it, a menu
 ```
 
 ## Adding a game

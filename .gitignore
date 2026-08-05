@@ -14,7 +14,3 @@ tools/flasher/publish/
 # Local site previews
 site/
 __pycache__/
-
-# The desktop tool's game library: built .uf2 files and their extracted icons,
-# cached so the tool is useful with no device plugged in. See LAUNCHER.md.
-library/

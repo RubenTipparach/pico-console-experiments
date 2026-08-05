@@ -22,7 +22,7 @@ where python >nul 2>nul
 if errorlevel 1 (echo   [missing] python & set "MISSING=1") else (echo   [ok] python)
 
 where dotnet >nul 2>nul
-if errorlevel 1 (echo   [missing] dotnet ^(needed for run_launcher.bat^) & set "MISSING=1") else (echo   [ok] dotnet)
+if errorlevel 1 (echo   [missing] dotnet ^(needed for tools\flasher^) & set "MISSING=1") else (echo   [ok] dotnet)
 
 where ninja >nul 2>nul
 if errorlevel 1 (echo   [missing] ninja ^(needed for the desktop game builds^) & set "MISSING=1") else (echo   [ok] ninja)
@@ -71,4 +71,4 @@ if exist "%ROOT%..\pico-sdk" (
 
 echo.
 echo Done. Try run_dustrider.bat, run_chicken.bat, run_kingfisher.bat, or
-echo run_pico-santa.bat, or run_launcher.bat for the flashing tool.
+echo run_pico-santa.bat. build_console.bat puts every game on one cart.

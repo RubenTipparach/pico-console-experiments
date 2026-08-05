@@ -16,6 +16,9 @@ public static class Uf2Locator
 {
     private static readonly string[] SearchGlobs =
     {
+        // Where build_console.bat puts console.uf2, first because the console
+        // is the thing most likely to be wanted.
+        "build.console",
         "build.pico",
         "build",
         "dist",

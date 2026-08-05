@@ -1,13 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 
-rem Builds a .uf2 for every game in one pass (device build, not desktop or
-rem web). With no PICO_ONLY_GAME set, the top level CMakeLists adds every
-rem games/<slug>/ directory it finds, same as CI. Output lands under
-rem build.pico\games\<slug>\<slug>.uf2, which is one of the directories
-rem PicoFlasher (tools/flasher) already scans on its own, so nothing needs
-rem copying for the flasher to see it. For every game on one cart instead,
-rem see build_console.bat.
+rem Builds the console: the menu and every game console.yaml lists, in one
+rem .uf2. Same configure the `console` job in .github/workflows/build.yml
+rem runs, because the workflow is the source of truth and this is convenience
+rem (rule 2). Output lands at build.console\console\console.uf2, which is one
+rem of the directories PicoFlasher (tools/flasher) scans on its own.
 
 rem No trailing backslash: bare "%ROOT%" with one right before the closing
 rem quote would escape the quote instead of closing it, on -S below.
@@ -66,12 +64,13 @@ for /f "delims=" %%G in ('where gcc') do (
 :gcc_found
 for %%G in ("%GCC_EXE%") do set "PATH=%%~dpG;%PATH%"
 
-set "BUILD_DIR=%ROOT%\build.pico"
+set "BUILD_DIR=%ROOT%\build.console"
 
-echo Configuring every game (device build)...
+echo Configuring the console (device build)...
 cmake -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja ^
     -DCMAKE_TOOLCHAIN_FILE="%SDK_DIR%/pico.toolchain" ^
-    -DPICO_BOARD=pimoroni_picosystem -DCMAKE_BUILD_TYPE=Release
+    -DPICO_BOARD=pimoroni_picosystem -DCMAKE_BUILD_TYPE=Release ^
+    -DPSE_CONSOLE=ON
 if errorlevel 1 exit /b 1
 
 echo Building (only what is out of date)...
@@ -79,5 +78,7 @@ cmake --build "%BUILD_DIR%"
 if errorlevel 1 exit /b 1
 
 echo.
-echo Built .uf2s:
-for /f "delims=" %%F in ('dir /b /s "%BUILD_DIR%\*.uf2" 2^>nul') do echo   %%F
+echo Built:
+for /f "delims=" %%F in ('dir /b /s "%BUILD_DIR%\console.uf2" 2^>nul') do echo   %%F
+echo.
+echo Flash it with tools\flasher, or drop it on the RPI-RP2 drive by hand.

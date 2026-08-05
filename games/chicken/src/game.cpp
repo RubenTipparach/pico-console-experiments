@@ -2,7 +2,18 @@
 #include <cstdlib>
 #include <cmath>
 
+#include "pse/game.hpp"
+
 using namespace blit;
+
+// Everything below is internal to this game.
+//
+// It used to be file scope with external linkage, which was harmless while a
+// game was a binary of its own. The console links every game together, and
+// `score`, `player` and `level` are names more than one game wants, so this
+// anonymous namespace is what makes four games fit in one image without any
+// of them having to rename their own state.
+namespace {
 
 // Screen dimensions - 240x240 for PicoSystem
 const int SCREEN_W = 240;
@@ -303,9 +314,16 @@ void generate_chunk(int chunk_id, int buffer_chunk_index) {
         screen.pixel(Point(x - 1, y - 1));
     }
     
-    void init() {
+    void game_init() {
         set_screen_mode(ScreenMode::hires);
-        
+
+        // Back to a fresh run every time. The console calls this each time the
+        // game is picked, not once per boot, so anything carried in a global
+        // has to be put back here or a second visit starts mid game.
+        score = 0;
+        seed = 34125;
+        chunk_seed = 34125;
+
         // Initialize gems
         for (int i = 0; i < MAX_GEMS; i++) {
             gems[i].active = false;
@@ -330,7 +348,7 @@ void generate_chunk(int chunk_id, int buffer_chunk_index) {
         if (camera_x < 0) camera_x = 0;
     }
     
-    void render(uint32_t time) {
+    void game_render(uint32_t time) {
         // Clear screen with sky gradient
         for (int y = 0; y < SCREEN_H; y++) {
             int r = 30 + y / 4;
@@ -398,7 +416,7 @@ void generate_chunk(int chunk_id, int buffer_chunk_index) {
         screen.text("Dist: " + std::to_string(distance), minimal_font, Point(180, 5));
     }
     
-    void update(uint32_t time) {
+    void game_update(uint32_t time) {
         // Player input
         if (buttons & Button::DPAD_LEFT) {
             player.vx -= 0.5f;
@@ -505,3 +523,7 @@ void generate_chunk(int chunk_id, int buffer_chunk_index) {
         }
     }
     
+}  // namespace
+
+// The one symbol this game exports.
+PSE_GAME(chicken, game_init, game_update, game_render);
