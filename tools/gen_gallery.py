@@ -203,9 +203,9 @@ def main(argv):
     parser.add_argument("--manifest", help="path to builds.json")
     parser.add_argument("--repo", default="", help="owner/name, for the link")
     parser.add_argument("--title", default="",
-                        help="gallery heading. Defaults to the repo name, so "
-                             "renaming the repo does not mean editing the "
-                             "generator.")
+                        help="gallery heading. Defaults to the repo name with "
+                             "its dashes read as spaces, so renaming the repo "
+                             "does not mean editing the generator.")
     parser.add_argument("--timestamp", default="")
     args = parser.parse_args(argv)
 
@@ -233,8 +233,11 @@ def main(argv):
     os.makedirs(args.site, exist_ok=True)
     index_path = os.path.join(args.site, "index.html")
     with open(index_path, "w", encoding="utf-8") as handle:
-        title = args.title or (args.repo.split("/")[-1] if args.repo
-                               else "games")
+        # A repo name is hyphenated because a path has to be; a sign over a
+        # cabinet is not. Dashes read as spaces so the marquee says what the
+        # place is called rather than where it lives.
+        title = args.title or (args.repo.split("/")[-1].replace("-", " ")
+                               if args.repo else "games")
         handle.write(render_page(cards, args.repo, args.timestamp, title,
                                  active_cards))
 

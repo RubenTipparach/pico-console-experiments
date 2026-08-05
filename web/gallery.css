@@ -20,6 +20,13 @@
   --device: #ffcc22;
 
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* The marquee is the one thing on the page that is not a readout, so it is
+     the one thing not set in the code face. Weight 900 picks up SF Pro Black
+     on Apple and Segoe UI Black on Windows, with Arial Black as the floor:
+     a heavy poster face everywhere, and no webfont to fetch. */
+  --display: system-ui, -apple-system, "Segoe UI", "Arial Black",
+             "Helvetica Neue", sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -58,17 +65,20 @@ body {
 
 .marquee h1 {
   margin: 0;
-  font-size: clamp(2rem, 7vw, 3.5rem);
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-family: var(--display);
+  font-size: clamp(2.25rem, 8vw, 4.25rem);
+  font-weight: 900;
+  /* A heavy face wants to be set tight. The old 0.12em was there to stop a
+     mono face reading as a filename, which is not a problem this one has. */
+  letter-spacing: 0.02em;
+  line-height: 1.05;
   text-transform: uppercase;
   color: var(--ink);
-  /* Hard offset shadow, no blur: a blurred glow reads as CSS, a hard offset
-     reads as a stencilled cabinet. */
-  text-shadow:
-    3px 0 var(--accent),
-    -3px 0 #22aaff,
-    0 4px #00000088;
+  /* One hard offset shadow, no blur and no colour split. The red and blue
+     ghosts either side used to read as a broken signal rather than a lit
+     sign, and at this weight the letterforms carry the sign on their own.
+     The accent still frames the marquee, along its bottom rule. */
+  text-shadow: 0 4px 0 #00000099;
   text-wrap: balance;
 }
 
