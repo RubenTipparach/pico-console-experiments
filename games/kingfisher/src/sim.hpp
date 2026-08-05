@@ -150,8 +150,11 @@ struct World {
     int32_t line_max;
     uint16_t stamina;
     uint16_t stamina_max;
+    uint16_t stamina_cap;  // this wind's ceiling, a quarter lower each time
+    uint16_t spent_timer;  // ticks left in a second wind, 0 when not in one
     int8_t run_dir;        // -1 or 1, which way the fish runs
     int8_t last_wiggle;    // last rod wiggle direction, 0 before the first
+    uint16_t wiggle_cd;    // ticks until a wiggle bites again
     FightPhase fight_phase;
     uint16_t phase_timer;
     uint16_t leap_timer;   // hooked fish surface break, cosmetic
