@@ -1,0 +1,7 @@
+# Colours for tree_far.obj. Every channel is a multiple of
+# 0x11, because the panel is four bits per channel and anything else
+# shifts on the device and nowhere else.
+
+# tree.obj's lower canopy tone, so the swap changes shape and not colour
+newmtl tree_far_leaf
+Kd 0.200000 0.533333 0.266667   # #338844

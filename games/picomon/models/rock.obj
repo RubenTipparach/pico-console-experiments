@@ -1,0 +1,46 @@
+# A wayside boulder: one dome, uneven on purpose.
+# Y is up, +Z is the way the creature faces, one world unit is one map tile.
+# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
+# so the game places it by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
+# is a pixel each instead of eight triangles.
+#
+# About 0.44 units tall and twice that across, 18 triangles.
+# The base ring sits on the ground and is left open. Nothing above the
+# horizon can see into it, and this is scenery that gets drawn a lot.
+
+mtllib rock.mtl
+
+# boulder, 18 triangles
+v 0.000 0.440 0.000
+v 0.324 0.300 0.000
+v 0.135 0.300 0.218
+v -0.165 0.300 0.267
+v -0.276 0.300 0.000
+v -0.159 0.300 -0.257
+v 0.141 0.300 -0.228
+v 0.432 0.000 0.000
+v 0.253 0.000 0.400
+v -0.202 0.000 0.320
+v -0.497 0.000 0.000
+v -0.221 0.000 -0.349
+v 0.244 0.000 -0.386
+usemtl rock_light
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 6
+f 1 6 7
+f 1 7 2
+usemtl rock_body
+f 2 8 9 3
+f 3 9 10 4
+f 4 10 11 5
+f 5 11 12 6
+f 6 12 13 7
+f 7 13 8 2

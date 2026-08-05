@@ -1,0 +1,9 @@
+# Colours for rock.obj. Every channel is a multiple of
+# 0x11, because the panel is four bits per channel and anything else
+# shifts on the device and nowhere else.
+
+newmtl rock_light
+Kd 0.733333 0.666667 0.600000   # #BBAA99
+
+newmtl rock_body
+Kd 0.600000 0.533333 0.466667   # #998877

@@ -1,0 +1,12 @@
+# Colours for tree.obj. Every channel is a multiple of
+# 0x11, because the panel is four bits per channel and anything else
+# shifts on the device and nowhere else.
+
+newmtl tree_trunk
+Kd 0.466667 0.333333 0.200000   # #775533
+
+newmtl tree_leaf_low
+Kd 0.200000 0.533333 0.266667   # #338844
+
+newmtl tree_leaf_high
+Kd 0.266667 0.600000 0.266667   # #449944

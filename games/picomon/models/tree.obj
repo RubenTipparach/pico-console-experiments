@@ -1,0 +1,64 @@
+# A route tree: a square trunk under two canopy cones.
+# Y is up, +Z is the way the creature faces, one world unit is one map tile.
+# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
+# so the game places it by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
+# is a pixel each instead of eight triangles.
+#
+# About 2.50 units tall, 20 triangles. tree_far.obj is the same
+# silhouette for six, and a tree that swaps between them must not
+# visibly change shape, which is why both canopies are six sided.
+
+mtllib tree.mtl
+
+# trunk, 8 triangles
+v 0.105 0.900 0.105
+v -0.105 0.900 0.105
+v -0.105 0.900 -0.105
+v 0.105 0.900 -0.105
+v 0.130 0.000 0.130
+v -0.130 0.000 0.130
+v -0.130 0.000 -0.130
+v 0.130 0.000 -0.130
+usemtl tree_trunk
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1
+
+# lower canopy, 6 triangles
+v 0.000 1.770 0.000
+v 0.860 0.720 0.000
+v 0.430 0.720 0.745
+v -0.430 0.720 0.745
+v -0.860 0.720 0.000
+v -0.430 0.720 -0.745
+v 0.430 0.720 -0.745
+usemtl tree_leaf_low
+f 9 10 11
+f 9 11 12
+f 9 12 13
+f 9 13 14
+f 9 14 15
+f 9 15 10
+
+# upper canopy, 6 triangles
+v 0.000 2.500 0.000
+v 0.620 1.450 0.000
+v 0.310 1.450 0.537
+v -0.310 1.450 0.537
+v -0.620 1.450 0.000
+v -0.310 1.450 -0.537
+v 0.310 1.450 -0.537
+usemtl tree_leaf_high
+f 16 17 18
+f 16 18 19
+f 16 19 20
+f 16 20 21
+f 16 21 22
+f 16 22 17

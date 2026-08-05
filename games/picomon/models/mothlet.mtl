@@ -1,0 +1,25 @@
+# Colours for mothlet.obj. Every channel is a multiple of
+# 0x11, because the panel is four bits per channel and anything else
+# shifts on the device and nowhere else.
+
+# fur
+newmtl mothlet_body
+Kd 0.733333 0.600000 0.866667   # #BB99DD
+
+# chest blaze and underside
+newmtl mothlet_belly
+Kd 0.933333 0.866667 1.000000   # #EEDDFF
+
+# forewing
+newmtl mothlet_wing
+Kd 0.800000 0.666667 0.933333   # #CCAAEE
+
+# hindwing and wing underside
+newmtl mothlet_wing2
+Kd 0.600000 0.466667 0.800000   # #9977CC
+
+newmtl mothlet_antenna
+Kd 0.533333 0.400000 0.600000   # #886699
+
+newmtl mothlet_leg
+Kd 0.466667 0.333333 0.533333   # #775588

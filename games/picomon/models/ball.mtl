@@ -1,0 +1,12 @@
+# Colours for ball.obj. Every channel is a multiple of
+# 0x11, because the panel is four bits per channel and anything else
+# shifts on the device and nowhere else.
+
+newmtl ball_top
+Kd 0.933333 0.200000 0.266667   # #EE3344
+
+newmtl ball_band
+Kd 0.266667 0.200000 0.200000   # #443333
+
+newmtl ball_base
+Kd 0.933333 0.933333 0.933333   # #EEEEEE

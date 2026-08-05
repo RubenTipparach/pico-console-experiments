@@ -1,0 +1,176 @@
+# TIDEPUP: the tide starter, and the mesh BRINEFIN and PUDDLIN tint.
+# Y is up, +Z is the way the creature faces, one world unit is one map tile.
+# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
+# so the game places it by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
+# is a pixel each instead of eight triangles.
+#
+# About 1.00 units tall, 72 triangles.
+# Read from the back: a dorsal fin and an upswept tail fluke, with
+# flippers instead of front legs. Nothing else in the roster has a fin,
+# which is the point.
+
+mtllib tidepup.mtl
+
+# body, 24 triangles
+v 0.000 0.670 -0.040
+v 0.251 0.535 -0.040
+v 0.126 0.535 0.290
+v -0.126 0.535 0.290
+v -0.251 0.535 -0.040
+v -0.126 0.535 -0.370
+v 0.126 0.535 -0.370
+v 0.251 0.265 -0.040
+v 0.126 0.265 0.290
+v -0.126 0.265 0.290
+v -0.251 0.265 -0.040
+v -0.126 0.265 -0.370
+v 0.126 0.265 -0.370
+v 0.000 0.130 -0.040
+usemtl tidepup_body
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 6
+f 1 6 7
+f 1 7 2
+f 2 8 9 3
+usemtl tidepup_belly
+f 3 9 10 4
+usemtl tidepup_body
+f 4 10 11 5
+f 5 11 12 6
+f 6 12 13 7
+f 7 13 8 2
+usemtl tidepup_belly
+f 8 14 9
+f 9 14 10
+f 10 14 11
+f 11 14 12
+f 12 14 13
+f 13 14 8
+
+# head, 12 triangles
+v 0.000 1.000 0.260
+v 0.250 0.790 0.260
+v 0.125 0.790 0.477
+v -0.125 0.790 0.477
+v -0.250 0.790 0.260
+v -0.125 0.790 0.043
+v 0.125 0.790 0.043
+v 0.000 0.580 0.260
+usemtl tidepup_body
+f 15 16 17
+f 15 17 18
+f 15 18 19
+f 15 19 20
+f 15 20 21
+f 15 21 16
+usemtl tidepup_belly
+f 16 22 17
+f 17 22 18
+f 18 22 19
+f 19 22 20
+f 20 22 21
+f 21 22 16
+
+# muzzle, 4 triangles
+v 0.000 0.750 0.580
+v 0.110 0.750 0.400
+v 0.000 0.665 0.400
+v -0.110 0.750 0.400
+v 0.000 0.835 0.400
+usemtl tidepup_snout
+f 23 24 25
+f 23 25 26
+f 23 26 27
+f 23 27 24
+
+# dorsal fin, 8 triangles
+v 0.000 0.884 -0.222
+v 0.035 0.680 -0.140
+v 0.000 0.751 0.036
+v -0.035 0.680 -0.140
+v 0.000 0.609 -0.316
+v 0.000 0.476 -0.058
+usemtl tidepup_fin
+f 28 29 30
+f 28 30 31
+f 28 31 32
+f 28 32 29
+usemtl tidepup_fin2
+f 29 33 30
+f 30 33 31
+f 31 33 32
+f 32 33 29
+
+# tail fluke, 8 triangles
+v 0.000 0.694 -0.760
+v 0.045 0.480 -0.580
+v 0.000 0.634 -0.396
+v -0.045 0.480 -0.580
+v 0.000 0.326 -0.764
+v 0.000 0.266 -0.400
+usemtl tidepup_fin
+f 34 35 36
+f 34 36 37
+f 34 37 38
+f 34 38 35
+usemtl tidepup_fin2
+f 35 39 36
+f 36 39 37
+f 37 39 38
+f 38 39 35
+
+# flipper, 4 triangles
+v 0.462 0.375 -0.068
+v 0.232 0.366 0.065
+v 0.305 0.420 0.173
+v 0.248 0.474 0.055
+v 0.175 0.420 -0.053
+usemtl tidepup_fin
+f 40 41 42
+f 40 42 43
+f 40 43 44
+f 40 44 41
+
+# flipper, 4 triangles
+v -0.462 0.375 -0.068
+v -0.248 0.474 0.055
+v -0.305 0.420 0.173
+v -0.232 0.366 0.065
+v -0.175 0.420 -0.053
+usemtl tidepup_fin
+f 45 46 47
+f 45 47 48
+f 45 48 49
+f 45 49 46
+
+# rear foot, 4 triangles
+v 0.265 0.240 -0.175
+v 0.095 0.240 -0.175
+v 0.095 0.240 -0.345
+v 0.265 0.240 -0.345
+v 0.180 0.000 -0.260
+usemtl tidepup_leg
+f 50 54 51
+f 51 54 52
+f 52 54 53
+f 53 54 50
+
+# rear foot, 4 triangles
+v -0.095 0.240 -0.175
+v -0.265 0.240 -0.175
+v -0.265 0.240 -0.345
+v -0.095 0.240 -0.345
+v -0.180 0.000 -0.260
+usemtl tidepup_leg
+f 55 59 56
+f 56 59 57
+f 57 59 58
+f 58 59 55
