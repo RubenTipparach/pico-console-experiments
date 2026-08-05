@@ -348,6 +348,10 @@ jobs:
           fi
           cp "$uf2" console.uf2
           elf=$(find build.console -name "console.elf" -print -quit)
+          if [ -z "$elf" ]; then
+            echo "::error::no console.elf to measure"
+            exit 1
+          fi
           bytes=$(stat -c%s console.uf2)
 
           # RAM and flash in the run summary, because rule 8 asks for the
@@ -364,16 +368,30 @@ jobs:
             echo "console.uf2 is $bytes bytes, which programs $((bytes / 2)) bytes of flash."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # The PicoSystem has 264 KB of SRAM and the SDK has already spent
-          # 115,200 of it on the framebuffer. The console is the build where
-          # what is left gets tight, because every game's state is resident at
-          # once, so the number is a check and not just a note.
-          read -r _ _ data bss _ < <(arm-none-eabi-size "$elf" | tail -1)
+          # Static RAM, checked rather than just noted: the console is the
+          # build where it gets tight, because every game's state is resident
+          # at once.
+          #
+          # arm-none-eabi-size prints `text data bss dec hex filename`. Every
+          # column is named here rather than skipped with underscores, because
+          # a positional read that skipped two of them picked up bss and dec,
+          # summed text + data + 2*bss, and failed its own check at 595,368
+          # bytes on a build that had linked perfectly.
+          read -r text data bss dec hex name <<< "$(arm-none-eabi-size "$elf" | tail -1)"
           ram=$((data + bss))
-          echo "static RAM: $ram bytes"
-          if [ "$ram" -gt 140000 ]; then
-            echo "::error::the console wants $ram bytes of static RAM. With the"
-            echo "::error::SDK's 115,200 byte framebuffer that leaves no stack."
+
+          # The RP2040 has 270,336 bytes of SRAM. The SDK's framebuffer is
+          # 115,200 of it and is counted in bss, so the ceiling is on the
+          # whole static footprint, not on what is left over. 230,000 leaves
+          # about 40 KB for stack and heap, which is the early warning: the
+          # linker catches a real overflow on its own, and by then the message
+          # is `region RAM overflowed` with nothing about which game grew.
+          echo "flash: $text bytes of code and const data"
+          echo "static RAM: $ram bytes ($data data + $bss bss, of 270,336)"
+          if [ "$ram" -gt 230000 ]; then
+            echo "::error::the console wants $ram bytes of static RAM of the"
+            echo "::error::270,336 the RP2040 has, leaving too little for the"
+            echo "::error::stack. Something on the menu grew: check bss."
             exit 1
           fi
 
