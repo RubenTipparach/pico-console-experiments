@@ -64,6 +64,36 @@ const Species k_species[k_species_count] = {
     {"THE OLD ONE",2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
 };
 
+uint32_t fish_weight_g(int species, int size_cm) {
+    if (species < 0 || species >= k_species_count || size_cm <= 0) return 0;
+    // Length cubed over the condition factor. A 200 cm fish is 8000000 / 100,
+    // which is 80 kg and still nowhere near overflowing 32 bits.
+    const uint32_t cm = static_cast<uint32_t>(size_cm);
+    return (cm * cm * cm) / k_weight_den;
+}
+
+uint32_t tour_target_for_day(int day) {
+    if (day < 1) day = 1;
+    if (day > k_tour_days) day = k_tour_days;
+    return k_tour_target_base +
+           k_tour_target_step * static_cast<uint32_t>(day - 1);
+}
+
+void records_add_score(Records& records, uint32_t score) {
+    if (score == 0) return;
+    // Insertion into a board of ten, highest first. Ten entries is small
+    // enough that shuffling beats sorting, and it keeps the board's order an
+    // invariant of the insert rather than something a caller has to redo.
+    for (int i = 0; i < k_high_scores; i++) {
+        if (score <= records.high[i]) continue;
+        for (int j = k_high_scores - 1; j > i; j--) {
+            records.high[j] = records.high[j - 1];
+        }
+        records.high[i] = score;
+        return;
+    }
+}
+
 int hook_distance_dm(const World& world) {
     int32_t dist;
     switch (world.mode) {
@@ -119,6 +149,42 @@ void world_make_save(const World& world, SaveData& out) {
 }
 
 namespace {
+
+// The end of a tournament day. Made the quota and the run goes on with a
+// harder one; missed it and the run is over there and then.
+//
+// Score is every gram over quota times the days survived, so a big fish on
+// day one is worth ten times the same fish on day ten. That is deliberate:
+// without the multiplier the best play is to land the minimum and idle, and
+// a tournament nobody pushes in is not a tournament.
+void tour_end_of_day(World& world) {
+    if (world.tour_state != TourState::Running) return;
+
+    if (world.tour_today_g < world.tour_target_g) {
+        world.tour_state = TourState::Lost;
+        const uint32_t days = world.tour_day > 0
+            ? static_cast<uint32_t>(world.tour_day - 1) : 0;
+        world.tour_score = (world.tour_over_g / k_tour_score_div) * days;
+        world.ev.tour_lost = true;
+        return;
+    }
+
+    world.tour_over_g += world.tour_today_g - world.tour_target_g;
+    world.tour_today_g = 0;
+
+    if (world.tour_day >= k_tour_days) {
+        world.tour_state = TourState::Won;
+        world.tour_score = (world.tour_over_g / k_tour_score_div) * k_tour_days;
+        world.ev.tour_won = true;
+        return;
+    }
+
+    world.tour_day++;
+    world.tour_target_g = tour_target_for_day(world.tour_day);
+    world.tour_state = TourState::DayPassed;
+    world.tour_card_timer = k_tour_card_ticks;
+    world.ev.tour_day_passed = true;
+}
 
 void fish_flee(Fish& fish);
 
@@ -446,6 +512,12 @@ void end_fight(World& world, bool caught) {
             if (world.card_record) {
                 rec.best_cm[fish.species] = fish.size_cm;
                 world.ev.new_record = true;
+            }
+            // The quota counts weight, not fish. A day of minnows is not a
+            // day's work.
+            if (world.tour_state == TourState::Running) {
+                world.tour_today_g += fish_weight_g(fish.species,
+                                                    fish.size_cm);
             }
             world.card_timer = 220;
             world.save_pending = true;
@@ -918,11 +990,58 @@ int world_test_hook(World& world, int species, int size_cm) {
     return 0;
 }
 
+void world_start(World& world, GameMode mode) {
+    world.game_mode = mode;
+    world.tour_day = 0;
+    world.tour_target_g = 0;
+    world.tour_today_g = 0;
+    world.tour_over_g = 0;
+    world.tour_score = 0;
+    world.tour_card_timer = 0;
+    world.tour_state = TourState::Idle;
+    // The rod comes back to the boat whatever was happening. Starting a run
+    // out of a finished one would otherwise begin it mid fight, with a fish
+    // hooked from a tournament that is already over.
+    reset_lure(world);
+    world.card_species = -1;
+    world.card_timer = 0;
+    if (mode != GameMode::Tournament) return;
+
+    world.tour_state = TourState::Running;
+    world.tour_day = 1;
+    world.tour_target_g = tour_target_for_day(1);
+    // Day one starts at dawn rather than mid morning: a quota counted over a
+    // day should get the whole of one.
+    world.day_tick = 0;
+}
+
 void world_tick(World& world, const Input& input) {
     world.ev = Events{};
     world.tick++;
+
+    // A tournament is frozen while its result card is up, so the day that
+    // just ended cannot leak fishing time into the next one.
+    if (world.tour_card_timer > 0) {
+        world.tour_card_timer--;
+        if (world.tour_card_timer == 0 &&
+            world.tour_state == TourState::DayPassed) {
+            world.tour_state = TourState::Running;
+        }
+        return;
+    }
+    // A finished run stops the pond. The score is on screen and the only way
+    // on is out through the menu.
+    if (world.tour_state == TourState::Lost ||
+        world.tour_state == TourState::Won) {
+        return;
+    }
+
     world.day_tick++;
-    if (world.day_tick >= k_day_length) world.day_tick = 0;
+    if (world.day_tick >= k_day_length) {
+        world.day_tick = 0;
+        tour_end_of_day(world);
+        if (world.tour_card_timer > 0) return;
+    }
 
     // Weather. Rain raises interest, and one resident of the deep only bites
     // in it.

@@ -343,4 +343,39 @@ constexpr int k_tire_ticks_base = 70;
 constexpr int k_tire_ticks_vary = 70;
 constexpr int k_run_rest_div = 8;
 
+// ---- weight ----
+//
+// A fish's weight from its length, which is what a quota is counted in.
+// Length cubed against a condition factor, the way a real fish's weight is
+// estimated: grams = size_cm^3 / den. At 100 that is the usual factor for a
+// well fed fish, and it is what makes size mean something beyond a number on
+// a card. A 12 cm minnow is 17 g and a 160 cm sturgeon is 41 kg, so one good
+// fish is worth an afternoon of small ones.
+constexpr int k_weight_den = 100;
+
+// ---- the tournament ----
+//
+// Ten days, a quota each day, and one missed quota ends the run. The quota
+// climbs so the early days are a warm up and the last few need the deep
+// water, which is where the rare fish are and where the line is at most risk.
+//
+// One day is one full day/night cycle of the pond, so the clock a player
+// reads is the sun, not a number. That is three minutes a day at
+// k_day_length, and a competent angler lands somewhere between four and ten
+// fish in that time depending on how far out they are working.
+//
+// The numbers below are measured rather than guessed: tools in the test
+// suite play a full run and report what a day's fishing actually yields.
+constexpr uint32_t k_tour_target_base = 250;    // grams, day one
+constexpr uint32_t k_tour_target_step = 200;    // added per day after that
+
+// The score: every gram over quota, times the days survived. Overshooting on
+// day one is worth ten times overshooting on day ten, which is what makes an
+// early big fish worth chasing rather than banking the minimum and moving on.
+// Divided down so a score reads as a number rather than a phone bill.
+constexpr uint32_t k_tour_score_div = 100;
+
+// How long the day result card holds before the next day starts.
+constexpr int k_tour_card_ticks = 260;
+
 }  // namespace kf
