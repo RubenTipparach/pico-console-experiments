@@ -7,6 +7,8 @@ target: chicken
 sdk: 32blit
 web: true
 
+objective: "Keep moving right and stay on the platforms. Collect the gems on the way, time your jumps across the gaps, and do not fall off the bottom of the screen."
+
 controls:
   - "left/right: move"
   - "A: jump"

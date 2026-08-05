@@ -26,16 +26,34 @@ games/<slug>/
 | `slug` | no | URL path and cache key. Defaults to the directory name. |
 | `title` | yes | Shown on the gallery card. |
 | `blurb` | yes | One line. One. The card has room for one. |
+| `objective` | yes for web | What the player is trying to do, a sentence or two. Panel one of the tutorial. |
+| `controls` | yes for web | `"key: what it does"`, one a line. Shown on the card and paged into the tutorial. |
 | `target` | no | CMake target name. Defaults to the slug. |
 | `sdk` | no | `32blit` (default). See the note below. |
 | `web` | no | Build for the browser. Defaults to true for the 32blit SDK. |
-| `controls` | no | Short strings shown on the card, like `"A: jump"`. |
 | `models` | no | Documentation only. The real list lives in `CMakeLists.txt`. |
 
 Whether a game builds is decided in [`build.yaml`](../build.yaml) at the repo
 root, not in `game.yml`: list the slug under `build:` to keep it in the
 rotation, under `hold:` to take it out, or leave it out entirely and it builds
 by default.
+
+## The mini tutorial
+
+Every game that ships to the web ships a tutorial on its own page: what the
+game wants from the player, then its controls, as panels with arrows to page
+through. It is built from `objective` and `controls` by
+[`tools/gen_shell.py`](../tools/gen_shell.py) at configure time, so there is
+nothing to write beyond those two fields and nothing to keep in sync.
+
+Write `controls` as `"key: what it does"`. The key half is set in its own
+column and the rest is the explanation, so `"A: jump"` reads as a control and
+`"A"` alone reads as noise. A line with no colon is kept whole, for the things
+a game needs to say that are not one button.
+
+`tools/tests/test_gen_shell.py` walks every game in the repo and fails if one
+that ships to the web has no objective or no controls. A page a player cannot
+understand is a broken page, and it should not get as far as being published.
 
 ## On the SDK field
 

@@ -7,6 +7,8 @@ target: pico-santa
 sdk: 32blit
 web: true
 
+objective: "Drive the sleigh around the city and collect every gem you can find. The streets are a grid, so turn down the ones you have not searched yet."
+
 controls:
   - "left/right: turn"
   - "up: drive"

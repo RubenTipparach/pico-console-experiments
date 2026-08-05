@@ -336,6 +336,23 @@ source when a real model would do.
   Keep it that way: it means the page needs no per game knowledge, and a change
   to the C++ button mapping does not break it. Editing the shell reaches every
   game on the next build, since every enabled game is rebuilt every run.
+- **Every web game ships a mini tutorial on its own page.** It is the first
+  thing a player meets, and a game nobody can work out is a game nobody plays.
+  Panel one is the objective, what the game is asking of them. The rest are the
+  controls, each key beside what it actually does, split across panels with
+  arrows when there are more than four. The page used to say
+  `Arrows or WASD - Z X C V`: the keys the SDL build reads, with nothing about
+  what any of them does in the game in front of you. Never ship that again.
+  - Write it in `game.yml` as `objective` and `controls`, nowhere else.
+    `tools/gen_shell.py` builds the panels into that game's page at configure
+    time, so the shell in `web/` stays game agnostic and there is no second
+    copy of the text to keep in sync.
+  - Controls are `"key: what it does"`. A key on its own is noise; the half
+    after the colon is the whole point. A line with no colon is kept whole,
+    for what a game needs to say that is not one button.
+  - `tools/tests/test_gen_shell.py` walks every game in the repo and fails the
+    build when one that ships to the web has no objective or no controls. That
+    check is the rule; do not weaken it to get a game out.
 - **Thumbnails are manual.** CI captures a screenshot only the first time a game
   is published, when `games/<slug>/thumbnail.png` does not exist yet. After that
   the committed thumbnail is left alone forever, even when the game changes.
