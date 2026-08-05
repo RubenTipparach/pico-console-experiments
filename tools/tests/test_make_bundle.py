@@ -170,7 +170,7 @@ def test_a_game_with_no_metadata_is_refused():
               "the error explains why it matters: " + result.stderr)
 
 
-def test_slot_map_matches_the_firmware():
+def test_slot_map_matches_the_firmware_and_the_tool():
     # launcher/src/library.hpp hardcodes the same three numbers, and
     # cmake/slot.cmake links against them. A silent disagreement here puts a
     # game at an address the launcher never looks at.
@@ -188,6 +188,30 @@ def test_slot_map_matches_the_firmware():
     check("PICO_SLOT_SIZE 524288" in text, "the linker agrees on the slot size")
     check("PICO_SLOT_COUNT 23" in text, "the linker agrees on the slot count")
 
+    # The desktop tool composes bundles too, so it is a fourth copy of the same
+    # map. It cannot import this file, and a silent disagreement there writes a
+    # bundle that boots into the wrong thing.
+    flasher = os.path.join(os.path.dirname(TOOLS), "tools", "flasher",
+                           "Bundle.cs")
+    text = open(flasher, encoding="utf-8").read()
+    check("FlashBase = 0x10000000" in text, "the tool agrees on the flash base")
+    check("SlotSize = 512 * 1024" in text, "the tool agrees on the slot size")
+    check("SlotCount = 23" in text, "the tool agrees on the slot count")
+
+    meta = os.path.join(os.path.dirname(TOOLS), "tools", "flasher",
+                        "GameMeta.cs")
+    text = open(meta, encoding="utf-8").read()
+    check("HeaderSize = %d" % game_meta.HEADER_SIZE in text,
+          "the tool agrees on the metadata header size")
+    check("IconWidth = %d" % game_meta.ICON_W in text,
+          "the tool agrees on the icon width")
+    check("IconHeight = %d" % game_meta.ICON_H in text,
+          "the tool agrees on the icon height")
+    for name, offset in (("OffsetSlug", 16), ("OffsetTitle", 40),
+                         ("OffsetVersion", 72)):
+        check("%s = %d" % (name, offset) in text,
+              "the tool agrees on %s" % name)
+
 
 def main():
     test_a_good_bundle_round_trips()
@@ -196,7 +220,7 @@ def main():
     test_a_game_too_big_for_its_slot_is_refused()
     test_a_launcher_that_would_eat_slot_one_is_refused()
     test_a_game_with_no_metadata_is_refused()
-    test_slot_map_matches_the_firmware()
+    test_slot_map_matches_the_firmware_and_the_tool()
 
     if FAILURES:
         sys.stderr.write("\n%d check(s) failed\n" % len(FAILURES))

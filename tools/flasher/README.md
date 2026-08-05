@@ -1,6 +1,7 @@
 # PicoFlasher
 
-A one window Windows utility that copies a `.uf2` onto a PicoSystem.
+A one window Windows utility with two jobs: copy a single `.uf2` onto a
+PicoSystem, or build a library of games and put the whole lot on at once.
 
 Quick and dirty on purpose: single form, no installer, no settings file. It is a
 tool, not a product.
@@ -21,6 +22,38 @@ installing.
 4. Press **Flash**.
 
 The board reboots into the game the moment the copy finishes.
+
+## The Library tab
+
+The console holds one launcher and up to 23 games, all in a single `.uf2`. See
+[LAUNCHER.md](../../LAUNCHER.md) for why it is one file rather than an install
+step per game. This tab is where that file gets made.
+
+1. Fill the library. It defaults to `library/` at the repo root, which is
+   gitignored. Put built `.uf2` files there, or press **Add file...**. The
+   `launcher-bundle` artifact from CI and any local build tree are picked up
+   too, so a game you just built shows up without being copied anywhere.
+2. Pick games on the left and press **Add** to put them in the bundle. Each
+   game's name and icon come out of the `.uf2` itself, so the list is readable
+   without a manifest.
+3. Press **Flash to console** with a board in BOOTSEL, or **Save bundle...** to
+   write the file and flash it later.
+
+Two things it will refuse, both because they produce a console that boots into
+the wrong thing with nothing to read but a black screen:
+
+- A game linked for the wrong slot. Bundled games are built with
+  `-DPICO_SLOT=n`; the standalone `.uf2` you flash on its own is linked at the
+  base of flash and cannot go in a bundle. The tool says which is which.
+- A game with no metadata block, which the launcher would leave out of its menu
+  while it silently occupied a slot.
+
+### What it cannot do
+
+Tell you what is already on the console. `RPI-RP2` is a fake FAT volume with no
+storage behind it: sectors are parsed for UF2 magic as they arrive and then
+discarded, so there is nothing to read back. The right hand list is the bundle
+being built, not a report from the device.
 
 ## Building it locally
 
