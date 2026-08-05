@@ -53,9 +53,14 @@ rem
 rem CMAKE_POLICY_VERSION_MINIMUM works around 32blit-sdk's vendored SDL2
 rem package: its cmake config still declares cmake_minimum_required(<3.5),
 rem support for which CMake 4 removed outright.
+rem Static libgcc/libstdc++ so the exe does not depend on MinGW's runtime
+rem DLLs being on PATH: only the SDL2 DLLs get copied next to the build
+rem output, and libgcc_s_seh-1.dll / libstdc++-6.dll missing from PATH is a
+rem silent failure to launch, not an error message.
 echo Configuring %SLUG% (desktop build)...
 cmake -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja ^
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ ^
+    -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static" ^
     -DPICO_ONLY_GAME=%SLUG% -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 if errorlevel 1 exit /b 1
 
@@ -71,5 +76,10 @@ if "%GAME_EXE%"=="" (
     exit /b 1
 )
 
+rem The SDL backend defaults to 320x240 (System::max_width in the SDK) while
+rem the PicoSystem board config is 240x240, the same mismatch rule 12 works
+rem around for the web shell. Without --size the game draws into its own
+rem 240x240 (or doubled 120x120 lores) area and the rest of the window is
+rem black margin, which is not a driver crash, just an unset window size.
 echo Running %GAME_EXE%...
-"%GAME_EXE%"
+"%GAME_EXE%" --size 240,240

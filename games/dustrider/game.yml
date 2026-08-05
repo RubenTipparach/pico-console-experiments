@@ -15,4 +15,5 @@ controls:
 models:
   - bike.obj
   - cactus.obj
+  - rock.obj
 

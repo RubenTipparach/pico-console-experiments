@@ -8,6 +8,7 @@
 
 #include "bike.hpp"
 #include "cactus.hpp"
+#include "rock.hpp"
 
 namespace drr {
 namespace {
@@ -266,43 +267,17 @@ void draw_ground_detail(const World& world, float cam_x, float cam_z) {
             const float size = 0.22f + static_cast<float>((h >> 17) & 7) * 0.055f;
             const int tone = static_cast<int>((h >> 21) & 15);
 
-            // Boulders only out north, where they are far enough away to
-            // read as rocks. Up close a boxy one is all top face and reads
-            // as a table floating on the sand, so the near foreground gets
-            // flat scree instead, which is also what sells speed there.
-            if ((h & 28) == 0 && side == 1) {
-                // Worth its twelve triangles for the silhouette it throws
-                // against the flat sand.
-                g_renderer.draw_box(jx, 0.0f, cz, size * 2.2f, size * 1.8f,
-                                    size * 2.0f,
-                                    clamp8(168 - tone * 4),
-                                    clamp8(138 - tone * 4),
-                                    clamp8(98 - tone * 3),
-                                    clamp8(126 - tone * 4),
-                                    clamp8(100 - tone * 4),
-                                    clamp8(70 - tone * 3));
-                continue;
-            }
-
-            // Flat scree patch: two triangles, and at this grazing angle it
-            // reads as a streak of darker grit.
-            // Stretched along x and given real z extent: at this grazing
-            // angle a square patch collapses to a one pixel line.
-            const float wx[4] = {jx - size * 1.6f, jx + size * 1.6f,
-                                 jx + size * 1.6f, jx - size * 1.6f};
-            const float wy[4] = {0.01f, 0.01f, 0.01f, 0.01f};
-            const float wz[4] = {cz - size * 1.1f, cz - size * 1.1f,
-                                 cz + size * 1.1f, cz + size * 1.1f};
-            // Well under the sand it sits on. Scree a few shades off the
-            // ground is invisible at this size, and invisible detail is
-            // triangles spent on nothing.
-            const uint8_t r = clamp8(150 - tone * 6);
-            const uint8_t g = clamp8(116 - tone * 6);
-            const uint8_t b = clamp8(72 - tone * 4);
-            const uint8_t cr[4] = {r, r, r, r};
-            const uint8_t cg[4] = {g, g, g, g};
-            const uint8_t cb[4] = {b, b, b, b};
-            quad_world(wx, wy, wz, cr, cg, cb);
+            // A real rock, narrower at the top than the base, so it throws
+            // a proper silhouette at any distance or camera pitch instead
+            // of a flat quad that goes edge on and flickers to a line.
+            // Occasionally bigger, for a boulder among the scree.
+            const bool big = (h & 28) == 0;
+            const float scale = big ? size * 1.6f : size;
+            const float yaw = static_cast<float>((h >> 25) & 15) *
+                              (k_pi / 8.0f);
+            const uint8_t tint = clamp8(215 - tone * 5);
+            g_renderer.draw_mesh(models::rock, jx, 0.0f, cz, yaw, scale,
+                                 tint, tint, tint);
         }
     }
 }

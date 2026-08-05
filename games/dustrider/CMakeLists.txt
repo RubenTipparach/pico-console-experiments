@@ -6,4 +6,5 @@ add_picosystem_game(dustrider
     MODELS
         bike.obj
         cactus.obj
+        rock.obj
 )
