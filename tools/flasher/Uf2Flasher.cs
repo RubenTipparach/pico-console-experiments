@@ -20,7 +20,19 @@ public sealed record FlashResult(bool Success, string Message);
 /// </summary>
 public static class Uf2Flasher
 {
-    private const int BlockSize = 64 * 1024;
+    // One 4KB flash sector's worth of UF2 blocks. Used to be 64KB: the RP2040
+    // bootrom erases a sector (tens of milliseconds on the W25Q parts these
+    // boards actually carry) before it can program the blocks landing in it,
+    // and WriteThrough only forces .NET's own buffering, it says nothing
+    // about whether the device has actually finished committing a chunk
+    // before the next one arrives over USB. A multi-game bundle large enough
+    // to span many sectors showed exactly the symptom that mismatch would
+    // produce: the first and last parts of a write landing correctly while a
+    // slot in the middle came back completely erased, as if that whole
+    // stretch had never been written at all. Flushing after every sector
+    // sized chunk instead of every 64KB gives the device sixteen times as
+    // many chances to catch up before more data queues up behind it.
+    private const int BlockSize = 4 * 1024;
     private const uint Uf2Magic0 = 0x0A324655;   // "UF2\n"
     private const uint Uf2Magic1 = 0x9E5D5157;
 
@@ -63,11 +75,15 @@ public static class Uf2Flasher
                 {
                     var count = Math.Min(BlockSize, payload.Length - written);
                     stream.Write(payload, written, count);
+                    // Flushed per chunk, not just once at the end: this is
+                    // what actually gives the device a chance to finish
+                    // committing one sector before the next is queued up
+                    // behind it, which WriteThrough alone does not guarantee.
+                    stream.Flush();
                     written += count;
                     progress?.Report((int)(100L * written / payload.Length));
                 }
                 wroteEverything = true;
-                stream.Flush();
             }
             finally
             {
