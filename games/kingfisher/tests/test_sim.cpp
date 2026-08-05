@@ -332,6 +332,119 @@ void test_wiggle_spam_cannot_pin_a_fish() {
 }
 
 
+// Wear a hooked fish down to its second wind the way a player does: work the
+// reel while the meter is out of the red and come off it when it climbs.
+//
+// Simply holding the reel used to get here, and no longer does: on a strong
+// fish a held pull now loads the rod past what it will stand long before the
+// fish runs out of stamina, so a test that cranks from hook to net measures a
+// snapped line rather than a spent fish.
+void wear_down_until_spent(kf::World& world) {
+    for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight &&
+                    world.spent_timer == 0; t++) {
+        kf::Input input{};
+        input.a = world.tension < kf::k_tension_danger - 80;
+        if (t % 3 == 0) {
+            if ((t / 3) % 2 == 0) input.left_pressed = true;
+            else input.right_pressed = true;
+        }
+        kf::world_tick(world, input);
+    }
+}
+
+// The meter has to climb with a held pull rather than switch on and off with
+// it. Two ticks of cranking and two hundred must not read the same, or the
+// length of a pull costs nothing and the only question the fight asks is
+// whether a finger is on the button.
+void test_stress_accumulates_with_a_held_pull() {
+    kf::World world;
+    kf::world_init(world, 31);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    kf::Input reel{};
+    reel.a = true;
+    for (int t = 0; t < 20 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode == kf::Mode::Fight);
+    const uint16_t early = world.line_stress;
+
+    for (int t = 0; t < 60 && world.mode == kf::Mode::Fight; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode != kf::Mode::Fight || world.line_stress > early);
+    CHECK(world.mode != kf::Mode::Fight || world.strain > 0);
+
+    // And easing off has to unwind it, or a player who let it build has no
+    // way back and the break is the game's decision rather than theirs.
+    if (world.mode == kf::Mode::Fight) {
+        const uint16_t loaded = world.strain;
+        for (int t = 0; t < 40 && world.mode == kf::Mode::Fight; t++) {
+            kf::world_tick(world, kf::Input{});
+        }
+        CHECK(world.mode != kf::Mode::Fight || world.strain < loaded);
+    }
+}
+
+// Nothing in the lake may break the line on one tick's worth of pull. If it
+// could, that species would be back to an on/off meter: down the reel, snap,
+// with no climb to read and nothing the player could have done differently.
+void test_no_fish_breaks_the_line_on_one_tick() {
+    for (int species = 0; species < kf::k_species_count; species++) {
+        kf::World world;
+        kf::world_init(world, 200 + species);
+        kf::world_test_hook(world, species, kf::k_species[species].size_max);
+        kf::Input hook{};
+        hook.a_pressed = true;
+        kf::world_tick(world, hook);
+
+        // Hand the fish everything: full effort, pulling away, reel down.
+        world.fish_effort = 255;
+        world.fish_dir = 1;
+        world.strain = 0;
+        kf::Input reel{};
+        reel.a = true;
+        kf::world_tick(world, reel);
+
+        const int instant = world.line_stress - world.strain / kf::k_strain_fp;
+        if (instant >= kf::k_rod_starter_max) {
+            std::printf("  %s alone reaches %d of %d\n",
+                        kf::k_species[species].name, instant,
+                        kf::k_rod_starter_max);
+        }
+        CHECK(instant < kf::k_rod_starter_max);
+    }
+}
+
+// A spent fish must not load the rod. The exhaustion window is the one time
+// pulling is free, and it is the whole reward for wearing a fish down.
+void test_a_spent_fish_builds_no_strain() {
+    kf::World world;
+    kf::world_init(world, 77);
+    kf::world_test_hook(world, kf::k_species_count - 1, 200);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    wear_down_until_spent(world);
+    CHECK(world.mode == kf::Mode::Fight);
+    CHECK(world.stamina == 0 || world.spent_timer > 0);
+
+    // Hold the reel down through the window: the rod holds where it is
+    // rather than loading further.
+    kf::Input reel{};
+    reel.a = true;
+    const uint16_t held = world.strain;
+    for (int t = 0; t < 30 && world.mode == kf::Mode::Fight &&
+                    world.stamina == 0; t++) {
+        kf::world_tick(world, reel);
+    }
+    CHECK(world.mode != kf::Mode::Fight || world.strain <= held);
+}
+
 // Running a fish out of stamina must open a real window and then close it
 // again on its own: the fish goes limp, refills over about two and a half
 // seconds whatever the player does, and comes back weaker than it was. That
@@ -346,14 +459,11 @@ void test_second_wind_opens_and_closes() {
     const uint16_t first_cap = world.stamina_cap;
     CHECK(first_cap == world.stamina_max);
 
-    // Work it down. Cranking is the only thing that empties a fish.
+    // Work it down. Reeling is the only thing that empties a fish, but it has
+    // to be reeling the meter allows: holding it flat out snaps the line.
+    wear_down_until_spent(world);
     kf::Input reel{};
     reel.a = true;
-    int guard = 0;
-    while (world.mode == kf::Mode::Fight && world.spent_timer == 0 &&
-           guard++ < 30000) {
-        kf::world_tick(world, reel);
-    }
     CHECK(world.mode == kf::Mode::Fight);
     CHECK(world.spent_timer > 0);          // the window opened
     CHECK(world.stamina_cap < first_cap);  // and cost the fish its ceiling
@@ -863,6 +973,9 @@ int main() {
     test_stamina_drains_and_regens();
     test_second_wind_opens_and_closes();
     test_wiggle_spam_cannot_pin_a_fish();
+    test_stress_accumulates_with_a_held_pull();
+    test_no_fish_breaks_the_line_on_one_tick();
+    test_a_spent_fish_builds_no_strain();
     test_wiggle_relieves_and_tires();
     test_fresh_fish_resists_the_reel();
     test_tension_climbs_hard_against_a_run();

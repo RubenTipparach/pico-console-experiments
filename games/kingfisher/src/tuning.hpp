@@ -109,10 +109,55 @@ static_assert(k_wind_cap_num < k_wind_cap_den,
 // chooses a direction to put it in (away, holding, or straight at the boat).
 // That is where the fight's texture comes from now, rather than from a phase
 // deciding everything at once.
-constexpr int k_stress_per_strength = 55;   // at full effort, per strength
+// The instantaneous share is deliberately small. It used to be most of the
+// bar on its own, which is what made the meter read as on or off: the
+// strongest fish put 550 of the rod's 600 into the line the moment it pulled,
+// so the needle was already at the stop before anything accumulated and the
+// only question was whether the player was touching the reel. At 26 a legend
+// pulling flat out sits under half way, which leaves the top half of the bar
+// for the climb that the pull itself earns.
+constexpr int k_stress_per_strength = 26;   // at full effort, per strength
 constexpr int k_tow_stress_base = 40;       // cranking at all costs this
-constexpr int k_tow_stress_num = 8;         // plus mass: size_cm * num / den
-constexpr int k_tow_stress_den = 5;
+
+// ---- strain: what a long pull costs ----
+//
+// The two forces above are instantaneous, so on their own the meter only
+// reports what is happening this tick: hold the reel and it steps up once and
+// sits there, ease off and it drops straight back. That reads as on or off,
+// and it means the length of a pull costs nothing.
+//
+// Strain is the memory. Pulling against a fish that still has something left
+// loads the rod a little more every tick, and the loading is what eventually
+// takes the line over its limit rather than the pull itself. A long haul on a
+// strong fish therefore ends in a break even though no single tick of it was
+// dangerous, which is the feedback loop the fight is played on.
+//
+// Two things are deliberate. It builds only against a fish with stamina, so
+// the exhaustion window stays safe to spend and the reward for wearing a fish
+// down is real. And it bleeds off faster than it builds, so easing up is
+// always the answer and the player is never handed an unavoidable break.
+//
+// Two things build it, and both are the fish rather than the tow: how hard it
+// is pulling, and how much of it there is. Mass lives here rather than in the
+// instantaneous reading on purpose. A heavy fish leaning on the rod for a
+// while is what breaks a line; a heavy fish for one tick is not, and putting
+// its weight in the instant reading made the biggest species snap the moment
+// the reel went down, with the meter jumping rather than climbing.
+// Carried in 64ths of a stress unit. A minnow loads the rod at a fraction of
+// a point per tick and a whole number would round that to nothing, which is
+// the difference between "a minnow can just about break a line if you are
+// stupid about it" and "a minnow never can".
+constexpr int k_strain_fp = 64;
+constexpr int k_strain_gain_effort = 30;     // per point of the fish's stress
+constexpr int k_strain_gain_mass = 50;      // per cm of fish
+constexpr int k_strain_relief = 3 * 64;     // per tick, easing off
+constexpr int k_strain_wiggle_shed = 70 * 64;   // a wiggle dumps this much
+constexpr int k_strain_max = 900 * 64;
+
+static_assert(k_strain_relief >
+                  (10 * k_stress_per_strength / 4) * k_strain_gain_effort / 64,
+              "letting go has to shed strain faster than the strongest fish "
+              "builds it at a quarter effort, or the meter ratchets");
 
 // ---- the rod: what the line will take ----
 //
@@ -120,33 +165,48 @@ constexpr int k_tow_stress_den = 5;
 // breaking stress: raise it and bigger fish become landable, which is what a
 // better rod is for.
 //
-//   species      str  size  fish stress  tow stress  total  can break
-//   MINNOW         1    12       55           59        114     no
-//   BLUEGILL       2    25      110           80        190     no
-//   PERCH          3    30      165           88        253     no
-//   GHOST KOI      4    60      220          136        356     no
-//   BASS           5    55      275          128        403     no
-//   CARP           4    70      220          152        372     no
-//   GOLD CARP      5    75      275          160        435     no
-//   MOONFISH       6    60      330          136        466     no
-//   PIKE           7    90      385          184        569     no
-//   CATFISH        8   110      440          216        656     yes
-//   STURGEON       9   160      495          296        791     yes
-//   THE OLD ONE   10   200      550          360        910     yes
+// No fish reaches the limit on what it is doing right now. Every break is a
+// pull that went on too long, which is the whole point of the strain above:
+// the instant column is where the meter sits when the reel goes down, and the
+// per tick column is how fast it climbs from there.
 //
-//   rod: STARTER, limit 600. Strongest fish alone: 550.
+//   species      str  size  instant  strain/tick  to limit  snaps if held
+//   MINNOW         1    12      66      0.33         never       0%
+//   BLUEGILL       2    25      92      0.68         never       0%
+//   PERCH          3    30     118      0.94          8.6s       0%
+//   GHOST KOI      4    60     144      1.49          3.1s      12%
+//   BASS           5    55     170      1.62          2.7s      51%
+//   CARP           4    70     144      1.62          2.8s      85%
+//   GOLD CARP      5    75     170      1.87          2.3s     100%
+//   MOONFISH       6    60     196      1.87          2.2s     100%
+//   PIKE           7    90     222      2.43          1.6s     100%
+//   CATFISH        8   110     248      2.86          1.2s     100%
+//   STURGEON       9   160     274      3.67          0.9s     100%
+//   THE OLD ONE   10   200     300      4.34          0.7s     100%
 //
-// Fish stress is what a fish that size can manage flat out; tow stress is
-// what cranking on that much mass adds. Total over the rod's limit can
-// break, and only while cranking, which is why the last column changes with
-// the rod rather than with the fish. The numbers come from the constants
-// above, at each species' maximum size; tools cannot regenerate this table,
-// so change a constant and change these too.
+//   rod: STARTER, limit 600. Hardest instant pull in the lake: 300.
+//
+// "to limit" is the strain alone at full effort, and the fish is not at full
+// effort for all of it, so the measured snap times run longer: a legend takes
+// about two seconds of solid cranking, a catfish three and a half.
+//
+// The last column is measured, not derived: a bot that holds the reel from
+// hook to net, forty trials a species, six hundred for the small ones. The
+// three smallest never snap because they are landed before the rod loads,
+// which is what makes them the ones you can be careless with. The gradient
+// through the middle is the point, and it is fragile: raising the gains to
+// give a minnow a chance collapses it, because GHOST KOI jumps to 80% long
+// before a minnow's fight lasts long enough to matter.
+//
+// The numbers come from the constants above at each species' maximum size;
+// tools cannot regenerate this table, so change a constant and change these
+// too.
 constexpr uint16_t k_rod_starter_max = 600;
 
-static_assert(10 * k_stress_per_strength < k_rod_starter_max,
-              "the strongest fish must not be able to break the line alone: "
-              "letting go has to be safe, or the meter is a lie");
+static_assert(10 * k_stress_per_strength + k_tow_stress_base <
+                  k_rod_starter_max,
+              "nothing may break the line on one tick's pull: a break has to "
+              "be a pull held too long, or the strain above is decoration");
 
 // ---- the reel: how fast line comes in ----
 //

@@ -1,16 +1,20 @@
-// The trophy shot has to fit the band it is drawn in.
+// What the fight and the catch card actually put on screen.
 //
-// The catch card renders the fish through the real engine into the top
-// viewport, and the top viewport ends at the split. Nothing about that is
-// checked by the sim tests, which is how a trophy came to be drawn a metre
-// below the camera's aim point: every species looked fine except the big ones,
-// whose bellies were cut off by the split. The species worth photographing
-// were the only ones photographed badly.
+// Everything here renders a real frame through the real engine and the real
+// models and reads the pixels back, because these are claims about what a
+// player sees and there is no other way to check one.
 //
-// So this renders a real frame per species at its maximum size and measures
-// where the fish actually lands. It is a rendering test, so it needs the real
-// engine and the real models, and it runs alongside the preview harness for
-// that reason.
+// The trophy shot has to fit the band it is drawn in. The catch card renders
+// the fish into the top viewport, and the top viewport ends at the split.
+// Nothing about that was checked by the sim tests, which is how a trophy came
+// to be drawn a metre below the camera's aim point: every species looked fine
+// except the big ones, whose bellies were cut off by the split. The species
+// worth photographing were the only ones photographed badly.
+//
+// The stamina meter has to say which state the fish is in. It goes dark blue
+// while a spent fish takes its second wind, and that window is the one time
+// pulling is free, so a player reading the bar at a glance has to be able to
+// tell it apart from the bright bar that means stop.
 
 #include <cstdint>
 #include <cstdio>
@@ -125,10 +129,80 @@ void test_every_trophy_fits_the_band() {
     }
 }
 
+// The bar is four pixels wide at x=3 under the split, and it fills from the
+// bottom, so its lowest cell is the one that is lit soonest.
+constexpr int k_bar_x = 4;
+constexpr int k_bar_bottom = k_split + 9 + 40 - 3;
+
+void test_the_stamina_bar_marks_the_second_wind() {
+    std::vector<uint8_t> recovering(static_cast<size_t>(k_w) * k_h * 3);
+    std::vector<uint8_t> fighting(static_cast<size_t>(k_w) * k_h * 3);
+
+    kf::World world;
+    kf::world_init(world, 12);
+    kf::world_test_hook(world, 10, 160);          // a sturgeon, worth a fight
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+
+    // Wear it down the way a player does, until the second wind opens, then
+    // let it refill a little: at the instant it opens the fish is on zero and
+    // the bar has nothing lit to read.
+    for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight &&
+                    world.spent_timer == 0; t++) {
+        kf::Input input{};
+        input.a = world.tension < kf::k_tension_danger - 80;
+        if (t % 3 == 0) {
+            if ((t / 3) % 2 == 0) input.left_pressed = true;
+            else input.right_pressed = true;
+        }
+        kf::world_tick(world, input);
+    }
+    check(world.mode == kf::Mode::Fight, "the fish is still on for the shot");
+    check(world.spent_timer > 0, "the second wind is open");
+    for (int t = 0; t < 60 && world.mode == kf::Mode::Fight &&
+                    world.spent_timer > 0; t++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    check(world.stamina > 0, "the bar has something lit to read");
+
+    // Render the same world twice, once as it stands and once with the
+    // recovery flag cleared and nothing else touched. Any pixel that differs
+    // between the two is the bar, which is the only thing the flag drives.
+    // Reading a colour straight off one frame does not work: the water behind
+    // the bar is a bright gradient, and the first version of this test scored
+    // the water and passed with an empty bar.
+    kf::World shown = world;
+    pse::RenderTarget a{recovering.data(), k_w, k_h, k_w * 3,
+                        pse::PixelFormat::rgb888};
+    kfr::render_scene(shown, a, 50000);
+
+    kf::World lit = world;
+    lit.spent_timer = 0;
+    pse::RenderTarget b{fighting.data(), k_w, k_h, k_w * 3,
+                        pse::PixelFormat::rgb888};
+    kfr::render_scene(lit, b, 50000);
+
+    const int i = (k_bar_bottom * k_w + k_bar_x) * 3;
+    const int rr = recovering[i], rg = recovering[i + 1], rb = recovering[i + 2];
+    const int fr = fighting[i], fg = fighting[i + 1], fb = fighting[i + 2];
+    std::printf("  stamina bar  fighting rgb(%d,%d,%d)  recovering rgb(%d,%d,%d)\n",
+                fr, fg, fb, rr, rg, rb);
+
+    check(rr != fr || rg != fg || rb != fb,
+          "the recovery state changes the bar at all");
+    // Dark and blue: blue has to lead, and the whole thing has to be darker
+    // than the bar it replaces, or the two states read the same at a glance.
+    check(rb > rg && rb > rr, "the recovering bar is blue");
+    check(rr + rg + rb < fr + fg + fb, "the recovering bar is darker");
+    check(rg < fg, "the recovering bar is not the bright one");
+}
+
 }  // namespace
 
 int main() {
     test_every_trophy_fits_the_band();
+    test_the_stamina_bar_marks_the_second_wind();
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

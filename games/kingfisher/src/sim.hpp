@@ -141,6 +141,7 @@ struct World {
     int8_t hooked_fish;    // index into fish[], -1 when none
     uint16_t tension;      // 0..1023, line stress against the rod's limit
     uint16_t line_stress;  // the truth the meter slews toward
+    uint16_t strain;       // rod loading from a sustained pull, adds to stress
     uint16_t line_frac;    // sub fp remainder of this tick's line movement
     uint8_t fish_effort;   // 0..255, how hard the fish is working
     int8_t fish_dir;       // 1 away, 0 holding, -1 back toward the boat

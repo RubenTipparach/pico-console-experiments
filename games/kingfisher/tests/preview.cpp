@@ -92,6 +92,29 @@ int main(int argc, char** argv) {
         capture(world, 95000, out + "/preview_4_fight.ppm");
     }
 
+    // 4b: the same fight with the fish run out, taking its second wind. The
+    // stamina bar goes dark blue for this window, which is the one time
+    // pulling is free, so it is worth being able to look at.
+    {
+        for (int t = 0; t < 30000 && world.mode == kf::Mode::Fight &&
+                        world.spent_timer == 0; t++) {
+            kf::Input input{};
+            input.a = world.tension < kf::k_tension_danger - 80;
+            if (t % 3 == 0) {
+                if ((t / 3) % 2 == 0) input.left_pressed = true;
+                else input.right_pressed = true;
+            }
+            kf::world_tick(world, input);
+        }
+        // A moment in, so the bar has refilled enough to read.
+        run(world, kf::Input{}, 70);
+        if (world.mode == kf::Mode::Fight) {
+            capture(world, 96000, out + "/preview_4b_spent.ppm");
+        } else {
+            std::printf("fight ended before the second wind, no spent frame\n");
+        }
+    }
+
     // 5: the catch card trophy, landed with the full technique: work the reel
     // whenever the meter is out of the red, wiggle throughout.
     {
