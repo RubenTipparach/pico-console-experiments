@@ -1,0 +1,19 @@
+# Colours for sign.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+newmtl sign_post
+Kd 0.466667 0.333333 0.200000   # #775533
+
+# the side that faces the reader
+newmtl sign_face
+Kd 0.866667 0.733333 0.466667   # #DDBB77
+
+newmtl sign_back
+Kd 0.666667 0.533333 0.266667   # #AA8844
+
+newmtl sign_edge
+Kd 0.600000 0.466667 0.200000   # #997733

@@ -1,0 +1,26 @@
+# Colours for tidepup.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+# pelt
+newmtl tidepup_body
+Kd 0.333333 0.666667 0.866667   # #55AADD
+
+# chest blaze and underside
+newmtl tidepup_belly
+Kd 0.866667 0.933333 1.000000   # #DDEEFF
+
+newmtl tidepup_snout
+Kd 0.866667 0.933333 1.000000   # #DDEEFF
+
+newmtl tidepup_fin
+Kd 0.533333 0.800000 0.933333   # #88CCEE
+
+newmtl tidepup_fin2
+Kd 0.266667 0.533333 0.733333   # #4488BB
+
+newmtl tidepup_leg
+Kd 0.266667 0.600000 0.800000   # #4499CC

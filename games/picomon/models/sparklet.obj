@@ -1,0 +1,200 @@
+# SPARKLET: the spark minor, and the mesh VOLTPUP tints.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
+#
+# About 1.21 units tall, 80 triangles.
+# Everything about it is jagged: a three spike crest down the back and
+# a tail bent into a bolt. Two straight limbs at an angle read as a
+# zigzag from any side, which a curve would not.
+
+mtllib sparklet.mtl
+
+# body, 24 triangles
+v 0.000 0.690 0.000
+v 0.242 0.555 0.000
+v 0.121 0.555 0.232
+v -0.121 0.555 0.232
+v -0.242 0.555 0.000
+v -0.121 0.555 -0.232
+v 0.121 0.555 -0.232
+v 0.242 0.285 0.000
+v 0.121 0.285 0.233
+v -0.121 0.285 0.233
+v -0.242 0.285 0.000
+v -0.121 0.285 -0.233
+v 0.121 0.285 -0.233
+v 0.000 0.150 0.000
+usemtl sparklet_body
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 6
+f 1 6 7
+f 1 7 2
+f 2 8 9 3
+usemtl sparklet_belly
+f 3 9 10 4
+usemtl sparklet_body
+f 4 10 11 5
+f 5 11 12 6
+f 6 12 13 7
+f 7 13 8 2
+usemtl sparklet_belly
+f 8 14 9
+f 9 14 10
+f 10 14 11
+f 11 14 12
+f 12 14 13
+f 13 14 8
+
+# head, 12 triangles
+v 0.000 1.030 0.120
+v 0.250 0.820 0.120
+v 0.125 0.820 0.328
+v -0.125 0.820 0.328
+v -0.250 0.820 0.120
+v -0.125 0.820 -0.088
+v 0.125 0.820 -0.088
+v 0.000 0.610 0.120
+usemtl sparklet_body
+f 15 16 17
+f 15 17 18
+f 15 18 19
+f 15 19 20
+f 15 20 21
+f 15 21 16
+usemtl sparklet_belly
+f 16 22 17
+f 17 22 18
+f 18 22 19
+f 19 22 20
+f 20 22 21
+f 21 22 16
+
+# crest spike, 4 triangles
+v 0.000 1.208 0.000
+v 0.028 1.000 0.120
+v 0.000 1.042 0.194
+v -0.028 1.000 0.120
+v 0.000 0.958 0.046
+usemtl sparklet_crest
+f 23 24 25
+f 23 25 26
+f 23 26 27
+f 23 27 24
+
+# crest spike, 4 triangles
+v 0.000 1.202 -0.200
+v 0.028 0.960 -0.060
+v 0.000 1.002 0.014
+v -0.028 0.960 -0.060
+v 0.000 0.917 -0.134
+usemtl sparklet_crest
+f 28 29 30
+f 28 30 31
+f 28 31 32
+f 28 32 29
+
+# crest spike, 4 triangles
+v 0.000 0.711 -0.350
+v 0.028 0.520 -0.240
+v 0.000 0.562 -0.166
+v -0.028 0.520 -0.240
+v 0.000 0.478 -0.314
+usemtl sparklet_crest
+f 33 34 35
+f 33 35 36
+f 33 36 37
+f 33 37 34
+
+# bolt, lower limb, 8 triangles
+v 0.000 0.458 -0.572
+v 0.035 0.520 -0.340
+v 0.000 0.617 -0.366
+v -0.035 0.520 -0.340
+v 0.000 0.423 -0.314
+v 0.000 0.582 -0.108
+usemtl sparklet_bolt
+f 38 39 40
+f 38 40 41
+f 38 41 42
+f 38 42 39
+usemtl sparklet_bolt2
+f 39 43 40
+f 40 43 41
+f 41 43 42
+f 42 43 39
+
+# bolt, upper limb, 8 triangles
+v 0.000 0.756 -0.836
+v 0.035 0.600 -0.680
+v 0.000 0.664 -0.616
+v -0.035 0.600 -0.680
+v 0.000 0.536 -0.744
+v 0.000 0.444 -0.524
+usemtl sparklet_bolt
+f 44 45 46
+f 44 46 47
+f 44 47 48
+f 44 48 45
+usemtl sparklet_bolt2
+f 45 49 46
+f 46 49 47
+f 47 49 48
+f 48 49 45
+
+# leg, 4 triangles
+v 0.260 0.310 0.240
+v 0.120 0.310 0.240
+v 0.120 0.310 0.100
+v 0.260 0.310 0.100
+v 0.190 0.000 0.170
+usemtl sparklet_leg
+f 50 54 51
+f 51 54 52
+f 52 54 53
+f 53 54 50
+
+# leg, 4 triangles
+v -0.120 0.310 0.240
+v -0.260 0.310 0.240
+v -0.260 0.310 0.100
+v -0.120 0.310 0.100
+v -0.190 0.000 0.170
+usemtl sparklet_leg
+f 55 59 56
+f 56 59 57
+f 57 59 58
+f 58 59 55
+
+# leg, 4 triangles
+v 0.240 0.310 -0.130
+v 0.100 0.310 -0.130
+v 0.100 0.310 -0.270
+v 0.240 0.310 -0.270
+v 0.170 0.000 -0.200
+usemtl sparklet_leg
+f 60 64 61
+f 61 64 62
+f 62 64 63
+f 63 64 60
+
+# leg, 4 triangles
+v -0.100 0.310 -0.130
+v -0.240 0.310 -0.130
+v -0.240 0.310 -0.270
+v -0.100 0.310 -0.270
+v -0.170 0.000 -0.200
+usemtl sparklet_leg
+f 65 69 66
+f 66 69 67
+f 67 69 68
+f 68 69 65

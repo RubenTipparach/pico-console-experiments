@@ -1,0 +1,12 @@
+# Colours for rock.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+newmtl rock_light
+Kd 0.733333 0.666667 0.600000   # #BBAA99
+
+newmtl rock_body
+Kd 0.600000 0.533333 0.466667   # #998877

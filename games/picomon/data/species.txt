@@ -1,0 +1,253 @@
+# The creatures. See FORMAT.md.
+#
+# Type ring: ember > leaf > stone > spark > tide > ember. Five types in a loop
+# a player can hold in their head, plus mind, which is even against everything
+# and takes double from itself. One rule, no chart to show on a 120 pixel
+# screen.
+#
+# Six meshes serve sixteen species. A mesh is roughly 1.2 KB of flash and a
+# tint is three bytes, so an evolution that reuses its base mesh at a larger
+# scale and a different tint costs 3 bytes instead of 1200. That is the whole
+# reason the roster can be this size on this device.
+
+species emberkit
+  name EMBERKIT
+  type ember
+  stats 39 52 43 65
+  catch 45
+  xp 62
+  mesh emberkit
+  tint ff cc 99
+  scale 100
+  learn 1 scratch
+  learn 1 ember
+  learn 9 tailwhip
+  learn 16 flareup
+  evolve 16 flarette
+end
+
+species flarette
+  name FLARETTE
+  type ember
+  stats 58 64 58 80
+  catch 45
+  xp 142
+  mesh emberkit
+  tint ff aa 77
+  scale 128
+  learn 1 scratch
+  learn 1 ember
+  learn 18 flareup
+  learn 26 firefang
+end
+
+species mossling
+  name MOSSLING
+  type leaf
+  stats 45 49 49 45
+  catch 45
+  xp 64
+  mesh mossling
+  tint ff ff ff
+  scale 100
+  learn 1 tackle
+  learn 1 vinesnap
+  learn 10 leechseed
+  learn 17 leafblade
+  evolve 16 bramblin
+end
+
+species bramblin
+  name BRAMBLIN
+  type leaf
+  stats 60 62 63 60
+  catch 45
+  xp 141
+  mesh mossling
+  tint cc ee 88
+  scale 128
+  learn 1 tackle
+  learn 1 vinesnap
+  learn 19 leafblade
+  learn 28 rootbind
+end
+
+species tidepup
+  name TIDEPUP
+  type tide
+  stats 44 48 65 43
+  catch 45
+  xp 63
+  mesh tidepup
+  tint ff ff ff
+  scale 100
+  learn 1 tackle
+  learn 1 bubble
+  learn 11 tailwhip
+  learn 18 aquajet
+  evolve 16 brinefin
+end
+
+species brinefin
+  name BRINEFIN
+  type tide
+  stats 59 63 80 58
+  catch 45
+  xp 142
+  mesh tidepup
+  tint 99 dd ff
+  scale 130
+  learn 1 tackle
+  learn 1 bubble
+  learn 20 aquajet
+  learn 29 tidalcrash
+end
+
+species sparklet
+  name SPARKLET
+  type spark
+  stats 35 55 40 90
+  catch 190
+  xp 82
+  mesh sparklet
+  tint ff ff ff
+  scale 96
+  learn 1 tackle
+  learn 1 zap
+  learn 13 quickstep
+  learn 20 thunderjolt
+  evolve 18 voltpup
+end
+
+species voltpup
+  name VOLTPUP
+  type spark
+  stats 55 75 55 110
+  catch 75
+  xp 142
+  mesh sparklet
+  tint ff ee 66
+  scale 124
+  learn 1 zap
+  learn 1 quickstep
+  learn 22 thunderjolt
+  learn 30 stormbite
+end
+
+species pebblin
+  name PEBBLIN
+  type stone
+  stats 50 55 80 25
+  catch 190
+  xp 60
+  mesh pebblin
+  tint ff ff ff
+  scale 100
+  learn 1 tackle
+  learn 1 pebblethrow
+  learn 12 harden
+  learn 19 rockslam
+  evolve 20 bouldrin
+end
+
+species bouldrin
+  name BOULDRIN
+  type stone
+  stats 75 85 115 30
+  catch 60
+  xp 152
+  mesh pebblin
+  tint bb aa 88
+  scale 140
+  learn 1 pebblethrow
+  learn 1 harden
+  learn 22 rockslam
+  learn 32 quakestep
+end
+
+species mothlet
+  name MOTHLET
+  type mind
+  stats 40 35 40 60
+  catch 180
+  xp 58
+  mesh mothlet
+  tint ff ff ff
+  scale 96
+  learn 1 tackle
+  learn 1 dazzle
+  learn 14 hush
+  learn 22 mindbeam
+  evolve 22 lunamoth
+end
+
+species lunamoth
+  name LUNAMOTH
+  type mind
+  stats 62 50 62 85
+  catch 60
+  xp 150
+  mesh mothlet
+  tint dd bb ff
+  scale 126
+  learn 1 dazzle
+  learn 1 hush
+  learn 24 mindbeam
+  learn 33 moonhaze
+end
+
+species nibble
+  name NIBBLE
+  type leaf
+  stats 38 42 38 55
+  catch 220
+  xp 48
+  mesh mossling
+  tint aa cc 66
+  scale 84
+  learn 1 tackle
+  learn 1 vinesnap
+  learn 12 leechseed
+end
+
+species dustbug
+  name DUSTBUG
+  type stone
+  stats 42 46 52 38
+  catch 220
+  xp 50
+  mesh pebblin
+  tint cc bb 99
+  scale 84
+  learn 1 tackle
+  learn 1 pebblethrow
+  learn 13 harden
+end
+
+species puddlin
+  name PUDDLIN
+  type tide
+  stats 40 40 50 48
+  catch 220
+  xp 50
+  mesh tidepup
+  tint 88 cc ee
+  scale 84
+  learn 1 tackle
+  learn 1 bubble
+  learn 14 aquajet
+end
+
+species flicker
+  name FLICKER
+  type ember
+  stats 36 50 36 70
+  catch 220
+  xp 52
+  mesh emberkit
+  tint ff dd bb
+  scale 84
+  learn 1 scratch
+  learn 1 ember
+  learn 15 flareup
+end

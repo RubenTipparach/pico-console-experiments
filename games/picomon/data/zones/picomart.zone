@@ -1,0 +1,38 @@
+# The Pico Mart. One room, one counter, one clerk.
+#
+# The shelves are fence tiles, which block, so the clerk at the gap between
+# them is the only way through and the player cannot end up talking to a
+# shopkeeper from behind.
+
+zone picomart
+name PICO MART
+size 11 9
+indoor
+
+tiles
+WWWWWWWWWWW
+WfffffffffW
+W====f====W
+WfffffffffW
+WfffffffffW
+WfffffffffW
+WfffffffffW
+WfffffffffW
+WWWWWdWWWWW
+end
+
+warp 5 8 hometown 5 17 south
+
+npc clerk 5 3 south healer
+  stock picoball, greatball, potion, antidote
+  say Anything you can carry.
+end
+
+npc shopper 8 5 west villager
+  say A GREAT BALL is worth three of the cheap ones.
+  say Not really. It is worth about one and a half.
+end
+
+event sign 2 5
+  say NO PICOMON OUT IN THE SHOP. THANK YOU.
+end

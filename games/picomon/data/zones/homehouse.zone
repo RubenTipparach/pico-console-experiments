@@ -1,0 +1,27 @@
+# Your house.
+
+zone homehouse
+name HOME
+size 9 7
+indoor
+
+tiles
+WWWWWWWWW
+WfffffffW
+WfffffffW
+WfffffffW
+WfffffffW
+WfffffffW
+WWWWdWWWW
+end
+
+warp 4 6 hometown 5 9 south
+
+npc mum 4 2 south villager
+  say Off to the tall grass again?
+  say Take a ball. You will want it.
+end
+
+event item 2 2 picoball 5
+  flag got_starter_balls
+end

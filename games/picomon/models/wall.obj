@@ -1,0 +1,43 @@
+# An interior wall block: one tile square, two units tall, flat topped.
+#
+# Y is up, +Z is north, one world unit is one map tile. The lowest vertex sits
+# on y = 0 and the model is centred on x = 0 and z = 0, so the game places it
+# by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark, and that is exactly what
+# the first version of this file did: a room with a black stripe along its
+# near wall and nothing on screen to say why.
+#
+# Four faces, 8 triangles. No bottom and no north face: the camera stands
+# south of the player and looks north, so the north side of a block is never
+# the side facing anyone.
+#
+# Two units, not one. A one unit wall seen from three tiles away through this
+# lens is four pixels of trim around a floor floating in black, and the room
+# reads as a platform rather than as somewhere with a roof over it.
+#
+# Slightly over one tile wide on purpose. A run of these is a wall, and a
+# hairline of floor showing between two blocks reads as a gap in it.
+
+mtllib wall.mtl
+
+v -0.52 0.00 -0.52
+v  0.52 0.00 -0.52
+v  0.52 0.00  0.52
+v -0.52 0.00  0.52
+v -0.52 2.00 -0.52
+v  0.52 2.00 -0.52
+v  0.52 2.00  0.52
+v -0.52 2.00  0.52
+
+usemtl wall_top
+f 5 6 7 8
+
+usemtl wall_face
+f 1 2 6 5
+
+usemtl wall_side
+f 2 3 7 6
+f 4 1 5 8

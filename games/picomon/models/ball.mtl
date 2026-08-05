@@ -1,0 +1,12 @@
+# Colours for ball.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+newmtl ball_top
+Kd 1.000000 0.266667 0.333333   # #FF4455
+
+newmtl ball_base
+Kd 0.933333 0.933333 0.933333   # #EEEEEE

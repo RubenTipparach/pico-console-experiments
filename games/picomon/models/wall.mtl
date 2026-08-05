@@ -1,0 +1,18 @@
+# Colours for wall.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+#
+# The top is the lit face and the front is the one the player reads the room
+# from, so the front is the mid tone and the sides fall away.
+
+newmtl wall_top
+Kd 0.800000 0.733333 0.666667   # #CCBBAA
+
+newmtl wall_face
+Kd 0.600000 0.533333 0.466667   # #998877
+
+newmtl wall_side
+Kd 0.466667 0.400000 0.333333   # #776655

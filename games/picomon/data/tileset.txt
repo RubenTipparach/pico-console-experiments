@@ -1,0 +1,28 @@
+# Picomon tileset. See FORMAT.md.
+#
+# One line per map character. Colours are the ground colour the renderer uses,
+# already snapped to four bits per channel so nothing shifts on the device.
+
+# char  name        flags                   r  g  b
+.       grass       walk                    55 99 44
+,       grass2      walk                    44 88 44
+G       tallgrass   walk encounter          33 77 33
+p       path        walk                    bb aa 77
+P       path2       walk                    aa 99 66
+f       floor       walk                    bb bb aa
+s       sand        walk                    dd cc 99
+T       tree        block                   33 77 33
+R       rock        block                   88 88 77
+H       house       block                   99 99 88
+F       fence       block                   99 77 55
+w       water       block water             33 66 bb
+d       door        walk door               77 55 33
+v       ledgesouth  walk ledge_south        99 88 66
+c       cave        walk                    55 55 66
+C       cavewall    block                   33 33 44
+
+# Interior walls. A room is not a village: H draws a cottage with a roof on
+# it, which is right outdoors and absurd from the inside, so a room's edge is
+# its own tile and the renderer stands a plain block on it.
+W       wall        block                   77 66 55
+=       counter     block                   99 77 55

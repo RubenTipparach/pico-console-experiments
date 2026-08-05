@@ -1,0 +1,49 @@
+# A route sign: a post and a board.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# About 0.98 units tall, 20 triangles.
+# The pale face is on +Z, so a sign is rotated to face its reader the
+# same way a creature is rotated to face its opponent.
+
+mtllib sign.mtl
+
+# post, 8 triangles
+v 0.045 0.620 0.045
+v -0.045 0.620 0.045
+v -0.045 0.620 -0.045
+v 0.045 0.620 -0.045
+v 0.055 0.000 0.055
+v -0.055 0.000 0.055
+v -0.055 0.000 -0.055
+v 0.055 0.000 -0.055
+usemtl sign_post
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1
+
+# board, 12 triangles
+v 0.360 0.980 0.050
+v -0.360 0.980 0.050
+v -0.360 0.980 -0.050
+v 0.360 0.980 -0.050
+v 0.360 0.500 0.050
+v -0.360 0.500 0.050
+v -0.360 0.500 -0.050
+v 0.360 0.500 -0.050
+usemtl sign_face
+f 9 13 14 10
+usemtl sign_edge
+f 10 14 15 11
+usemtl sign_back
+f 11 15 16 12
+usemtl sign_edge
+f 12 16 13 9
+f 9 10 11 12
+f 16 15 14 13

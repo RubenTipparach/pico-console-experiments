@@ -1,0 +1,87 @@
+# The bag. See FORMAT.md.
+#
+# Names are capped at 12 characters, which is what the bag list holds at a 4
+# pixel advance, and descriptions at 54, which is two lines of 27. Both are
+# checked at build time: the names are written to the constraint rather than
+# trimmed with an ellipsis afterwards.
+#
+# price is what a shop charges. An item with no price is not for sale, and a
+# shop that stocks one is a build error rather than a free handout: the key
+# items below are the reason that check exists.
+
+item picoball
+  name PICO BALL
+  pocket balls
+  effect ball 4
+  price 200
+  desc A BASIC BALL. ODDS X1.
+end
+
+item greatball
+  name GREAT BALL
+  pocket balls
+  effect ball 6
+  price 600
+  desc BETTER ODDS. X1.5.
+end
+
+item duskball
+  name DUSK BALL
+  pocket balls
+  effect ball 12
+  price 1000
+  desc X3 IN CAVES. X1 OUTSIDE.
+end
+
+item potion
+  name POTION
+  pocket medicine
+  effect heal 20
+  price 300
+  desc RESTORES 20 HP.
+end
+
+item superpotion
+  name SUPER POTION
+  pocket medicine
+  effect heal 50
+  price 700
+  desc RESTORES 50 HP.
+end
+
+item antidote
+  name ANTIDOTE
+  pocket medicine
+  effect cure
+  price 100
+  desc CLEARS POISON.
+end
+
+item revive
+  name REVIVE
+  pocket medicine
+  effect revive
+  price 1500
+  desc WAKES A FAINTED PICOMON.
+end
+
+item townmap
+  name MAP
+  pocket key
+  effect key
+  desc SHOWS THE ZONE YOU ARE IN.
+end
+
+item oldrod
+  name OLD ROD
+  pocket key
+  effect key
+  desc FISH IN ANY DEEP WATER.
+end
+
+item townkey
+  name TOWN KEY
+  pocket key
+  effect key
+  desc OPENS THE NORTH GATE.
+end

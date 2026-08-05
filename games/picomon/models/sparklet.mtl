@@ -1,0 +1,27 @@
+# Colours for sparklet.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+# pelt
+newmtl sparklet_body
+Kd 0.933333 0.800000 0.266667   # #EECC44
+
+# chest blaze and underside
+newmtl sparklet_belly
+Kd 1.000000 0.933333 0.666667   # #FFEEAA
+
+newmtl sparklet_crest
+Kd 0.866667 0.666667 0.200000   # #DDAA33
+
+# the tail, brightest thing on the model
+newmtl sparklet_bolt
+Kd 1.000000 0.866667 0.133333   # #FFDD22
+
+newmtl sparklet_bolt2
+Kd 0.866667 0.733333 0.133333   # #DDBB22
+
+newmtl sparklet_leg
+Kd 0.800000 0.666667 0.200000   # #CCAA33

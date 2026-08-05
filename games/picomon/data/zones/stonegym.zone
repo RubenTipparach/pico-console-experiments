@@ -1,0 +1,92 @@
+# The Stone Gym. Three chambers, a minion guarding the gap into each, and
+# the leader at the top.
+#
+# The gaps are offset so the route through is a zigzag, and each minion's
+# sight line covers the only tile the player can enter their chamber through.
+# That is the whole puzzle: the minions are not avoidable, they are just
+# visible, because a trainer's sight line is drawn on the ground while they
+# are unbeaten.
+#
+# The leader has no sight line. A gym leader is walked up to and challenged,
+# not tripped over, and the badge is what opens the cave on Route 1.
+#
+# Everything here is stone type, and the starter is not strong against stone.
+# The counter is in the tall grass one screen away: a MOSSLING is leaf, leaf
+# breaks stone, and the player is expected to work that out or lose.
+
+zone stonegym
+name STONE GYM
+size 13 16
+indoor
+
+tiles
+WWWWWWWWWWWWW
+WfffffffffffW
+WfffffffffffW
+WfffffffffffW
+WRRRRRfRRRRRW
+WfffffffffffW
+WfffffffffffW
+WfffffffffffW
+WRfRRRRRRRRRW
+WfffffffffffW
+WfffffffffffW
+WfffffffffffW
+WRRRRRRRRRfRW
+WfffffffffffW
+WfffffffffffW
+WWWWWWdWWWWWW
+end
+
+warp 6 15 hometown 18 17 south
+
+npc quarry 10 10 south trainer
+  sight 3
+  party dustbug 6, pebblin 6
+  say Nobody walks in off the street.
+  win The gap is yours. Good luck upstairs.
+  lose Back out you go.
+  reward 140
+  flag beat_quarry
+end
+
+npc chisel 2 10 north trainer
+  sight 2
+  party pebblin 7, dustbug 7
+  say Two down. You will not get a third.
+  win Two down, then.
+  lose That is as far as you go.
+  reward 160
+  flag beat_chisel
+end
+
+npc gravel 6 6 north trainer
+  sight 2
+  party dustbug 7, pebblin 8
+  say The leader is right behind me. Prove it.
+  say Prove you are worth her time.
+  win She is waiting. Do not keep her.
+  lose Come back when you can beat me.
+  reward 180
+  flag beat_gravel
+end
+
+npc granita 6 2 south trainer
+  kind trainer
+  party pebblin 9, dustbug 9, bouldrin 11
+  say I am GRANITA. Stone does not move for anyone.
+  say Show me something that does.
+  win The STONE BADGE is yours. The cave is open.
+  lose Stone does not move.
+  reward 500
+  flag badge_stone
+end
+
+event sign 5 13
+  say STONE GYM. LEADER GRANITA.
+  say STONE GROUNDS SPARK. LEAF BREAKS STONE.
+end
+
+event item 1 1 superpotion 1
+  flag got_superpotion_gym
+end

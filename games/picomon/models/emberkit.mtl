@@ -1,0 +1,30 @@
+# Colours for emberkit.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
+
+# coat
+newmtl emberkit_body
+Kd 0.933333 0.533333 0.200000   # #EE8833
+
+# chest blaze and underside
+newmtl emberkit_belly
+Kd 1.000000 0.866667 0.666667   # #FFDDAA
+
+newmtl emberkit_snout
+Kd 1.000000 0.933333 0.800000   # #FFEECC
+
+newmtl emberkit_ear
+Kd 0.866667 0.466667 0.200000   # #DD7733
+
+newmtl emberkit_tail
+Kd 1.000000 0.666667 0.333333   # #FFAA55
+
+# the tail tip, which is most of the read
+newmtl emberkit_tip
+Kd 1.000000 0.933333 0.800000   # #FFEECC
+
+newmtl emberkit_leg
+Kd 0.800000 0.466667 0.200000   # #CC7733

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe, not Exe. Exe attaches a console window behind the form. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PicomonEditor</AssemblyName>
+    <RootNamespace>PicomonEditor</RootNamespace>
+    <Version>0.1.0</Version>
+
+    <!-- Single self contained .exe, same as the flasher: it gets handed to
+         whoever is drawing maps, not installed. Deliberately not trimmed,
+         because trimming is unsupported for WinForms and produces an app that
+         fails at runtime rather than at build time. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+</Project>
