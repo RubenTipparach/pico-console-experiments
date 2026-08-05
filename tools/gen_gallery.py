@@ -13,6 +13,7 @@ import argparse
 import html
 import os
 import sys
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -111,16 +112,30 @@ class Card:
         ])
 
 
-def render_page(cards, repo, generated_at, title):
-    if cards:
+def render_page(cards, repo, generated_at, title, active_cards=None):
+    if active_cards is None:
+        active_cards = cards
+        archived_cards = []
+    else:
+        archived_cards = [c for c in cards if c not in active_cards]
+
+    if active_cards:
         shelf = ('<div class="shelf">\n%s\n</div>'
-                 % "\n".join(card.render() for card in cards))
+                 % "\n".join(card.render() for card in active_cards))
     else:
         shelf = '<div class="empty">No games published yet</div>'
 
-    playable = sum(1 for c in cards if c.game.web and c.is_published)
+    # Add archived section if there are held games
+    archived_section = ""
+    if archived_cards:
+        archived_shelf = ('<div class="shelf archived">\n%s\n</div>'
+                          % "\n".join(card.render() for card in archived_cards))
+        archived_section = ('\n<section class="archived-section">\n'
+                           '<h2>Archived</h2>\n%s\n</section>' % archived_shelf)
+
+    playable = sum(1 for c in active_cards if c.game.web and c.is_published)
     stats = "%d game%s &middot; %d playable" % (
-        len(cards), "" if len(cards) == 1 else "s", playable)
+        len(active_cards), "" if len(active_cards) == 1 else "s", playable)
 
     repo_url = "https://github.com/%s" % repo if repo else "#"
 
@@ -143,6 +158,7 @@ def render_page(cards, repo, generated_at, title):
 
 <main class="wrap">
 %(shelf)s
+%(archived_section)s
 
   <footer class="shelf-footer">
     <span>Flash a .uf2: hold <kbd>X</kbd>, press power, drop the file on <kbd>RPI-RP2</kbd>.</span>
@@ -173,6 +189,7 @@ def render_page(cards, repo, generated_at, title):
 </html>
 """ % {
         "shelf": shelf,
+        "archived_section": archived_section,
         "stats": stats,
         "repo_url": escape(repo_url),
         "generated_at": escape(generated_at),
@@ -186,9 +203,9 @@ def main(argv):
     parser.add_argument("--manifest", help="path to builds.json")
     parser.add_argument("--repo", default="", help="owner/name, for the link")
     parser.add_argument("--title", default="",
-                        help="gallery heading. Defaults to the repo name, so "
-                             "renaming the repo does not mean editing the "
-                             "generator.")
+                        help="gallery heading. Defaults to the repo name with "
+                             "its dashes read as spaces, so renaming the repo "
+                             "does not mean editing the generator.")
     parser.add_argument("--timestamp", default="")
     args = parser.parse_args(argv)
 
@@ -201,12 +218,28 @@ def main(argv):
     published = load_published(args.manifest)
     cards = [Card(game, published.get(game.slug), args.site) for game in games]
 
+    # Read build.yaml to separate active games from archived (held) games
+    build_yaml_path = os.path.join(REPO_ROOT, "build.yaml")
+    held_games = []
+    try:
+        with open(build_yaml_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+            held_games = config.get("hold", [])
+    except Exception:
+        pass
+
+    active_cards = [c for c in cards if c.game.slug not in held_games]
+
     os.makedirs(args.site, exist_ok=True)
     index_path = os.path.join(args.site, "index.html")
     with open(index_path, "w", encoding="utf-8") as handle:
-        title = args.title or (args.repo.split("/")[-1] if args.repo
-                               else "games")
-        handle.write(render_page(cards, args.repo, args.timestamp, title))
+        # A repo name is hyphenated because a path has to be; a sign over a
+        # cabinet is not. Dashes read as spaces so the marquee says what the
+        # place is called rather than where it lives.
+        title = args.title or (args.repo.split("/")[-1].replace("-", " ")
+                               if args.repo else "games")
+        handle.write(render_page(cards, args.repo, args.timestamp, title,
+                                 active_cards))
 
     # Jekyll would otherwise eat any path starting with an underscore, which
     # emscripten output can contain.
