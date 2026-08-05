@@ -128,6 +128,17 @@ reason nobody can see.
   uploaded, never an earlier copy of it. The shell also shows any runtime
   crash on the page with a copy button, so a phone can report exactly what
   broke and from which build.
+- A red run must not publish, and must not claim it did. The publish job runs
+  under `!cancelled()` so it can still deploy when the build was legitimately
+  skipped, and that let a run through where the engine tests had **failed**
+  and the build never ran: it deployed the previous binaries and stamped the
+  manifest with the new commit, so the site reported a version it was not
+  serving. Every job the publish depends on now has to have passed, and a
+  skipped build is only acceptable when the detect job found no work. The
+  manifest's `built` flag is read from the files actually present in the
+  incoming artifact, never from what an earlier job said it intended to
+  build. A green badge on a red run is worse than a red one, because it
+  removes the reason to look.
 - That browser comes from `tools/setup_browser.sh`, which never touches apt.
   `playwright install --with-deps chromium` pulls Chromium's whole system
   dependency set, 21 MB of it CJK fonts that a canvas game has no use for,
