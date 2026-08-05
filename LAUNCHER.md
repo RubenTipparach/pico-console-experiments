@@ -177,6 +177,21 @@ Not built yet:
   remove. The mockups are confirmed, so that is implementation, not design.
 - CI does not assemble a bundle yet, so there is no downloadable one.
 
+## Related projects
+
+[PicoCrystal-GBC](https://github.com/Wyatt-Grant/PicoCrystal-GBC) is a Game
+Boy Color emulator for the PicoSystem with a boot menu for up to 14 ROMs,
+per-game save slots, custom names and icons, and a "boot last game" option.
+Worth a look for menu and save-slot UX ideas, but it solves a different, easier
+problem than this repo does: it is one compiled emulator with ROM files
+embedded into its own firmware image, not independently built native
+programs. An emulator interpreting ROM data never runs into the addressing
+constraint this file opens with, because only the emulator itself ever
+executes; the "games" are data, not code linked to their own absolute
+addresses. That is also why it cannot be the model for bundling arbitrary
+PicoSystem `.uf2` games, ours or anyone else's: those are native code, and
+native code is exactly what the constraint applies to.
+
 None of this has run on hardware. The handoff is the part to watch: if it is
 wrong the console needs a BOOTSEL reflash, which is recoverable, but it is not
 something a player should ever meet.

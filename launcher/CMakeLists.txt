@@ -4,7 +4,8 @@
 # It is not a game and does not live under games/, so it is never discovered by
 # the gallery, never published, and never listed in build.yaml.
 
-blit_executable(launcher src/main.cpp src/library.cpp src/menu.cpp)
+blit_executable(launcher src/main.cpp src/library.cpp src/menu.cpp
+    src/override_table.cpp)
 
 target_include_directories(launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 

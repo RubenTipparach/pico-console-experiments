@@ -346,10 +346,29 @@ def uf2_image(path):
 
 
 def find_block(image):
-    index = image.find(MAGIC)
-    if index < 0:
-        raise MetaError("no PSE metadata block found")
-    return image[index:index + BLOCK_SIZE]
+    """Scans for a real block, not just the 8 byte magic.
+
+    The magic alone can hit on data that is not a block at all: the launcher
+    binary carries the literal "PSEGAME1" string as the pattern its own
+    on-device scanner is compiled to search for, and the linker can place it
+    right next to unrelated strings (its 32blit metadata.yml fields, in
+    practice), which then get misread as a slug/title/version. A hit is
+    trusted only once the size and format fields that follow it check out,
+    the same guard launcher/src/library.cpp applies on device; anything else
+    is not a corrupt block, it is not a block, and the search continues past
+    it rather than handing back garbage.
+    """
+    start = 0
+    while True:
+        index = image.find(MAGIC, start)
+        if index < 0:
+            raise MetaError("no PSE metadata block found")
+        if index + 16 <= len(image):
+            size, _icon_w, _icon_h, fmt = struct.unpack(
+                "<HHHH", image[index + 8:index + 16])
+            if size == BLOCK_SIZE and fmt == FORMAT_RGB565:
+                return image[index:index + BLOCK_SIZE]
+        start = index + 4
 
 
 # ---- commands ----

@@ -33,11 +33,15 @@ public static class GameMetaReader
     public const int IconHeight = 48;
     public const int BlockSize = HeaderSize + IconWidth * IconHeight * 2;
 
+    private const int OffsetBlockSize = 8;
     private const int OffsetIconWidth = 10;
     private const int OffsetIconHeight = 12;
+    private const int OffsetFormat = 14;
     private const int OffsetSlug = 16;
     private const int OffsetTitle = 40;
     private const int OffsetVersion = 72;
+
+    private const ushort FormatRgb565 = 1;
 
     private const int SlugMax = 24;
     private const int TitleMax = 32;
@@ -85,6 +89,15 @@ public static class GameMetaReader
     }
 
     /// <summary>Finds the metadata block in a flash image, or null.</summary>
+    ///
+    /// The 8 byte magic alone is not proof of a real block: the launcher's own
+    /// binary contains that exact literal, since it is the pattern its own
+    /// scanner is compiled to search for, sitting in .rodata next to whatever
+    /// else the linker put nearby (its 32blit metadata.yml strings, in
+    /// practice). A magic hit is confirmed by checking the size and format
+    /// fields that follow it, the same way launcher/src/library.cpp does on
+    /// device; a hit that fails is not a corrupt block, it is not a block, and
+    /// scanning continues past it rather than returning garbage.
     public static GameMeta? Find(byte[] image, int from = 0, int to = -1)
     {
         if (to < 0 || to > image.Length) to = image.Length;
@@ -98,7 +111,13 @@ public static class GameMetaReader
             {
                 if (image[i + m] != Magic[m]) { hit = false; break; }
             }
-            if (hit) return Decode(image, i);
+            if (!hit) continue;
+
+            var size = BitConverter.ToUInt16(image, i + OffsetBlockSize);
+            var format = BitConverter.ToUInt16(image, i + OffsetFormat);
+            if (size != BlockSize || format != FormatRgb565) continue;
+
+            return Decode(image, i);
         }
         return null;
     }

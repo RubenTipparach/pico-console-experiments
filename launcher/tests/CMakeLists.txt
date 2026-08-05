@@ -6,6 +6,7 @@ add_executable(launcher_tests
     test_library.cpp
     ../src/library.cpp
     ../src/menu.cpp
+    ../src/override_table.cpp
 )
 
 target_include_directories(launcher_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)

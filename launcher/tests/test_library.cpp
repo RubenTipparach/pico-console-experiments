@@ -13,6 +13,7 @@
 
 #include "library.hpp"
 #include "menu.hpp"
+#include "override_table.hpp"
 
 namespace {
 
@@ -75,6 +76,25 @@ launcher::Span span_of(const std::vector<uint8_t>& image) {
     return launcher::Span{image.data(), image.size()};
 }
 
+// The launcher's own image: the override table (with whatever titles are
+// given, slot n at [n - 1]) sitting a long way in, the way the compiler
+// would actually place it among everything else in the launcher.
+std::vector<uint8_t> make_overrides(
+    const std::vector<std::pair<int, std::string>>& titles) {
+    std::vector<uint8_t> table(launcher::k_override_table_size, 0);
+    std::memcpy(table.data(), "PSEOVR01", 8);
+    for (const auto& [slot, title] : titles) {
+        uint8_t* dest = table.data() + 8 +
+            static_cast<size_t>(slot - 1) * launcher::k_override_title_size;
+        std::memcpy(dest, title.data(), title.size());
+    }
+
+    std::vector<uint8_t> image(launcher::k_slot_size, 0xFF);
+    const size_t at = 60000;
+    std::memcpy(image.data() + at, table.data(), table.size());
+    return image;
+}
+
 void test_reads_a_game_out_of_a_slot() {
     const auto image = make_slot(make_block("kingfisher", "Kingfisher", "v1.4.0"));
     launcher::Entry entry{};
@@ -114,6 +134,56 @@ void test_a_nameless_or_oversized_block_is_refused() {
     check(entry.icon == nullptr, "an icon of the wrong size is dropped");
 }
 
+void test_override_names_a_slot_with_no_block_of_its_own() {
+    std::vector<uint8_t> empty(launcher::k_slot_size, 0xFF);
+    const auto overrides = make_overrides({{2, "Celeste"}});
+    launcher::Entry entry{};
+
+    check(!launcher::read_slot(span_of(empty), 2, entry),
+          "with no overrides given, an empty slot is still not a game");
+    check(launcher::read_slot(span_of(empty), 2, entry, span_of(overrides)),
+          "an override names a slot that carries no block of its own");
+    check(std::string(entry.title) == "Celeste", "the override's title is used");
+    check(entry.slug[0] == '\0', "an override carries no slug");
+    check(entry.version[0] == '\0', "an override carries no version");
+    check(entry.icon == nullptr, "an override carries no icon");
+    check(entry.slot == 2, "the slot index is still recorded");
+
+    check(!launcher::read_slot(span_of(empty), 5, entry, span_of(overrides)),
+          "the override only applies to the slot it names");
+}
+
+void test_a_real_block_wins_over_an_override() {
+    // A game that describes itself is always trusted over a title the
+    // flasher patched in from outside: the block is the truth whenever one
+    // exists, the override only fills in when there is nothing else to go on.
+    const auto image = make_slot(make_block("kingfisher", "Kingfisher", "v1"));
+    const auto overrides = make_overrides({{3, "Some Other Name"}});
+    launcher::Entry entry{};
+
+    check(launcher::read_slot(span_of(image), 3, entry, span_of(overrides)),
+          "a slot with its own block still reads");
+    check(std::string(entry.title) == "Kingfisher",
+          "the game's own title wins, not the override's");
+    check(entry.icon != nullptr, "the game's own icon is still used");
+}
+
+void test_override_table_needs_its_own_magic() {
+    // A slot sized buffer with no PSEOVR01 anywhere in it: nothing to find,
+    // not a crash and not a false match on unrelated bytes.
+    std::vector<uint8_t> junk(launcher::k_slot_size, 0x42);
+    launcher::Entry entry{};
+    check(!launcher::read_slot(span_of(junk), 1, entry, span_of(junk)),
+          "a span with no override magic yields no override");
+
+    // Too short to hold a whole table, even with the magic right at the
+    // front: must not read past the end of it.
+    std::vector<uint8_t> short_span(launcher::k_override_table_size - 1, 0);
+    std::memcpy(short_span.data(), "PSEOVR01", 8);
+    check(!launcher::read_slot(span_of(junk), 1, entry, span_of(short_span)),
+          "a truncated override table is refused, not read out of bounds");
+}
+
 void test_scan_keeps_flash_order_and_skips_gaps() {
     const auto a = make_slot(make_block("alpha", "Alpha", "v1"));
     std::vector<uint8_t> empty(launcher::k_slot_size, 0xFF);
@@ -129,6 +199,22 @@ void test_scan_keeps_flash_order_and_skips_gaps() {
     check(found[0].slot == 1 && found[1].slot == 3,
           "slot indices skip the gap: got " + std::to_string(found[0].slot) +
               " and " + std::to_string(found[1].slot));
+}
+
+void test_scan_fills_gaps_from_overrides() {
+    const auto a = make_slot(make_block("alpha", "Alpha", "v1"));
+    std::vector<uint8_t> forced(launcher::k_slot_size, 0xFF);  // no block of its own
+    std::vector<uint8_t> empty(launcher::k_slot_size, 0xFF);   // truly nothing
+    const auto overrides = make_overrides({{2, "Celeste"}});
+
+    const launcher::Span slots[3] = {span_of(a), span_of(forced), span_of(empty)};
+    launcher::Entry found[8]{};
+    const int count = launcher::scan(slots, 3, found, 8, span_of(overrides));
+
+    check(count == 2, "the real game and the overridden slot both show, the empty one does not");
+    check(std::string(found[0].title) == "Alpha", "the real game keeps its own title");
+    check(std::string(found[1].title) == "Celeste", "the gap is named from the override");
+    check(found[1].slot == 2, "the overridden entry keeps its own slot index");
 }
 
 void test_scan_respects_its_output_bound() {
@@ -231,7 +317,11 @@ int main() {
     test_reads_a_game_out_of_a_slot();
     test_an_empty_slot_is_not_a_game();
     test_a_nameless_or_oversized_block_is_refused();
+    test_override_names_a_slot_with_no_block_of_its_own();
+    test_a_real_block_wins_over_an_override();
+    test_override_table_needs_its_own_magic();
     test_scan_keeps_flash_order_and_skips_gaps();
+    test_scan_fills_gaps_from_overrides();
     test_scan_respects_its_output_bound();
     test_boot_vectors_refuse_rubbish();
     test_slot_addresses_match_the_linker();

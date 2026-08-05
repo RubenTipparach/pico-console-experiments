@@ -18,11 +18,13 @@ if not exist "%ROOT%\..\32blit-sdk" (
     echo Run install_deps.bat first.
     exit /b 1
 )
-rem Resolved to a clean absolute path (no ..\), not just for tidiness:
-rem pico-sdk remembers the literal CMAKE_TOOLCHAIN_FILE string it was
-rem configured with and refuses to reconfigure if a later run passes a
-rem differently spelled path to the same file.
+rem Resolved to a clean absolute path (no ..\) with forward slashes, not
+rem just for tidiness: pico-sdk remembers the literal CMAKE_TOOLCHAIN_FILE
+rem string it was configured with, CMake normalized (forward slashes), and
+rem refuses to reconfigure if a later run passes the same file spelled
+rem differently, backslashes included.
 for %%I in ("%ROOT%\..\32blit-sdk") do set "SDK_DIR=%%~fI"
+set "SDK_DIR=%SDK_DIR:\=/%"
 
 if not exist "%ROOT%\..\pico-sdk" (
     echo Pico SDK not found at %ROOT%\..\pico-sdk
@@ -67,7 +69,7 @@ set "BUILD_DIR=%ROOT%\build.pico"
 
 echo Configuring every game (device build)...
 cmake -S "%ROOT%" -B "%BUILD_DIR%" -G Ninja ^
-    -DCMAKE_TOOLCHAIN_FILE="%SDK_DIR%\pico.toolchain" ^
+    -DCMAKE_TOOLCHAIN_FILE="%SDK_DIR%/pico.toolchain" ^
     -DPICO_BOARD=pimoroni_picosystem -DCMAKE_BUILD_TYPE=Release
 if errorlevel 1 exit /b 1
 

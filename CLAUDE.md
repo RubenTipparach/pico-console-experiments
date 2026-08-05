@@ -328,6 +328,15 @@ source when a real model would do.
   filtering, which is what the hardware does to reach its panel. Do not
   hand-draw a thumbnail and do not scale one with a filter: a soft screenshot
   reads as a soft game.
+- **`games/<slug>/thumbnail.png` is 120x120.** The native render size, not the
+  240x240 the gallery card doubles it to for display: `game_meta.py`'s icon
+  pipeline center-crops whatever it is handed to a square and box-averages it
+  down to the 48x48 the `.uf2` actually carries, so an off-size thumbnail
+  still produces a correctly sized icon, but a non-120x120 source (a browser
+  screenshot from the older `gh-pages` capture path, at whatever size that
+  captured, is the way this has actually gone wrong) is a sign the file did
+  not come from the preview harness and should be regenerated or resized to
+  match, not left as the odd one out.
 
 ### 13. Flashing to the device is a one click job
 

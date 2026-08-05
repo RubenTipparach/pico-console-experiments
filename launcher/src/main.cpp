@@ -26,6 +26,7 @@ namespace {
 launcher::Entry g_games[launcher::k_max_slots];
 int g_count = 0;
 launcher::Menu g_menu;
+bool g_boot_refused = false;
 
 // Drawing the icon costs 2304 pen changes a frame, which is fine at this size
 // and on a screen nobody is playing a game on.
@@ -153,8 +154,9 @@ void init() {
     for (int i = 0; i < launcher::k_max_slots; i++) {
         slots[i] = span_for(i + 1);
     }
+    // Slot 0 is the launcher's own image, where its override table lives.
     g_count = launcher::scan(slots, launcher::k_max_slots, g_games,
-                             launcher::k_max_slots);
+                             launcher::k_max_slots, span_for(0));
     g_menu.reset(g_count);
 }
 
@@ -166,8 +168,20 @@ void update(uint32_t time) {
     input.right = (buttons.pressed & Button::DPAD_RIGHT) != 0;
     input.select = (buttons.pressed & Button::A) != 0;
 
+    if (input.left || input.right) g_boot_refused = false;
+
     if (g_menu.update(input, g_count)) {
-        boot_slot(g_games[g_menu.index()].slot);
+        // A slot listing a title is not proof its vector table is sane: the
+        // block only says a game claims to be there. This is the actual
+        // gate boot_slot depends on, checked here rather than left as the
+        // comment on boot_slot claimed it already was.
+        const int slot = g_games[g_menu.index()].slot;
+        uint32_t stack_pointer = 0, reset_handler = 0;
+        if (launcher::boot_vectors(span_for(slot), stack_pointer, reset_handler)) {
+            boot_slot(slot);
+        } else {
+            g_boot_refused = true;
+        }
     }
 }
 
@@ -208,4 +222,11 @@ void render(uint32_t time) {
     screen.pen = Pen(110, 120, 140);
     screen.text(game.version, minimal_font, Point(4, 103));
     screen.text("A PLAY", minimal_font, Point(88, 103));
+
+    // Only reachable when a slot's vectors failed the check A just ran: a
+    // real fault here is a corrupt or half written slot, not a bug to hide.
+    // Staying on the menu beats jumping in blind.
+    if (g_boot_refused) {
+        draw_centred("CANNOT BOOT THIS", 70, Pen(224, 120, 120));
+    }
 }

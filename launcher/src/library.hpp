@@ -2,12 +2,17 @@
 
 // What is installed, read out of flash itself.
 //
-// Every game compiles a metadata block into a `.pse_meta` section (see
-// tools/game_meta.py): magic, slug, title, version, and a 48x48 RGB565 icon.
-// A bundled game sits in a slot of its own, so finding the library is a matter
-// of looking at the start of each slot for that magic. Nothing else has to be
-// written down: the games describe themselves, and an empty slot is simply one
-// with no magic in it.
+// Every game this project builds compiles a metadata block into a
+// `.pse_meta` section (see tools/game_meta.py): magic, slug, title, version,
+// and a 48x48 RGB565 icon. A bundled game sits in a slot of its own, so
+// finding it is a matter of looking at the start of each slot for that
+// magic: the games describe themselves, nothing has to be written down.
+//
+// A game this project did not build carries no such block, ever, and a slot
+// with nothing bootable in it looks identical from here: neither has a
+// title to show. override_table.hpp is the one exception, a title
+// PicoFlasher can write directly into the launcher's own image for a slot
+// whose own game cannot describe itself. See read_slot below.
 //
 // This file is pure: it takes a span of bytes and reports what it found, so
 // the host tests can drive it with a synthetic flash image.
@@ -51,12 +56,22 @@ struct Span {
 };
 
 // Reads one slot. Returns false when there is no game there.
-bool read_slot(Span slot, int slot_index, Entry& out);
+//
+// A slot with its own PSEGAME1 block (every game this project builds has
+// one) is read from that, same as always. A slot with no block of its own
+// falls back to `overrides`, the launcher's own image (override_table.hpp):
+// a title PicoFlasher can patch in directly for a game that cannot describe
+// itself. That fallback never carries an icon or a version, only a title,
+// since nothing about a game that never self-described was ever verified.
+// `overrides` defaults to empty, which finds nothing, for callers (most host
+// tests) that only care about a slot's own block.
+bool read_slot(Span slot, int slot_index, Entry& out, Span overrides = Span{});
 
 // Reads every slot into `out`, returning how many games were found. Games
 // keep their slot order, so the menu order is the flash order and a game does
 // not move around between boots.
-int scan(const Span* slots, int slot_count, Entry* out, int max_entries);
+int scan(const Span* slots, int slot_count, Entry* out, int max_entries,
+        Span overrides = Span{});
 
 // Where slot n starts in the address space. Split out so the tests can use
 // the same arithmetic the device does.

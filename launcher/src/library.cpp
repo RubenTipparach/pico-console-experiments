@@ -2,10 +2,12 @@
 
 #include <cstring>
 
+#include "override_table.hpp"
+
 namespace launcher {
 namespace {
 
-const char k_magic[8] = {'P', 'S', 'E', 'G', 'A', 'M', 'E', '1'};
+const uint8_t k_magic[8] = {'P', 'S', 'E', 'G', 'A', 'M', 'E', '1'};
 
 // Field offsets inside the block, from tools/game_meta.py. Written out rather
 // than derived so a change on either side shows up as a mismatch here.
@@ -38,17 +40,58 @@ void copy_field(char* out, size_t out_size, const uint8_t* field,
     out[i] = '\0';
 }
 
-const uint8_t* find_magic(Span slot) {
-    if (slot.size < k_meta_size) return nullptr;
-    const size_t last = slot.size - k_meta_size;
+const uint8_t* find_bytes(const uint8_t* data, size_t size,
+                          const uint8_t* magic, size_t magic_size,
+                          size_t needed) {
+    if (size < needed) return nullptr;
+    const size_t last = size - needed;
     for (size_t i = 0; i <= last; i += 4) {
-        // The block is 4 byte aligned by the compiler, so stepping by 4 is
-        // safe and makes a whole slot scan cheap.
-        if (std::memcmp(slot.data + i, k_magic, sizeof(k_magic)) == 0) {
-            return slot.data + i;
-        }
+        // 4 byte aligned by the compiler in both cases, so stepping by 4 is
+        // safe and makes a whole span scan cheap.
+        if (std::memcmp(data + i, magic, magic_size) == 0) return data + i;
     }
     return nullptr;
+}
+
+const uint8_t* find_magic(Span slot) {
+    return find_bytes(slot.data, slot.size, k_magic, sizeof(k_magic),
+                      k_meta_size);
+}
+
+const uint8_t* find_override_table(Span overrides) {
+    if (overrides.data == nullptr) return nullptr;
+    // Compared directly against g_override_table's own bytes rather than a
+    // separate magic constant: a second copy of the same 8 bytes would sit
+    // in the launcher's own image right alongside the real table (unlike
+    // PSEGAME1, which never coexists with a game's own block in the same
+    // binary), guaranteeing a false hit on the wrong one, every build. There
+    // is now exactly one occurrence of "PSEOVR01" in the whole binary.
+    return find_bytes(overrides.data, overrides.size, g_override_table,
+                      k_override_magic_size, k_override_table_size);
+}
+
+// A slot with no metadata block of its own falls back to the launcher's own
+// override table (override_table.hpp): a title PicoFlasher patched in
+// directly when it composed the bundle, for a game that cannot describe
+// itself. No icon, no slug, no version, just enough to be named and
+// selectable; unlike the block above, this is never trusted for anything
+// beyond a title, since a game that never described itself was never
+// verified as anything more than "code sitting at this address."
+bool read_override(Span overrides, int slot_index, Entry& out) {
+    if (slot_index < 1 || slot_index > k_max_slots) return false;
+    const uint8_t* table = find_override_table(overrides);
+    if (table == nullptr) return false;
+
+    const uint8_t* title = table + k_override_magic_size +
+        static_cast<size_t>(slot_index - 1) * k_override_title_size;
+    if (title[0] == '\0') return false;
+
+    out.slug[0] = '\0';
+    copy_field(out.title, sizeof(out.title), title, k_override_title_size);
+    out.version[0] = '\0';
+    out.slot = slot_index;
+    out.icon = nullptr;
+    return out.title[0] != '\0';
 }
 
 }  // namespace
@@ -57,9 +100,9 @@ uint32_t slot_address(int slot) {
     return k_flash_base + static_cast<uint32_t>(slot) * k_slot_size;
 }
 
-bool read_slot(Span slot, int slot_index, Entry& out) {
+bool read_slot(Span slot, int slot_index, Entry& out, Span overrides) {
     const uint8_t* block = find_magic(slot);
-    if (block == nullptr) return false;
+    if (block == nullptr) return read_override(overrides, slot_index, out);
 
     const uint16_t size = read_u16(block + k_off_size);
     if (size < k_meta_size) return false;
@@ -81,12 +124,13 @@ bool read_slot(Span slot, int slot_index, Entry& out) {
     return out.title[0] != '\0';
 }
 
-int scan(const Span* slots, int slot_count, Entry* out, int max_entries) {
+int scan(const Span* slots, int slot_count, Entry* out, int max_entries,
+        Span overrides) {
     int found = 0;
     for (int i = 0; i < slot_count && found < max_entries; i++) {
         // Slot 0 is the launcher itself, which is not a menu entry.
         const int slot_index = i + 1;
-        if (read_slot(slots[i], slot_index, out[found])) found++;
+        if (read_slot(slots[i], slot_index, out[found], overrides)) found++;
     }
     return found;
 }

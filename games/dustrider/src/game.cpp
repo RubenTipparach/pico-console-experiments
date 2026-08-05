@@ -8,6 +8,8 @@
 #include "render.hpp"
 #include "sim.hpp"
 
+#include "diagnostic_led.hpp"  // TEMPORARY, see that file
+
 using namespace blit;
 
 namespace {
@@ -145,6 +147,7 @@ void start_run() {
 }  // namespace
 
 void init() {
+    DIAG_LED_RED();
     set_screen_mode(ScreenMode::lores);
 
     dr::SaveData data;
@@ -191,6 +194,7 @@ void update(uint32_t time) {
 }
 
 void render(uint32_t time) {
+    DIAG_LED_GREEN();
     drr::render_scene(g_world, pse::target_from_screen(), time);
 
     if (g_shell == Shell::Title) {
