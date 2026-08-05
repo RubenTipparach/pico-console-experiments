@@ -16,6 +16,10 @@ public sealed class TileDef
     public bool Encounter => Flags.Contains("encounter");
     public bool Door => Flags.Contains("door");
     public string FlagText => string.Join(" ", Flags);
+
+    /// <summary>What a dropdown shows. Left as ToString rather than a
+    /// DisplayMember so the list cannot be filled without it.</summary>
+    public override string ToString() => $"{Ch}   {Name}";
 }
 
 public sealed class NamedDef
@@ -23,6 +27,20 @@ public sealed class NamedDef
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public override string ToString() => Id;
+}
+
+/// <summary>
+/// Where a new game begins, out of start.txt. The editor never writes this
+/// file, but it can break it: the player's first tile is an ordinary tile in an
+/// ordinary zone, and painting a tree over it is a failed build with nothing in
+/// the zone itself to show for it.
+/// </summary>
+public sealed class StartPoint
+{
+    public string Zone { get; init; } = "";
+    public int X { get; init; }
+    public int Y { get; init; }
+    public string Facing { get; init; } = "south";
 }
 
 /// <summary>
@@ -40,6 +58,10 @@ public sealed class Dataset
     public List<NamedDef> Items { get; } = new();
     public List<ZoneFile> Zones { get; } = new();
     public Dictionary<string, ZoneFile> ZoneById { get; } = new();
+
+    /// <summary>Null when start.txt is missing or says nothing useful, which is
+    /// itself reported.</summary>
+    public StartPoint? Start { get; private set; }
 
     /// <summary>Problems from reading the directory itself, as opposed to from
     /// checking what is in it: a tileset line that makes no sense, a zone file
@@ -61,6 +83,7 @@ public sealed class Dataset
         data.LoadNames("species.txt", "species", data.Species);
         data.LoadNames("items.txt", "item", data.Items);
         data.LoadZones();
+        data.LoadStart();
         return data;
     }
 
@@ -147,6 +170,51 @@ public sealed class Dataset
                 id = "";
             }
         }
+    }
+
+    /// <summary>The `zone` and `at` lines of start.txt, and nothing else. The
+    /// starting party and bag are checked against species.txt and items.txt by
+    /// the compiler, but no edit made here can break those: the only part of
+    /// this file the editor can invalidate is the tile the player stands on.</summary>
+    private void LoadStart()
+    {
+        var path = Path.Combine(Root, "start.txt");
+        if (!File.Exists(path))
+        {
+            LoadErrors.Add("start.txt: not found in the data directory");
+            return;
+        }
+        string zone = "", facing = "south";
+        int x = 0, y = 0;
+        var placed = false;
+        foreach (var (line, number) in Meaningful(path))
+        {
+            var (key, value) = ZoneFile.Partition(line);
+            if (key == "zone") zone = value;
+            else if (key != "at") continue;
+            else
+            {
+                var parts = ZoneFile.Words(value);
+                if (parts.Length != 3
+                    || !int.TryParse(parts[0], System.Globalization.NumberStyles.Integer,
+                                     System.Globalization.CultureInfo.InvariantCulture, out x)
+                    || !int.TryParse(parts[1], System.Globalization.NumberStyles.Integer,
+                                     System.Globalization.CultureInfo.InvariantCulture, out y))
+                {
+                    LoadErrors.Add($"start.txt:{number}: expected: at <x> <y> <facing>");
+                    continue;
+                }
+                facing = parts[2];
+                placed = true;
+            }
+        }
+        if (zone.Length == 0)
+        {
+            LoadErrors.Add("start.txt: the start block has no zone");
+            return;
+        }
+        if (!placed) LoadErrors.Add("start.txt: the start block has no 'at' line");
+        Start = new StartPoint { Zone = zone, X = x, Y = y, Facing = facing };
     }
 
     private void LoadZones()

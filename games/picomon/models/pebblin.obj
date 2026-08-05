@@ -1,14 +1,14 @@
 # PEBBLIN: the stone minor, and the mesh BOULDRIN and DUSTBUG tint.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
 #
 # About 0.82 units tall, 62 triangles.
 # The only creature in the roster that is wider than it is tall, which
@@ -105,11 +105,11 @@ f 29 32 33
 f 29 33 30
 
 # leg, 4 triangles
-v 0.370 0.240 0.310
-v 0.190 0.240 0.310
-v 0.190 0.240 0.130
-v 0.370 0.240 0.130
-v 0.280 0.000 0.220
+v 0.330 0.240 0.290
+v 0.150 0.240 0.290
+v 0.150 0.240 0.110
+v 0.330 0.240 0.110
+v 0.240 0.000 0.200
 usemtl pebblin_leg
 f 34 38 35
 f 35 38 36
@@ -117,11 +117,11 @@ f 36 38 37
 f 37 38 34
 
 # leg, 4 triangles
-v -0.190 0.240 0.310
-v -0.370 0.240 0.310
-v -0.370 0.240 0.130
-v -0.190 0.240 0.130
-v -0.280 0.000 0.220
+v -0.150 0.240 0.290
+v -0.330 0.240 0.290
+v -0.330 0.240 0.110
+v -0.150 0.240 0.110
+v -0.240 0.000 0.200
 usemtl pebblin_leg
 f 39 43 40
 f 40 43 41
@@ -129,11 +129,11 @@ f 41 43 42
 f 42 43 39
 
 # leg, 4 triangles
-v 0.350 0.240 -0.150
-v 0.170 0.240 -0.150
-v 0.170 0.240 -0.330
-v 0.350 0.240 -0.330
-v 0.260 0.000 -0.240
+v 0.310 0.240 -0.130
+v 0.130 0.240 -0.130
+v 0.130 0.240 -0.310
+v 0.310 0.240 -0.310
+v 0.220 0.000 -0.220
 usemtl pebblin_leg
 f 44 48 45
 f 45 48 46
@@ -141,11 +141,11 @@ f 46 48 47
 f 47 48 44
 
 # leg, 4 triangles
-v -0.170 0.240 -0.150
-v -0.350 0.240 -0.150
-v -0.350 0.240 -0.330
-v -0.170 0.240 -0.330
-v -0.260 0.000 -0.240
+v -0.130 0.240 -0.130
+v -0.310 0.240 -0.130
+v -0.310 0.240 -0.310
+v -0.130 0.240 -0.310
+v -0.220 0.000 -0.220
 usemtl pebblin_leg
 f 49 53 50
 f 50 53 51

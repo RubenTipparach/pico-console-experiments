@@ -1,14 +1,11 @@
 # A wayside boulder: one dome, uneven on purpose.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
-#
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
 #
 # About 0.44 units tall and twice that across, 18 triangles.
 # The base ring sits on the ground and is left open. Nothing above the

@@ -17,7 +17,6 @@ public sealed class Inspector : Panel
     private readonly TableLayoutPanel _rows = new();
     private Dataset? _data;
     private ZoneFile? _zone;
-    private object? _thing;
     private bool _loading;
 
     /// <summary>Raised when a field is edited, so the map repaints and the
@@ -57,7 +56,6 @@ public sealed class Inspector : Panel
 
     public void Display(object? thing)
     {
-        _thing = thing;
         _loading = true;
         _rows.SuspendLayout();
         foreach (var control in _rows.Controls.Cast<Control>().ToArray()) control.Dispose();
@@ -94,7 +92,7 @@ public sealed class Inspector : Panel
             return;
         }
         Row("zone", Note(_zone.Id));
-        Row("name", Text(_zone.Name, v => { _zone.Name = v; Changed(); }));
+        Row("name", TextField(_zone.Name, v => { _zone.Name = v; Changed(); }));
         Row("size", Note($"{ZoneFile.N(_zone.Width)} by {ZoneFile.N(_zone.Height)}"));
         Row("file", Note(Path.GetFileName(_zone.Path)));
         Row("", Note("Click a marker to edit it, or paint with the palette."));
@@ -102,7 +100,7 @@ public sealed class Inspector : Panel
 
     private void BuildNpc(NpcDef npc)
     {
-        Row("id", Text(npc.Id, v => { npc.Id = v.Trim(); Changed(); }));
+        Row("id", TextField(npc.Id, v => { npc.Id = v.Trim(); Changed(); }));
         Row("at", Place(npc));
         Row("facing", Choice(Validator.Facings, npc.Facing, v => { npc.Facing = v; Changed(); }));
         Row("sheet", Free(_data?.Sheets ?? Enumerable.Empty<string>(), npc.Sheet,
@@ -116,8 +114,14 @@ public sealed class Inspector : Panel
             Rebuild(npc);
         }));
 
-        var sight = new NumericUpDown { Minimum = 0, Maximum = 20, Width = 60 };
-        sight.Value = npc.Sight ?? 0;
+        var sight = new NumericUpDown { Minimum = 0, Maximum = Validator.MaxSight, Width = 60 };
+        // Clamped rather than trusted, the same way every other number in this
+        // panel is. The compiler puts no bounds on a sight key at all, and a
+        // NumericUpDown throws when it is handed a value outside its own range,
+        // so a hand written 'sight 25' would take the editor down on the click
+        // that selected the NPC. The model keeps what the file said until the
+        // box is touched, and the problem list is what reports it.
+        sight.Value = Math.Clamp(npc.Sight ?? 0, 0, Validator.MaxSight);
         sight.Enabled = npc.Sight.HasValue;
         var hasSight = new CheckBox { Text = "line of sight", AutoSize = true, Checked = npc.Sight.HasValue };
         hasSight.CheckedChanged += (_, _) =>
@@ -139,7 +143,7 @@ public sealed class Inspector : Panel
         Row("say", Pages(npc.Say));
         Row("win", Pages(npc.Win));
         Row("lose", Pages(npc.Lose));
-        Row("reward", Number(npc.Reward, 0, 65535, v => { npc.Reward = v; Changed(); }));
+        Row("reward", Number(npc.Reward, 0, Validator.MaxReward, v => { npc.Reward = v; Changed(); }));
         Row("flag", Free(_data?.SetFlags ?? Enumerable.Empty<string>(), npc.Flag,
                          v => { npc.Flag = v.Trim(); Changed(); }));
         Row("only when", Condition(npc));
@@ -191,7 +195,7 @@ public sealed class Inspector : Panel
         {
             Row("item", Free(_data?.Items.Select(i => i.Id) ?? Enumerable.Empty<string>(), ev.Item,
                              v => { ev.Item = v.Trim(); Changed(); }));
-            Row("count", Text(ev.Count, v => { ev.Count = v.Trim(); Changed(); }));
+            Row("count", TextField(ev.Count, v => { ev.Count = v.Trim(); Changed(); }));
         }
 
         Row("flag", Free(_data?.SetFlags ?? Enumerable.Empty<string>(), ev.Flag,
@@ -353,7 +357,7 @@ public sealed class Inspector : Panel
         return flow;
     }
 
-    private Control Text(string value, Action<string> set)
+    private Control TextField(string value, Action<string> set)
     {
         var box = new TextBox { Text = value, Dock = DockStyle.Fill };
         box.TextChanged += (_, _) => set(box.Text);

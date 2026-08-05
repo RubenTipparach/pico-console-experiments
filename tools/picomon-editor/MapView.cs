@@ -34,7 +34,7 @@ public sealed class MapView : Control
     private Point _mouse = new(-1, -1);
 
     public Tool Tool { get; set; } = Tool.Paint;
-    public char Brush { get; set; } = '.';
+    public char BrushChar { get; set; } = '.';
 
     /// <summary>Where the last left click landed, which is where a new NPC,
     /// warp or event gets placed. Putting it under the last click beats putting
@@ -235,6 +235,9 @@ public sealed class MapView : Control
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        // A plain Control is not focused by clicking it, and without focus the
+        // map never sees Delete or Escape.
+        Focus();
         if (_zone is null) return;
         var cell = Cell(e.Location);
         if (!_zone.Contains(cell.X, cell.Y)) return;
@@ -314,7 +317,7 @@ public sealed class MapView : Control
             var box = Span(from, Cell(e.Location));
             for (var y = box.Top; y < box.Bottom; y++)
                 for (var x = box.Left; x < box.Right; x++)
-                    _zone.SetTile(x, y, Brush);
+                    _zone.SetTile(x, y, BrushChar);
             _rectFrom = null;
             Edited?.Invoke();
             Invalidate();
@@ -344,8 +347,8 @@ public sealed class MapView : Control
 
     private void Stroke(Point cell)
     {
-        if (_zone is null || _zone.TileAt(cell.X, cell.Y) == Brush) return;
-        _zone.SetTile(cell.X, cell.Y, Brush);
+        if (_zone is null || _zone.TileAt(cell.X, cell.Y) == BrushChar) return;
+        _zone.SetTile(cell.X, cell.Y, BrushChar);
         Invalidate(new Rectangle(cell.X * _zoom, cell.Y * _zoom, _zoom, _zoom));
         Edited?.Invoke();
     }
@@ -355,7 +358,7 @@ public sealed class MapView : Control
     {
         if (_zone is null) return;
         var target = _zone.TileAt(seed.X, seed.Y);
-        if (target == Brush || target == '\0') return;
+        if (target == BrushChar || target == '\0') return;
 
         var pending = new Stack<Point>();
         pending.Push(seed);
@@ -363,7 +366,7 @@ public sealed class MapView : Control
         {
             var at = pending.Pop();
             if (!_zone.Contains(at.X, at.Y) || _zone.TileAt(at.X, at.Y) != target) continue;
-            _zone.SetTile(at.X, at.Y, Brush);
+            _zone.SetTile(at.X, at.Y, BrushChar);
             pending.Push(new Point(at.X + 1, at.Y));
             pending.Push(new Point(at.X - 1, at.Y));
             pending.Push(new Point(at.X, at.Y + 1));

@@ -45,6 +45,16 @@ public static class Validator
     public const int MaxParty = 6;
     public const int MaxFlags = 64;
 
+    /// <summary>What the generated tables can hold: sight is a uint8_t and
+    /// reward is a uint16_t. picomon_data.py range checks neither. It writes
+    /// whatever the file said straight into a braced initialiser, so a negative
+    /// or oversized value passes the data build and then fails as a narrowing
+    /// error in the C++ compile, a long way from the line that caused it. The
+    /// boxes in the inspector cover exactly these ranges, so anything outside
+    /// one came from the file rather than from an edit.</summary>
+    public const int MaxSight = 255;
+    public const int MaxReward = 65535;
+
     public static readonly string[] Facings = { "north", "east", "south", "west" };
     public static readonly string[] NpcKinds = { "villager", "trainer", "healer", "shop" };
     public static readonly string[] EventKinds = { "sign", "item", "trigger" };
@@ -76,7 +86,44 @@ public static class Validator
         }
 
         foreach (var zone in data.Zones) CheckZone(data, zone, set, problems);
+        CheckStart(data, problems);
         return problems;
+    }
+
+    /// <summary>
+    /// Where the player starts, which is the one thing outside the zone files
+    /// that painting a tile can break. start.txt names a zone and a tile in it,
+    /// and the compiler fails on a start the player cannot stand on. Nothing in
+    /// the zone being edited shows it: the tile looks like any other tile, so
+    /// without this the editor says the map is fine and CI says it is not.
+    /// It is reported against the zone it is in, so it appears with that zone's
+    /// problems and blocks saving it.
+    /// </summary>
+    private static void CheckStart(Dataset data, List<Problem> problems)
+    {
+        if (data.Start is not { } start) return;
+        if (!data.ZoneById.TryGetValue(start.Zone, out var zone))
+        {
+            problems.Add(new Problem
+            {
+                Severity = Severity.Error,
+                ZoneId = "data",
+                Text = $"start.txt: the game starts in zone '{start.Zone}', which does not exist",
+            });
+            return;
+        }
+
+        void Add(string text) => problems.Add(new Problem
+        {
+            Severity = Severity.Error, ZoneId = zone.Id, Text = text, X = start.X, Y = start.Y,
+        });
+
+        if (!Facings.Contains(start.Facing))
+            Add($"start.txt: unknown facing '{start.Facing}'");
+        if (!zone.Contains(start.X, start.Y))
+            Add("start.txt: the player starts outside the zone");
+        else if (!Walkable(data, zone.TileAt(start.X, start.Y)))
+            Add("start.txt: the player starts on a tile they cannot stand on");
     }
 
     private static void CheckZone(Dataset data, ZoneFile zone, HashSet<string> setFlags,
@@ -168,6 +215,20 @@ public static class Validator
         }
 
         // --- encounters
+        // The game takes the first table whose character matches and stops, so
+        // a second one for the same character is data that reads as live and
+        // never rolls. The compiler allows it, which is exactly why it is worth
+        // saying here: "Add table" starts on the first encountering tile, so
+        // adding two in a row produces this without being asked to.
+        var tabled = new HashSet<char>();
+        foreach (var table in zone.Encounters)
+        {
+            if (!tabled.Add(table.Tile))
+                Add(Severity.Warning,
+                    $"a second encounter table for '{table.Tile}'; the game rolls the first one and never reaches this",
+                    table);
+        }
+
         foreach (var table in zone.Encounters)
         {
             if (!data.TileByChar.TryGetValue(table.Tile, out var tile))
@@ -214,6 +275,15 @@ public static class Validator
                 Add(Severity.Error, $"unknown npc kind '{npc.Kind}'", npc, npc.X, npc.Y);
             if (npc.Sheet.Length == 0)
                 Add(Severity.Error, $"npc '{npc.Id}' has no sheet", npc, npc.X, npc.Y);
+
+            if (npc.Sight is { } sight && (sight < 0 || sight > MaxSight))
+                Add(Severity.Error,
+                    $"npc '{npc.Id}' has sight {ZoneFile.N(sight)}, which does not fit the byte the table holds",
+                    npc, npc.X, npc.Y);
+            if (npc.Reward < 0 || npc.Reward > MaxReward)
+                Add(Severity.Error,
+                    $"npc '{npc.Id}' has reward {ZoneFile.N(npc.Reward)}, which does not fit the table's 0 to {MaxReward}",
+                    npc, npc.X, npc.Y);
 
             var trainer = npc.EffectiveKind == "trainer";
             if (trainer && npc.Party.Count == 0)

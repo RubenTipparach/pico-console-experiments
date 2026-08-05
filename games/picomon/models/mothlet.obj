@@ -1,14 +1,14 @@
 # MOTHLET: the mind minor, and the mesh LUNAMOTH tints.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
 #
 # About 1.08 units tall, 68 triangles.
 # Two swept forewings, two hindwing lobes, two antennae. It is the one
@@ -152,10 +152,10 @@ f 45 48 49
 f 45 49 46
 
 # leg, 4 triangles
-v 0.150 0.280 0.110
-v 0.050 0.280 0.110
-v 0.050 0.280 0.010
-v 0.150 0.280 0.010
+v 0.150 0.330 0.110
+v 0.050 0.330 0.110
+v 0.050 0.330 0.010
+v 0.150 0.330 0.010
 v 0.100 0.000 0.060
 usemtl mothlet_leg
 f 50 54 51
@@ -164,10 +164,10 @@ f 52 54 53
 f 53 54 50
 
 # leg, 4 triangles
-v -0.050 0.280 0.110
-v -0.150 0.280 0.110
-v -0.150 0.280 0.010
-v -0.050 0.280 0.010
+v -0.050 0.330 0.110
+v -0.150 0.330 0.110
+v -0.150 0.330 0.010
+v -0.050 0.330 0.010
 v -0.100 0.000 0.060
 usemtl mothlet_leg
 f 55 59 56

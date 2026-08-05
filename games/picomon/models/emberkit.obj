@@ -1,14 +1,14 @@
 # EMBERKIT: the ember starter, and the mesh FLARETTE and FLICKER tint.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
 #
 # About 1.28 units tall, 76 triangles.
 # The silhouette is the two upright ears and the fat swept tail. Both
@@ -80,11 +80,11 @@ f 20 22 21
 f 21 22 16
 
 # snout, 4 triangles
-v 0.000 0.860 0.540
-v 0.100 0.860 0.340
-v 0.000 0.775 0.340
-v -0.100 0.860 0.340
-v 0.000 0.945 0.340
+v 0.000 0.850 0.620
+v 0.100 0.850 0.360
+v 0.000 0.765 0.360
+v -0.100 0.850 0.360
+v 0.000 0.935 0.360
 usemtl emberkit_snout
 f 23 24 25
 f 23 25 26
@@ -116,14 +116,14 @@ f 33 36 37
 f 33 37 34
 
 # tail, 12 triangles
-v 0.000 0.798 -0.614
-v 0.140 0.560 -0.400
-v 0.070 0.641 -0.310
-v -0.070 0.641 -0.310
-v -0.140 0.560 -0.400
-v -0.070 0.479 -0.490
-v 0.070 0.479 -0.490
-v 0.000 0.322 -0.186
+v 0.000 0.813 -0.648
+v 0.190 0.560 -0.420
+v 0.095 0.670 -0.298
+v -0.095 0.670 -0.298
+v -0.190 0.560 -0.420
+v -0.095 0.450 -0.542
+v 0.095 0.450 -0.542
+v 0.000 0.307 -0.192
 usemtl emberkit_tip
 f 38 39 40
 f 38 40 41
@@ -140,10 +140,10 @@ f 43 45 44
 f 44 45 39
 
 # leg, 4 triangles
-v 0.290 0.300 0.275
-v 0.140 0.300 0.275
-v 0.140 0.300 0.125
-v 0.290 0.300 0.125
+v 0.290 0.340 0.275
+v 0.140 0.340 0.275
+v 0.140 0.340 0.125
+v 0.290 0.340 0.125
 v 0.215 0.000 0.200
 usemtl emberkit_leg
 f 46 50 47
@@ -152,10 +152,10 @@ f 48 50 49
 f 49 50 46
 
 # leg, 4 triangles
-v -0.140 0.300 0.275
-v -0.290 0.300 0.275
-v -0.290 0.300 0.125
-v -0.140 0.300 0.125
+v -0.140 0.340 0.275
+v -0.290 0.340 0.275
+v -0.290 0.340 0.125
+v -0.140 0.340 0.125
 v -0.215 0.000 0.200
 usemtl emberkit_leg
 f 51 55 52
@@ -164,10 +164,10 @@ f 53 55 54
 f 54 55 51
 
 # leg, 4 triangles
-v 0.270 0.300 -0.165
-v 0.120 0.300 -0.165
-v 0.120 0.300 -0.315
-v 0.270 0.300 -0.315
+v 0.270 0.340 -0.165
+v 0.120 0.340 -0.165
+v 0.120 0.340 -0.315
+v 0.270 0.340 -0.315
 v 0.195 0.000 -0.240
 usemtl emberkit_leg
 f 56 60 57
@@ -176,10 +176,10 @@ f 58 60 59
 f 59 60 56
 
 # leg, 4 triangles
-v -0.120 0.300 -0.165
-v -0.270 0.300 -0.165
-v -0.270 0.300 -0.315
-v -0.120 0.300 -0.315
+v -0.120 0.340 -0.165
+v -0.270 0.340 -0.165
+v -0.270 0.340 -0.315
+v -0.120 0.340 -0.315
 v -0.195 0.000 -0.240
 usemtl emberkit_leg
 f 61 65 62

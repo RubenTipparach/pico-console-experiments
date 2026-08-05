@@ -1,6 +1,9 @@
-# Colours for tree.obj. Every channel is a multiple of
-# 0x11, because the panel is four bits per channel and anything else
-# shifts on the device and nowhere else.
+# Colours for tree.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
+# on the byte it was written for.
 
 newmtl tree_trunk
 Kd 0.466667 0.333333 0.200000   # #775533

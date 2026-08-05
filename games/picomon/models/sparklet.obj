@@ -1,14 +1,14 @@
 # SPARKLET: the spark minor, and the mesh VOLTPUP tints.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
 #
 # About 1.21 units tall, 80 triangles.
 # Everything about it is jagged: a three spike crest down the back and
@@ -29,7 +29,7 @@ v 0.242 0.285 0.000
 v 0.121 0.285 0.233
 v -0.121 0.285 0.233
 v -0.242 0.285 0.000
-v -0.121 0.285 -0.232
+v -0.121 0.285 -0.233
 v 0.121 0.285 -0.233
 v 0.000 0.150 0.000
 usemtl sparklet_body
@@ -104,11 +104,11 @@ f 28 31 32
 f 28 32 29
 
 # crest spike, 4 triangles
-v 0.000 0.991 -0.350
-v 0.028 0.800 -0.240
-v 0.000 0.843 -0.166
-v -0.028 0.800 -0.240
-v 0.000 0.758 -0.314
+v 0.000 0.711 -0.350
+v 0.028 0.520 -0.240
+v 0.000 0.562 -0.166
+v -0.028 0.520 -0.240
+v 0.000 0.478 -0.314
 usemtl sparklet_crest
 f 33 34 35
 f 33 35 36
@@ -152,10 +152,10 @@ f 47 49 48
 f 48 49 45
 
 # leg, 4 triangles
-v 0.260 0.260 0.240
-v 0.120 0.260 0.240
-v 0.120 0.260 0.100
-v 0.260 0.260 0.100
+v 0.260 0.310 0.240
+v 0.120 0.310 0.240
+v 0.120 0.310 0.100
+v 0.260 0.310 0.100
 v 0.190 0.000 0.170
 usemtl sparklet_leg
 f 50 54 51
@@ -164,10 +164,10 @@ f 52 54 53
 f 53 54 50
 
 # leg, 4 triangles
-v -0.120 0.260 0.240
-v -0.260 0.260 0.240
-v -0.260 0.260 0.100
-v -0.120 0.260 0.100
+v -0.120 0.310 0.240
+v -0.260 0.310 0.240
+v -0.260 0.310 0.100
+v -0.120 0.310 0.100
 v -0.190 0.000 0.170
 usemtl sparklet_leg
 f 55 59 56
@@ -176,10 +176,10 @@ f 57 59 58
 f 58 59 55
 
 # leg, 4 triangles
-v 0.240 0.260 -0.130
-v 0.100 0.260 -0.130
-v 0.100 0.260 -0.270
-v 0.240 0.260 -0.270
+v 0.240 0.310 -0.130
+v 0.100 0.310 -0.130
+v 0.100 0.310 -0.270
+v 0.240 0.310 -0.270
 v 0.170 0.000 -0.200
 usemtl sparklet_leg
 f 60 64 61
@@ -188,10 +188,10 @@ f 62 64 63
 f 63 64 60
 
 # leg, 4 triangles
-v -0.100 0.260 -0.130
-v -0.240 0.260 -0.130
-v -0.240 0.260 -0.270
-v -0.100 0.260 -0.270
+v -0.100 0.310 -0.130
+v -0.240 0.310 -0.130
+v -0.240 0.310 -0.270
+v -0.100 0.310 -0.270
 v -0.170 0.000 -0.200
 usemtl sparklet_leg
 f 65 69 66

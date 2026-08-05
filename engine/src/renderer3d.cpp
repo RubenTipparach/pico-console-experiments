@@ -8,7 +8,7 @@ namespace {
 constexpr float k_pi = 3.14159265f;
 constexpr float k_z_near = 0.25f;
 constexpr float k_z_far = 400.0f;
-constexpr float k_fov_degrees = 90.0f;
+constexpr float k_default_fov_degrees = 90.0f;
 
 // Flat shading direction. Baked into the engine because a game that wants a
 // different light should pass different vertex colours, not reconfigure the
@@ -64,6 +64,13 @@ const float k_face_shade[6] = {0.70f, 0.90f, 0.60f, 1.00f, 1.00f, 0.50f};
 
 }  // namespace
 
+void Renderer3D::set_fov(float degrees) {
+    if (degrees < 1.0f) degrees = 1.0f;
+    if (degrees > 175.0f) degrees = 175.0f;
+    fov_degrees_ = degrees;
+    rebuild_view_projection();
+}
+
 void Renderer3D::set_camera(float x, float y, float z, float yaw, float pitch) {
     camera_x_ = x;
     camera_y_ = y;
@@ -94,7 +101,7 @@ void Renderer3D::set_orbit_camera(float target_x, float target_y, float target_z
 
 void Renderer3D::rebuild_view_projection() {
     // Standard perspective divide: focal = 1 / tan(fov / 2).
-    const float half_fov = (k_fov_degrees * 0.5f) * k_pi / 180.0f;
+    const float half_fov = (fov_degrees_ * 0.5f) * k_pi / 180.0f;
     const float focal = 1.0f / tanf(half_fov);
 
     float projection[4][4] = {};
@@ -394,7 +401,12 @@ bool Renderer3D::project_billboard(float wx, float wy, float wz,
     const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
     if (distance < 0.5f) return false;
 
-    out_scale = world_size * 40.0f / distance;
+    // The 40 was tuned against the default 90 degree lens, where the focal
+    // length is 1. Scaling it by the current focal keeps a billboard the same
+    // size as the geometry around it at any field of view, and leaves every
+    // game that never touches the lens byte for byte where it was.
+    const float half_fov = (fov_degrees_ * 0.5f) * k_pi / 180.0f;
+    out_scale = world_size * 40.0f / tanf(half_fov) / distance;
     if (out_scale < 0.5f) return false;
 
     const int scaled = depth * 255 / k_fixed_one;

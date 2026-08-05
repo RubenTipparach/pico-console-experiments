@@ -1,36 +1,37 @@
 # MOSSLING: the leaf starter, and the mesh BRAMBLIN and NIBBLE tint.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
+# Eyes are not modelled. They are two depth tested dots in the 2D layer, a
+# pixel each instead of eight triangles.
 #
-# About 1.36 units tall, 76 triangles.
-# A round body under a three leaf sprout. The sprout is the read, so
-# it is deliberately taller than the head it grows out of.
+# About 1.15 units tall, 72 triangles.
+# A round body under a three leaf sprout that sweeps back over its own
+# shoulders. Stacking the leaves straight up the axis instead made a
+# cone on a cone on a cone, and it read as a small pine tree.
 
 mtllib mossling.mtl
 
 # body, 24 triangles
-v 0.000 0.690 0.000
-v 0.303 0.545 0.000
-v 0.152 0.545 0.262
-v -0.152 0.545 0.263
-v -0.303 0.545 0.000
-v -0.152 0.545 -0.262
-v 0.152 0.545 -0.262
-v 0.303 0.255 0.000
-v 0.152 0.255 0.263
-v -0.152 0.255 0.263
-v -0.303 0.255 0.000
-v -0.152 0.255 -0.262
-v 0.152 0.255 -0.263
-v 0.000 0.110 0.000
+v 0.000 0.680 -0.020
+v 0.294 0.540 -0.020
+v 0.147 0.540 0.243
+v -0.147 0.540 0.243
+v -0.294 0.540 -0.020
+v -0.147 0.540 -0.282
+v 0.147 0.540 -0.282
+v 0.294 0.260 -0.020
+v 0.147 0.260 0.243
+v -0.147 0.260 0.243
+v -0.294 0.260 -0.020
+v -0.147 0.260 -0.282
+v 0.147 0.260 -0.282
+v 0.000 0.120 -0.020
 usemtl mossling_body
 f 1 2 3
 f 1 3 4
@@ -55,14 +56,14 @@ f 12 14 13
 f 13 14 8
 
 # head, 12 triangles
-v 0.000 1.020 0.100
-v 0.270 0.800 0.100
-v 0.135 0.800 0.325
-v -0.135 0.800 0.325
-v -0.270 0.800 0.100
-v -0.135 0.800 -0.125
-v 0.135 0.800 -0.125
-v 0.000 0.580 0.100
+v 0.000 0.970 0.160
+v 0.260 0.780 0.160
+v 0.130 0.780 0.377
+v -0.130 0.780 0.377
+v -0.260 0.780 0.160
+v -0.130 0.780 -0.057
+v 0.130 0.780 -0.057
+v 0.000 0.590 0.160
 usemtl mossling_body
 f 15 16 17
 f 15 17 18
@@ -78,62 +79,59 @@ f 19 22 20
 f 20 22 21
 f 21 22 16
 
-# stem, 8 triangles
-v 0.032 1.140 0.032
-v -0.032 1.140 0.032
-v -0.032 1.140 -0.032
-v 0.032 1.140 -0.032
-v 0.045 0.940 0.045
-v -0.045 0.940 0.045
-v -0.045 0.940 -0.045
-v 0.045 0.940 -0.045
-usemtl mossling_stem
-f 23 27 28 24
-f 24 28 29 25
-f 25 29 30 26
-f 26 30 27 23
-
 # crown leaf, 8 triangles
-v 0.000 1.354 -0.078
-v 0.130 1.160 -0.030
-v 0.000 1.165 -0.009
-v -0.130 1.160 -0.030
-v 0.000 1.155 -0.051
-v 0.000 0.966 0.018
+v 0.000 1.153 -0.255
+v 0.200 0.980 -0.120
+v 0.000 0.994 -0.103
+v -0.200 0.980 -0.120
+v 0.000 0.966 -0.137
+v 0.000 0.807 0.015
 usemtl mossling_leaf
-f 31 32 33
-f 31 33 34
-f 31 34 35
-f 31 35 32
+f 23 24 25
+f 23 25 26
+f 23 26 27
+f 23 27 24
 usemtl mossling_leaf2
-f 32 36 33
-f 33 36 34
-f 34 36 35
-f 35 36 32
+f 24 28 25
+f 25 28 26
+f 26 28 27
+f 27 28 24
 
 # side leaf, 4 triangles
-v 0.304 1.203 -0.062
-v 0.132 0.941 -0.020
-v 0.072 1.022 -0.002
-v 0.008 1.099 -0.020
-v 0.068 1.018 -0.038
+v 0.291 1.000 -0.232
+v 0.140 0.771 -0.067
+v 0.114 0.872 -0.025
+v 0.060 0.969 -0.013
+v 0.086 0.868 -0.055
 usemtl mossling_leaf2
-f 37 38 39
-f 37 39 40
-f 37 40 41
-f 37 41 38
+f 29 30 31
+f 29 31 32
+f 29 32 33
+f 29 33 30
 
 # side leaf, 4 triangles
-v -0.304 1.203 -0.062
-v -0.008 1.099 -0.020
-v -0.072 1.022 -0.002
-v -0.132 0.941 -0.020
-v -0.068 1.018 -0.038
+v -0.291 1.000 -0.232
+v -0.060 0.969 -0.013
+v -0.114 0.872 -0.025
+v -0.140 0.771 -0.067
+v -0.086 0.868 -0.055
 usemtl mossling_leaf2
-f 42 43 44
-f 42 44 45
-f 42 45 46
-f 42 46 43
+f 34 35 36
+f 34 36 37
+f 34 37 38
+f 34 38 35
+
+# tail, 4 triangles
+v 0.000 0.562 -0.526
+v 0.070 0.480 -0.300
+v 0.000 0.546 -0.276
+v -0.070 0.480 -0.300
+v 0.000 0.414 -0.324
+usemtl mossling_stem
+f 39 40 41
+f 39 41 42
+f 39 42 43
+f 39 43 40
 
 # leg, 4 triangles
 v 0.285 0.280 0.265
@@ -142,10 +140,10 @@ v 0.135 0.280 0.115
 v 0.285 0.280 0.115
 v 0.210 0.000 0.190
 usemtl mossling_leg
-f 47 51 48
-f 48 51 49
-f 49 51 50
-f 50 51 47
+f 44 48 45
+f 45 48 46
+f 46 48 47
+f 47 48 44
 
 # leg, 4 triangles
 v -0.135 0.280 0.265
@@ -154,10 +152,10 @@ v -0.285 0.280 0.115
 v -0.135 0.280 0.115
 v -0.210 0.000 0.190
 usemtl mossling_leg
-f 52 56 53
-f 53 56 54
-f 54 56 55
-f 55 56 52
+f 49 53 50
+f 50 53 51
+f 51 53 52
+f 52 53 49
 
 # leg, 4 triangles
 v 0.265 0.280 -0.145
@@ -166,10 +164,10 @@ v 0.115 0.280 -0.295
 v 0.265 0.280 -0.295
 v 0.190 0.000 -0.220
 usemtl mossling_leg
-f 57 61 58
-f 58 61 59
-f 59 61 60
-f 60 61 57
+f 54 58 55
+f 55 58 56
+f 56 58 57
+f 57 58 54
 
 # leg, 4 triangles
 v -0.115 0.280 -0.145
@@ -178,7 +176,7 @@ v -0.265 0.280 -0.295
 v -0.115 0.280 -0.295
 v -0.190 0.000 -0.220
 usemtl mossling_leg
-f 62 66 63
-f 63 66 64
-f 64 66 65
-f 65 66 62
+f 59 63 60
+f 60 63 61
+f 61 63 62
+f 62 63 59

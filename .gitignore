@@ -11,6 +11,11 @@ tools/flasher/bin/
 tools/flasher/obj/
 tools/flasher/publish/
 
+# Picomon editor build output
+tools/picomon-editor/bin/
+tools/picomon-editor/obj/
+tools/picomon-editor/publish/
+
 # Local site previews
 site/
 __pycache__/

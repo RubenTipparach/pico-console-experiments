@@ -754,6 +754,12 @@ def emit(d, hpp_path, cpp_path):
     for zid in [z["id"] for z in d.zones]:
         w(f"constexpr uint8_t zone_{ident(zid)} = {d.zone_ix[zid]};")
     w("")
+    # Named tile constants, so the renderer asks for "the tree tile" rather
+    # than for index 7. Reordering tileset.txt then moves the number and
+    # nothing breaks, which is the whole reason not to write the number down.
+    for t in d.tiles:
+        w(f"constexpr uint8_t tile_{ident(t['name'])} = {d.tile_by_char[t['ch']]};")
+    w("")
     for iid in [i["id"] for i in d.items]:
         w(f"constexpr uint8_t item_{ident(iid)} = {d.item_ix[iid]};")
     w("")

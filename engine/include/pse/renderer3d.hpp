@@ -35,6 +35,14 @@ public:
     // Place the camera explicitly.
     void set_camera(float x, float y, float z, float yaw, float pitch);
 
+    // Vertical field of view in degrees. The default is 90, which is a very
+    // wide lens: it makes the bottom of the frame look 45 degrees further down
+    // than the middle, so a camera pitched for a three quarter view still
+    // reads as top down near the player. A game that wants the flat, even
+    // perspective of a handheld role playing game wants a long lens instead,
+    // and this is the only knob that gets it. Costs one matrix rebuild.
+    void set_fov(float degrees);
+
     // Project into a horizontal band of the target instead of the full frame,
     // for split screen scenes: y0 is the band's first row, height its row
     // count. Horizontal extent stays the full width, so a half height band
@@ -101,6 +109,7 @@ private:
 
     float camera_x_ = 0.0f, camera_y_ = 0.0f, camera_z_ = 0.0f;
     float camera_yaw_ = 0.0f, camera_pitch_ = 0.0f;
+    float fov_degrees_ = 90.0f;
 
     int viewport_y0_ = 0;
     int viewport_h_ = 0;   // 0 means the full target height

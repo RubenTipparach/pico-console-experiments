@@ -1,0 +1,31 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: picomon
+title: Picomon
+blurb: Walk the route, catch what lives in the grass.
+target: picomon
+sdk: 32blit
+web: true
+
+objective: "Walk out of Hometown, step into the tall grass, and catch what comes out of it. Wear a creature down before you throw, then build a team good enough to get past the trainers on the road north."
+
+controls:
+  - "dpad: walk"
+  - "A: talk, read, pick up, confirm"
+  - "B: back"
+  - "X: bag"
+  - "Y: party"
+
+models:
+  - emberkit.obj
+  - mossling.obj
+  - tidepup.obj
+  - sparklet.obj
+  - pebblin.obj
+  - mothlet.obj
+  - tree.obj
+  - tree_far.obj
+  - house.obj
+  - sign.obj
+  - rock.obj
+  - ball.obj

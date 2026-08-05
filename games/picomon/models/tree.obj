@@ -1,18 +1,17 @@
 # A route tree: a square trunk under two canopy cones.
-# Y is up, +Z is the way the creature faces, one world unit is one map tile.
-# The lowest vertex sits on y = 0 and the model is centred on x = 0 and z = 0,
-# so the game places it by its feet.
+# Y is up, +Z is the front, one world unit is one map tile. The lowest vertex
+# sits on y = 0 and the model is centred on x = 0 and z = 0, so the game places
+# it by its feet.
 #
 # Faces are wound so that (c - a) x (b - a) points out of the solid, which is
 # what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
 # model still draws, it just goes flat ambient dark.
 #
-# Eyes are not modelled. They are two depth tested dots in the 2D layer, which
-# is a pixel each instead of eight triangles.
-#
-# About 2.50 units tall, 20 triangles. tree_far.obj is the same
-# silhouette for six, and a tree that swaps between them must not
-# visibly change shape, which is why both canopies are six sided.
+# About 2.50 units tall, 20 triangles. tree_far.obj replaces it past the
+# swap distance for six triangles: same height, same six segments, but one
+# cone and no trunk, so the outline does change. Keep both canopies six
+# sided, because a segment count that changes reads as a shape that
+# changes even when the outline is close.
 
 mtllib tree.mtl
 

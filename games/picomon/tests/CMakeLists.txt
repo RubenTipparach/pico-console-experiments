@@ -39,3 +39,45 @@ target_include_directories(picomon_sim_tests PRIVATE
     ${picomon_gen}
 )
 add_test(NAME picomon_sim_tests COMMAND picomon_sim_tests)
+
+# The preview harness renders real frames through the real engine and the real
+# models, no SDK anywhere, and writes them as PPM images. Not a test: a tool for
+# looking at the game without hardware, and the way the thumbnail is taken.
+#
+# It builds the game's own render.cpp, so it needs the game's own model list and
+# the same generated sprite tables the device gets.
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/obj_model.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
+
+set(picomon_models "")
+foreach(model ${picomon_model_files})
+    add_obj_model(picomon_preview
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} picomon_models)
+endforeach()
+
+# The character art is committed as .aseprite and .png; the device tables are
+# not, so they are regenerated into the build tree like everything else.
+add_custom_command(
+    OUTPUT ${picomon_gen}/sprites.cpp ${picomon_gen}/sprites.hpp
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${picomon_gen}
+    COMMAND ${Python3_EXECUTABLE} ${picomon_root}/art/build_art.py
+            --out-dir ${picomon_gen}
+    DEPENDS ${picomon_root}/art/build_art.py ${picomon_root}/art/aseprite.py
+    COMMENT "picomon art: packing the sprite sheets"
+    VERBATIM
+)
+
+add_executable(picomon_preview
+    preview.cpp
+    ${picomon_root}/src/sim.cpp
+    ${picomon_root}/src/render.cpp
+    ${picomon_gen}/picomon_data.cpp
+    ${picomon_gen}/sprites.cpp
+    ${picomon_models}
+)
+target_include_directories(picomon_preview PRIVATE
+    ${picomon_root}/src
+    ${picomon_gen}
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(picomon_preview pse-core)
