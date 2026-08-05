@@ -50,10 +50,14 @@ public:
         const uint8_t* p = storage_.data() +
                            (static_cast<size_t>(y) * width_ + x) * bytes_;
         if (format_ == pse::PixelFormat::rgb565) {
+            // Unpacked the way the SDK does it, red in the low bits. See
+            // pse/pixel.hpp: this used to mirror the engine's own packing
+            // instead, which made a swapped red and blue invisible here and
+            // obvious on the device.
             const uint16_t v = static_cast<uint16_t>(p[0] | (p[1] << 8));
-            r = ((v >> 11) & 0x1F) << 3;
+            r = (v & 0x1F) << 3;
             g = ((v >> 5) & 0x3F) << 2;
-            b = (v & 0x1F) << 3;
+            b = ((v >> 11) & 0x1F) << 3;
         } else {
             r = p[0];
             g = p[1];
@@ -495,6 +499,45 @@ void test_queue_overflow() {
 
 // Guard the documented memory budget. If someone raises the render size this
 // test is the thing that tells them what it just cost.
+// The screen format on the device, pinned against the SDK's own packing.
+//
+// This is deliberately an independent copy of blend.cpp's pack_rgb565 rather
+// than a readback through our own code: the previous test decoded 565 with the
+// same convention the engine encoded it with, so red and blue were swapped in
+// perfect agreement and every test passed while the hardware showed the wrong
+// colours in every game.
+void test_rgb565_matches_the_sdk() {
+    // 32blit/graphics/blend.cpp:
+    //     pack_rgb565(r, g, b) = (r >> 3) | ((g >> 2) << 5) | ((b >> 3) << 11)
+    auto sdk_pack = [](int r, int g, int b) {
+        return static_cast<uint16_t>((r >> 3) | ((g >> 2) << 5) |
+                                     ((b >> 3) << 11));
+    };
+
+    for (int r = 0; r < 256; r += 5) {
+        for (int g = 0; g < 256; g += 7) {
+            for (int b = 0; b < 256; b += 11) {
+                uint8_t bytes[2] = {0, 0};
+                pse::Rgb565::store(bytes, static_cast<uint8_t>(r),
+                                   static_cast<uint8_t>(g),
+                                   static_cast<uint8_t>(b));
+                const uint16_t got =
+                    static_cast<uint16_t>(bytes[0] | (bytes[1] << 8));
+                CHECK(got == sdk_pack(r, g, b));
+            }
+        }
+    }
+
+    // Spelled out, because "red is 0x001F" is the whole point and a reader
+    // should not have to run the loop above to learn it.
+    uint8_t red[2] = {0, 0};
+    uint8_t blue[2] = {0, 0};
+    pse::Rgb565::store(red, 255, 0, 0);
+    pse::Rgb565::store(blue, 0, 0, 255);
+    CHECK(red[0] == 0x1F && red[1] == 0x00);
+    CHECK(blue[0] == 0x00 && blue[1] == 0xF8);
+}
+
 void test_memory_budget() {
     CHECK(sizeof(pse::MeshFace) == 12);
     CHECK(sizeof(pse::MeshVertex) == 6);
@@ -514,6 +557,7 @@ int main() {
     test_renderer_projects_and_culls();
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
+    test_rgb565_matches_the_sdk();
     test_memory_budget();
     test_split_matches_immediate();
     test_two_scene_split();
