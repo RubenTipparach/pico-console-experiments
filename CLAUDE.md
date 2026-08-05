@@ -230,6 +230,32 @@ Before adding anything, ask what it costs:
   a launcher, or any game big enough to care about asset budgets. `LAUNCHER.md`
   is the design built on top of it: the flash map, the metadata block every
   game now carries, and how a launcher would boot one game from another.
+- **The whole device maxes out at 16 MB total** (confirmed against Pimoroni's
+  own spec for the PicoSystem's QSPI flash chip, not assumed). That is the
+  entire chip, the 12 MB program region and the 4 MB storage partition
+  together, not a per-operation limit. It matters beyond the firmware itself:
+  BOOTSEL exposes the device as a fake FAT16 drive with that same 16 MB
+  ceiling, and the UF2 format costs 512 bytes on disk per 256 bytes of real
+  flash data, exactly doubling a payload's size, so a single flash operation
+  cannot represent more than about 8 MB of actual flash content before the
+  `.uf2` file itself exceeds what the drive can hold. `tools/flasher`'s
+  bundle composer learned this the hard way: an early "clear every game slot"
+  action wrote the full 512 KB of all 23 slots in one UF2. Fully blanking a
+  slot is not needed to make it stop being listed as installed, only reaching
+  past wherever its metadata block landed is, and every game this project
+  builds or has imported is well under that: measured real flash content
+  (uf2 file size / 2) of everything in the library as of this writing is
+  launcher.uf2 101,376 B, chicken.uf2 110,080 B, pico-santa.uf2 118,528 B,
+  dustrider.uf2 132,096 B, kingfisher.uf2 141,056 B (the largest game this
+  project actually builds), raycaster.uf2 146,432 B, Daft-Freak.uf2
+  153,344 B, celeste.uf2 300,288 B, pico3d.uf2 323,584 B. Clearing 512 KB
+  per slot when 256 KB (double the largest real game) would do produced a
+  23.0 MB file (measured: `WriteBlocks` returned exactly 24,117,248 bytes),
+  bigger than the 16 MB drive it had to fit through, so the write could not
+  physically complete: not slow, not stuck, too large to write at all.
+  Anything that touches many slots at once has to budget its `.uf2` file
+  size against the 16 MB drive ceiling, using a real measured figure for how
+  much of a slot actually needs reaching, not a guessed one.
 - If you add a feature, state its RAM and flash cost in the PR body.
 
 ### 9. Keep on-device UI sparse

@@ -14,7 +14,6 @@
 #ifdef PICO_ON_DEVICE
 #include "hardware/regs/m0plus.h"
 #include "hardware/structs/scb.h"
-#include "hardware/resets.h"
 #include "hardware/irq.h"
 #include "pico/platform.h"
 #endif
@@ -82,6 +81,20 @@ void draw_centred(const char* text, int y, Pen pen) {
 // launcher's own boot2 performed would be lost and the game would run with
 // flash in its slow default mode. Jumping in place keeps that setup.
 //
+// This used to also reset a dozen peripheral blocks before jumping, on the
+// theory that a game should not inherit a display DMA or an audio alarm the
+// launcher had set up. That is gone: it was extra ceremony beyond what the
+// actual jump needs, unreset_block_wait() is a blocking wait with no
+// timeout, and a peripheral whose reset-clear condition never satisfies in
+// this context hangs forever with no explanation, which is indistinguishable
+// from a crash on screen. Every game's own init already brings up whatever
+// peripherals it needs from what it assumes is a fresh boot, the same way it
+// would after a real power cycle, so pre-emptively resetting them here was
+// solving a problem that did not need solving and risking one that did not
+// exist before. This now matches the jump sequence a real shipped multi
+// firmware RP2040 project (picogus, sw/multifw/bootloader.c) uses: VTOR, the
+// vectors, MSP, BX, nothing else.
+//
 // Nothing here can fail softly: if the vectors were rubbish the jump would
 // land nowhere, so library.cpp validates them before this is ever called.
 void __attribute__((noreturn)) boot_slot(int slot) {
@@ -92,32 +105,14 @@ void __attribute__((noreturn)) boot_slot(int slot) {
 
     // Stop everything that could still fire while the game is bringing itself
     // up. An interrupt into this launcher's handler after its vector table is
-    // gone is a hard fault with no explanation attached.
+    // gone is a hard fault with no explanation attached. Unlike the removed
+    // peripheral resets below, this is non-blocking: every instruction here
+    // completes in bounded time, no waiting on hardware to acknowledge.
     __asm volatile("cpsid i");
     for (int irq = 0; irq < 32; irq++) {
         irq_set_enabled(static_cast<uint>(irq), false);
     }
     nvic_hw->icpr = 0xFFFFFFFFu;
-
-    // Put the peripherals back the way a fresh boot would find them, so the
-    // game does not inherit a display DMA or an audio alarm this launcher set
-    // up. IO_QSPI, PADS_QSPI and the PLLs are deliberately excluded: resetting
-    // those would take flash or the system clock away mid jump, and the code
-    // doing the resetting is executing from flash.
-    reset_block(RESETS_RESET_ADC_BITS | RESETS_RESET_DMA_BITS |
-                RESETS_RESET_I2C0_BITS | RESETS_RESET_I2C1_BITS |
-                RESETS_RESET_PIO0_BITS | RESETS_RESET_PIO1_BITS |
-                RESETS_RESET_PWM_BITS | RESETS_RESET_SPI0_BITS |
-                RESETS_RESET_SPI1_BITS | RESETS_RESET_TIMER_BITS |
-                RESETS_RESET_UART0_BITS | RESETS_RESET_UART1_BITS |
-                RESETS_RESET_USBCTRL_BITS);
-    unreset_block_wait(RESETS_RESET_ADC_BITS | RESETS_RESET_DMA_BITS |
-                       RESETS_RESET_I2C0_BITS | RESETS_RESET_I2C1_BITS |
-                       RESETS_RESET_PIO0_BITS | RESETS_RESET_PIO1_BITS |
-                       RESETS_RESET_PWM_BITS | RESETS_RESET_SPI0_BITS |
-                       RESETS_RESET_SPI1_BITS | RESETS_RESET_TIMER_BITS |
-                       RESETS_RESET_UART0_BITS | RESETS_RESET_UART1_BITS |
-                       RESETS_RESET_USBCTRL_BITS);
 
     scb_hw->vtor = vectors;
     __asm volatile("msr msp, %0\n"

@@ -153,19 +153,25 @@ void test_override_names_a_slot_with_no_block_of_its_own() {
           "the override only applies to the slot it names");
 }
 
-void test_a_real_block_wins_over_an_override() {
-    // A game that describes itself is always trusted over a title the
-    // flasher patched in from outside: the block is the truth whenever one
-    // exists, the override only fills in when there is nothing else to go on.
+void test_override_wins_when_both_are_present() {
+    // The override is patched in for every game PicoFlasher places, not
+    // just a forced one, so it reflects what was actually composed. Its
+    // title wins over the slot's own block when the two disagree, because
+    // trusting a fresh scan of this slot's raw flash as the identity check
+    // is exactly the failure mode the override table exists to route
+    // around; the block still enriches the entry with the picture, slug,
+    // and version the override never carries.
     const auto image = make_slot(make_block("kingfisher", "Kingfisher", "v1"));
     const auto overrides = make_overrides({{3, "Some Other Name"}});
     launcher::Entry entry{};
 
     check(launcher::read_slot(span_of(image), 3, entry, span_of(overrides)),
-          "a slot with its own block still reads");
-    check(std::string(entry.title) == "Kingfisher",
-          "the game's own title wins, not the override's");
-    check(entry.icon != nullptr, "the game's own icon is still used");
+          "a slot with both a block and an override still reads");
+    check(std::string(entry.title) == "Some Other Name",
+          "the override's title wins: it is what the flasher actually placed here");
+    check(entry.icon != nullptr, "the game's own icon still enriches the entry");
+    check(std::string(entry.slug) == "kingfisher",
+          "the game's own slug still enriches the entry");
 }
 
 void test_override_table_needs_its_own_magic() {
@@ -318,7 +324,7 @@ int main() {
     test_an_empty_slot_is_not_a_game();
     test_a_nameless_or_oversized_block_is_refused();
     test_override_names_a_slot_with_no_block_of_its_own();
-    test_a_real_block_wins_over_an_override();
+    test_override_wins_when_both_are_present();
     test_override_table_needs_its_own_magic();
     test_scan_keeps_flash_order_and_skips_gaps();
     test_scan_fills_gaps_from_overrides();

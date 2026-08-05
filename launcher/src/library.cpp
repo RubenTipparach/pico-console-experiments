@@ -100,9 +100,14 @@ uint32_t slot_address(int slot) {
     return k_flash_base + static_cast<uint32_t>(slot) * k_slot_size;
 }
 
-bool read_slot(Span slot, int slot_index, Entry& out, Span overrides) {
+namespace {
+
+// Reads a slot purely from its own PSEGAME1 block, ignoring overrides
+// entirely. This is the whole of what read_slot used to be before the
+// override table could name a slot the flasher is certain it placed.
+bool read_block(Span slot, int slot_index, Entry& out) {
     const uint8_t* block = find_magic(slot);
-    if (block == nullptr) return read_override(overrides, slot_index, out);
+    if (block == nullptr) return false;
 
     const uint16_t size = read_u16(block + k_off_size);
     if (size < k_meta_size) return false;
@@ -122,6 +127,38 @@ bool read_slot(Span slot, int slot_index, Entry& out, Span overrides) {
     // A game with no title is not worth showing: it would be an unlabelled
     // card the player cannot identify.
     return out.title[0] != '\0';
+}
+
+}  // namespace
+
+bool read_slot(Span slot, int slot_index, Entry& out, Span overrides) {
+    // The override table is patched directly into the launcher's own image
+    // by PicoFlasher for every game it placed (Bundle.cs), not just a forced
+    // one, so it does not depend on this slot's raw flash scanning
+    // correctly to be found at all. It is checked first, and its title wins
+    // if the two ever disagree, because it reflects what was actually
+    // composed rather than a scan of this slot re-derived on this boot:
+    // trusting that scan as proof nothing is here is exactly the failure
+    // mode this table exists to route around.
+    if (read_override(overrides, slot_index, out)) {
+        // The block still enriches the entry with the picture, slug, and
+        // version the override never carries, when it happens to be found
+        // too. Best effort: none of those are required for the game to be
+        // listed and selectable.
+        Entry from_block{};
+        if (read_block(slot, slot_index, from_block)) {
+            std::memcpy(out.slug, from_block.slug, sizeof(out.slug));
+            std::memcpy(out.version, from_block.version, sizeof(out.version));
+            out.icon = from_block.icon;
+        }
+        return true;
+    }
+
+    // No override for this slot: an old bundle composed before this
+    // existed, or a single slot-linked .uf2 flashed by hand outside the
+    // flasher entirely. Fall back to the slot describing itself, exactly as
+    // before override tables existed at all.
+    return read_block(slot, slot_index, out);
 }
 
 int scan(const Span* slots, int slot_count, Entry* out, int max_entries,

@@ -4,15 +4,18 @@
 //
 // Every game this project builds compiles a metadata block into a
 // `.pse_meta` section (see tools/game_meta.py): magic, slug, title, version,
-// and a 48x48 RGB565 icon. A bundled game sits in a slot of its own, so
-// finding it is a matter of looking at the start of each slot for that
-// magic: the games describe themselves, nothing has to be written down.
+// and a 48x48 RGB565 icon, sitting somewhere in its own slot.
 //
-// A game this project did not build carries no such block, ever, and a slot
-// with nothing bootable in it looks identical from here: neither has a
-// title to show. override_table.hpp is the one exception, a title
-// PicoFlasher can write directly into the launcher's own image for a slot
-// whose own game cannot describe itself. See read_slot below.
+// What actually decides whether a slot is listed is override_table.hpp:
+// PicoFlasher patches a title straight into the launcher's own image for
+// every game it places there, not only a game that cannot describe itself,
+// because a fresh scan of a slot's raw flash for that magic is not proof of
+// absence, only proof the scan failed to find it. The override answers "is
+// a game here, and what is it called" without depending on that scan at
+// all; the slot's own block, when the scan does find it, still supplies the
+// picture, slug, and version the override never carries. A slot with
+// neither an override nor a block of its own is what "nothing installed
+// here" actually looks like. See read_slot below.
 //
 // This file is pure: it takes a span of bytes and reports what it found, so
 // the host tests can drive it with a synthetic flash image.
@@ -57,14 +60,16 @@ struct Span {
 
 // Reads one slot. Returns false when there is no game there.
 //
-// A slot with its own PSEGAME1 block (every game this project builds has
-// one) is read from that, same as always. A slot with no block of its own
-// falls back to `overrides`, the launcher's own image (override_table.hpp):
-// a title PicoFlasher can patch in directly for a game that cannot describe
-// itself. That fallback never carries an icon or a version, only a title,
-// since nothing about a game that never self-described was ever verified.
-// `overrides` defaults to empty, which finds nothing, for callers (most host
-// tests) that only care about a slot's own block.
+// `overrides` (the launcher's own image, override_table.hpp) is checked
+// first: a title PicoFlasher patches in directly for every game it placed,
+// so a slot is listed on its say so without this needing to find that
+// slot's own PSEGAME1 block at all. When the block is also found, it fills
+// in the icon, slug, and version the override never carries, but not the
+// title: the override wins that if the two ever disagree. A slot with no
+// override falls back to reading its own block outright, the way a slot
+// flashed by hand outside PicoFlasher still works. `overrides` defaults to
+// empty, which finds nothing, for callers (most host tests) that only care
+// about a slot's own block.
 bool read_slot(Span slot, int slot_index, Entry& out, Span overrides = Span{});
 
 // Reads every slot into `out`, returning how many games were found. Games

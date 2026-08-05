@@ -1,20 +1,21 @@
 #pragma once
 
-// A name for a game that cannot name itself.
+// The names of what is actually in each slot, as recorded by whoever put it
+// there, rather than re-derived by scanning that slot's raw flash for a
+// magic string every time the launcher boots.
 //
-// Every game this project builds compiles its own PSEGAME1 metadata block
-// (library.hpp), and read_slot() finds that first. A game this project did
-// not build carries no such block, ever, and there is no way to add one to
-// its own image without recompiling it from source. What CAN be done instead
-// is give the launcher its own, separate place to hold a title for a slot,
-// so a game that cannot describe itself can still be named by whoever put it
-// there.
+// Every game this project builds also compiles its own PSEGAME1 metadata
+// block (library.hpp) into its slot. That used to be the only source
+// read_slot() trusted, but a scan finding nothing is not proof nothing is
+// there, only proof the scan failed, and there is no way to tell those
+// apart from flash alone. PicoFlasher knows for a fact what it placed in
+// each slot when it composes a bundle (tools/flasher/Bundle.cs), so it
+// patches every game's title in here directly, not only a forced game with
+// no block of its own. read_slot() checks this table first.
 //
 // This table is reserved inside the launcher's own image, all zero, and
-// PicoFlasher patches a slot's entry directly into the flashed bytes when
-// composing a bundle that force adds a game with no metadata block of its
-// own (tools/flasher/Bundle.cs). Nothing on this side ever writes it, only
-// reads it, and only when a slot's own scan for PSEGAME1 finds nothing.
+// PicoFlasher patches a slot's entry directly into the flashed bytes.
+// Nothing on this side ever writes it, only reads it.
 //
 // Bytes, not a struct: the launcher's own image is scanned for the magic the
 // same way a game's slot is scanned for PSEGAME1, so this stays exactly as

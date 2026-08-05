@@ -639,11 +639,8 @@ public sealed class LibraryTab : UserControl
         var answer = MessageBox.Show(this,
             "This erases every game slot on the console, including anything " +
             "not in the bundle on the right. The launcher itself is not " +
-            "touched. It writes the full 512KB of all 23 slots (about " +
-            "11.5 MB), so it takes a while — the status line will show " +
-            "progress; it is working, not stuck. This cannot be undone " +
-            "from here — reflash whatever you want back afterward.\n\n" +
-            "Clear all slots?",
+            "touched. This cannot be undone from here — reflash whatever " +
+            "you want back afterward.\n\nClear all slots?",
             "Clear all slots",
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes) return;

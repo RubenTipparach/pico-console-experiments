@@ -142,9 +142,13 @@ public static class Bundle
         var all = new List<Block>(blocks);
         var used = new Dictionary<int, string>();
 
-        // Only looked up if something actually needs it: a bundle with no
-        // forced placement never touches the launcher's override table.
-        var forcedNames = new Dictionary<int, string>();
+        // Every game gets its title patched into the launcher's own
+        // override table, not only a forced one: the launcher checks that
+        // table first and trusts it without needing to find this slot's own
+        // metadata block by scanning raw flash (launcher/src/library.cpp
+        // read_slot). Looked up once, lazily, so a bundle with no games at
+        // all never touches it.
+        var titles = new Dictionary<int, string>();
         int overrideTableOffset = -1;
 
         foreach (var game in games)
@@ -180,6 +184,20 @@ public static class Bundle
             var extent = Extent(gameBlocks);
             var want = SlotAddress(game.Slot);
 
+            if (overrideTableOffset == -1)
+            {
+                var launcherImage = FlattenBlocks(blocks, launcherExtent.Low,
+                                                   launcherExtent.High);
+                overrideTableOffset = OverrideTable.Find(launcherImage);
+                if (overrideTableOffset == -1)
+                {
+                    return new Result(false,
+                        $"This launcher build has no override table to name " +
+                        $"{game.Name} with. Rebuild the launcher with build_bundle.bat.");
+                }
+            }
+            titles[game.Slot] = game.Name;
+
             if (game.Forced)
             {
                 // Not linked for this slot at all, most likely a file this
@@ -190,26 +208,11 @@ public static class Bundle
                 // absolute address the game's own instructions still carry
                 // for wherever they actually think they are, which is why
                 // this is not a substitute for a real -DPICO_SLOT build.
-                if (overrideTableOffset == -1)
-                {
-                    var launcherImage = FlattenBlocks(blocks, launcherExtent.Low,
-                                                       launcherExtent.High);
-                    overrideTableOffset = OverrideTable.Find(launcherImage);
-                    if (overrideTableOffset == -1)
-                    {
-                        return new Result(false,
-                            $"{game.Name} is forced, but this launcher build has no " +
-                            "override table to name it with. Rebuild the launcher " +
-                            "with build_bundle.bat.");
-                    }
-                }
-
                 var delta = unchecked(want - extent.Low);
                 gameBlocks = gameBlocks
                     .Select(b => new Block(unchecked(b.Address + delta), b.Data))
                     .ToList();
                 extent = (want, unchecked(extent.High + delta));
-                forcedNames[game.Slot] = game.Name;
             }
             else if (extent.Low != want)
             {
@@ -228,16 +231,20 @@ public static class Bundle
 
             if (!game.Forced)
             {
-                // A game with no metadata block would sit in a slot the
-                // launcher scans and finds nothing in: installed, and
-                // invisible. A forced game is named through the override
-                // table instead, patched below.
+                // Every game this project actually builds carries its own
+                // metadata block (tools/game_meta.py); a properly slot
+                // linked game with none is a build misconfiguration worth
+                // refusing, even though the override table patched in below
+                // would still make it listed and nameable on its own. A
+                // forced game never had a block to check in the first
+                // place, so it skips straight to that override.
                 if (!GameMetaReader.TryReadImage(gameBytes, out _, out var image)
                     || GameMetaReader.Find(image) is null)
                 {
                     return new Result(false,
-                        $"{game.Name} has no metadata block, so the launcher would " +
-                        "not list it.");
+                        $"{game.Name} has no metadata block. It should have been " +
+                        "built with build_bundle.bat, which never produces one " +
+                        "without it.");
                 }
             }
 
@@ -255,10 +262,11 @@ public static class Bundle
         // previous flash ever needs clearing, that is a separate, deliberate
         // action, not automatic overhead on every compose.
 
-        // Patch every forced game's title into the launcher's own blocks.
+        // Patch every game's title into the launcher's own blocks, not only
+        // a forced one's: see the field comment on `titles` above.
         // `blocks` and `all` share the same Block objects for the launcher's
         // portion, so patching Data in place here is visible in `all` too.
-        foreach (var (slot, name) in forcedNames)
+        foreach (var (slot, name) in titles)
         {
             var titleAddress = unchecked(launcherExtent.Low + (uint)overrideTableOffset
                 + OverrideTable.MagicSize + (uint)(slot - 1) * OverrideTable.TitleSize);
@@ -288,24 +296,52 @@ public static class Bundle
 
     /// <summary>
     /// A separate, deliberate action for the thing Compose used to do on
-    /// every flash and shouldn't: wipe every game slot back to empty. This
-    /// writes the FULL 512KB of every slot, not just its vector table: a
-    /// game's metadata block can sit anywhere the compiler put it, so only
-    /// clearing the vector table left it unbootable but still named in the
-    /// menu, which does not read as "cleared" to anyone looking at the
-    /// screen. That makes this a real multi-megabyte write, same as the
-    /// version Compose used to do automatically on every flash and
-    /// shouldn't: the difference is this only runs once, when explicitly
-    /// asked for, with real progress reported rather than silently. The
-    /// launcher itself (slot 0) is never touched.
+    /// every flash and shouldn't: wipe every game slot back to empty.
+    ///
+    /// Not the full 512KB of every slot. The whole device is a 16MB flash
+    /// chip (confirmed against Pimoroni's own spec, not assumed), BOOTSEL
+    /// exposes it as a fake drive with that same 16MB ceiling, and the UF2
+    /// format costs 512 bytes on disk per 256 bytes of real flash data,
+    /// exactly doubling a payload's size. Fully blanking all 23 slots is
+    /// 23 * 512KB = 11.5MB of real data, a 23.0MB file (measured, not
+    /// estimated: WriteBlocks produced exactly 24,117,248 bytes), bigger
+    /// than the drive it would have to fit through. Not slow, not stuck:
+    /// too large to write at all, full stop.
+    ///
+    /// ClearBytesPerSlot has to reach past wherever a game's own metadata
+    /// block landed, not just its vector table: clearing only the 4KB
+    /// vector table sector left a stale game unbootable but still listed in
+    /// the menu, which does not read as "cleared" from the screen. Measured
+    /// real flash content (uf2 file size / 2) of every game actually built
+    /// or imported into the library as of this writing:
+    ///
+    ///   launcher.uf2     101,376 B   chicken.uf2      110,080 B
+    ///   pico-santa.uf2   118,528 B   dustrider.uf2    132,096 B
+    ///   kingfisher.uf2   141,056 B   raycaster.uf2    146,432 B
+    ///   Daft-Freak.uf2   153,344 B   celeste.uf2      300,288 B
+    ///   pico3d.uf2       323,584 B (largest, a foreign import)
+    ///
+    /// The largest game this project actually builds is kingfisher at
+    /// 141,056 bytes; 262,144 (256KB) covers it with 121,088 bytes to
+    /// spare. 23 slots * 256KB = 5.75MB real data, an 11.5MB file: well
+    /// under the 16MB ceiling, with margin, and a number that is on the
+    /// record rather than picked to sound safe. A foreign game force added
+    /// at a size larger than this (celeste and pico3d both are) is not
+    /// fully covered by this bound, but a forced game's name is never
+    /// read from its own slot in the first place, only from the launcher's
+    /// override table (see OverrideTable.cs), so its own uncleared tail is
+    /// display-inert: reaching its vector table is what matters, and 256KB
+    /// clears that for every slot regardless of what was there.
+    /// The launcher itself (slot 0) is never touched.
     /// </summary>
     public static byte[] ComposeClearAllSlots()
     {
+        const int ClearBytesPerSlot = 256 * 1024;
         var blocks = new List<Block>();
         for (var slot = 1; slot <= SlotCount; slot++)
         {
             var address = SlotAddress(slot);
-            for (var offset = 0; offset < SlotSize; offset += Payload)
+            for (var offset = 0; offset < ClearBytesPerSlot; offset += Payload)
             {
                 var data = new byte[Payload];
                 Array.Fill(data, (byte)0xFF);
