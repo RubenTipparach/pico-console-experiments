@@ -128,12 +128,25 @@ See [`games/README.md`](games/README.md) for the field reference.
 
 ## Thumbnails
 
+One picture per game, `games/<slug>/thumbnail.png`, doing two jobs: the gallery
+card shows it, and the 48x48 icon the launcher draws is resampled from it into
+the `.uf2`. A device never reaches the site, so a game with no committed
+thumbnail has a generated placeholder in the menu.
+
 CI screenshots a game once, the first time it is published, and then never
 touches it again. Rebuilding a game does not refresh its thumbnail, so the
-gallery does not churn.
+gallery does not churn. A committed PNG always wins over a captured one.
 
-To refresh one deliberately, run the **Capture thumbnails** workflow and name
-the game, or commit a PNG at `games/<slug>/thumbnail.png`.
+To make one deliberately, run the game's preview harness and convert the frame
+you want:
+
+```
+./build.test/games/dustrider/tests/dustrider_preview /tmp/dr
+python3 tools/make_thumbnail.py --ppm /tmp/dr/preview_4_bend.ppm \
+    --out games/dustrider/thumbnail.png
+```
+
+Or run the **Capture thumbnails** workflow and name the game.
 
 ## Models
 

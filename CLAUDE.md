@@ -316,6 +316,18 @@ source when a real model would do.
   Refreshing a thumbnail is an explicit user request, done by running the
   `Capture thumbnails` workflow with the game named, or by committing a new PNG.
   Never refresh thumbnails on your own initiative.
+- **One picture, two places.** `games/<slug>/thumbnail.png` is the gallery card
+  and, resampled to 48x48 by `game_meta.py`, the launcher icon inside the
+  `.uf2`. A device never reaches the site, so a screenshot that exists only on
+  `gh-pages` leaves the menu showing a coloured rectangle. When a thumbnail is
+  asked for, commit it: the publish step copies a committed PNG over whatever
+  was captured, so one file keeps both honest.
+- **Screenshots come from the preview harness, not from a running device.**
+  `<game>_preview` renders real frames through the real engine at the native
+  120x120, and `tools/make_thumbnail.py` doubles them to 240x240 with no
+  filtering, which is what the hardware does to reach its panel. Do not
+  hand-draw a thumbnail and do not scale one with a filter: a soft screenshot
+  reads as a soft game.
 
 ### 13. Flashing to the device is a one click job
 

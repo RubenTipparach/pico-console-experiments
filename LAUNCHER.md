@@ -120,7 +120,11 @@ So every game now compiles a fixed 4704 byte block into a `.pse_meta` section:
   desktop tool learns a game's name and icon without a sidecar file.
 - The icon is `games/<slug>/icon.png` if a game ships authored art, otherwise
   the committed `thumbnail.png`, otherwise a generated placeholder keyed off
-  the slug so it is stable between builds and obviously synthetic.
+  the slug so it is stable between builds and obviously synthetic. The
+  placeholder is a fallback, not a plan: a menu of coloured rectangles tells a
+  player nothing, so a game in the rotation should carry a real screenshot,
+  made with `tools/make_thumbnail.py` from a frame its preview harness
+  rendered.
 - PNG decoding is done in the tool itself rather than with Pillow: this runs
   inside every device build, and a pip install on every CI runner is the cost
   this repo avoids elsewhere.
