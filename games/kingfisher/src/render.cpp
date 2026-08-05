@@ -549,15 +549,24 @@ void set_top_camera(const World& world, uint32_t t) {
     float cam_tx = 0.0f, cam_ty = 0.0f, cam_tz = 5.6f;
     float yaw = sin64(t / 4) / 2200.0f;
     float dist = 8.2f, height = 3.8f;
+    // The lake wants the default framing: aiming a unit over the water pushes
+    // it down the band and keeps the far shore and the sky in shot.
+    float look_lift = 1.0f;
     if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
         cam_tx = fp_to_f(world.fish[world.hooked_fish].x) * 0.4f;
         cam_tz = 4.6f + fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
     } else if (world.mode == kf::Mode::Landed) {
+        // The trophy shot is the one camera studying a single object, so it
+        // aims straight at it. With the lake's lift the fish hung a metre
+        // below the aim point, which put it across the split and cut its
+        // belly off on the biggest species, exactly the ones worth showing.
         cam_tx = 0.0f; cam_ty = 0.55f; cam_tz = 3.1f;
         dist = 2.3f; height = 0.7f;
         yaw = 0.0f;
+        look_lift = 0.0f;
     }
-    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height);
+    g_renderer.set_orbit_camera(cam_tx, cam_ty, cam_tz, yaw, dist, height,
+                                look_lift);
 }
 
 // The underwater camera hangs below the surface and looks at the hook, or

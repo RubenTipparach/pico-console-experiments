@@ -74,13 +74,14 @@ void Renderer3D::set_camera(float x, float y, float z, float yaw, float pitch) {
 }
 
 void Renderer3D::set_orbit_camera(float target_x, float target_y, float target_z,
-                                  float yaw, float distance, float height) {
+                                  float yaw, float distance, float height,
+                                  float look_lift) {
     const float x = target_x - sinf(yaw) * distance;
     const float y = target_y + height;
     const float z = target_z - cosf(yaw) * distance;
 
     const float dx = target_x - x;
-    const float dy = (target_y + 1.0f) - y;
+    const float dy = (target_y + look_lift) - y;
     const float dz = target_z - z;
 
     camera_x_ = x;
