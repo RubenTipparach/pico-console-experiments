@@ -14,9 +14,29 @@ include_guard(GLOBAL)
 include(${CMAKE_CURRENT_LIST_DIR}/obj_model.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/game_meta.cmake)
 
-# Our Emscripten page, used instead of the SDK's.
+# Our Emscripten page, used instead of the SDK's, and the tool that fills in a
+# game's tutorial panels.
+#
+# Both are resolved here, at file scope, and never inside the function below.
+# CMAKE_CURRENT_LIST_DIR is the directory of the listfile being processed, and
+# inside a function that is the caller's file, not this one: a path built from
+# it in add_picosystem_game() came out as games/<slug>/../tools/gen_shell.py
+# and broke every web build. At file scope it is this directory, which is what
+# these paths are relative to.
 set(PICO_WEB_SHELL ${CMAKE_CURRENT_LIST_DIR}/../web/shell.html
     CACHE INTERNAL "Emscripten shell with touch controls")
+set(PICO_GEN_SHELL ${CMAKE_CURRENT_LIST_DIR}/../tools/gen_shell.py
+    CACHE INTERNAL "Builds one game's page from the shell and its game.yml")
+
+# Checked on every configure, not just Emscripten ones. The bad path above
+# only failed on the web build, which is the one configuration a host build
+# and the test suite never run, so it reached main green. A missing tool is
+# now a hard error everywhere, and a laptop finds it in seconds.
+foreach(required ${PICO_WEB_SHELL} ${PICO_GEN_SHELL})
+    if(NOT EXISTS ${required})
+        message(FATAL_ERROR "picosystem_game.cmake: missing ${required}")
+    endif()
+endforeach()
 
 function(add_picosystem_game NAME)
     cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;DEFINES" ${ARGN})
@@ -60,8 +80,7 @@ function(add_picosystem_game NAME)
         set_property(DIRECTORY APPEND PROPERTY
                      CMAKE_CONFIGURE_DEPENDS ${game_yml} ${PICO_WEB_SHELL})
         execute_process(
-            COMMAND ${CMAKE_COMMAND} -E env python3
-                    ${CMAKE_CURRENT_LIST_DIR}/../tools/gen_shell.py
+            COMMAND ${CMAKE_COMMAND} -E env python3 ${PICO_GEN_SHELL}
                     --game ${CMAKE_CURRENT_SOURCE_DIR}
                     --shell ${PICO_WEB_SHELL}
                     --out ${shell_out}
