@@ -51,6 +51,8 @@ def check(directory, slug):
 
     port, shutdown = serve(directory)
     errors = []
+    panels = 0
+    leftover = 0
     try:
         with sync_playwright() as playwright:
             launch_args = {
@@ -65,6 +67,14 @@ def check(directory, slug):
             page.goto("http://127.0.0.1:%d/%s/" % (port, slug),
                       wait_until="load", timeout=60000)
             page.wait_for_timeout(RUN_MS)
+            # The tutorial is built into each game's page at configure time,
+            # and nothing downstream would notice if that stopped happening:
+            # the game would boot and play, and only a person landing on it
+            # cold would find it says nothing about itself. Checked on the
+            # page that is about to deploy, because that is the only place
+            # the whole chain from game.yml to the served HTML is visible.
+            panels = page.locator("#tutorial [data-panel]").count()
+            leftover = page.content().count("PSE_TUTORIAL")
             browser.close()
     finally:
         shutdown()
@@ -76,7 +86,19 @@ def check(directory, slug):
             sys.stderr.write("  %s\n" % error.splitlines()[0][:300])
         return 1
 
-    sys.stderr.write("boot_check: %s boots clean\n" % slug)
+    if leftover:
+        sys.stderr.write("boot_check: %s still has the tutorial placeholder: "
+                         "gen_shell.py did not run for this build\n" % slug)
+        return 1
+
+    if panels < 1:
+        sys.stderr.write("boot_check: %s has no tutorial panels, so its page "
+                         "cannot say what the game is or what the buttons "
+                         "do\n" % slug)
+        return 1
+
+    sys.stderr.write("boot_check: %s boots clean, %d tutorial panel(s)\n"
+                     % (slug, panels))
     return 0
 
 
