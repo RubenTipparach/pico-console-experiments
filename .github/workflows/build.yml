@@ -59,9 +59,11 @@ jobs:
           cmake --build build.test --parallel
           ctest --test-dir build.test --output-on-failure
 
-      # The metadata block is what a launcher and the desktop tool read a
-      # game's name and icon out of, and nothing downstream would notice if
-      # it silently stopped reaching the binary.
+      # The metadata block is what a standalone .uf2 says about itself, and
+      # nothing downstream would notice if it silently stopped reaching the
+      # binary. gen_library is what the console's menu is made of, and it is
+      # the only thing standing between a bad console.yaml and a device that
+      # boots into the wrong game.
       - name: Test the build tooling
         run: |
           python3 tools/tests/test_game_meta.py
@@ -208,11 +210,11 @@ jobs:
             -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
           cmake --build build.pico --parallel
 
-          # The metadata block is what the launcher draws a menu from, and it
-          # is the kind of thing that disappears silently: it compiles, lands
-          # in the object file, and gets collected by --gc-sections on the way
-          # to the .uf2. Nothing downstream would notice until a device showed
-          # an empty menu, so check the artifact itself.
+          # The metadata block is what this .uf2 says about itself, and it is
+          # the kind of thing that disappears silently: it compiles, lands in
+          # the object file, and gets collected by --gc-sections on the way to
+          # the .uf2. Nothing downstream would notice, so check the artifact
+          # itself.
           python3 tools/game_meta.py extract --uf2 "$(find build.pico -name "$TARGET.uf2" -print -quit)"
           ccache --show-stats
 
