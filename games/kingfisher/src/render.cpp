@@ -65,6 +65,11 @@ bool g_motes_seeded = false;
 uint32_t g_mote_respawns = 0;   // stirs the hash when a mote is recycled
 float g_mote_cam_x = 0.0f, g_mote_cam_z = 0.0f, g_mote_hook = 0.6f;
 
+// Where the underwater camera ended up this frame, so what is drawn into that
+// band can fog by its distance from the lens. Written by
+// set_underwater_camera, which always runs first.
+float g_uw_cam_x = 0.0f, g_uw_cam_z = 0.0f;
+
 // How far the pool is currently bulged away from the centre line, 8.8. Camera
 // travel toward the scene feeds it and it springs back to nothing, so parting
 // the water is something the pool does and then recovers from.
@@ -576,8 +581,16 @@ void set_top_camera(const World& world, uint32_t t) {
     // it down the band and keeps the far shore and the sky in shot.
     float look_lift = 1.0f;
     if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
+        // Aim out at the fish, but pull back by as much as the aim moved, so
+        // the camera itself stays where it was and the boat stays in the
+        // shot. Panning the orbit target alone walks the camera out with it:
+        // by 24 m the boat was level with the lens and by 46 m it was behind
+        // it, which left the player watching open water with their line
+        // running out of frame.
+        const float pan = fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
         cam_tx = fp_to_f(world.fish[world.hooked_fish].x) * 0.4f;
-        cam_tz = 4.6f + fp_to_f(world.fish[world.hooked_fish].z) * 0.15f;
+        cam_tz = 4.6f + pan;
+        dist = 8.2f + pan;
     } else if (world.mode == kf::Mode::Landed) {
         // The trophy shot is the one camera studying a single object, so it
         // aims straight at it. With the lake's lift the fish hung a metre
@@ -609,19 +622,32 @@ void set_underwater_camera(const World& world, bool lure_in_water) {
     // Level, so world depth maps to screen row without the near end of the
     // shot sliding up the frame. The setback frames the deepest band's floor
     // at the bottom of the viewport.
-    // Taken from the sim's own floor, plus enough margin that a hook sitting
-    // right on the bottom is still drawn whole rather than cut by the edge.
-    const float k_column = fp_to_f(kf::k_pond_floor_fp) + 0.2f;
-    const float k_cam_depth = k_column * 0.5f;
-    constexpr float k_cam_back = 3.4f;
+    // The column framed is the water actually under the lure, not a fixed
+    // one: the shallows are 0.9 m deep and the middle of the lake is 2.4, and
+    // showing the deepest column everywhere left a shallow cast's hook stuck
+    // a third of the way down a mostly empty band, looking like it refused to
+    // sink when it was already on the bottom.
+    //
+    // The setback scales with the column so the framing stays the same shape,
+    // which also brings the camera in close in the shallows. The margin is
+    // what keeps a hook resting on the bed drawn whole instead of cut by the
+    // bottom edge.
+    constexpr float k_reference_column = 2.6f;
+    constexpr float k_reference_back = 3.4f;
+    const float floor_here = lure_in_water
+        ? fp_to_f(kf::water_depth_here(world))
+        : fp_to_f(kf::k_pond_floor_fp);
+    const float column = floor_here + 0.15f;
+    const float cam_depth = column * 0.5f;
+    const float cam_back = k_reference_back * (column / k_reference_column);
 
-    float cx = 0.0f, cy = -k_cam_depth, cz = 0.6f;
-    float look_x = 0.0f, look_y = -k_cam_depth, look_z = 6.0f;
+    float cx = 0.0f, cy = -cam_depth, cz = 0.6f;
+    float look_x = 0.0f, look_y = -cam_depth, look_z = 6.0f;
     if (lure_in_water) {
         const float lx = fp_to_f(world.lure_x);
         const float lz = fp_to_f(world.lure_z);
         cx = lx * 0.5f;
-        cz = lz - k_cam_back;
+        cz = lz - cam_back;
         look_x = lx;
         look_z = lz;
     }
@@ -629,6 +655,30 @@ void set_underwater_camera(const World& world, bool lure_in_water) {
     const float yaw = atan2f(dx, dz);
     const float pitch = atan2f(dy, sqrtf(dx * dx + dz * dz));
     g_renderer.set_camera(cx, cy, cz, yaw, pitch);
+    g_uw_cam_x = cx;
+    g_uw_cam_z = cz;
+}
+
+// How much of the water sits between the lens and a point down here, 0 for
+// something right in front of it and 256 for something lost in the murk.
+//
+// The engine's own fade works on world y, which shades a fish along its body
+// as it noses down and does nothing at all about distance: a fish forty metres
+// out came out exactly as sharp as one beside the boat, so the far ones read
+// as decals on the water rather than as fish in it.
+int water_fog_t(float x, float z) {
+    const float dx = x - g_uw_cam_x, dz = z - g_uw_cam_z;
+    const float d = sqrtf(dx * dx + dz * dz);
+    constexpr float k_clear = 2.5f;    // sharp inside this
+    constexpr float k_lost = 13.0f;    // and gone by here
+    float t = (d - k_clear) / (k_lost - k_clear);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return static_cast<int>(t * 256.0f);
+}
+
+inline uint8_t fog_mix(uint8_t colour, uint8_t fog, int t256) {
+    return static_cast<uint8_t>(colour + (fog - colour) * t256 / 256);
 }
 
 void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
@@ -660,9 +710,15 @@ void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
                           static_cast<float>(fish.vz == 0 ? 1 : fish.vz));
         }
         const float scale = 0.30f + fish.size_cm * 0.006f;
-        g_renderer.draw_mesh(models::kingfisher::fish, fx, fy, fz, fyaw, scale,
-                             shade8(s.r, sky.light), shade8(s.g, sky.light),
-                             shade8(s.b, sky.light));
+        // Into the murk with distance. The fog colour is the same water the
+        // engine's depth fade uses, so the two agree about what the deep
+        // looks like and a far fish settles into it rather than onto it.
+        const int fog = water_fog_t(fx, fz);
+        g_renderer.draw_mesh(
+            models::kingfisher::fish, fx, fy, fz, fyaw, scale,
+            fog_mix(shade8(s.r, sky.light), shade8(sky.wat_r, 70), fog),
+            fog_mix(shade8(s.g, sky.light), shade8(sky.wat_g, 80), fog),
+            fog_mix(shade8(s.b, sky.light), shade8(sky.wat_b, 95), fog));
     }
 
     // The hook. The bobber mesh reads as the lure below the surface too, and

@@ -144,6 +144,10 @@ uint8_t day_phase(const World& world) {
     return static_cast<uint8_t>((world.day_tick * 256u) / k_day_length);
 }
 
+int32_t water_depth_here(const World& world) {
+    return k_bands[band_for_z(world.lure_z)].depth_max;
+}
+
 uint16_t clock_minutes(const World& world) {
     constexpr uint32_t span = (k_day_end_hour - k_day_start_hour) * 60u;
     return static_cast<uint16_t>(k_day_start_hour * 60u +

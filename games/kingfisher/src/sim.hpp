@@ -245,6 +245,13 @@ void world_make_save(const World& world, SaveData& out);
 uint8_t day_phase(const World& world);
 bool is_night(const World& world);
 
+// How deep the water is under the lure right now, in fp8, which is as deep as
+// the lure can be wound down. Shallow near the boat and deep out in the middle,
+// so the underwater viewport frames this rather than a fixed column: the bed
+// belongs at the bottom of the band wherever the player has cast, or a shallow
+// cast reads as a hook that will not sink.
+int32_t water_depth_here(const World& world);
+
 // The wall clock, in minutes since midnight. Runs from k_day_start_hour to
 // one minute short of k_day_end_hour, so it never reads 24:00: the day is
 // over at that point and the tick has already wrapped to the next dawn.
