@@ -464,7 +464,7 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
         <div class="budget-row"><span>Queue cap</span><span class="v">640</span></div>
         <div class="budget-row"><span>Ship</span><span class="v">204</span></div>
         <div class="budget-row"><span>Terrain</span><span class="v">128</span></div>
-        <div class="budget-row"><span>Pads</span><span class="v">6</span></div>
+        <div class="budget-row"><span>Pads</span><span class="v">20</span></div>
         <div class="budget-row"><span>Raster ms</span><span class="v" id="b-ms">0.00</span></div>
         <div class="budget-row"><span>Ship mesh</span><span class="v">3.3 KB</span></div>
         <div class="budget-row"><span>Terrain texture</span><span class="v">128 B</span></div>
@@ -525,8 +525,19 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
       cells now, <b>128 triangles</b>, each one flat lit off its own normal,
       with the two diagonals alternating so the tessellation does not line up
       into rows. Colour comes from height and slope, so a cliff is a cliff.
-      Both pads sit on a flat apron well outside the square, because the ground
+      Both pads sit on a flat apron well outside the deck, because the ground
       you drift over on the way down matters more than the ground you land on.
+    </p>
+    <p>
+      <b>The pads are blocks now, and that was a bug fix, not a decoration.</b>
+      Flat on the ground they z fought the terrain, which is the one byte depth
+      buffer doing exactly what the engine's own comment warns about: over a 6
+      to 170 range one depth step is 0.65 units of view distance, and a deck
+      0.12 above the apron falls in the same step as the apron. They tie, and
+      ties go to whoever drew first, so the pad flickered. A block clears it by
+      two whole steps, and it gives the pad a silhouette to judge a descent
+      against, which a decal never had. Ten triangles each, plated deck,
+      sides carrying the state: orange on the one you are aiming at.
     </p>
   </div>
 
@@ -775,8 +786,8 @@ $ tools/obj2cpp.py tom.obj --out-cpp tom.cpp --out-hpp tom.hpp --name tom
       <ul>
         <li><b>Flash</b> roughly 3.3 KB for the ship mesh, under 1 KB for the pad, plus code. Nothing measurable against 12 MB.</li>
         <li><b>RAM</b> nothing new. The rasterizer and the frame queue come from <code>pse::shared_rasterizer()</code>, so the console pays for them once.</li>
-        <li><b>Triangles</b> 204 ship, 128 terrain, 6 pads. Around 340 of the queue's 640, with the terrain culled to a radius rather than drawn whole.</li>
-        <li><b>Terrain texture</b> 128 bytes for the 16x16 at 4bpp, plus 16 KB for the 32 pre shaded copies that make lighting free per pixel.</li>
+        <li><b>Triangles</b> 204 ship, 128 terrain, 20 pads. Around 350 of the queue's 640, with the terrain culled to a radius rather than drawn whole.</li>
+        <li><b>Textures</b> 128 bytes each for the 16x16 regolith and deck plate at 4bpp, plus the pre shaded copies that make lighting free per pixel, 512 bytes a copy at RGB565.</li>
         <li><b>Cores</b> <code>run_split</code> as usual, one scene, both bands.</li>
       </ul>
       <h3>Open questions</h3>
@@ -1085,6 +1096,12 @@ function terrainBase(x, z) {
    turns a good approach into a rolled hull for no reason you could have seen. */
 const PAD_HALF = 7;      // 14 units across, about two and a half ship widths
 const PAD_FLAT = 16;     // flat ground out to here, then a skirt back to hills
+/* Height matters for a reason that is not looks. The depth buffer is one
+   byte across a 6 to 170 range, so one step is 0.65 units of view distance,
+   and a deck sitting 0.12 above the ground lands in the same step as the
+   ground: they tie, ties go to whoever drew first, and the pad flickers. A
+   real block clears it by two steps and the fighting stops. */
+const PAD_H = 2.4;       // deck height above the apron
 const PADS = [
   {id: "A", x: -34, z: -8, y: 0},
   {id: "B", x:  32, z: 22, y: 0}
@@ -1105,12 +1122,25 @@ function terrainHeight(x, z) {
   return h;
 }
 
-// Landing counts on the white square itself, not on the apron around it.
+// Landing counts on the deck itself, not on the apron around it.
 function padAt(x, z) {
   for (const pad of PADS) {
     if (Math.abs(x - pad.x) <= PAD_HALF && Math.abs(z - pad.z) <= PAD_HALF) return pad;
   }
   return null;
+}
+
+/* What the hull rests on here: the deck if it is over a pad, the ground
+   otherwise. One function so the collision, the resting height and the
+   altitude readout can never disagree about where the floor is.
+
+   The step at the deck edge is real, and a ship drifting into the side of a
+   block at deck height pops up onto it rather than clipping. That is wrong,
+   and it is the kind of wrong a mockup is allowed to be: the fix is to
+   collide against the block's faces, which is a job for the real sim. */
+function groundAt(x, z) {
+  const pad = padAt(x, z);
+  return (pad ? pad.y + PAD_H : terrainHeight(x, z)) + REST_Y;
 }
 
 /* Height and slope decide the colour, which is the whole point of dropping
@@ -1139,41 +1169,72 @@ function terrainPal(h, ny) {
    RGB565: 16 KB of flash, against 12 MB available.
    ------------------------------------------------------------------ */
 const TEX_N = 16;
-const TEX_MASK = TEX_N - 1;
 
-// Brightness per texel, 0..255. Coarse blotches with a little grain, which is
-// what regolith looks like and what survives being drawn 20 pixels wide.
-const TEX = (function(){
-  const t = new Uint8Array(TEX_N*TEX_N);
+// Each texture is brightness per texel, 0..255, which is the whole reason one
+// pattern can serve every colour: the palette entry supplies the hue and this
+// supplies the detail. On device that is 4 bits a texel, 128 bytes.
+const TEX_REGOLITH = 0, TEX_METAL = 1;
+
+const TEXTURES = (function(){
   let seed = 0x9E3779B9;
   const rnd = () => ((seed = (seed*1664525 + 1013904223) >>> 0) / 4294967296);
+
+  // Coarse blotches with a little grain. What regolith looks like, and what
+  // survives being drawn twenty pixels wide.
+  const regolith = new Uint8Array(TEX_N*TEX_N);
   for(let y=0;y<TEX_N;y++){
     for(let x=0;x<TEX_N;x++){
       const blotch = Math.sin(x*0.9)*Math.cos(y*1.1) + Math.sin((x+y)*0.55);
-      let b = 200 + blotch*22 + (rnd()-0.5)*26;
-      t[y*TEX_N+x] = Math.max(150, Math.min(255, b))|0;
+      regolith[y*TEX_N+x] = Math.max(150, Math.min(255,
+        200 + blotch*22 + (rnd()-0.5)*26))|0;
     }
   }
-  return t;
+
+  // Deck plate: four panels, a dark seam between them, a rivet at each corner
+  // of every panel and a slight sheen across the plate. Deliberately high
+  // contrast, because the pad has to read as built rather than as ground at
+  // the size it is actually drawn.
+  const metal = new Uint8Array(TEX_N*TEX_N);
+  for(let y=0;y<TEX_N;y++){
+    for(let x=0;x<TEX_N;x++){
+      let b = 226 + Math.sin((x+y)*0.42)*10;      // faint brushed sheen
+      const seam = (x%8===0) || (y%8===0);
+      if(seam) b = 150;
+      const rx = x%8, ry = y%8;
+      if((rx===2||rx===6) && (ry===2||ry===6)) b = 255;   // rivets
+      metal[y*TEX_N+x] = Math.max(120, Math.min(255, b))|0;
+    }
+  }
+  return [regolith, metal];
 })();
 
 const TEX_LEVELS = 8;
 const texCache = new Map();
-function shadedTex(pal, level){
-  const key = (pal<<3)|level;
+function shadedTex(texId, pal, level){
+  const key = (texId<<9)|(pal<<3)|level;
   let t = texCache.get(key);
   if(t) return t;
+  const src = TEXTURES[texId];
   const base = PALRGB[pal];
   const lit = 0.42 + 0.58*(level/(TEX_LEVELS-1));
   t = new Uint8Array(TEX_N*TEX_N*3);
   for(let i=0;i<TEX_N*TEX_N;i++){
-    const b = (TEX[i]/255)*lit;
+    const b = (src[i]/255)*lit;
     t[i*3]   = Math.min(255, base[0]*b)|0;
     t[i*3+1] = Math.min(255, base[1]*b)|0;
     t[i*3+2] = Math.min(255, base[2]*b)|0;
   }
   texCache.set(key,t);
   return t;
+}
+
+// The fixed light, quantised to the levels that were baked. Shared so the
+// terrain and the pad decks agree about which way the sun is.
+function lightLevel(nx,ny,nz){
+  let d=nx*0.42+ny*0.82+nz*-0.39;
+  d=0.42+0.58*(d>0?d:0);
+  let lvl=((d-0.42)/0.58*(TEX_LEVELS-1)+0.5)|0;
+  return lvl<0?0:lvl>TEX_LEVELS-1?TEX_LEVELS-1:lvl;
 }
 
 /* ==================================================================
@@ -1285,7 +1346,7 @@ class Sim {
        falling out of the sky, so the first thing a player does is take off,
        which is also the first thing they need to learn. */
     const start=PADS[0];
-    this.x=start.x; this.z=start.z; this.y=start.y+REST_Y;
+    this.x=start.x; this.z=start.z; this.y=groundAt(start.x,start.z);
     this.grounded=true;
     this.landedOn=start.id;
     this.target=PADS[1].id;
@@ -1393,7 +1454,7 @@ class Sim {
        just parks the ship, so it can lift off again, and the mission is only
        over when the pad it parks on is the target. That is what makes the
        first mission a hop rather than a single descent. */
-    const gy = terrainHeight(this.x, this.z) + REST_Y;
+    const gy = groundAt(this.x, this.z);
     if(this.y<=gy){
       this.y=gy;
       const tilt=Math.hypot(this.pitch,this.roll);
@@ -1503,12 +1564,7 @@ function terrainTri(r, cam, a, b, c, out, s0, s1, s2){
     return;
   }
 
-  // Same fixed light as shadeFlat, quantised to the levels that were baked.
-  let d=nx*0.42+ny*0.82+nz*-0.39;
-  d=0.42+0.58*(d>0?d:0);
-  let lvl=((d-0.42)/0.58*(TEX_LEVELS-1)+0.5)|0;
-  lvl=lvl<0?0:lvl>TEX_LEVELS-1?TEX_LEVELS-1:lvl;
-  const tex=shadedTex(pal,lvl);
+  const tex=shadedTex(TEX_REGOLITH,pal,lightLevel(nx,ny,nz));
 
   r.triTex(
     s0[0],s0[1],s0[2],s0[3], a[0]*TEX_U*s0[3], a[2]*TEX_U*s0[3],
@@ -1541,39 +1597,64 @@ function drawGround(r,cam,sim){
   }
 }
 
-/* One flat square, two triangles. */
-function flatQuad(r,cam,cx,cz,y,half,col){
-  const out=[0,0,0], s=[[0,0,0],[0,0,0],[0,0,0],[0,0,0]];
-  const q=[[cx-half,y,cz-half],[cx+half,y,cz-half],
-           [cx+half,y,cz+half],[cx-half,y,cz+half]];
+/* A flat quad, either textured or not, given its four world corners. */
+function quad(r,cam,q,texId,pal,nx,ny,nz,tint){
+  const out=[0,0,0,0], s=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
   for(let i=0;i<4;i++){
     if(!cam.project(q[i][0],q[i][1],q[i][2],out)) return;
-    s[i][0]=out[0]; s[i][1]=out[1]; s[i][2]=out[2];
+    s[i][0]=out[0]; s[i][1]=out[1]; s[i][2]=out[2]; s[i][3]=out[3];
   }
+  if(texOn && texId>=0){
+    // UVs straight off the corners, one repeat across the face, so nothing
+    // per vertex has to be stored for a shape this regular.
+    const uv=[[0,0],[TEX_N,0],[TEX_N,TEX_N],[0,TEX_N]];
+    const tex=shadedTex(texId,pal,lightLevel(nx,ny,nz));
+    const T=(a,b,c)=>r.triTex(
+      s[a][0],s[a][1],s[a][2],s[a][3], uv[a][0]*s[a][3], uv[a][1]*s[a][3],
+      s[b][0],s[b][1],s[b][2],s[b][3], uv[b][0]*s[b][3], uv[b][1]*s[b][3],
+      s[c][0],s[c][1],s[c][2],s[c][3], uv[c][0]*s[c][3], uv[c][1]*s[c][3], tex);
+    T(0,1,2); T(0,2,3);
+    return;
+  }
+  let col=shadeFlat(nx,ny,nz,pal);
+  if(tint) col=[(col[0]*tint)|0,(col[1]*tint)|0,(col[2]*tint)|0];
   r.tri(s[0][0],s[0][1],s[0][2], s[1][0],s[1][1],s[1][2], s[2][0],s[2][1],s[2][2], col[0],col[1],col[2]);
   r.tri(s[0][0],s[0][1],s[0][2], s[2][0],s[2][1],s[2][2], s[3][0],s[3][1],s[3][2], col[0],col[1],col[2]);
 }
 
-/* The pads: a big white square each, which is the one shape on the map that
-   is obviously not terrain. Six triangles for the pair, against sixteen for
-   the octagons they replaced.
+/* The pads, as blocks rather than decals.
 
-   The pad you are aiming at gets an orange surround under the white, so the
-   target reads from across the valley without a marker, an arrow, or a line
-   of text telling the player where to go. */
+   Flat on the ground they z fought the terrain, which is the one byte depth
+   buffer doing exactly what the engine's own comment warns about: a deck
+   0.12 above the apron lands in the same depth step as the apron, they tie,
+   and ties go to whoever drew first. Raising it into a real block clears the
+   tie and gives the pad a silhouette you can judge a descent against, which
+   a decal never had.
+
+   Deck is plated metal. The sides carry the state: orange on the pad you are
+   aiming at, dark on the one you have left. That way the target reads from
+   across the valley with no marker, no arrow, and no line of text.
+   Ten triangles each, twenty for the pair. */
 function drawPads(r,cam,sim){
   for(const pad of PADS){
     const done = sim.landedOn===pad.id && sim.state==="won";
     const target = pad.id===sim.target && !done;
-    const y = pad.y + 0.12;      // just proud of the plateau it sits on
-    if(target){
-      const pulse=0.70+0.30*Math.sin(tick*0.55);
-      const o=PALRGB[9];
-      flatQuad(r,cam,pad.x,pad.z,y-0.04,PAD_HALF+2.5,
-        [(o[0]*pulse)|0,(o[1]*pulse)|0,(o[2]*pulse)|0]);
-    }
-    const w=PALRGB[7];
-    flatQuad(r,cam,pad.x,pad.z,y,PAD_HALF,[w[0],w[1],w[2]]);
+    const y0=pad.y, y1=pad.y+PAD_H, h=PAD_HALF;
+    const x0=pad.x-h, x1=pad.x+h, z0=pad.z-h, z1=pad.z+h;
+
+    const sidePal = target ? 9 : 5;
+    const pulse = target ? 0.72+0.28*Math.sin(tick*0.55) : 1;
+
+    // Sides. Flat colour on purpose: the deck carries the detail, and four
+    // more textured faces would buy nothing at the size these are drawn.
+    quad(r,cam,[[x0,y1,z0],[x1,y1,z0],[x1,y0,z0],[x0,y0,z0]],-1,sidePal, 0,0,-1,pulse);
+    quad(r,cam,[[x1,y1,z1],[x0,y1,z1],[x0,y0,z1],[x1,y0,z1]],-1,sidePal, 0,0, 1,pulse);
+    quad(r,cam,[[x0,y1,z1],[x0,y1,z0],[x0,y0,z0],[x0,y0,z1]],-1,sidePal,-1,0, 0,pulse);
+    quad(r,cam,[[x1,y1,z0],[x1,y1,z1],[x1,y0,z1],[x1,y0,z0]],-1,sidePal, 1,0, 0,pulse);
+
+    // Deck, plated and lit from above.
+    quad(r,cam,[[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]],
+         TEX_METAL, done?11:6, 0,1,0);
   }
 }
 
@@ -1611,7 +1692,7 @@ function drawFlames(r,cam,sim,scale,tick){
    button prompts, measured not eyeballed.
    ================================================================== */
 function drawHud(r,sim,scheme){
-  const alt=Math.max(0,sim.y-(terrainHeight(sim.x,sim.z)+REST_Y));
+  const alt=Math.max(0,sim.y-groundAt(sim.x,sim.z));
   const fuelW=40;
   // fuel bar, top left
   r.rect(3,3,fuelW+2,6, 20,24,40);
@@ -1900,7 +1981,7 @@ function frame(now){
   rasterMs = rasterMs*0.9 + (performance.now()-t0)*0.1;
 
   /* ---- telemetry ---- */
-  const alt=Math.max(0,sim.y-(terrainHeight(sim.x,sim.z)+REST_Y));
+  const alt=Math.max(0,sim.y-groundAt(sim.x,sim.z));
   setTxt("t-alt", alt.toFixed(1));
   const vs=-sim.vy;
   const vsEl=setTxt("t-vs", vs.toFixed(1));

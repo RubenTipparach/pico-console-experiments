@@ -13,10 +13,20 @@ step and no network.
 Hop from pad A to pad B. The ship starts sitting on A rather than falling out
 of the sky, so the first thing a player does is take off, which is also the
 first thing they need to learn. Landing well anywhere just parks the ship and
-it can lift off again; the run only ends on the white square that is pulsing
-orange. Each pad is a 14 unit white square on a flat apron of radius 16, since
-the ground you drift over on the way down matters more than the ground you
-finally touch.
+it can lift off again; the run only ends on the deck that is pulsing orange.
+
+Each pad is a 14 unit block, 2.4 units proud of a flat apron of radius 16,
+since the ground you drift over on the way down matters more than the ground
+you finally touch. The deck is plated metal off a second 16x16 texture and the
+sides carry the state, orange on the one you are aiming at.
+
+The block height is not a styling choice. Flat on the ground the pads z fought
+the terrain: the depth buffer is one byte across a 6 to 170 range, so one step
+is 0.65 units of view distance, and a deck 0.12 above the apron falls in the
+same step as the apron. They tie, ties go to whoever drew first, and the pad
+flickers. This is the failure `Renderer3D::set_depth_range` warns about, in
+the small. A block clears it by two whole steps, and it gives the pad a
+silhouette to judge a descent against, which a decal never had.
 
 ## What it is
 
