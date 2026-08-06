@@ -1,29 +1,50 @@
 # The Picomon Centre.
+#
+# Laid out as the room actually works: the machine bank along the back wall,
+# the reception desk across the room in front of it with one gap, and the
+# nurse standing in that gap. She is the only way past the desk, which is
+# both correct and free: an NPC blocks the tile it stands on, so nothing has
+# to know that the back of the room is staff only.
+#
+# The rest is a waiting room. Benches down both walls, a plant in each far
+# corner, and a red cross on the floor between the door and the desk, which
+# is the tile every player crosses on the way in.
 
 zone healcentre
 name CENTRE
-size 11 8
+size 13 10
 indoor
 
 tiles
-WWWWWWWWWWW
-WffRRRRRffW
-WffRRRRRffW
-WfffffffffW
-WfffffffffW
-WfffffffffW
-WfffffffffW
-WWWWWdWWWWW
+WWWWWWWWWWWWW
+WlllMMMMMlllW
+WYKKKKlKKKKYW
+WlllllllllllW
+WlllllllllllW
+WBlllllllllBW
+WBllll+llllBW
+Wllll+++llllW
+Wlllll+lllllW
+WWWWWWdWWWWWW
 end
 
-warp 5 7 hometown 17 9 south
+warp 6 9 hometown 17 9 south
 
-npc nurse 5 3 south healer
+npc nurse 6 2 south healer
   kind healer
   say Rest here any time. It is free.
 end
 
-npc visitor 2 5 east villager
+npc visitor 2 6 east villager
   say A fainted PICOMON will not fight.
   say Bring it here, or use a REVIVE.
+end
+
+npc waiting 10 5 west villager
+  say The machine behind her puts them right in seconds.
+  say I still worry every time.
+end
+
+event sign 3 3
+  say PICOMON CENTRE. REST AND RECOVER, FREE.
 end

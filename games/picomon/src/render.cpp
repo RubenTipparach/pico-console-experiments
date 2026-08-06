@@ -9,11 +9,14 @@
 
 #include "ball.hpp"
 #include "counter.hpp"
+#include "desk.hpp"
 #include "emberkit.hpp"
 #include "house.hpp"
+#include "machine.hpp"
 #include "mossling.hpp"
 #include "mothlet.hpp"
 #include "pebblin.hpp"
+#include "plant.hpp"
 #include "rock.hpp"
 #include "sign.hpp"
 #include "sparklet.hpp"
@@ -436,7 +439,19 @@ void draw_overworld(const World& w, uint32_t t) {
                     g_renderer.draw_mesh(wall, wx, 0.0f, wz, 0.0f, 1.0f);
                     break;
                 case tile_counter:
+                    // A bench is a counter in a different room. One mesh, and
+                    // the tile colour under it does the rest.
+                case tile_bench:
                     g_renderer.draw_mesh(counter, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_desk:
+                    g_renderer.draw_mesh(desk, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_machine:
+                    g_renderer.draw_mesh(machine, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_plant:
+                    g_renderer.draw_mesh(plant, wx, 0.0f, wz, 0.0f, 1.0f);
                     break;
                 case tile_house:
                     // One mesh per building, on its own north west corner

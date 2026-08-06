@@ -26,4 +26,7 @@ set(picomon_model_files
     ball.obj
     wall.obj
     counter.obj
+    desk.obj
+    machine.obj
+    plant.obj
 )

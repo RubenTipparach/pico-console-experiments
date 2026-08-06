@@ -179,7 +179,7 @@ void town_shots(const std::string& out) {
 
     // The Centre: the nurse, and what a whiteout looks like from the other
     // side of it.
-    go(w, pm::zone_healcentre, 5, 4, 0);
+    go(w, pm::zone_healcentre, 6, 3, 0);
     run(w, pm::Input{}, 2);
     capture(w, 8200, out + "/town_10_centre.ppm");
     pm::world_tick(w, press_a());

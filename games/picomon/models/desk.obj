@@ -1,0 +1,37 @@
+# The CENTRE's reception desk: one tile square, counter high, flat topped.
+#
+# Y is up, +Z is north, one world unit is one map tile. The lowest vertex sits
+# on y = 0 and the model is centred on x = 0 and z = 0, so the game places it
+# by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# Four faces, 8 triangles. No bottom and no north face: the camera stands
+# south of the player and looks north, so the north side is never seen.
+#
+# 0.62 units, a little taller than the mart's counter, and white rather than
+# wood. A hospital reads as one from its fittings, and a desk the same colour
+# as the shop counter would just be a shop counter in a different room.
+
+mtllib desk.mtl
+
+v -0.52 0.00 -0.52
+v  0.52 0.00 -0.52
+v  0.52 0.00  0.52
+v -0.52 0.00  0.52
+v -0.52 0.62 -0.52
+v  0.52 0.62 -0.52
+v  0.52 0.62  0.52
+v -0.52 0.62  0.52
+
+usemtl desk_top
+f 5 6 7 8
+
+usemtl desk_face
+f 1 2 6 5
+
+usemtl desk_side
+f 2 3 7 6
+f 4 1 5 8

@@ -310,12 +310,12 @@ void test_a_whiteout_goes_home_and_says_so() {
 }
 
 void test_resting_at_a_centre_moves_home() {
-    // The nurse is at 5,3 in the CENTRE; stand below her and face north.
-    pm::World w = talk_to(pm::zone_healcentre, 5, 4, 0);
+    // The nurse is at 6,2 in the CENTRE; stand below her and face north.
+    pm::World w = talk_to(pm::zone_healcentre, 6, 3, 0);
     check(w.mode == pm::Mode::Dialogue, "the nurse says something");
-    check(w.home_zone == pm::zone_healcentre && w.home_x == 5 && w.home_y == 4,
+    check(w.home_zone == pm::zone_healcentre && w.home_x == 6 && w.home_y == 3,
           "resting at a CENTRE makes it home");
-    check(w.home_x != 5 || w.home_y != 3,
+    check(w.home_x != 6 || w.home_y != 2,
           "and home is the player's tile, not the nurse's, which she blocks");
 
     // Now lose, and wake up there rather than at the start.
@@ -325,7 +325,7 @@ void test_resting_at_a_centre_moves_home() {
     w.ty = 20;
     w.fade = 0;
     faint_the_party(w);
-    check(w.zone == pm::zone_healcentre && w.tx == 5 && w.ty == 4,
+    check(w.zone == pm::zone_healcentre && w.tx == 6 && w.ty == 3,
           "a whiteout goes to the last CENTRE rested at");
     check(w.zone != pm::k_start.zone || w.ty != pm::k_start.y,
           "which is not where the game started");
@@ -338,8 +338,8 @@ void test_the_nurse_actually_heals() {
     w.party[0].hp = 1;
     for (int m = 0; m < 4; m++) if (w.party[0].moves[m] != 0xFF) w.party[0].pp[m] = 0;
     w.zone = pm::zone_healcentre;
-    w.tx = 5;
-    w.ty = 4;
+    w.tx = 6;
+    w.ty = 3;
     w.facing = 0;
     w.mode = pm::Mode::Overworld;
     w.fade = 0;
@@ -376,8 +376,8 @@ void test_a_challenge_does_not_follow_you_between_zones() {
           "the armed index is out of range for the destination, which is the "
           "whole point of this test");
     w.zone = pm::zone_healcentre;
-    w.tx = 5;
-    w.ty = 4;
+    w.tx = 6;
+    w.ty = 3;
     w.mode = pm::Mode::Overworld;
     w.fade = 0;
 
@@ -413,7 +413,7 @@ void test_a_challenge_does_not_follow_you_between_zones() {
 }
 
 void test_home_survives_a_save() {
-    pm::World w = talk_to(pm::zone_healcentre, 5, 4, 0);
+    pm::World w = talk_to(pm::zone_healcentre, 6, 3, 0);
     pm::SaveData data;
     pm::world_make_save(w, data);
     pm::World loaded;
