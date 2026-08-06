@@ -514,8 +514,17 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
       Hop from pad A to pad B. The ship starts sitting on A rather than falling
       out of the sky, so the first thing a player does is take off, which is
       also the first thing they need to learn. Land well anywhere and the ship
-      just parks and can lift off again; the run only ends on the white square
-      that is pulsing orange.
+      just parks and can lift off again; the run only ends on the deck that is
+      pulsing orange.
+    </p>
+    <p>
+      When that deck is out of frame an arrow appears at the edge of the screen
+      pointing at it, and disappears the moment you can see it again: a marker
+      stuck on top of something already in shot is the decorative status line
+      rule 9 exists to keep off a 120 pixel screen. Its direction comes from
+      the world bearing rotated into the camera's own basis, not from the
+      projection, because a pad behind the camera has no valid projection at
+      all and behind the camera is exactly when an arrow earns its pixels.
     </p>
     <p>
       The ground was a checkerboard of small quads, and it was the wrong shape
@@ -956,6 +965,27 @@ class Raster {
   }
   rect(x,y,rw,rh,r,g,b){
     for(let j=0;j<rh;j++) for(let i=0;i<rw;i++) this.plot(x+i,y+j,r,g,b);
+  }
+  /* A filled triangle in screen space, no depth and no projection. For HUD
+     furniture, which sits on top of the world by definition. */
+  fillTri2D(x0,y0,x1,y1,x2,y2,r,g,b){
+    let area=(x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    if(area===0) return;
+    if(area<0){ let t; t=x1;x1=x2;x2=t; t=y1;y1=y2;y2=t; area=-area; }
+    const minx=Math.max(0,Math.floor(Math.min(x0,x1,x2)));
+    const maxx=Math.min(this.w-1,Math.ceil(Math.max(x0,x1,x2)));
+    const miny=Math.max(0,Math.floor(Math.min(y0,y1,y2)));
+    const maxy=Math.min(this.h-1,Math.ceil(Math.max(y0,y1,y2)));
+    for(let y=miny;y<=maxy;y++){
+      const py=y+0.5;
+      for(let x=minx;x<=maxx;x++){
+        const px=x+0.5;
+        if(((x1-x0)*(py-y0)-(px-x0)*(y1-y0))<0) continue;
+        if(((x2-x1)*(py-y1)-(px-x1)*(y2-y1))<0) continue;
+        if(((x0-x2)*(py-y2)-(px-x2)*(y0-y2))<0) continue;
+        this.plot(x,y,r,g,b);
+      }
+    }
   }
   /* The real console5x7 glyphs, drawn like pse::draw_text. Uppercase only,
      because that is the whole charset the font carries. */
@@ -1709,6 +1739,59 @@ function drawFlames(r,cam,sim,scale,tick){
   }
 }
 
+/* An arrow at the edge of the screen for the pad you cannot see.
+
+   Only when you cannot see it: the deck pulses, and a marker stuck on top of
+   something already in frame is the decorative status line rule 9 exists to
+   keep off a 120 pixel screen. So visibility is decided by projecting the
+   deck, and direction is worked out separately from the world.
+
+   Direction has to come from the world bearing rather than from that
+   projection, because a pad behind the camera has no valid projection at all,
+   and behind the camera is exactly when an arrow earns its pixels. The ground
+   plane offset is rotated into the camera's own basis, which is the same
+   `rgt` and `fwd` the projection uses, so the arrow and the view can never
+   disagree about which way is right. */
+let lastArrow=null;      // where it ended up, for __bench and for tests
+
+function drawTargetArrow(r, cam, sim){
+  lastArrow=null;
+  if(sim.state!=="fly") return;
+  const pad = PADS.find(p=>p.id===sim.target);
+  if(!pad) return;
+
+  const out=[0,0,0,0];
+  const margin=13;
+  if(cam.project(pad.x, pad.y+PAD_H, pad.z, out) &&
+     out[0]>=margin && out[0]<=W-margin &&
+     out[1]>=margin && out[1]<=H-margin) return;
+
+  const dx=pad.x-sim.x, dz=pad.z-sim.z;
+  const cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw);
+  const right = dx*cy - dz*sy;          // dot with the camera's right vector
+  const fwd   = dx*sy + dz*cy;          // dot with its forward, on the ground
+  let ax=right, ay=-fwd;                // screen y counts downward
+  const L=Math.hypot(ax,ay); if(L<1e-6) return;
+  ax/=L; ay/=L;
+
+  // Walk out from the centre to an inset border, whichever edge comes first.
+  const halfW=W/2-9, halfH=H/2-9;
+  const t=Math.min(Math.abs(ax)>1e-6?halfW/Math.abs(ax):Infinity,
+                   Math.abs(ay)>1e-6?halfH/Math.abs(ay):Infinity);
+  const ex=W/2+ax*t, ey=H/2+ay*t;
+  const px=-ay, py=ax;                  // perpendicular, for the base corners
+  lastArrow={x:ex, y:ey, dx:ax, dy:ay};
+
+  // Same pulse as the deck it points at, so they read as one thing.
+  const pulse=0.70+0.30*Math.sin(tick*0.55);
+  const c=PALRGB[9];
+  const col=[(c[0]*pulse)|0,(c[1]*pulse)|0,(c[2]*pulse)|0];
+  r.fillTri2D(ex+ax*5, ey+ay*5,
+              ex-ax*3+px*4, ey-ay*3+py*4,
+              ex-ax*3-px*4, ey-ay*3-py*4,
+              col[0],col[1],col[2]);
+}
+
 /* ==================================================================
    The HUD, drawn in the engine's own 5x7 font. Rule 9: sparse, no
    button prompts, measured not eyeballed.
@@ -1996,6 +2079,7 @@ function frame(now){
   drawPads(R,cam,sim);
   drawShip(R,cam,sim,SHIP_SCALE);
   drawFlames(R,cam,sim,SHIP_SCALE,tick);
+  drawTargetArrow(R,cam,sim);
   drawHud(R,sim,scheme);
   if(paused) drawPause(R,pauseSel);
   R.squeeze565();
@@ -2150,7 +2234,8 @@ function setTxt(id,v){ const e=document.getElementById(id); e.textContent=v; ret
        __bench.sim.roll        positive tips the lift vector toward -X
        __bench.THR             which pod each button works                */
 window.__bench = {get sim(){return sim;}, THR, PADS, TUNE,
-                  get cam(){return cam;}, get scheme(){return scheme;}};
+                  get cam(){return cam;}, get scheme(){return scheme;},
+                  get arrow(){return lastArrow;}};
 
 /* ---- go ---- */
 syncSchemes(); syncMap(); syncTex(); note();

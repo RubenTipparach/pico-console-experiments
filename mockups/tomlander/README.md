@@ -15,6 +15,13 @@ of the sky, so the first thing a player does is take off, which is also the
 first thing they need to learn. Landing well anywhere just parks the ship and
 it can lift off again; the run only ends on the deck that is pulsing orange.
 
+When the target deck is out of frame an arrow appears at the edge of the
+screen pointing at it, and disappears as soon as it is visible again. Its
+direction comes from the world bearing rotated into the camera's own basis
+rather than from the projection, because a pad behind the camera has no valid
+projection at all, and behind the camera is exactly when the arrow is worth
+its pixels.
+
 Each pad is a 14 unit block, 2.4 units proud of a flat apron of radius 16,
 since the ground you drift over on the way down matters more than the ground
 you finally touch. The deck is plated metal off a second 16x16 texture and the
