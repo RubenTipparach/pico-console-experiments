@@ -305,6 +305,7 @@ void world_init(World& world, Mission mission) {
     world.fault = Fault::None;
     world.fuel = k_fuel_full;
     world.damage = 0;
+    world.dry_ticks = 0;
 
     // Every mission starts ON pad A, not falling toward it. The first thing a
     // player does is take off, which is also the first thing they need to
@@ -541,20 +542,42 @@ void world_tick(World& world, const Input& input) {
         world.ticks_in_state = 0;
     }
 
-    // An empty tank with the mission still open is the end of it, wherever the
-    // ship happens to be. It used to just cut the pods and let the hull drop,
-    // which reads as a bug on the ground: park short of the deck with nothing
-    // left and the game sits there forever waiting for a take off that can
-    // never happen.
+    // An empty tank ends a mission, five seconds later, once the hull has
+    // stopped moving.
+    //
+    // The gauge reaching zero is the end of the CONTROL, not the end of the
+    // flight. A hull that runs dry at altitude still has everything it had a
+    // moment ago except thrust: its speed, its lean, and a long way to fall.
+    // Calling it at zero threw away the most interesting seconds the game has,
+    // and threw away a real outcome with them, because a dead stick glide onto
+    // the deck you were sent to is a landing and it counts.
+    //
+    // Both halves of the condition earn their place. The timer alone would cut
+    // a fall short, since terminal descent is 17.7 units a second and the
+    // ceiling is a good deal more than five of those. The stop test alone
+    // would call the flight the instant a hull settled, with no beat to watch
+    // it happen. So: at least five seconds, and then stopped.
+    //
+    // Whatever happens on the way down is judged by the touchdown exactly as
+    // it always was. Arrive too fast and the fault is TOO FAST, because that
+    // is what actually broke the ship. NO FUEL is the other ending, the one
+    // with no other name: down safe, in one piece, somewhere that is not the
+    // deck, with nothing left to lift off on again. That case used to sit
+    // there forever waiting for a launch that could never happen.
     //
     // Judged LAST in the tick on purpose. A touchdown resolved above may have
     // ended the flight, or may have been a leg that filled the tank back up,
     // and both of those should beat the empty gauge: arriving on the pickup
     // deck as the last of the fuel goes is a save, not a loss.
-    if (world.fuel <= 0 && mission_open(world)) {
-        world.state = Flight::Crashed;
-        world.fault = Fault::Dry;
-        world.ticks_in_state = 0;
+    if (world.fuel > 0) {
+        world.dry_ticks = 0;
+    } else if (mission_open(world)) {
+        if (world.dry_ticks < 0xFFFF) world.dry_ticks++;
+        if (world.dry_ticks >= k_dry_grace && at_rest(world)) {
+            world.state = Flight::Crashed;
+            world.fault = Fault::Dry;
+            world.ticks_in_state = 0;
+        }
     }
 }
 

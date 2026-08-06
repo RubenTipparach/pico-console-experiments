@@ -151,7 +151,28 @@ constexpr int32_t k_fuel_full = 100 << 8;
 // Per tick with all four pods at full: 13 per second at 100 Hz, fp8.
 constexpr int32_t k_fuel_burn = 33;
 
-// One tank is 8.5 seconds of holding level, because k_level_base is 236 of
+// The grace an empty tank gets before the mission is called, in ticks. Five
+// seconds.
+//
+// The gauge reaching zero is the end of the CONTROL, not the end of the
+// flight. A hull that runs dry at altitude keeps its speed and its lean and is
+// going to come down somewhere, and a dead stick glide onto the deck you were
+// sent to is a landing that counts. Calling it at zero threw all of that away.
+constexpr int32_t k_dry_grace = 500;
+
+// And how slow counts as stopped, fp16 per tick, about half a unit a second.
+// The grace is a MINIMUM wait, not a deadline: it has to have run out AND the
+// hull has to have stopped moving. A timer alone would cut a long fall short,
+// and a stop test alone would end a flight the instant a hull settled, with no
+// beat to see what happened.
+//
+// Measured on speed rather than on the grounded flag on purpose. A touchdown
+// zeroes all three velocities today, so the two mean the same thing, but they
+// stop meaning the same thing the moment anything can move a hull it is not
+// flying: wind across a deck, swell under a floating one. Something still
+// pushing the ship is something still happening, and the flight should not be
+// called while it is.
+constexpr int32_t k_at_rest_speed = 328;
 // 255 and the leveller fires all four pods at it. Flown properly, pulsing the
 // leveller rather than leaning on it, a leg costs 57 to 65 percent of a tank.
 // Two legs therefore do not fit in one, which is why a deck that continues a

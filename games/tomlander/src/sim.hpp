@@ -194,6 +194,12 @@ struct World {
     // ever moves at a touchdown and it only ever counts up.
     uint8_t damage;
 
+    // Ticks since the tank emptied, zero while there is anything in it. The
+    // mission is not called until this passes k_dry_grace AND the hull has
+    // stopped moving, so running dry in the air is a glide rather than an
+    // ending. Refilling on a leg deck resets it.
+    uint16_t dry_ticks;
+
     Flight state;
     Fault fault;
     uint32_t ticks_in_state;
@@ -212,6 +218,18 @@ inline bool carrying(const World& world) { return world.cargo == kCargoHeld; }
 // the whole of the "goals not complete" half of the rule.
 inline bool mission_open(const World& world) {
     return world.state == Flight::Flying;
+}
+
+// Has the hull stopped moving? Speed rather than the grounded flag, so a hull
+// something else is still pushing does not read as a hull at rest. Chebyshev,
+// because this is a threshold and not a measurement and a square is one
+// comparison cheaper than a circle.
+inline bool at_rest(const World& world) {
+    const int32_t ax = world.vx < 0 ? -world.vx : world.vx;
+    const int32_t ay = world.vy < 0 ? -world.vy : world.vy;
+    const int32_t az = world.vz < 0 ? -world.vz : world.vz;
+    const int32_t fastest = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    return fastest <= k_at_rest_speed;
 }
 
 // ---- the fixed point trigonometry the sim runs on ----

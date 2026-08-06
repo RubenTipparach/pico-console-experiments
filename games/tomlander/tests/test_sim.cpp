@@ -843,47 +843,123 @@ void test_a_hard_landing_costs_hull_and_two_of_them_end_it() {
     CHECK(fresh.damage == 0);
 }
 
-// An empty tank with the mission still open ends it, wherever the ship is.
-// It used to just cut the pods, which reads as a bug on the ground: parked
-// short of the deck with nothing left, the game sat there forever waiting for
-// a take off that could never happen.
-void test_running_dry_with_the_mission_open_is_a_fail() {
-    // Airborne.
+// An empty tank ends a mission, but only after five seconds AND only once the
+// hull has stopped moving. Running dry is the end of the control, not the end
+// of the flight: the ship still has its speed and its lean and a long way to
+// fall, and where it ends up is a real outcome that has to be allowed to
+// happen.
+void test_running_dry_is_a_glide_before_it_is_a_fail() {
+    tl::Input none{};
+
+    // Empty the tank at altitude and the flight carries on. Checked well past
+    // the grace period, because the grace alone must not end it: terminal
+    // descent is 17.7 units a second and there is a good deal more than five
+    // seconds of ceiling above the valley floor.
     tl::World w;
     tl::world_init(w);
-    w.y = 60 << 16;
+    w.y = 120 << 16;
     w.grounded = false;
     w.landed_on = 0xFF;
-    tl::Input all = fire_all();
-    int ticks = 0;
-    while (w.state == tl::Flight::Flying && ticks < 5000) {
-        tl::world_tick(w, all);
-        ticks++;
+    w.fuel = 0;
+    int airborne = 0;
+    while (w.state == tl::Flight::Flying && !w.grounded && airborne < 4000) {
+        tl::world_tick(w, none);
+        airborne++;
     }
-    CHECK(w.state == tl::Flight::Crashed);
-    CHECK(w.fault == tl::Fault::Dry);
-    CHECK(w.fuel == 0);
+    CHECK(airborne > tl::k_dry_grace);      // it was still flying past the grace
+    CHECK(w.dry_ticks > tl::k_dry_grace);
 
-    // And parked safely on a deck, which is the case that used to hang.
+    // Parked with an empty tank: the case that used to hang. It gets the same
+    // five seconds and then it is over.
     tl::World parked;
     tl::world_init(parked);
-    parked.fuel = 1;
-    tl::Input none{};
-    tl::world_tick(parked, fire_all());     // spends the last of it
+    parked.fuel = 0;
+    for (int i = 0; i < tl::k_dry_grace - 1; i++) {
+        tl::world_tick(parked, none);
+        CHECK(parked.state == tl::Flight::Flying);
+    }
+    CHECK(tl::at_rest(parked));
     tl::world_tick(parked, none);
     CHECK(parked.state == tl::Flight::Crashed);
     CHECK(parked.fault == tl::Fault::Dry);
 
-    // Not once the flight is over, though. The gauge reading empty on the
+    // A tank that is not empty resets the clock, so a leg refuel wipes out a
+    // grace period already half spent rather than carrying it forward.
+    tl::World topped;
+    tl::world_init(topped);
+    topped.fuel = 0;
+    for (int i = 0; i < 100; i++) tl::world_tick(topped, none);
+    CHECK(topped.dry_ticks == 100);
+    topped.fuel = tl::k_fuel_full;
+    tl::world_tick(topped, none);
+    CHECK(topped.dry_ticks == 0);
+
+    // Not once the flight is over, either way. The gauge reading empty on the
     // deck you were sent to is a finished mission, not a failed one, and the
     // dry check is judged after the touchdown for exactly that reason.
     tl::World done;
     tl::world_init(done);
     done.fuel = 0;
     done.state = tl::Flight::Landed;
-    tl::world_tick(done, none);
+    for (int i = 0; i < tl::k_dry_grace * 2; i++) tl::world_tick(done, none);
     CHECK(done.state == tl::Flight::Landed);
     CHECK(done.fault == tl::Fault::None);
+}
+
+// Where a dead stick glide ends is judged by the touchdown, not by the gauge.
+// Three endings, and only one of them is called NO FUEL.
+void test_what_a_dead_stick_glide_lands_on_is_what_decides_it() {
+    tl::Input none{};
+
+    // Onto the deck it was sent to, gently: that is a landing and it counts.
+    // The whole point of the grace, and it would have been unreachable when
+    // the tank emptying ended the flight where it stood.
+    tl::World winner;
+    tl::world_init(winner);
+    winner.fuel = 0;
+    winner.x = winner.pads[1].x;
+    winner.z = winner.pads[1].z;
+    winner.y = tl::ground_at(winner, winner.x, winner.z) + (3 << 16);
+    winner.grounded = false;
+    winner.landed_on = 0xFF;
+    for (int i = 0; i < tl::k_dry_grace * 2 &&
+                    winner.state == tl::Flight::Flying; i++) {
+        tl::world_tick(winner, none);
+    }
+    CHECK(winner.state == tl::Flight::Landed);
+    CHECK(winner.fault == tl::Fault::None);
+
+    // Down in one piece but not on a deck: nothing left to lift off on, and
+    // this is the ending that has no other name.
+    tl::World stuck;
+    tl::world_init(stuck);
+    stuck.fuel = 0;
+    stuck.x = stuck.pads[0].x + (40 << 16);
+    stuck.z = stuck.pads[0].z + (40 << 16);
+    stuck.y = tl::ground_at(stuck, stuck.x, stuck.z) + (3 << 16);
+    stuck.grounded = false;
+    stuck.landed_on = 0xFF;
+    for (int i = 0; i < tl::k_dry_grace * 3 &&
+                    stuck.state == tl::Flight::Flying; i++) {
+        tl::world_tick(stuck, none);
+    }
+    CHECK(stuck.state == tl::Flight::Crashed);
+    CHECK(stuck.fault == tl::Fault::Dry);
+
+    // And straight in from the ceiling: the fault is what actually broke the
+    // ship, not what led to it. The player watched the tank empty; they do not
+    // need telling, and TOO FAST is the more useful thing to be told.
+    tl::World smashed;
+    tl::world_init(smashed);
+    smashed.fuel = 0;
+    smashed.y = 140 << 16;
+    smashed.grounded = false;
+    smashed.landed_on = 0xFF;
+    for (int i = 0; i < 4000 && smashed.state == tl::Flight::Flying; i++) {
+        tl::world_tick(smashed, none);
+    }
+    CHECK(smashed.state == tl::Flight::Crashed);
+    CHECK(smashed.fault == tl::Fault::TooFast);
 }
 
 // A deck that continues a mission fills the tank; the one that ends it does
@@ -1026,7 +1102,8 @@ int main() {
     test_the_salvage_square_fits_the_section();
     test_the_bands_land_on_exact_readout_values();
     test_a_hard_landing_costs_hull_and_two_of_them_end_it();
-    test_running_dry_with_the_mission_open_is_a_fail();
+    test_running_dry_is_a_glide_before_it_is_a_fail();
+    test_what_a_dead_stick_glide_lands_on_is_what_decides_it();
     test_a_leg_refuels_and_an_ending_does_not();
     test_memory_budget();
 
