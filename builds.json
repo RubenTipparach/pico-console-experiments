@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T01:38:14Z",
-      "commit": "5f98ee8",
+      "built_at": "2026-08-06T03:49:02Z",
+      "commit": "f336820",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T01:38:14Z",
-      "commit": "5f98ee8",
+      "built_at": "2026-08-06T03:49:02Z",
+      "commit": "f336820",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T01:38:14Z",
-      "commit": "5f98ee8",
+      "built_at": "2026-08-06T03:49:02Z",
+      "commit": "f336820",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -54,8 +54,19 @@
       "target": "picomon",
       "title": "Picomon",
       "web": true
+    },
+    {
+      "built_at": "2026-08-06T03:49:02Z",
+      "commit": "f336820",
+      "dir": "games/tomlander",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "tomlander",
+      "target": "tomlander",
+      "title": "Tom Lander",
+      "web": true
     }
   ],
-  "generated_at": "2026-08-06T01:38:14Z",
+  "generated_at": "2026-08-06T03:49:02Z",
   "schema": 2
 }
