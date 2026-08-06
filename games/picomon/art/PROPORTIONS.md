@@ -32,6 +32,13 @@ rows  7 .. 16    body: arms at the flanks, torso core 8 wide from row 12
 rows 17 .. 19    legs
 ```
 
+The skull is an egg, not a box. The crown widens one two-pixel step a row,
+4 to 8 to 10 to 12, and the hairline is an arc: hair wraps the forehead's
+top corners, so the face's first row is six wide and its eye rows eight.
+That gradual widening is the reference's silhouette (boy1's skull steps
+6, 10, 12, 14 down to its hairline), and it is the whole difference
+between an egg and a box with rounded corners.
+
 Five rows of overlap, 7 to 11. The arm's top rows sit **behind** the face,
 which is twelve wide there, so the visible arm begins exactly where the chin
 tapers, and the shoulders cannot end up at the ears no matter what the head

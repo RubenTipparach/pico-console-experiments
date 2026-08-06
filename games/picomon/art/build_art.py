@@ -22,21 +22,11 @@ The art itself lives in this file as character-per-pixel strings, which is
 what makes it reviewable in a diff. Frames are 14 x 20: two tiles tall at the
 overworld camera's 10 pixels per tile.
 
-Inside those 20 rows the people are chibi, and the row budget is the whole
-style: 10 rows of head, 5 of body, 5 of legs. Half the character is head,
-which is what Mother 3 and the Pokemon overworld sprites do and what a
-realistically proportioned figure cannot do at this size. The reason is
-legibility, not cuteness: at 12 x 20 a head drawn to scale is about five rows,
-and five rows cannot hold two eyes that read as a face. Ten rows can, so a
-person on this screen has an expression instead of a smudge.
-
-The eyes are what the height buys, and they are drawn to be read: two pixels
-of white with two of pupil directly under them, kept two pixels apart. Both
-halves matter. Without the white the eye is a dark blob against skin and the
-face reads as blank; without the gap the eyes merge into one bar at a glance.
-Arms are stubs, one skin pixel at each shoulder, moved a row up or down across
-the walk. At six pixels of torso that is all the swing there is room for, and
-it is enough, because the legs carry the walk.
+The construction is transplanted from a Gen 3 overworld sprite and is
+documented in PROPORTIONS.md: an egg shaped skull whose face is the bottom
+third with the eyes at 70 per cent, solid 1 x 2 dark eyes, arms that flank
+the torso with their tops hidden behind the face, three row legs, and a walk
+whose two stepping frames are mirror silhouettes.
 """
 import argparse
 import base64
@@ -140,27 +130,27 @@ LEGS_H = 3
 
 HEAD = {
     "hero.down": [
-        "....kkkkkk....",
-        "..kkhhhhhhkk..",
+        ".....kkkk.....",
+        "...kkhhhhkk...",
+        "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
-        ".kkhhhhhhhhkk.",
-        ".khsssssssShk.",
+        ".khhsssssShhk.",
         ".khssessesShk.",
         ".khssessesShk.",
         "...ksssssSk...",
         "....kkkkkk....",
     ],
-    # Facing away is all hair on the same silhouette, so the character
-    # does not change size when they turn round.
+    # Facing away is all hair on the same egg, so the character does
+    # not change size when they turn round.
     "hero.up": [
-        "....kkkkkk....",
-        "..kkhhhhhhkk..",
+        ".....kkkk.....",
+        "...kkhhhhkk...",
+        "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
@@ -171,43 +161,44 @@ HEAD = {
     ],
     # In profile the hair is behind the face, not half of it.
     "hero.side": [
-        "....kkkkkk....",
-        "..kkhhhhhhkk..",
+        ".....kkkk.....",
+        "...kkhhhhkk...",
+        "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
-        ".kkhhhhhhhkk..",
         ".khhhhssssSk..",
         ".khhhhssesSk..",
         ".khhhhssesSk..",
         "...khhsssSk...",
         "....kkkkkk....",
     ],
-    # Longer hair, with bangs, and it frames the jaw.
+    # Longer hair: it frames the jaw, so the jaw row keeps a hair
+    # column the others do not.
     "villager.down": [
-        "....kkkkkk....",
-        "..kkhhhhhhkk..",
+        ".....kkkk.....",
+        "...kkhhhhkk...",
+        "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
-        ".kkhhhhhhhhkk.",
-        ".khhssssssShk.",
+        ".khhsssssShhk.",
         ".khssessesShk.",
         ".khssessesShk.",
         "...khsssShk...",
         "....kkkkkk....",
     ],
-    # The cap costs three rows of hair, so the forehead is taller and
-    # the eyes stay on the same rows as everyone else's.
+    # The cap follows the same egg. Its brim costs the forehead a row,
+    # and the eyes stay on the same rows as everyone else's.
     "trainer.down": [
-        "....kkkkkk....",
-        "..kkrrrrrrkk..",
+        ".....kkkk.....",
+        "...kkrrrrkk...",
+        "..krrrrrrrrk..",
         ".krrrrrrrrrrk.",
         ".krrRRRRrrrrk.",
         ".kkRRRRRRRRkk.",
-        ".khsssssssShk.",
         ".khsssssssShk.",
         ".khsssssssShk.",
         ".khssessesShk.",
@@ -216,12 +207,12 @@ HEAD = {
         "....kkkkkk....",
     ],
     "trainer.up": [
-        "....kkkkkk....",
-        "..kkrrrrrrkk..",
+        ".....kkkk.....",
+        "...kkrrrrkk...",
+        "..krrrrrrrrk..",
         ".krrrrrrrrrrk.",
         ".krrRRRRrrrrk.",
         ".kkrrrrrrrrkk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
@@ -232,9 +223,9 @@ HEAD = {
     # A white cap with the same red cross the coat carries, so the nurse
     # is recognisable from the top of the head down.
     "healer.down": [
-        "....kkkkkk....",
-        "..kkcccccckk..",
-        ".kcccwwccccck.",
+        ".....kkkk.....",
+        "...kkcccckk...",
+        "..kccwwccck...",
         ".kcccccccccck.",
         ".kkhhhhhhhhkk.",
         ".khsssssssShk.",
