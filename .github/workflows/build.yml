@@ -277,135 +277,6 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # The console: the menu and every game console.yaml lists, in one .uf2.
-  #
-  # One build, not one per game plus a composition step afterwards. There are
-  # no slots to line up and nothing to relocate, because the games are linked
-  # together and the menu calls one of them. That is why this job is short
-  # where the bundle job it replaces was long, and why what it produces has
-  # actually been seen to run.
-  #
-  # It does not depend on the build matrix: console.yaml is its own list, and a
-  # game held out of the web rotation still belongs on the device.
-  console:
-    needs: [engine-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build ccache python3 python3-pip \
-            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
-          pip3 install --user 32blit
-
-      - name: Cache SDKs
-        id: sdk-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ github.workspace }}/../32blit-sdk
-            ${{ github.workspace }}/../pico-sdk
-          key: sdks-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}
-
-      - name: Check out the SDKs
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
-        working-directory: ${{ github.workspace }}/..
-        run: |
-          git clone --depth 1 --branch "$BLIT_SDK_TAG" \
-            https://github.com/32blit/32blit-sdk
-          git clone --depth 1 --branch "$PICO_SDK_TAG" \
-            https://github.com/raspberrypi/pico-sdk
-          git -C pico-sdk submodule update --init lib/tinyusb
-
-      - name: Cache compiler output
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-console-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-${{ github.sha }}
-          restore-keys: |
-            ccache-console-${{ env.BLIT_SDK_TAG }}-${{ env.PICO_SDK_TAG }}-
-
-      - name: Build the console
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          cmake -S . -B build.console -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
-            -DPICO_BOARD=pimoroni_picosystem \
-            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DPSE_CONSOLE=ON \
-            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
-          cmake --build build.console --parallel
-
-      - name: Report what it costs
-        run: |
-          set -euo pipefail
-          uf2=$(find build.console -name "console.uf2" -print -quit)
-          if [ -z "$uf2" ]; then
-            echo "::error::the console did not build"
-            exit 1
-          fi
-          cp "$uf2" console.uf2
-          elf=$(find build.console -name "console.elf" -print -quit)
-          if [ -z "$elf" ]; then
-            echo "::error::no console.elf to measure"
-            exit 1
-          fi
-          bytes=$(stat -c%s console.uf2)
-
-          # RAM and flash in the run summary, because rule 8 asks for the
-          # numbers and a number nobody prints is a number nobody checks. A
-          # .uf2 carries 256 bytes of real flash per 512 byte block, so the
-          # file on disk is twice what it programs.
-          {
-            echo "## Console"
-            echo
-            echo '```'
-            arm-none-eabi-size "$elf"
-            echo '```'
-            echo
-            echo "console.uf2 is $bytes bytes, which programs $((bytes / 2)) bytes of flash."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          # Static RAM, checked rather than just noted: the console is the
-          # build where it gets tight, because every game's state is resident
-          # at once.
-          #
-          # arm-none-eabi-size prints `text data bss dec hex filename`. Every
-          # column is named here rather than skipped with underscores, because
-          # a positional read that skipped two of them picked up bss and dec,
-          # summed text + data + 2*bss, and failed its own check at 595,368
-          # bytes on a build that had linked perfectly.
-          read -r text data bss dec hex name <<< "$(arm-none-eabi-size "$elf" | tail -1)"
-          ram=$((data + bss))
-
-          # The RP2040 has 270,336 bytes of SRAM. The SDK's framebuffer is
-          # 115,200 of it and is counted in bss, so the ceiling is on the
-          # whole static footprint, not on what is left over. 230,000 leaves
-          # about 40 KB for stack and heap, which is the early warning: the
-          # linker catches a real overflow on its own, and by then the message
-          # is `region RAM overflowed` with nothing about which game grew.
-          echo "flash: $text bytes of code and const data"
-          echo "static RAM: $ram bytes ($data data + $bss bss, of 270,336)"
-          if [ "$ram" -gt 230000 ]; then
-            echo "::error::the console wants $ram bytes of static RAM of the"
-            echo "::error::270,336 the RP2040 has, leaving too little for the"
-            echo "::error::stack. Something on the menu grew: check bss."
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: console
-          path: console.uf2
-          retention-days: 7
-          if-no-files-found: error
-
   publish:
     needs: [engine-tests, detect, build]
     # Building is publishing here: a run that gets this far deploys what it
@@ -677,7 +548,7 @@ jobs:
   # skipped matrix job never reports, which silently blocks branch protection if
   # `build` is the required check. Make this the required check instead.
   gate:
-    needs: [engine-tests, detect, build, console]
+    needs: [engine-tests, detect, build]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -691,4 +562,3 @@ jobs:
           if [ "${{ needs.engine-tests.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.detect.result }}" != "success" ]; then exit 1; fi
           if [ "${{ needs.build.result }}" = "failure" ]; then exit 1; fi
-          if [ "${{ needs.console.result }}" = "failure" ]; then exit 1; fi

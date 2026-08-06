@@ -110,8 +110,14 @@ on the PicoSystem (`screen_fb` in `32blit-pico/display.cpp`, hires and single
 buffered on RP2040), which leaves about 149 KB of the 264 KB for everything
 else, so 89 KB of scratch space for scenes nothing is rendering was not
 affordable and was not necessary: one game runs at a time and no state
-survives leaving it. The console job in CI prints the static RAM total and
-fails over 140 KB.
+survives leaving it.
+
+Nothing in CI checks that total any more: the console is built locally, by the
+person about to flash it, so the number to watch is the one `arm-none-eabi-size`
+prints at the end of that build. `data + bss` is the static footprint, the
+framebuffer is already inside it, and the RP2040 has 270,336 bytes. Past about
+230,000 there is too little left for the stack, and the linker's own
+`region RAM overflowed` is the next warning you get — which names no game.
 
 A 2D game that never asks for the shared rasterizer never links it:
 `shared_render.cpp` is a translation unit of its own, and an archive member
