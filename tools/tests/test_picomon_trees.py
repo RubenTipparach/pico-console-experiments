@@ -8,10 +8,10 @@ a chip with no FPU, so it has to be billboards. A tree standing on its own
 inside the playable area is one of under twenty, the player walks around it
 and sees more than one side of it, and it is worth the triangles.
 
-tools/picomon_data.py tells them apart by flooding inward from the map edge
-across tree tiles: whatever the outside can reach is border, whatever it
-cannot is interior, and the interior ones are rewritten to the `treecore`
-tile at compile time.
+tools/picomon_data.py tells them apart with two rules: flood inward from the
+map edge across tree tiles, and then also promote anything the flood DID
+reach that stands with three or more open sides, because that is a spur the
+player walks around rather than a wall they walk past.
 
 This tests that flood fill, on maps built to make its failure modes obvious
 and then on the real ones. It matters because both ways of getting it wrong
@@ -61,11 +61,16 @@ def tile_ids(d):
 
 
 def split(rows, w, h, tree, core):
-    """Run the real flood fill over a throwaway map."""
+    """Run the real split over a throwaway map.
+
+    Tile 0 is open ground and both tree tiles block, which is what the open
+    side count reads.
+    """
     d = picomon_data.Data.__new__(picomon_data.Data)
-    d.tiles = [{"name": ""} for _ in range(max(tree, core) + 1)]
-    d.tiles[tree]["name"] = "tree"
-    d.tiles[core]["name"] = "treecore"
+    block = picomon_data.TILE_FLAGS["block"]
+    d.tiles = [{"name": "", "flags": 0} for _ in range(max(tree, core) + 1)]
+    d.tiles[tree] = {"name": "tree", "flags": block}
+    d.tiles[core] = {"name": "treecore", "flags": block}
     z = {"w": w, "h": h, "tiles": [list(r) for r in rows]}
     d.zones = [z]
     picomon_data.Data.split_trees(d)
@@ -97,23 +102,50 @@ def test_an_island_is_interior():
     print("  a lone tree inside the map is geometry")
 
 
-def test_a_tongue_off_the_border_stays_sprites():
-    """Trees connected to the edge stay sprites however far in they run.
+def test_a_thick_treeline_stays_sprites():
+    """A deep band of trees along the edge is all border.
 
-    This is the case a distance rule gets wrong. A treeline six rows deep is
-    still the border, because the player only ever sees its near face.
+    This is the case a distance rule gets wrong. Hometown's northern
+    treeline is six rows deep, and the player only ever sees its near face,
+    so every tile of it is a billboard however far in it runs.
+    """
+    T, C = 7, 20
+    g = [[0] * 8 for _ in range(8)]
+    for y in range(4):         # a four row band across the top
+        for x in range(8):
+            g[y][x] = T
+    out, n = split(g, 8, 8, T, C)
+    if n != 0:
+        fail(f"a four row treeline across the top produced {n} mesh trees, "
+             "expected 0: nothing in it has three open sides")
+    print("  a deep treeline hanging off the edge stays sprites")
+
+
+def test_a_thin_spur_becomes_geometry():
+    """One tile wide is not a treeline, it is a tree the player walks round.
+
+    Reaching the edge is not enough on its own. A single file of trees
+    poking into the field is seen from three sides as the player passes, and
+    it looked exactly like what it was on Route 1: a flat billboard standing
+    in open grass. Counting open sides is what tells it from a thick band.
     """
     T, C = 7, 20
     g = [[0] * 7 for _ in range(7)]
-    for y in range(5):
-        g[y][3] = T            # a spur running down from the top edge
     for x in range(7):
-        g[0][x] = T
+        g[0][x] = T            # the border ring's top row
+    for y in range(1, 5):
+        g[y][3] = T            # a one wide spur hanging off it
     out, n = split(g, 7, 7, T, C)
-    if n != 0:
-        fail(f"a spur hanging off the top edge produced {n} mesh trees, "
-             "expected 0: it is reachable from outside along its own length")
-    print("  a deep treeline hanging off the edge stays sprites")
+    if n != 4:
+        fail(f"a one wide spur off the top edge produced {n} mesh trees, "
+             "expected 4: every tile of it has open ground on three sides")
+    for y in range(1, 5):
+        if out[y][3] != C:
+            fail(f"the spur tile at 3,{y} stayed a sprite")
+    if any(out[0][x] != T for x in range(7)):
+        fail("the border row itself became geometry, and it has at most one "
+             "open side anywhere along it")
+    print("  a one tile wide spur off the edge is geometry")
 
 
 def test_a_pocket_inside_a_thicket_is_interior():
@@ -193,7 +225,8 @@ def test_the_meshes_stay_inside_their_budget():
 def main():
     test_a_ring_is_all_border()
     test_an_island_is_interior()
-    test_a_tongue_off_the_border_stays_sprites()
+    test_a_thick_treeline_stays_sprites()
+    test_a_thin_spur_becomes_geometry()
     test_a_pocket_inside_a_thicket_is_interior()
     test_the_real_maps()
     test_the_meshes_stay_inside_their_budget()

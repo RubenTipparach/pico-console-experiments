@@ -845,17 +845,31 @@ class Data:
         tree in the wall that frames the map is one of a hundred and twenty,
         is never seen from more than one side, and has to stay a billboard.
 
-        Telling them apart is a flood fill inward from the edge across tree
-        tiles: whatever the outside can reach is border, whatever it cannot
-        is interior. Doing it here rather than in the renderer is the point.
-        It is a property of the map, it never changes while the game runs,
-        and per frame it would be a flood fill of the whole zone.
+        Telling them apart takes two rules, and the second one was added
+        after looking at a screenshot.
 
-        Deciding it by proximity to the edge instead was the obvious cheap
-        alternative and it is wrong: Hometown's northern treeline is six rows
-        deep, so a rule of "within N tiles of the edge" either turns most of
-        that treeline into meshes or swallows the interior trees standing two
-        tiles in from it.
+        First, a flood fill inward from the edge across tree tiles: whatever
+        the outside cannot reach is an island, and an island is geometry.
+
+        Second, and this is the one that is easy to miss: a tree the flood
+        fill DID reach is still geometry if the player can WALK PAST IT ON
+        BOTH SIDES, meaning open ground on opposite sides in either axis.
+        That is a tree standing in the field, seen from three sides as the
+        player goes by, and it has no business being a billboard. Under the
+        flood fill alone, `TT` at the start of Route 1's row 7 stayed a
+        sprite because it touched the edge ring, and it sat in open field
+        beside a grass patch looking exactly like what it was.
+
+        Deep treelines are unaffected, which is the point of counting open
+        sides rather than measuring distance. A tile inside Hometown's six
+        row northern treeline has no open sides at all, and the innermost
+        row has one. A rule of "within N tiles of the edge" would either
+        turn most of that treeline into meshes or swallow the interior trees
+        standing two tiles in from it.
+
+        Doing this here rather than in the renderer is the point: it is a
+        property of the map, it never changes while the game runs, and per
+        frame it would be a flood fill of the whole zone.
         """
         tree = next((i for i, t in enumerate(self.tiles)
                      if t["name"] == "tree"), None)
@@ -887,10 +901,43 @@ class Data:
                         continue
                     seen[ny][nx] = True
                     stack.append((nx, ny))
+            def opens(x, y):
+                """Can the player stand on the tile at x, y?
+
+                Outside the map is never open: the window runs past the edge
+                and reads the border tile, so the outermost ring has walls
+                beyond it, not field.
+                """
+                if not (0 <= x < w and 0 <= y < h):
+                    return False
+                return not (self.tiles[rows[y][x]]["flags"]
+                            & TILE_FLAGS["block"])
+
+            def thin(x, y):
+                """Open ground on both opposite sides, in either axis.
+
+                That is exactly "the player can walk past on both sides", so
+                they see round it, so it needs to be geometry. Counting three
+                open sides instead only catches the TIP of a one wide spur:
+                the tiles behind the tip have their neighbours above and
+                below, so they score two and stayed billboards standing in
+                open grass.
+                """
+                return ((opens(x - 1, y) and opens(x + 1, y)) or
+                        (opens(x, y - 1) and opens(x, y + 1)))
+
+            # Anything the outside could not reach, plus anything it could
+            # reach that the player can walk around.
             n = 0
             for y in range(h):
                 for x in range(w):
-                    if rows[y][x] == tree and not seen[y][x]:
+                    if rows[y][x] != tree:
+                        continue
+                    if not seen[y][x]:
+                        rows[y][x] = core
+                        n += 1
+                        continue
+                    if thin(x, y):
                         rows[y][x] = core
                         n += 1
             z["mesh_trees"] = n

@@ -310,5 +310,7 @@ reacts mid-step, and every NPC in the zone.
 
 ### Cost
 
-One projection a tile, never one a blade: a Route 1 screenful is up to
-seventy grass tiles. 0.429 ms a frame on the host harness.
+One projection a tile, and one blit: a Route 1 screenful is up to seventy
+grass tiles. 0.223 ms a frame on the host harness, which is FASTER than the
+five procedural blades it replaced, because a sprite blit beats fifteen
+individual plots each doing its own depth test.
