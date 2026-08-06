@@ -7,11 +7,13 @@ target: kingfisher
 sdk: 32blit
 web: true
 
-objective: "Cast into deep water for the rarer fish, then wear the fish down: reel while the line is safe, ease off when the meter climbs, and land it before it breaks free."
+objective: "Cast into deep water for the rarer fish, then set the hook's depth: surface feeders ride high and the heavy ones sit on the bottom. Wear a fish down once it takes, reeling while the line is safe and easing off when the meter climbs."
 
 controls:
   - "hold A: power, release: cast"
   - "A: hook, then hold to reel"
+  - "up: raise the lure in the water"
+  - "down: drop it toward the bottom"
   - "left/right: wiggle the rod"
   - "B: recall the lure"
   - "Y: records"

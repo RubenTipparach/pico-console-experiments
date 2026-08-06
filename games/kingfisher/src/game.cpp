@@ -526,6 +526,8 @@ void game_update(uint32_t time) {
     input.right = (buttons & Button::DPAD_RIGHT) != 0;
     input.left_pressed = (buttons.pressed & Button::DPAD_LEFT) != 0;
     input.right_pressed = (buttons.pressed & Button::DPAD_RIGHT) != 0;
+    input.up = (buttons & Button::DPAD_UP) != 0;
+    input.down = (buttons & Button::DPAD_DOWN) != 0;
 
     if (g_show_records) {
         // The pond pauses while the book is open. Letting it run with the

@@ -324,6 +324,32 @@ constexpr int k_cast_vz_per255 = 102;  // added by full power (~50 m)
 constexpr int k_retrieve_ramp_ticks = 100;
 constexpr int k_retrieve_max_fp256 = 2621;  // fp<<8 per tick, ~4 m/s
 
+// ---- working the lure up and down the water column ----
+//
+// Casting distance picks the band. Depth picks between the species holding in
+// it, because a fish only takes an interest in a lure near its own level: a
+// bottom feeder will not come up for one hanging under the surface.
+//
+// The lure settles at k_lure_settle_fp while left alone, which is the sink it
+// always had, and moves at k_lure_depth_step_fp while the player is holding a
+// direction, so a full column takes under two seconds to sweep rather than
+// five.
+// The bottom of the pond, and the deepest anything is ever allowed to be.
+// The underwater viewport frames exactly this column, so a hook or a fish
+// below it would be a thing the player cannot see, and both are clamped here
+// rather than trusted to stay in range. render.cpp sizes its camera from this
+// same number so the picture and the rule cannot drift apart.
+constexpr int32_t k_pond_floor_fp = (240 * 256) / 100;
+
+constexpr int32_t k_lure_settle_fp = 2;
+constexpr int32_t k_lure_depth_step_fp = 6;
+constexpr int32_t k_lure_min_depth_fp = 256 / 8;   // just under the surface
+
+// How far off a fish's level the lure may hang and still be worth rising to.
+// Generous next to a band's slice, so depth is a choice to make and not a
+// pixel to hit.
+constexpr int32_t k_lure_depth_reach_fp = (35 * 256) / 100;
+
 static_assert(k_fight_reel_max_fp256 < k_retrieve_max_fp256,
               "a fish on the line must never come in faster than a bare hook");
 

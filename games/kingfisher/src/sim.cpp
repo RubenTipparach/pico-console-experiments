@@ -26,17 +26,35 @@ int32_t clamp32(int32_t v, int32_t lo, int32_t hi) {
 // Depth bands as z ranges from the boat, in fp8 world units. Farther cast
 // means deeper water means rarer fish: the power meter is the difficulty
 // dial. The ranges themselves live in tuning.hpp with the rest of the pond.
+//
+// Each band's column is wide enough to hold three species levels with room
+// between them. They used to be thin (the shallows were a quarter of a metre
+// top to bottom), which was fine while the lure simply sank to the floor and
+// is not once the player is steering it.
 struct Band { int32_t z_min, z_max; int32_t depth_min, depth_max; };
-const Band k_bands[3] = {
-    {k_lake_near_fp, k_shallow_max_fp, k_one / 4, k_one / 2},
-    {k_shallow_max_fp, k_mid_max_fp, k_one / 2, 5 * k_one / 4},
-    {k_mid_max_fp, k_lake_far_fp, 5 * k_one / 4, 2 * k_one},
+constexpr Band k_bands[3] = {
+    {k_lake_near_fp, k_shallow_max_fp, (15 * k_one) / 100, (90 * k_one) / 100},
+    {k_shallow_max_fp, k_mid_max_fp, (30 * k_one) / 100, (160 * k_one) / 100},
+    {k_mid_max_fp, k_lake_far_fp, (50 * k_one) / 100, k_pond_floor_fp},
 };
+
+static_assert(k_bands[0].depth_max <= k_pond_floor_fp &&
+              k_bands[1].depth_max <= k_pond_floor_fp &&
+              k_bands[2].depth_max <= k_pond_floor_fp,
+              "no band may reach past the bottom of the viewport");
 
 int band_for_z(int32_t z) {
     if (z < k_bands[1].z_min) return 0;
     if (z < k_bands[2].z_min) return 1;
     return 2;
+}
+
+// The slice of a band's column a species holds in, from its `depth` level.
+void species_depth_range(const Species& s, int32_t& lo, int32_t& hi) {
+    const Band& band = k_bands[s.band];
+    const int32_t slice = (band.depth_max - band.depth_min) / 3;
+    lo = band.depth_min + slice * s.depth;
+    hi = lo + slice;
 }
 
 constexpr int32_t k_lake_half_width = k_lake_half_width_fp;
@@ -49,19 +67,26 @@ constexpr int32_t k_boat_z = 0;
 }  // namespace
 
 const Species k_species[k_species_count] = {
-    // name        band  time            rarity str size      points colour
-    {"MINNOW",     0, k_day | k_night,   30,  1,   5,  12,     5, 200, 205, 215},
-    {"BLUEGILL",   0, k_day,             24,  2,  12,  25,    10,  90, 140, 190},
-    {"PERCH",      0, k_day,             20,  3,  15,  30,    15, 150, 160,  90},
-    {"GHOST KOI",  0, k_night,            6,  4,  30,  60,    60, 235, 235, 240},
-    {"BASS",       1, k_day,             16,  5,  25,  55,    25,  90, 150,  80},
-    {"CARP",       1, k_day | k_night,   14,  4,  30,  70,    20, 170, 130,  70},
-    {"GOLD CARP",  1, k_day,              4,  5,  35,  75,    90, 230, 180,  60},
-    {"PIKE",       1, k_day | k_night,   10,  7,  40,  90,    40,  60, 110,  70},
-    {"MOONFISH",   1, k_night,            5,  6,  30,  60,    80, 170, 190, 230},
-    {"CATFISH",    2, k_night,            8,  8,  50, 110,    50, 120, 100,  90},
-    {"STURGEON",   2, k_day | k_night,    4,  9,  80, 160,   110, 130, 135, 145},
-    {"THE OLD ONE",2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
+    // Depth is the level it holds at inside its band: 0 up near the surface,
+    // 1 midwater, 2 on the bottom. Surface feeders and hunters ride high, the
+    // heavy bottom feeders sit on the floor.
+    // The order of this table is the order of the records a player has saved,
+    // so rows are added at the end and never shuffled: index 3 has to keep
+    // meaning GHOST KOI, and THE OLD ONE has to stay last, because the rain
+    // rule in update_fish names it as k_species_count - 1.
+    // name        band depth time           rarity str size      points colour
+    {"MINNOW",     0, 0, k_day | k_night,   30,  1,   5,  12,     5, 200, 205, 215},
+    {"BLUEGILL",   0, 0, k_day,             24,  2,  12,  25,    10,  90, 140, 190},
+    {"PERCH",      0, 1, k_day,             20,  3,  15,  30,    15, 150, 160,  90},
+    {"GHOST KOI",  0, 2, k_night,            6,  4,  30,  60,    60, 235, 235, 240},
+    {"BASS",       1, 0, k_day,             16,  5,  25,  55,    25,  90, 150,  80},
+    {"CARP",       1, 2, k_day | k_night,   14,  4,  30,  70,    20, 170, 130,  70},
+    {"GOLD CARP",  1, 1, k_day,              4,  5,  35,  75,    90, 230, 180,  60},
+    {"PIKE",       1, 1, k_day | k_night,   10,  7,  40,  90,    40,  60, 110,  70},
+    {"MOONFISH",   1, 0, k_night,            5,  6,  30,  60,    80, 170, 190, 230},
+    {"CATFISH",    2, 1, k_night,            8,  8,  50, 110,    50, 120, 100,  90},
+    {"STURGEON",   2, 2, k_day | k_night,    4,  9,  80, 160,   110, 130, 135, 145},
+    {"THE OLD ONE",2, 2, k_night,            1, 10, 120, 200,   250,  60,  80,  70},
 };
 
 uint32_t fish_weight_g(int species, int size_cm) {
@@ -202,6 +227,7 @@ void reset_lure(World& world) {
     world.bite_timer = 0;
     world.lure_x = 0;
     world.lure_y = 0;
+    world.lure_target_y = 0;
     world.lure_z = k_one;
     world.lure_vx = world.lure_vy = world.lure_vz = 0;
     world.twitch_timer = 0;
@@ -267,8 +293,10 @@ void spawn_fish(World& world) {
 
         fish.x = rnd(world.rng, 2) ? k_lake_half_width : -k_lake_half_width;
         fish.z = band.z_min + rnd(world.rng, band.z_max - band.z_min);
-        fish.y = band.depth_min +
-                 rnd(world.rng, band.depth_max - band.depth_min);
+        int32_t depth_lo, depth_hi;
+        species_depth_range(s, depth_lo, depth_hi);
+        fish.y = clamp32(depth_lo + rnd(world.rng, depth_hi - depth_lo),
+                         0, k_pond_floor_fp);
         fish.vx = 0;
         fish.vz = 0;
         fish.tx = rnd(world.rng, 2 * k_lake_half_width) - k_lake_half_width;
@@ -340,6 +368,12 @@ void update_fish(World& world, Fish& fish, int index) {
             if (world.hooked_fish >= 0) break;
             if (band_for_z(world.lure_z) != s.band) break;
             if (lure_dist2_units(world, fish) > 16) break;
+            // And it has to be at roughly this fish's level. A lure hanging
+            // under the surface is not worth a bottom feeder's trouble, which
+            // is what makes the depth the player picked a decision.
+            const int32_t dy = world.lure_y > fish.y ? world.lure_y - fish.y
+                                                     : fish.y - world.lure_y;
+            if (dy > k_lure_depth_reach_fp) break;
 
             // Interest roll every 16 ticks. Twitching the lure and rain both
             // help; rare fish are pickier.
@@ -359,6 +393,18 @@ void update_fish(World& world, Fish& fish, int index) {
         case FishState::Curious: {
             fish.tx = world.lure_x;
             fish.tz = world.lure_z;
+            // Come up (or down) to it, at a rate that goes with the fish's
+            // own speed. Without this a fish crossed to the lure's spot on the
+            // surface plan and hung a foot below it, which looks wrong the
+            // moment the player is the one choosing the depth.
+            const int32_t rise = 2 + s.strength / 3;
+            if (fish.y < world.lure_y) {
+                fish.y += rise;
+                if (fish.y > world.lure_y) fish.y = world.lure_y;
+            } else if (fish.y > world.lure_y) {
+                fish.y -= rise;
+                if (fish.y < world.lure_y) fish.y = world.lure_y;
+            }
             steer(fish, speed + 2);
             if (!lure_in_water(world) || world.hooked_fish >= 0) {
                 fish.state = FishState::Wander;
@@ -882,6 +928,10 @@ void update_lure(World& world, const Input& input) {
             world.lure_z = clamp32(world.lure_z, k_one, k_lake_far_fp);
             if (world.lure_y >= 0) {
                 world.lure_y = 0;
+                // A lure nobody steers goes on doing what it always did:
+                // sinking to the floor of whatever band it landed in.
+                world.lure_target_y =
+                    k_bands[band_for_z(world.lure_z)].depth_max;
                 world.lure_vx = world.lure_vy = world.lure_vz = 0;
                 world.mode = Mode::Sinking;
                 world.ev.splash = true;
@@ -893,9 +943,31 @@ void update_lure(World& world, const Input& input) {
                 reset_lure(world);
                 break;
             }
-            // Settle toward the bottom of the local band.
+            // Work the lure up and down the column. Up and down move the
+            // depth the player is holding it at; the lure then chases that,
+            // quickly while a direction is held and at its own sink rate once
+            // it is let alone, so a chosen depth stays chosen.
             const Band& band = k_bands[band_for_z(world.lure_z)];
-            if (world.lure_y < band.depth_max) world.lure_y += 2;
+            if (input.up) world.lure_target_y -= k_lure_depth_step_fp;
+            if (input.down) world.lure_target_y += k_lure_depth_step_fp;
+            const int32_t floor_y = band.depth_max < k_pond_floor_fp
+                ? band.depth_max : k_pond_floor_fp;
+            world.lure_target_y = clamp32(world.lure_target_y,
+                                          k_lure_min_depth_fp, floor_y);
+
+            const int32_t rate = (input.up || input.down)
+                ? k_lure_depth_step_fp : k_lure_settle_fp;
+            if (world.lure_y < world.lure_target_y) {
+                world.lure_y += rate;
+                if (world.lure_y > world.lure_target_y) {
+                    world.lure_y = world.lure_target_y;
+                }
+            } else if (world.lure_y > world.lure_target_y) {
+                world.lure_y -= rate;
+                if (world.lure_y < world.lure_target_y) {
+                    world.lure_y = world.lure_target_y;
+                }
+            }
 
             if (world.twitch_timer > 0) world.twitch_timer--;
             if (input.left || input.right) {

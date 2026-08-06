@@ -596,15 +596,33 @@ void set_top_camera(const World& world, uint32_t t) {
 // drifts under the boat when no line is out.
 void set_underwater_camera(const World& world, bool lure_in_water) {
     g_renderer.set_viewport(k_split, 120 - k_split);
-    float cx = 0.0f, cy = -0.55f, cz = 0.6f;
-    float look_x = 0.0f, look_y = -0.9f, look_z = 6.0f;
+
+    // The lower viewport is the water column seen side on, with the surface
+    // along its top edge. The camera holds that framing and does not chase the
+    // hook up and down.
+    //
+    // It used to look straight at the hook, which pinned the hook to the
+    // middle of the band: working the lure moved the whole pond and left the
+    // one thing the player was moving exactly where it was. With the column
+    // fixed, depth is simply how far down the band the hook is.
+    //
+    // Level, so world depth maps to screen row without the near end of the
+    // shot sliding up the frame. The setback frames the deepest band's floor
+    // at the bottom of the viewport.
+    // Taken from the sim's own floor, plus enough margin that a hook sitting
+    // right on the bottom is still drawn whole rather than cut by the edge.
+    const float k_column = fp_to_f(kf::k_pond_floor_fp) + 0.2f;
+    const float k_cam_depth = k_column * 0.5f;
+    constexpr float k_cam_back = 3.4f;
+
+    float cx = 0.0f, cy = -k_cam_depth, cz = 0.6f;
+    float look_x = 0.0f, look_y = -k_cam_depth, look_z = 6.0f;
     if (lure_in_water) {
         const float lx = fp_to_f(world.lure_x);
         const float lz = fp_to_f(world.lure_z);
         cx = lx * 0.5f;
-        cz = lz - 3.4f;
+        cz = lz - k_cam_back;
         look_x = lx;
-        look_y = -g_hook_depth;
         look_z = lz;
     }
     const float dx = look_x - cx, dy = look_y - cy, dz = look_z - cz;
@@ -650,7 +668,11 @@ void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
     // The hook. The bobber mesh reads as the lure below the surface too, and
     // its eased depth is what the camera tracks.
     if (lure_in_water) {
-        float target = 1.0f;
+        // Where the sim actually has the lure. This was a hardcoded 1.0, from
+        // when depth was nothing the player could change: the dpad moved the
+        // lure and the picture drew it at the same height regardless, so the
+        // control looked broken while working perfectly.
+        float target = fp_to_f(world.lure_y);
         if (world.mode == kf::Mode::Fight && world.hooked_fish >= 0) {
             target = fp_to_f(world.fish[world.hooked_fish].y) + 0.12f;
         }

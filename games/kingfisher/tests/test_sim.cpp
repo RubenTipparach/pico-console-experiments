@@ -1117,6 +1117,109 @@ void test_the_day_runs_dawn_to_midnight() {
     }
 }
 
+// Depth is a choice the player makes, so it has to stick, stay in the water,
+// and actually gate what is willing to bite.
+void test_the_hook_works_the_water_column() {
+    kf::World world;
+    kf::world_init(world, 0x0DEE9123u);
+    kf::world_start(world, kf::GameMode::Free);
+
+    // Cast, and let it fly and settle.
+    kf::Input hold{};
+    hold.a = true;
+    hold.a_pressed = true;
+    kf::world_tick(world, hold);
+    for (int i = 0; i < 30; i++) { hold.a_pressed = false; kf::world_tick(world, hold); }
+    kf::Input release{};
+    release.a_released = true;
+    kf::world_tick(world, release);
+    for (int i = 0; i < 400 && world.mode != kf::Mode::Sinking; i++) {
+        kf::world_tick(world, kf::Input{});
+    }
+    CHECK(world.mode == kf::Mode::Sinking);
+
+    // Left alone it settles, as it always did, and stays in the water.
+    for (int i = 0; i < 200; i++) kf::world_tick(world, kf::Input{});
+    const int32_t settled = world.lure_y;
+    CHECK(settled > 0);
+
+    // Up raises it, and it stays raised once the button is let go.
+    kf::Input up{};
+    up.up = true;
+    for (int i = 0; i < 60; i++) kf::world_tick(world, up);
+    const int32_t raised = world.lure_y;
+    CHECK(raised < settled);
+    for (int i = 0; i < 120; i++) kf::world_tick(world, kf::Input{});
+    CHECK(world.lure_y == raised);   // held, not sinking back on its own
+
+    // It never leaves the water, however long either direction is held.
+    for (int i = 0; i < 600; i++) kf::world_tick(world, up);
+    CHECK(world.lure_y >= kf::k_lure_min_depth_fp);
+    kf::Input down{};
+    down.down = true;
+    for (int i = 0; i < 600; i++) kf::world_tick(world, down);
+    CHECK(world.lure_y > raised);
+    CHECK(world.lure_y <= kf::k_pond_floor_fp);   // never below the viewport
+
+    // A fish far off the lure's level never takes an interest. Park the lure
+    // at the surface and a fish on the bottom right beside it, and run long
+    // enough that any interest roll would have fired many times over.
+    kf::Input surface{};
+    surface.up = true;
+    for (int i = 0; i < 300; i++) kf::world_tick(world, surface);
+    for (auto& f : world.fish) f.state = kf::FishState::Gone;
+    kf::Fish& deep = world.fish[0];
+    deep.state = kf::FishState::Wander;
+    deep.species = 0;
+    deep.size_cm = 10;
+    deep.x = world.lure_x;
+    deep.z = world.lure_z;
+    deep.y = world.lure_y + 2 * kf::k_lure_depth_reach_fp;
+    deep.tx = deep.x;
+    deep.tz = deep.z;
+    deep.timer = 40000;
+    for (int i = 0; i < 1200; i++) {
+        kf::world_tick(world, surface);
+        if (world.fish[0].state != kf::FishState::Wander) break;
+        world.fish[0].y = world.lure_y + 2 * kf::k_lure_depth_reach_fp;
+    }
+    CHECK(world.fish[0].state == kf::FishState::Wander);
+}
+
+// Nothing lives below the bottom of the underwater viewport, because the
+// player would be fishing for something they cannot see.
+void test_nothing_swims_below_the_viewport() {
+    kf::World world;
+    kf::world_init(world, 0x5EA1F00Du);
+    kf::world_start(world, kf::GameMode::Free);
+
+    kf::Input cast{};
+    cast.a = true;
+    cast.a_pressed = true;
+    kf::world_tick(world, cast);
+    for (int i = 0; i < 40; i++) { cast.a_pressed = false; kf::world_tick(world, cast); }
+    kf::Input release{};
+    release.a_released = true;
+    kf::world_tick(world, release);
+
+    kf::Input down{};
+    down.down = true;
+    for (int i = 0; i < 4000; i++) {
+        kf::world_tick(world, down);
+        if (world.lure_y > kf::k_pond_floor_fp) {
+            check(false, "the hook stays above the pond floor");
+            break;
+        }
+        for (const auto& f : world.fish) {
+            if (f.state == kf::FishState::Gone) continue;
+            if (f.y > kf::k_pond_floor_fp) {
+                check(false, "no fish swims below the pond floor");
+                return;
+            }
+        }
+    }
+}
+
 void test_records_and_save_roundtrip() {
     kf::World world;
     kf::world_init(world, 11);
@@ -1176,6 +1279,8 @@ int main() {
     test_weight_grows_with_the_cube_of_length();
     test_the_quota_climbs_every_day();
     test_the_day_runs_dawn_to_midnight();
+    test_the_hook_works_the_water_column();
+    test_nothing_swims_below_the_viewport();
     test_a_missed_quota_ends_the_run();
     test_making_the_quota_carries_the_run();
     test_ten_days_wins_and_scores();

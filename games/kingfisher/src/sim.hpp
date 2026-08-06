@@ -29,6 +29,11 @@ constexpr uint8_t k_night = 2;
 struct Species {
     const char* name;
     uint8_t band;          // 0 shallow, 1 mid, 2 deep; deeper = farther cast
+    // Where in that band's water column it holds: 0 near the surface, 1 in
+    // midwater, 2 hard on the bottom. How far out to cast picks the band; the
+    // hook's depth then picks between the species inside it, which is what
+    // the up and down arrows are for.
+    uint8_t depth;
     uint8_t time_mask;     // k_day | k_night
     uint8_t rarity;        // spawn weight, higher = more common
     uint8_t strength;      // 1..10, drives the fight
@@ -125,6 +130,8 @@ struct Input {
     bool right;
     bool left_pressed;
     bool right_pressed;
+    bool up;               // raise the lure in the water
+    bool down;             // drop it
 };
 
 // One tick's worth of things the presentation layers care about. Reset at the
@@ -160,6 +167,9 @@ struct World {
     int8_t aim;            // -10..10, lateral cast offset
 
     int32_t lure_x, lure_y, lure_z;   // y positive down, 0 at the surface
+    // The depth the player is holding the lure at. lure_y chases this, so a
+    // depth chosen once is kept instead of having to be held with the dpad.
+    int32_t lure_target_y;
     int32_t lure_vx, lure_vy, lure_vz;
     uint16_t twitch_timer;
     uint16_t retrieve_hold;   // ticks A has been held towing the lure
