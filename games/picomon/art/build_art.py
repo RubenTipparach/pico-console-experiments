@@ -723,9 +723,53 @@ TREE_KINDS = [
     ("broadleaf", 2, 1),
 ]
 
+# Tall grass, straight off the design mockup rather than reinvented. The tuft
+# is mockups/picomon/index.html's TUFT, character for character, on its
+# PAL_GRASS: the game and the mockup should be looking at the same field.
+#
+# The mockup's rows are ten and eleven characters, padded to eleven, and one
+# of them carries a space where a gap was meant. Padding and space are both
+# transparent there, so they are dots here.
+#
+# Two frames, because the grass has to do something the mockup never asked
+# of it: part around whoever is standing in it. `parted` is the same tuft
+# pressed down, the blades splayed outward and the crown gone, and the
+# renderer swaps to it inside the parting radius.
+PALETTES["grass"] = {
+    "d": (0x22, 0x66, 0x33),   # shadow green
+    "m": (0x33, 0x88, 0x44),   # body green
+    "l": (0x55, 0xAA, 0x55),   # lit green
+}
+
+GRASS_TUFT = [
+    # standing
+    [
+        "..d....d...",
+        ".dm...dm...",
+        ".dm..dmm.d.",
+        "dmm.dmml.dm",
+        "dmlldmmlldm",
+        "dmlldmllldm",
+        "ddmmddmmddm",
+        "..ddd..dd..",
+    ],
+    # parted: the same clump trodden flat and pushed out to the sides
+    [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "dm.......md",
+        "dmm.....mmd",
+        "ddmm...mmdd",
+        "..dd...dd..",
+    ],
+]
+
 SCENERY = {
     "treenear": {"palette": "tree", "w": 16, "h": 26, "frames": TREE_NEAR},
     "treefar": {"palette": "tree", "w": 12, "h": 18, "frames": TREE_FAR},
+    "grass": {"palette": "grass", "w": 11, "h": 8, "frames": GRASS_TUFT},
 }
 
 

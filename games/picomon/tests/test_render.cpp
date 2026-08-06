@@ -308,17 +308,21 @@ void test_an_interior_tree_is_drawn() {
 }
 
 
-// Tall grass grows blades. The encounter tile used to be nothing but a
+// Tall grass grows tufts. The encounter tile used to be nothing but a
 // darker ground colour, so the one tile the game is about looked like lawn.
-// The blade colours are unique to the grass, so these counts cannot be
-// satisfied by trees, ground or sprites.
-int count_blades(const Frame& f) {
+//
+// The counted colours are the mockup's PAL_GRASS, and two of the three are
+// unique to it: 226633 and 55AA55 appear nowhere else in an overworld
+// frame. 338844 is deliberately excluded even though the tuft uses it,
+// because the tree sprites use it too, and a count that trees can satisfy
+// is a count that proves nothing about grass.
+int count_grass(const Frame& f) {
     int n = 0;
     for (int y = 0; y < k_h; y++) {
         for (int x = 0; x < k_w; x++) {
             const uint8_t* p = f.at(x, y);
-            if ((p[0] == 0x22 && p[1] == 0x88 && p[2] == 0x33) ||
-                (p[0] == 0x55 && p[1] == 0xBB && p[2] == 0x55)) n++;
+            if ((p[0] == 0x22 && p[1] == 0x66 && p[2] == 0x33) ||
+                (p[0] == 0x55 && p[1] == 0xAA && p[2] == 0x55)) n++;
         }
     }
     return n;
@@ -334,13 +338,13 @@ pm::World on_route(int tx, int ty) {
     return w;
 }
 
-void test_tall_grass_grows_blades() {
+void test_tall_grass_grows_tufts() {
     pm::World w = on_route(11, 6);       // on the path beside the west patch
     Frame f;
     render(w, f, 0);
-    const int n = count_blades(f);
-    std::printf("  grass: %d blade pixels\n", n);
-    check(n > 25, "the tall grass is drawn as blades, not as a flat colour");
+    const int n = count_grass(f);
+    std::printf("  grass: %d tuft pixels\n", n);
+    check(n > 25, "the tall grass is drawn as tufts, not as a flat colour");
 }
 
 void test_the_grass_sways() {
@@ -353,13 +357,13 @@ void test_the_grass_sways() {
         for (int x = 0; x < k_w; x++) {
             const uint8_t* pa = a.at(x, y);
             const uint8_t* pb = b.at(x, y);
-            const bool ta = pa[0] == 0x55 && pa[1] == 0xBB && pa[2] == 0x55;
-            const bool tb = pb[0] == 0x55 && pb[1] == 0xBB && pb[2] == 0x55;
+            const bool ta = pa[0] == 0x55 && pa[1] == 0xAA && pa[2] == 0x55;
+            const bool tb = pb[0] == 0x55 && pb[1] == 0xAA && pb[2] == 0x55;
             if (ta != tb) moved++;
         }
     }
-    std::printf("  grass: %d tip pixels moved between two moments\n", moved);
-    check(moved > 5, "the blade tips move with time, so the field sways");
+    std::printf("  grass: %d lit pixels moved between two moments\n", moved);
+    check(moved > 5, "the tufts move with time, so the field sways");
 }
 
 // The parting. Standing in the grass pushes every blade within the parting
@@ -371,18 +375,18 @@ void test_the_grass_parts_around_the_player() {
     pm::World w = on_route(5, 6);        // standing inside the west patch
     Frame f;
     render(w, f, 0);
-    check(count_blades(f) > 25, "the rest of the patch still has blades");
+    check(count_grass(f) > 25, "the rest of the patch still has its tufts");
     int inside = 0;
     for (int y = 55; y <= 61; y++) {
         for (int x = 56; x <= 62; x++) {
             const uint8_t* p = f.at(x, y);
-            if ((p[0] == 0x22 && p[1] == 0x88 && p[2] == 0x33) ||
-                (p[0] == 0x55 && p[1] == 0xBB && p[2] == 0x55)) inside++;
+            if ((p[0] == 0x22 && p[1] == 0x66 && p[2] == 0x33) ||
+                (p[0] == 0x55 && p[1] == 0xAA && p[2] == 0x55)) inside++;
         }
     }
-    std::printf("  grass: %d blade pixels at the player's feet\n", inside);
+    std::printf("  grass: %d tuft pixels at the player's feet\n", inside);
     check(inside == 0,
-          "no blade stands inside the parting radius, so the grass opens "
+          "no tuft stands inside the parting radius, so the grass opens "
           "around the body standing in it");
 }
 
@@ -574,7 +578,7 @@ int main() {
     test_the_treeline_is_drawn();
     test_the_border_is_sprites_and_the_inside_is_geometry();
     test_an_interior_tree_is_drawn();
-    test_tall_grass_grows_blades();
+    test_tall_grass_grows_tufts();
     test_the_grass_sways();
     test_the_grass_parts_around_the_player();
     test_a_hit_flashes_shakes_and_drains();

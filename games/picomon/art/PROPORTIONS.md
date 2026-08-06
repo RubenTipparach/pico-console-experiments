@@ -268,3 +268,36 @@ are measured live by `measure.py`.
 
 The symmetry result in section 3 comes from comparing each leg pose in
 `build_art.py` against its own reverse.
+
+
+## 7. Tall grass
+
+The tuft is the design mockup's, character for character: `TUFT` on
+`PAL_GRASS` in `mockups/picomon/index.html`, carried into `build_art.py` as
+the `grass` sheet. An earlier revision of `draw_grass` invented five
+procedural blades a tile instead, which was a worse clump and, more to the
+point, a second design for something the mockup had already settled. **When
+the mockup has drawn a thing, use its drawing.**
+
+Two frames, because the game asks something of the grass the mockup never
+did:
+
+- `standing`, the mockup's tuft, swayed by shifting the whole clump on a
+  phase keyed to the tile so a field ripples instead of pulsing as one.
+- `parted`, the same clump pressed flat with the blades splayed outward.
+
+The renderer swaps to `parted` and slides the tuft radially away inside
+about a tile of any occupant, and draws nothing at all underfoot. The
+occupants are the player at their **interpolated** position, so the grass
+opens mid-step, and every NPC in the zone.
+
+One projection a tile, never one a blade: a Route 1 screenful is up to
+seventy grass tiles. Frame cost 0.425 to 0.430 ms on the host harness.
+
+Depth: the tuft takes **one** step nearer than its ground, like every other
+billboard. Two was a bug, and an instructive one: a tuft a tile north sits
+about three depth steps farther than the player, so at minus two it could
+tie the player's minus one, and a tie goes to whoever drew first, which is
+the tuft. Grass behind the player rendered on the player's legs. The player
+correspondingly takes two steps, because the player is the one thing that
+shares a tile with grass.

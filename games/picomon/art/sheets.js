@@ -84,5 +84,17 @@ const SHEETS = {
    ]
   },
   "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAASCAYAAAAzI3woAAAAy0lEQVR42u2V0RHCMAiGmSUrZAVXyApdwRWcxVncqR7eEVMk+GPKm73jpfcRPhLSEhlPqWWnwBPlKbp4vV12tEiUTxVipt3bi0+RihZAeX6vAxYqW32Hk/jBOjn87vrYenATsOTZM2TJ6JjmS3LkyBBeuJmMmS/zcJgJ59gi/MhCMuPg6Y6RAoeFDSlLSMuYQrKtS4tPhtvaUXd20I5XhPoptOrfrqiQvua9APDJGHn6NpyRjuECvwildrzIpxf4C53KC8zRgL9yBv8ERHkV5VOMes8AAAAASUVORK5CYII="
+ },
+ "grass": {
+  "frame_w": 11,
+  "frame_h": 8,
+  "frames": 2,
+  "tags": {
+   "shapes": [
+    0,
+    1
+   ]
+  },
+  "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAICAYAAAD9aA/QAAAAYklEQVR42mNggAKlNOP/DGgAmxhJAGSAcYfLf0JiFBsM48PEyHI5NkNg/NBVof/Jdj1ME8gQEEY3GFmMGAtg6nAaDONjMxiX4TA5uMHIGvDx0eVwGYoSJzABZEEMRXjE0cUAurKaVYqL34wAAAAASUVORK5CYII="
  }
 };

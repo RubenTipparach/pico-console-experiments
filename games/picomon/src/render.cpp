@@ -1,7 +1,6 @@
 #include "render.hpp"
 
 #include <cmath>
-#include <cstdio>
 
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
@@ -300,107 +299,69 @@ void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
     draw_sprite(sheet, frame, px, py - sh.h, d, false, 0);
 }
 
-// Tall grass, as blades standing on the encounter tile.
+// Tall grass, as the design mockup's own tuft.
 //
 // The tile used to be nothing but its ground colour, so the one tile type
 // the game is ABOUT, the one that hides creatures, was visually identical
-// to a slightly darker lawn. Blades give it volume, and volume is the point:
-// they sway on their own, and they part around anyone standing in them,
-// which is what says "something can be in here" without a line of text.
+// to a slightly darker lawn.
 //
-// Cost, and the shape it forces: a screenful of Route 1 can be seventy
-// tall grass tiles. One projection per tile, never per blade: the blades
-// hang off the tile's projected centre at fixed pixel offsets, which at
-// this lens is exact to within a pixel (a tile is ten pixels near, eight
-// far). Five blades a tile, at most four plotted pixels each.
+// The art is mockups/picomon/index.html's TUFT, character for character on
+// its PAL_GRASS, carried into art/build_art.py. An earlier version of this
+// function invented five procedural blades a tile instead, which was a
+// worse clump and, more to the point, a second design for something the
+// mockup had already settled. The mockup is the design; when it has drawn
+// a thing, use its drawing.
 //
-// The parting is world space: each blade measures the nearest occupant
-// (player or NPC), and inside a radius of about a tile it is pushed
-// radially away and flattened to a single pixel. The push is what reads as
-// a body taking up room; the flattening is what keeps pushed blades from
-// covering whoever is standing in them. The radius is a tile on purpose:
-// smaller radii left standing blades from neighbouring tiles visually on
-// the player's feet, because the camera forwardshortens rows and screen
-// nearness is not world nearness.
+// Two things the mockup never asked of it. It sways, which it does there
+// too, by shifting the whole tuft rather than bending a tip. And it parts
+// around whoever is standing in it: inside about a tile the tuft swaps to
+// the pressed down frame and slides radially outward, and underfoot it is
+// not drawn at all. The parting is the point of the whole feature, because
+// an empty patch where a body is says "something takes up room here"
+// without a line of text.
+//
+// One projection a tile, never one a blade: a screenful of Route 1 can be
+// seventy grass tiles.
 struct GrassOccupant { float x, z; };
 
 void draw_grass(int tx, int ty, float wx, float wz, uint32_t t,
                 const GrassOccupant* occ, int occ_count) {
-    int sx = 0, sy = 0, sd = 0;
-    if (!g_renderer.project(wx, 0.0f, wz, sx, sy, sd)) return;
-    // One step nearer than the ground, the same offset every billboard uses.
-    // It was two, and two was a bug: a blade one tile north sits about three
-    // depth steps farther than the player, so at minus two it could TIE the
-    // player's minus one, and a tie goes to whoever drew first, which is the
-    // blade. A blade behind the player rendered on the player's toes. At
-    // minus one the blade beats its own tile, same-tile blades still win the
-    // tie against whoever stands there (the front-of-feet layering the
-    // parting wants), and anything a row nearer wins outright.
-    const uint8_t d8 = uint8_t(sd * 255 / pse::k_fixed_one - 1);
-    for (int i = 0; i < 5; i++) {
-        const uint32_t h = uint32_t(tx) * 73856093u ^ uint32_t(ty) * 19349663u
-                           ^ uint32_t(i) * 83492791u;
-        const float ox = (float(h & 7) - 3.5f) / 9.0f;
-        const float oz = (float((h >> 3) & 7) - 3.5f) / 9.0f;
-        float bx = wx + ox, bz = wz + oz;
-        int height = 2 + int((h >> 10) & 1);
-        // The nearest occupant decides whether this blade stands or parts.
-        float best = 1e9f, ddx = 0.0f, ddz = 0.0f;
-        for (int o = 0; o < occ_count; o++) {
-            const float dx = bx - occ[o].x, dz = bz - occ[o].z;
-            const float d2 = dx * dx + dz * dz;
-            if (d2 < best) { best = d2; ddx = dx; ddz = dz; }
-        }
-        // Underfoot the grass is simply crushed: a blade the body is
-        // standing on has nowhere to be pushed to that reads as anything
-        // but a glitch, and the empty patch under the feet is the clearest
-        // possible statement that the space is occupied.
-        if (best < 0.2f) continue;
-        if (best < 1.0f) {
-            const float d = sqrtf(best);
-            const float push = (1.1f - d) * 1.05f;
-            bx += ddx / d * push;
-            bz += ddz / d * push;
-            height = 1;
-        }
-        // Screen placement. Far from anyone, the blade hangs off the tile's
-        // one projection at a fixed pixel scale, which is what keeps seventy
-        // grass tiles at one projection each. Near an occupant the blade is
-        // projected exactly, because the fixed scale has now been wrong
-        // twice: the vertical figure was eyeballed at seven pixels a unit,
-        // the camera's pitch actually compresses rows to about five, the
-        // error moved blades a band south, and a blade correctly outside
-        // the parting radius in the world still stood on the player's toes
-        // on screen. The parting is the one place screen position has to
-        // agree with world distance, so those blades pay for a real
-        // projection. A handful of tiles at most sit inside the threshold.
-        int bpx, bpy;
-        if (best < 6.25f) {
-            int ed = 0;
-            if (!g_renderer.project(bx, 0.0f, bz, bpx, bpy, ed)) continue;
-        } else {
-            const float fx = (bx - wx) * 9.0f, fy = (wz - bz) * 5.5f;
-            bpx = sx + int(fx + (fx < 0 ? -0.5f : 0.5f));
-            bpy = sy + int(fy + (fy < 0 ? -0.5f : 0.5f));
-        }
-        const int phase = int((h >> 6) & 15);
-        const float sway = sinf(float(t) * 0.0025f + float(phase) * 0.4f);
-        const int lean = height > 1 ? int(sway + (sway < 0 ? -0.5f : 0.5f)) : 0;
-        for (int j = 0; j < height; j++) {
-            const int xx = bpx + (j == height - 1 ? lean : 0);
-            const int yy = bpy - j;
-            if (!g_raster.test_and_set_depth(xx, yy, d8)) continue;
-#ifdef GRASS_DEBUG
-            if (xx >= 54 && xx <= 64 && yy >= 53 && yy <= 63)
-                std::printf("tile %d,%d blade %d h%d best %.3f -> px %d,%d\n",
-                            tx, ty, i, height, best, xx, yy);
-#endif
-            // A flattened blade is all base colour: trodden grass has no
-            // lit tip, and the tip colour is what the sway test counts.
-            if (height > 1 && j == height - 1) plot(xx, yy, 0x55, 0xBB, 0x55);
-            else plot(xx, yy, 0x22, 0x88, 0x33);
-        }
+    // Nearest occupant, measured in the world. Screen nearness is not world
+    // nearness at this pitch, which is a mistake this function has already
+    // made once.
+    float best = 1e9f, ddx = 0.0f, ddz = 0.0f;
+    for (int o = 0; o < occ_count; o++) {
+        const float dx = wx - occ[o].x, dz = wz - occ[o].z;
+        const float d2 = dx * dx + dz * dz;
+        if (d2 < best) { best = d2; ddx = dx; ddz = dz; }
     }
+    if (best < 0.16f) return;              // trodden flat underfoot
+
+    float gx = wx, gz = wz;
+    int frame = 0;
+    if (best < 1.1f) {
+        const float d = sqrtf(best);
+        const float push = (1.05f - d) * 0.55f;
+        gx += ddx / d * push;
+        gz += ddz / d * push;
+        frame = 1;
+    } else {
+        // The sway is the mockup's: the whole tuft leans, and the phase is
+        // keyed off the tile so a field ripples instead of pulsing as one.
+        gx += 0.06f * sinf(float(t) * 0.0021f + float(tx) * 0.7f
+                           + float(ty) * 0.4f);
+    }
+
+    int sx = 0, sy = 0, sd = 0;
+    if (!g_renderer.project(gx, 0.0f, gz, sx, sy, sd)) return;
+    const SpriteSheet& sh = k_sheets[art_grass];
+    // One step nearer than the ground it stands on, the same as every other
+    // billboard here. Two was a bug: a tuft a tile north sits about three
+    // depth steps farther than the player, so at minus two it could tie the
+    // player's minus one, and a tie goes to whoever drew first, which is the
+    // tuft. Grass behind the player rendered on the player's legs.
+    const uint8_t d8 = uint8_t(sd * 255 / pse::k_fixed_one - 1);
+    draw_sprite(art_grass, frame, sx, sy - sh.h + 2, d8, false, 0);
 }
 
 // The colour a hit throws off, by the attacking move's type. One rule and no

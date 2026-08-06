@@ -76,5 +76,16 @@
         2
       ]
     }
+  },
+  "grass": {
+    "frame_w": 11,
+    "frame_h": 8,
+    "frames": 2,
+    "tags": {
+      "shapes": [
+        0,
+        1
+      ]
+    }
   }
 }
