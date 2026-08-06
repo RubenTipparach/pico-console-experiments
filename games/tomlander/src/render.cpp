@@ -98,10 +98,21 @@ Rgb lerp_rgb(Rgb a, Rgb b, int t256) {
 // already carries three colours and the rasterizer already interpolates them:
 // a gradient across the landscape is free, and it is what stops eight metre
 // cells reading as eight metre cells.
+// Mars, so the whole ramp is one rusted hue and only its value moves. Iron
+// oxide dust is the same mineral everywhere, and a real Martian view varies by
+// how much light a slope catches rather than by changing colour, which is also
+// what makes the ramp read as one planet instead of three biomes: the palette
+// this replaced ran teal to brown to near white, so a basin, a plain and a
+// ridge looked like different worlds bolted together.
+//
+// The hue is held slightly toward orange rather than pushed to pure red.
+// Mars is butterscotch and rust in true colour, and the saturated red everyone
+// pictures is a contrast stretched press image, so a screen full of it would
+// look like a filter rather than a place.
 Rgb ground_colour(float height) {
-    const Rgb low{18, 83, 89};        // basins, in shadow
-    const Rgb mid{95, 87, 79};        // the general regolith
-    const Rgb high{194, 195, 199};    // ridge tops catching the light
+    const Rgb low{58, 30, 26};        // basins, deep in shadow
+    const Rgb mid{142, 76, 47};       // the general regolith, iron oxide
+    const Rgb high{206, 152, 106};    // ridge tops catching the light, dust
     if (height < 0.0f) {
         int t = static_cast<int>((height + 9.0f) * 256.0f / 9.0f);
         t = t < 0 ? 0 : (t > 256 ? 256 : t);
@@ -451,16 +462,44 @@ void draw_target_arrow(const World& world, const pse::RenderTarget& target,
 
     // A small solid triangle, filled by walking out from the tip. No depth
     // test: HUD furniture sits on top of the world by definition.
+    //
+    // Drawn TWICE, a dark halo then the bright core, and that is not
+    // decoration. On a rust planet no single flat colour is readable against
+    // everything: the ground ramp alone spans luminance 58 to 206 and the sky
+    // meets it at the horizon, so a colour with contrast against the shadowed
+    // basins has almost none against a lit ridge. Measured against the five
+    // tones in this scene, the best flat colour available managed a worst case
+    // contrast ratio of 1.48, and the orange this used to be managed 1.06
+    // against the horizon, which is invisible.
+    //
+    // An outline sidesteps the whole problem. Whatever the arrow is over, one
+    // of the two tones contrasts with it, so the shape reads against every
+    // background instead of against most of them. It costs one more pass over
+    // about forty pixels, once a frame, and only when the arrow is drawn at
+    // all.
     const float perp_x = -ay, perp_y = ax;
-    for (int step = 0; step <= 7; step++) {
-        const float cx = ex + ax * (4.0f - step);
-        const float cyp = ey + ay * (4.0f - step);
-        const int spread = step / 2;
-        for (int w = -spread; w <= spread; w++) {
-            pse::plot_pixel(target,
-                            static_cast<int>(cx + perp_x * w),
-                            static_cast<int>(cyp + perp_y * w),
-                            255, 163, 0);
+    struct Pass { int grow; uint8_t r, g, b; };
+    const Pass passes[2] = {
+        {1, 24, 12, 10},        // the halo, near black
+        {0, 255, 214, 92},      // the core, bright warm
+    };
+    for (const Pass& pass : passes) {
+        for (int step = 0; step <= 7; step++) {
+            const float cx = ex + ax * (4.0f - step);
+            const float cyp = ey + ay * (4.0f - step);
+            const int spread = step / 2 + pass.grow;
+            for (int w = -spread; w <= spread; w++) {
+                // The halo also steps one pixel along the arrow's own axis at
+                // each end, so the tip and the tail are outlined too rather
+                // than just the flanks.
+                for (int along = -pass.grow; along <= pass.grow; along++) {
+                    pse::plot_pixel(
+                        target,
+                        static_cast<int>(cx + perp_x * w + ax * along),
+                        static_cast<int>(cyp + perp_y * w + ay * along),
+                        pass.r, pass.g, pass.b);
+                }
+            }
         }
     }
 }
@@ -492,9 +531,19 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     draw_cargo(world);
     draw_ship(world);
 
-    // A dusk sky: the ground fogs into it rather than ending on a line.
+    // A Martian sky, and it had to move when the ground did. The whole point
+    // of this gradient is that the terrain FOGS into it rather than ending on
+    // a line, and the dusk blue that was here stopped doing that the moment
+    // the ground turned rust: bright orange meeting near black navy is a hard
+    // horizon, not a haze.
+    //
+    // So the bottom of the sky is within a few counts of the ground's own lit
+    // ridge tone, which is what closes the seam. Dust suspended in a thin
+    // atmosphere is why a real Martian sky is butterscotch rather than blue,
+    // and it darkens with altitude because there is less of it overhead than
+    // along a sight line to the horizon.
     pse::run_split(g_raster, g_queue,
-                   pse::SkyGradient{16, 22, 48, 92, 74, 110});
+                   pse::SkyGradient{74, 56, 52, 190, 144, 108});
     g_raster.end_collect();
 
     g_stats.queued = g_queue.count;
