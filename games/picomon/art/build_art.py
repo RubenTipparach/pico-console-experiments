@@ -13,6 +13,11 @@ It writes, next to itself:
   sheets.js         the same strips as base64 data URIs, for pasting into
                     index.html so the mockup stays a single file
 
+PROPORTIONS.md, next to this file, is the blueprint: the row budget, where it
+came from, what the references measure, and the two things currently wrong
+with this art. Read it before moving a row boundary. `measure.py` reprints its
+numbers from the sheets this file emits.
+
 The art itself lives in this file as character-per-pixel strings, which is
 what makes it reviewable in a diff. Frames are 12 x 20: two tiles tall at the
 overworld camera's 10 pixels per tile.
