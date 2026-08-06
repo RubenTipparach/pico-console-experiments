@@ -177,12 +177,24 @@ def build_tower():
     for material, y0, y1 in bands:
         # The window bands are inset, so the concrete ones read as floor slabs
         # standing proud of them and the building gains a silhouette.
-        e = 1.0 if material == "concrete" else 0.93
+        #
+        # Inset in the wall's OWN normal direction only, never sideways. Doing
+        # both left a 0.07 by 0.07 notch at each of the four corners of every
+        # window band with no face in it at all, and at 120 pixels that is a
+        # thin vertical slot of sky straight through the building. Held at the
+        # full width the neighbouring walls cross inside the corner instead,
+        # which is invisible and costs nothing. Two walls overlapping is
+        # cheaper than two walls not quite meeting.
+        d = 0.0 if material == "concrete" else 0.07
         for name, corners in {
-            "back":  ((-e, y0, -1.0), (-e, y1, -1.0), (e, y1, -1.0), (e, y0, -1.0)),
-            "front": ((e, y0, 1.0), (e, y1, 1.0), (-e, y1, 1.0), (-e, y0, 1.0)),
-            "left":  ((-1.0, y0, e), (-1.0, y1, e), (-1.0, y1, -e), (-1.0, y0, -e)),
-            "right": ((1.0, y0, -e), (1.0, y1, -e), (1.0, y1, e), (1.0, y0, e)),
+            "back":  ((-1.0, y0, -1.0 + d), (-1.0, y1, -1.0 + d),
+                      (1.0, y1, -1.0 + d), (1.0, y0, -1.0 + d)),
+            "front": ((1.0, y0, 1.0 - d), (1.0, y1, 1.0 - d),
+                      (-1.0, y1, 1.0 - d), (-1.0, y0, 1.0 - d)),
+            "left":  ((-1.0 + d, y0, 1.0), (-1.0 + d, y1, 1.0),
+                      (-1.0 + d, y1, -1.0), (-1.0 + d, y0, -1.0)),
+            "right": ((1.0 - d, y0, -1.0), (1.0 - d, y1, -1.0),
+                      (1.0 - d, y1, 1.0), (1.0 - d, y0, 1.0)),
         }.items():
             del name
             m.quad(material, *corners)
