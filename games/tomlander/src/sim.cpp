@@ -304,6 +304,8 @@ void world_init(World& world, Mission mission) {
     world.state = Flight::Flying;
     world.fault = Fault::None;
     world.fuel = k_fuel_full;
+    world.damage = 0;
+    world.dry_ticks = 0;
 
     // Every mission starts ON pad A, not falling toward it. The first thing a
     // player does is take off, which is also the first thing they need to
@@ -464,7 +466,7 @@ void world_tick(World& world, const Input& input) {
             // is built around.
             world.state = Flight::Crashed;
             world.fault = Fault::Ditched;
-        } else if (fall > k_safe_descent) {
+        } else if (descent_band(fall) == Touchdown::Fatal) {
             world.state = Flight::Crashed;
             world.fault = Fault::TooFast;
         } else if (tilt(world) > k_safe_tilt) {
@@ -473,6 +475,14 @@ void world_tick(World& world, const Input& input) {
         } else if (slide > k_safe_slide) {
             world.state = Flight::Crashed;
             world.fault = Fault::Scraped;
+        } else if (descent_band(fall) == Touchdown::Hard &&
+                   ++world.damage >= k_damage_max) {
+            // The hull survives a hard arrival, and it does not survive two.
+            // Counted rather than gated so the cost carries across the whole
+            // flight: bang it down on the pickup and the delivery has to be
+            // clean, which is a consequence a player can feel coming.
+            world.state = Flight::Crashed;
+            world.fault = Fault::Broke;
         } else if (pad >= 0 && pad == world.target) {
             // The crate is a LEG, not an ending. Setting down on the deck it
             // is sitting on loads it and re-aims at the next deck, and the
@@ -483,6 +493,31 @@ void world_tick(World& world, const Input& input) {
                 world.target = world.deliver_to;
                 world.grounded = true;
                 world.landed_on = static_cast<uint8_t>(pad);
+                // A leg gets a tank.
+                //
+                // Not generosity. What a leg costs, three ways:
+                //
+                //   48 percent  the arithmetic. Hovering needs 36 percent of
+                //               the pods, and holding a 20 degree lean needs
+                //               38, which crosses 66 units in about ten
+                //               seconds.
+                //   57 to 65    flown, by the best of the autopilots tried
+                //               here: a pilot that pulses the leveller to
+                //               hold altitude and leans between the pulses.
+                //   83 to 100   flown by the blunt one the preview harness
+                //               uses, which holds level whenever it is low.
+                //
+                // Two legs is 96 percent of a tank at the arithmetic best and
+                // 114 or more as anyone actually flies it, so without a refuel
+                // the delivery and the salvage sit somewhere between razor
+                // thin and impossible, and which one depends on how well the
+                // player flies, which is the worst way for a mission to be
+                // unwinnable: it looks like their fault.
+                //
+                // Only a deck that CONTINUES the flight refuels. The one that
+                // ends it does not, so the tank left at the finish is still
+                // the score the debrief prints and still worth flying for.
+                world.fuel = k_fuel_full;
             } else {
                 if (carrying(world)) world.cargo = kCargoDone;
                 world.state = Flight::Landed;
@@ -505,6 +540,44 @@ void world_tick(World& world, const Input& input) {
     if (world.state == Flight::Flying && tilt(world) > k_tumble_tilt) {
         world.state = Flight::Tumbled;
         world.ticks_in_state = 0;
+    }
+
+    // An empty tank ends a mission, five seconds later, once the hull has
+    // stopped moving.
+    //
+    // The gauge reaching zero is the end of the CONTROL, not the end of the
+    // flight. A hull that runs dry at altitude still has everything it had a
+    // moment ago except thrust: its speed, its lean, and a long way to fall.
+    // Calling it at zero threw away the most interesting seconds the game has,
+    // and threw away a real outcome with them, because a dead stick glide onto
+    // the deck you were sent to is a landing and it counts.
+    //
+    // Both halves of the condition earn their place. The timer alone would cut
+    // a fall short, since terminal descent is 17.7 units a second and the
+    // ceiling is a good deal more than five of those. The stop test alone
+    // would call the flight the instant a hull settled, with no beat to watch
+    // it happen. So: at least five seconds, and then stopped.
+    //
+    // Whatever happens on the way down is judged by the touchdown exactly as
+    // it always was. Arrive too fast and the fault is TOO FAST, because that
+    // is what actually broke the ship. NO FUEL is the other ending, the one
+    // with no other name: down safe, in one piece, somewhere that is not the
+    // deck, with nothing left to lift off on again. That case used to sit
+    // there forever waiting for a launch that could never happen.
+    //
+    // Judged LAST in the tick on purpose. A touchdown resolved above may have
+    // ended the flight, or may have been a leg that filled the tank back up,
+    // and both of those should beat the empty gauge: arriving on the pickup
+    // deck as the last of the fuel goes is a save, not a loss.
+    if (world.fuel > 0) {
+        world.dry_ticks = 0;
+    } else if (mission_open(world)) {
+        if (world.dry_ticks < 0xFFFF) world.dry_ticks++;
+        if (world.dry_ticks >= k_dry_grace && at_rest(world)) {
+            world.state = Flight::Crashed;
+            world.fault = Fault::Dry;
+            world.ticks_in_state = 0;
+        }
     }
 }
 

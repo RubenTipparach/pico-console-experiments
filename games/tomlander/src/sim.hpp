@@ -41,7 +41,31 @@ enum class Flight : uint8_t {
     Tumbled,
 };
 
-enum class Fault : uint8_t { None, TooFast, TooSteep, Scraped, Ditched };
+enum class Fault : uint8_t {
+    None,
+    TooFast,     // came down faster than a hull survives at all
+    TooSteep,
+    Scraped,
+    Ditched,
+    Broke,       // survivable landings, but one too many of them
+    Dry,         // out of fuel with the mission still open
+};
+
+// How a touchdown at this descent rate goes. The sim judges by it and the HUD
+// colours by it, from the one function, so the number a player is watching
+// cannot promise something the landing does not honour. See k_soft_descent for
+// where the two lines sit and why they sit on exact readout values.
+enum class Touchdown : uint8_t {
+    Clean,       // green: set down, nothing bent
+    Hard,        // amber: it holds, and it costs a point of hull
+    Fatal,       // red: a wreck
+};
+
+inline Touchdown descent_band(int32_t fall) {
+    if (fall > k_safe_descent) return Touchdown::Fatal;
+    if (fall > k_soft_descent) return Touchdown::Hard;
+    return Touchdown::Clean;
+}
 
 struct Pad {
     int32_t x, z;     // fp16 centre
@@ -165,6 +189,17 @@ struct World {
     // Waterline, fp16, or k_no_sea when this mission has no ocean.
     int32_t sea;
 
+    // Hull damage, one point per hard landing, k_damage_max ends the flight.
+    // Not a health bar: nothing in the air can hurt the ship, so this only
+    // ever moves at a touchdown and it only ever counts up.
+    uint8_t damage;
+
+    // Ticks since the tank emptied, zero while there is anything in it. The
+    // mission is not called until this passes k_dry_grace AND the hull has
+    // stopped moving, so running dry in the air is a glide rather than an
+    // ending. Refilling on a leg deck resets it.
+    uint16_t dry_ticks;
+
     Flight state;
     Fault fault;
     uint32_t ticks_in_state;
@@ -177,6 +212,25 @@ void world_tick(World& world, const Input& input);
 // Is the ship carrying the crate right now? The one question the flight model
 // asks about cargo, so it is the one the renderer and the HUD ask too.
 inline bool carrying(const World& world) { return world.cargo == kCargoHeld; }
+
+// Is there still a mission to finish? False once the flight is over, however
+// it ended. Running the tank dry is only a fail while this is true, which is
+// the whole of the "goals not complete" half of the rule.
+inline bool mission_open(const World& world) {
+    return world.state == Flight::Flying;
+}
+
+// Has the hull stopped moving? Speed rather than the grounded flag, so a hull
+// something else is still pushing does not read as a hull at rest. Chebyshev,
+// because this is a threshold and not a measurement and a square is one
+// comparison cheaper than a circle.
+inline bool at_rest(const World& world) {
+    const int32_t ax = world.vx < 0 ? -world.vx : world.vx;
+    const int32_t ay = world.vy < 0 ? -world.vy : world.vy;
+    const int32_t az = world.vz < 0 ? -world.vz : world.vz;
+    const int32_t fastest = ax > ay ? (ax > az ? ax : az) : (ay > az ? ay : az);
+    return fastest <= k_at_rest_speed;
+}
 
 // ---- the fixed point trigonometry the sim runs on ----
 //

@@ -719,6 +719,317 @@ void test_the_salvage_square_fits_the_section() {
     CHECK(tl::pad_at(w, w.pads[0].x + tl::k_pad_half, w.pads[0].z) == 0);
 }
 
+// ---- the descent bands, the hull, and the tank ----
+
+// The number on the HUD is the whole of the landing rule, so the two lines it
+// is read against have to sit on exact printed values. The readout prints
+// (descent * 100) >> 16, which is whole units per second at a 100 Hz tick and
+// it TRUNCATES: with the gate a third of the way up a printed step, a 17 was
+// sometimes a landing and sometimes a wreck and nothing at the stick could
+// tell them apart.
+int32_t hud_number(int32_t fall) { return (fall * 100) >> 16; }
+
+void test_the_bands_land_on_exact_readout_values() {
+    // The last descent in each band prints the number the band is named for,
+    // and the first descent past it prints the next one up.
+    CHECK(hud_number(tl::k_soft_descent) == 10);
+    CHECK(hud_number(tl::k_soft_descent + 1) == 11);
+    CHECK(hud_number(tl::k_safe_descent) == 16);
+    CHECK(hud_number(tl::k_safe_descent + 1) == 17);
+
+    // So every printed value maps to exactly one band, with no straddling.
+    // Counted rather than checked one descent at a time: this walks every fp16
+    // value up to 20 u/s, and thirteen thousand passing checks would drown the
+    // handful that say something about the flight model.
+    int straddled = 0;
+    for (int32_t fall = 0; fall <= 20 * 656; fall++) {
+        const int32_t shown = hud_number(fall);
+        const tl::Touchdown band = tl::descent_band(fall);
+        const tl::Touchdown want = shown <= 10  ? tl::Touchdown::Clean
+                                 : shown <= 16 ? tl::Touchdown::Hard
+                                               : tl::Touchdown::Fatal;
+        if (band != want) straddled++;
+    }
+    CHECK(straddled == 0);
+
+    // And the bands are ordered, which the switch that colours them assumes.
+    CHECK(tl::k_soft_descent < tl::k_safe_descent);
+    CHECK(tl::descent_band(0) == tl::Touchdown::Clean);
+}
+
+// Green sets down clean, amber sets down and costs a point of hull, and the
+// second amber ends the flight. Flown by dropping onto deck A, so the sim
+// judges it through the same path a real touchdown takes.
+// Drop onto deck A with a chosen closing speed and report the descent the sim
+// actually judged, which is the one on the last tick the ship was still
+// flying. Not the speed it was given: gravity and drag both land inside the
+// tick before the touchdown is looked at, so a test that assumed the two were
+// the same would be testing its own arithmetic.
+int32_t drop_onto_pad_a(tl::World& w, int32_t closing, uint8_t damage) {
+    tl::world_init(w);
+    w.damage = damage;
+    w.y = tl::ground_at(w, w.x, w.z) + (2 << 16);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    w.vy = -closing;
+    tl::Input none{};
+    int32_t judged = 0;
+    for (int i = 0; i < 400 && w.state == tl::Flight::Flying && !w.grounded; i++) {
+        judged = tl::descent(w);
+        tl::world_tick(w, none);
+    }
+    return judged;
+}
+
+// A drop's recorded descent is the last one visible from outside the sim, and
+// the sim then applies one more tick of gravity and drag before it judges. The
+// two land within a gravity step of each other, so a drop that finishes within
+// a step of a band edge could honestly go either way and says nothing. Skip
+// those: the edges themselves are already proven exactly, over every value in
+// range, by test_the_bands_land_on_exact_readout_values, and what is left for
+// a real landing to prove is that the sim WIRES each band to the right
+// consequence.
+bool near_a_band_edge(int32_t fall) {
+    const int32_t slop = 2 * tl::k_gravity;
+    return iabs(fall - tl::k_soft_descent) <= slop ||
+           iabs(fall - tl::k_safe_descent) <= slop;
+}
+
+void test_a_hard_landing_costs_hull_and_two_of_them_end_it() {
+    // Whatever speed each drop works out at, the outcome has to be the one the
+    // band function promised for it. That is the contract the HUD colour is
+    // sold on, checked against the landing rather than against a constant.
+    for (int32_t closing = 0; closing <= 14000; closing += 250) {
+        tl::World w;
+        const int32_t judged = drop_onto_pad_a(w, closing, 0);
+        if (near_a_band_edge(judged)) continue;
+        switch (tl::descent_band(judged)) {
+            case tl::Touchdown::Clean:
+                CHECK(w.state == tl::Flight::Flying);
+                CHECK(w.damage == 0);
+                break;
+            case tl::Touchdown::Hard:
+                CHECK(w.state == tl::Flight::Flying);
+                CHECK(w.damage == 1);
+                break;
+            case tl::Touchdown::Fatal:
+                CHECK(w.state == tl::Flight::Crashed);
+                CHECK(w.fault == tl::Fault::TooFast);
+                CHECK(w.damage == 0);       // a wreck is not a dent
+                break;
+        }
+    }
+
+    // A hull with one dent already in it does not survive the next hard one,
+    // and the fault says so rather than blaming the speed: the same descent
+    // was survivable a moment ago.
+    tl::World w;
+    const int32_t judged = drop_onto_pad_a(w, tl::k_soft_descent + 2000, 1);
+    CHECK(tl::descent_band(judged) == tl::Touchdown::Hard);
+    CHECK(w.state == tl::Flight::Crashed);
+    CHECK(w.fault == tl::Fault::Broke);
+    CHECK(w.damage == tl::k_damage_max);
+
+    // And a red one on a dented hull is still TOO FAST, not BROKE UP: the
+    // speed gate is judged first because it is the truer reason.
+    tl::World fast;
+    CHECK(tl::descent_band(drop_onto_pad_a(fast, 14000, 1)) ==
+          tl::Touchdown::Fatal);
+    CHECK(fast.fault == tl::Fault::TooFast);
+
+    // A fresh flight starts on a whole hull.
+    tl::World fresh;
+    tl::world_init(fresh, tl::Mission::Delivery);
+    CHECK(fresh.damage == 0);
+}
+
+// An empty tank ends a mission, but only after five seconds AND only once the
+// hull has stopped moving. Running dry is the end of the control, not the end
+// of the flight: the ship still has its speed and its lean and a long way to
+// fall, and where it ends up is a real outcome that has to be allowed to
+// happen.
+void test_running_dry_is_a_glide_before_it_is_a_fail() {
+    tl::Input none{};
+
+    // Empty the tank at altitude and the flight carries on. Checked well past
+    // the grace period, because the grace alone must not end it: terminal
+    // descent is 17.7 units a second and there is a good deal more than five
+    // seconds of ceiling above the valley floor.
+    tl::World w;
+    tl::world_init(w);
+    w.y = 120 << 16;
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    w.fuel = 0;
+    int airborne = 0;
+    while (w.state == tl::Flight::Flying && !w.grounded && airborne < 4000) {
+        tl::world_tick(w, none);
+        airborne++;
+    }
+    CHECK(airborne > tl::k_dry_grace);      // it was still flying past the grace
+    CHECK(w.dry_ticks > tl::k_dry_grace);
+
+    // Parked with an empty tank: the case that used to hang. It gets the same
+    // five seconds and then it is over.
+    tl::World parked;
+    tl::world_init(parked);
+    parked.fuel = 0;
+    for (int i = 0; i < tl::k_dry_grace - 1; i++) {
+        tl::world_tick(parked, none);
+        CHECK(parked.state == tl::Flight::Flying);
+    }
+    CHECK(tl::at_rest(parked));
+    tl::world_tick(parked, none);
+    CHECK(parked.state == tl::Flight::Crashed);
+    CHECK(parked.fault == tl::Fault::Dry);
+
+    // A tank that is not empty resets the clock, so a leg refuel wipes out a
+    // grace period already half spent rather than carrying it forward.
+    tl::World topped;
+    tl::world_init(topped);
+    topped.fuel = 0;
+    for (int i = 0; i < 100; i++) tl::world_tick(topped, none);
+    CHECK(topped.dry_ticks == 100);
+    topped.fuel = tl::k_fuel_full;
+    tl::world_tick(topped, none);
+    CHECK(topped.dry_ticks == 0);
+
+    // Not once the flight is over, either way. The gauge reading empty on the
+    // deck you were sent to is a finished mission, not a failed one, and the
+    // dry check is judged after the touchdown for exactly that reason.
+    tl::World done;
+    tl::world_init(done);
+    done.fuel = 0;
+    done.state = tl::Flight::Landed;
+    for (int i = 0; i < tl::k_dry_grace * 2; i++) tl::world_tick(done, none);
+    CHECK(done.state == tl::Flight::Landed);
+    CHECK(done.fault == tl::Fault::None);
+}
+
+// Where a dead stick glide ends is judged by the touchdown, not by the gauge.
+// Three endings, and only one of them is called NO FUEL.
+void test_what_a_dead_stick_glide_lands_on_is_what_decides_it() {
+    tl::Input none{};
+
+    // Onto the deck it was sent to, gently: that is a landing and it counts.
+    // The whole point of the grace, and it would have been unreachable when
+    // the tank emptying ended the flight where it stood.
+    tl::World winner;
+    tl::world_init(winner);
+    winner.fuel = 0;
+    winner.x = winner.pads[1].x;
+    winner.z = winner.pads[1].z;
+    winner.y = tl::ground_at(winner, winner.x, winner.z) + (3 << 16);
+    winner.grounded = false;
+    winner.landed_on = 0xFF;
+    for (int i = 0; i < tl::k_dry_grace * 2 &&
+                    winner.state == tl::Flight::Flying; i++) {
+        tl::world_tick(winner, none);
+    }
+    CHECK(winner.state == tl::Flight::Landed);
+    CHECK(winner.fault == tl::Fault::None);
+
+    // Down in one piece but not on a deck: nothing left to lift off on, and
+    // this is the ending that has no other name.
+    tl::World stuck;
+    tl::world_init(stuck);
+    stuck.fuel = 0;
+    stuck.x = stuck.pads[0].x + (40 << 16);
+    stuck.z = stuck.pads[0].z + (40 << 16);
+    stuck.y = tl::ground_at(stuck, stuck.x, stuck.z) + (3 << 16);
+    stuck.grounded = false;
+    stuck.landed_on = 0xFF;
+    for (int i = 0; i < tl::k_dry_grace * 3 &&
+                    stuck.state == tl::Flight::Flying; i++) {
+        tl::world_tick(stuck, none);
+    }
+    CHECK(stuck.state == tl::Flight::Crashed);
+    CHECK(stuck.fault == tl::Fault::Dry);
+
+    // And straight in from the ceiling: the fault is what actually broke the
+    // ship, not what led to it. The player watched the tank empty; they do not
+    // need telling, and TOO FAST is the more useful thing to be told.
+    tl::World smashed;
+    tl::world_init(smashed);
+    smashed.fuel = 0;
+    smashed.y = 140 << 16;
+    smashed.grounded = false;
+    smashed.landed_on = 0xFF;
+    for (int i = 0; i < 4000 && smashed.state == tl::Flight::Flying; i++) {
+        tl::world_tick(smashed, none);
+    }
+    CHECK(smashed.state == tl::Flight::Crashed);
+    CHECK(smashed.fault == tl::Fault::TooFast);
+}
+
+// A deck that continues a mission fills the tank; the one that ends it does
+// not. Without the first half the delivery and the salvage cannot be flown at
+// all: a leg costs 57 to 65 percent of a tank, so two of them do not fit in
+// one. Without the second half the fuel left at the finish would always be a
+// full tank and the debrief's score would mean nothing.
+void test_a_leg_refuels_and_an_ending_does_not() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    w.fuel = tl::k_fuel_full / 5;
+    CHECK(w.target == 1);
+
+    // Set down on deck B, where the crate is: a leg, not an ending.
+    w.x = w.pads[1].x;
+    w.z = w.pads[1].z;
+    w.y = tl::ground_at(w, w.x, w.z);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    tl::Input none{};
+    tl::world_tick(w, none);
+    CHECK(w.state == tl::Flight::Flying);   // the flight carries on
+    CHECK(tl::carrying(w));
+    CHECK(w.target == 2);
+    CHECK(w.fuel == tl::k_fuel_full);       // and it carries on with a tank
+
+    // Now deck C, which ends it. The tank is left where the flying left it.
+    w.fuel = tl::k_fuel_full / 3;
+    w.x = w.pads[2].x;
+    w.z = w.pads[2].z;
+    w.y = tl::ground_at(w, w.x, w.z);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    tl::world_tick(w, none);
+    CHECK(w.state == tl::Flight::Landed);
+    CHECK(w.cargo == tl::kCargoDone);
+    CHECK(w.fuel == tl::k_fuel_full / 3);
+
+    // The salvage works the same way, and it is the mission that needs it
+    // most: 99 units each way.
+    tl::World sea;
+    tl::world_init(sea, tl::Mission::Salvage);
+    sea.fuel = 1;
+    sea.x = sea.pads[1].x;
+    sea.z = sea.pads[1].z;
+    sea.y = tl::ground_at(sea, sea.x, sea.z);
+    sea.grounded = false;
+    sea.landed_on = 0xFF;
+    tl::world_tick(sea, none);
+    CHECK(sea.state == tl::Flight::Flying);
+    CHECK(sea.fuel == tl::k_fuel_full);
+
+    // Reaching the pickup on the last drop of fuel is a save, not a loss:
+    // the refuel is resolved in the same tick, ahead of the dry check.
+    CHECK(sea.fault == tl::Fault::None);
+
+    // A deck that is not the target refuels nothing, whatever it is.
+    tl::World stray;
+    tl::world_init(stray, tl::Mission::Delivery);
+    stray.fuel = tl::k_fuel_full / 4;
+    stray.x = stray.pads[2].x;              // deck C, not the current target
+    stray.z = stray.pads[2].z;
+    stray.y = tl::ground_at(stray, stray.x, stray.z);
+    stray.grounded = false;
+    stray.landed_on = 0xFF;
+    tl::world_tick(stray, none);
+    CHECK(stray.state == tl::Flight::Flying);
+    CHECK(stray.fuel < tl::k_fuel_full);
+}
+
 // Touching the sea is lost however gently, because a lander is not a boat and
 // a soft ditching that merely parked the ship would make the ocean scenery.
 void test_ditching_is_a_crash_at_any_speed() {
@@ -789,6 +1100,11 @@ int main() {
     test_the_salvage_is_carried_back_to_the_shore();
     test_the_sea_floor_falls_away_from_the_coast();
     test_the_salvage_square_fits_the_section();
+    test_the_bands_land_on_exact_readout_values();
+    test_a_hard_landing_costs_hull_and_two_of_them_end_it();
+    test_running_dry_is_a_glide_before_it_is_a_fail();
+    test_what_a_dead_stick_glide_lands_on_is_what_decides_it();
+    test_a_leg_refuels_and_an_ending_does_not();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
