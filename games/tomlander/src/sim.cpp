@@ -47,6 +47,13 @@ int32_t damp(int32_t v) {
     return v - (v >= 0 ? (v >> k_drag_shift) : -((-v) >> k_drag_shift));
 }
 
+// The same thing at an arbitrary ratio, for the loaded hull's slower settle.
+// Rounds toward zero on both signs for the same reason damp does: a decay
+// that rounds the wrong way on negatives never lets a leftward drift die.
+int32_t damp_ratio(int32_t v, int32_t num, int32_t den) {
+    return v >= 0 ? (v * num) / den : -((-v) * num) / den;
+}
+
 }  // namespace
 
 int32_t sin_fp(int32_t angle) {
@@ -118,11 +125,55 @@ int pad_at(const World& world, int32_t x, int32_t z) {
     return -1;
 }
 
+// static const, so it sits in flash rather than costing 88 bytes of the
+// 264 KB of RAM permanently.
+const Building k_buildings[k_building_count] = {
+    // Along the A to B leg, which runs from (-34,-8) to (32,22).
+    {-16,   4, 3, false, 220},
+    { -6,  -6, 2, false, 255},
+    {  2,   8, 3, true,  255},
+    { 12,  -2, 2, false, 200},
+    { 14,  16, 2, true,  235},
+    // Off to the side of B's apron, so the deck itself stays clear.
+    { 46,  10, 2, false, 240},
+    // Along the B to C leg, (32,22) to (-20,62).
+    { 18,  38, 3, true,  255},
+    {  8,  30, 2, false, 215},
+    {  2,  48, 3, false, 250},
+    { -8,  40, 2, true,  225},
+    {-30,  46, 2, false, 235},
+};
+
+// Which building's footprint covers this point, or -1. Chebyshev, same as the
+// pad test: a square footprint and no square root.
+int building_at(int32_t x, int32_t z) {
+    for (int i = 0; i < k_building_count; i++) {
+        const Building& b = k_buildings[i];
+        const int32_t dx = iabs(x - (b.x * 65536));
+        const int32_t dz = iabs(z - (b.z * 65536));
+        const int32_t half = b.half * 65536;
+        if (dx <= half && dz <= half) return i;
+    }
+    return -1;
+}
+
 int32_t ground_at(const World& world, int32_t x, int32_t z) {
     const int pad = pad_at(world, x, z);
-    const int32_t floor_y = pad >= 0 ? world.pads[pad].y + k_pad_rise
-                                     : terrain_height(world, x, z);
-    return floor_y + k_rest_height;
+    if (pad >= 0) return world.pads[pad].y + k_pad_rise + k_rest_height;
+
+    // A roof is a floor. The buildings are solid, so putting the ship down on
+    // one lands it there, and flying into the side of one is a landing at
+    // whatever speed you hit it, which the descent and slide gates then judge
+    // exactly as they judge the ground.
+    const int32_t terrain = terrain_height(world, x, z);
+    const int building = building_at(x, z);
+    if (building >= 0) {
+        const Building& b = k_buildings[building];
+        const int32_t roof = terrain_raw(b.x * 65536, b.z * 65536) +
+                             building_height(b);
+        if (roof > terrain) return roof + k_rest_height;
+    }
+    return terrain + k_rest_height;
 }
 
 int32_t range_to_target(const World& world) {
@@ -151,28 +202,40 @@ void up_in_hull(const World& world, int32_t& bx, int32_t& by, int32_t& bz) {
 
 // ------------------------------------------------------------------ world
 
-void world_init(World& world) {
+void world_init(World& world, Mission mission) {
     world = World{};
     world.q = pse::quat_identity();
+    world.mission = mission;
 
     // Left shift of a negative is undefined, so these multiply. The compiler
     // folds them either way; the warning is the only difference that matters.
-    world.pads[0] = Pad{-34 * 65536, -8 * 65536, 0};
-    world.pads[1] = Pad{ 32 * 65536, 22 * 65536, 0};
+    //
+    // Three decks, spaced so each leg is a similar flight: A to B is 72 units
+    // and B to C is 66. Mission one only ever uses A and B; C is built either
+    // way, because a deck that appears when a mission starts would be a deck
+    // the player has not been able to see coming.
+    world.pads[0] = Pad{-34 * 65536,  -8 * 65536, 0};
+    world.pads[1] = Pad{ 32 * 65536,  22 * 65536, 0};
+    world.pads[2] = Pad{-20 * 65536,  62 * 65536, 0};
     // The apron sits at whatever the untouched landscape does there, so a pad
     // looks like it was built on the hill rather than punched through it.
     for (int i = 0; i < k_pad_count; i++) {
         world.pads[i].y = terrain_raw(world.pads[i].x, world.pads[i].z);
     }
 
+    // Both missions fly to B first. Mission one lands there and is done;
+    // mission two finds the crate there and carries it on to C, so the first
+    // leg is a flight the player has already made and the new thing is what
+    // happens after it.
     world.target = 1;
+    world.cargo = mission == Mission::Delivery ? 1 : kCargoNone;
     world.landed_on = 0;
     world.grounded = true;
     world.state = Flight::Flying;
     world.fault = Fault::None;
     world.fuel = k_fuel_full;
 
-    // Mission one starts ON pad A, not falling toward it. The first thing a
+    // Every mission starts ON pad A, not falling toward it. The first thing a
     // player does is take off, which is also the first thing they need to
     // learn.
     world.x = world.pads[0].x;
@@ -249,7 +312,12 @@ void world_tick(World& world, const Input& input) {
     // entire flight model.
     int32_t ux, uy, uz;
     hull_up(world, ux, uy, uz);
-    const int32_t push = (k_pod_thrust * total) / 255;
+    int32_t push = (k_pod_thrust * total) / 255;
+    // The crate's weight. Thrust is scaled and gravity is not, because gravity
+    // is an acceleration and does not care what the ship masses.
+    if (carrying(world)) {
+        push = (push * k_cargo_thrust_num) / k_cargo_thrust_den;
+    }
     world.vx += (ux * push) >> 14;
     world.vy += ((uy * push) >> 14) - k_gravity;
     world.vz += (uz * push) >> 14;
@@ -279,9 +347,20 @@ void world_tick(World& world, const Input& input) {
         tx -= k_pods[i].oz * lift;
         tz += k_pods[i].ox * lift;
     }
-    world.wx = damp(world.wx + tx);
-    world.wy = damp(world.wy);
-    world.wz = damp(world.wz + tz);
+    // The crate's sway: it does not settle when the hull does, so the hull
+    // keeps moving. Less damping, same torque, which reads as heavy rather
+    // than as sluggish.
+    if (carrying(world)) {
+        world.wx = damp_ratio(world.wx + tx, k_cargo_swing_num,
+                              k_cargo_swing_den);
+        world.wy = damp_ratio(world.wy, k_cargo_swing_num, k_cargo_swing_den);
+        world.wz = damp_ratio(world.wz + tz, k_cargo_swing_num,
+                              k_cargo_swing_den);
+    } else {
+        world.wx = damp(world.wx + tx);
+        world.wy = damp(world.wy);
+        world.wz = damp(world.wz + tz);
+    }
 
     // Compose this tick's turn onto the attitude, in the hull's own frame.
     // The rates are fp8 angle units where a turn is 4096 << 8; quat_integrate
@@ -318,8 +397,20 @@ void world_tick(World& world, const Input& input) {
             world.state = Flight::Crashed;
             world.fault = Fault::Scraped;
         } else if (pad >= 0 && pad == world.target) {
-            world.state = Flight::Landed;
-            world.landed_on = static_cast<uint8_t>(pad);
+            // The crate is a LEG, not an ending. Setting down on the deck it
+            // is sitting on loads it and re-aims at the next deck, and the
+            // flight carries straight on from a standing start, which is
+            // exactly the take off the player already knows how to do.
+            if (world.cargo == static_cast<uint8_t>(pad)) {
+                world.cargo = kCargoHeld;
+                world.target = static_cast<uint8_t>(pad) + 1;
+                world.grounded = true;
+                world.landed_on = static_cast<uint8_t>(pad);
+            } else {
+                if (carrying(world)) world.cargo = kCargoDone;
+                world.state = Flight::Landed;
+                world.landed_on = static_cast<uint8_t>(pad);
+            }
         } else {
             world.grounded = true;
             world.landed_on = pad >= 0 ? static_cast<uint8_t>(pad) : 0xFF;

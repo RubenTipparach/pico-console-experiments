@@ -52,6 +52,29 @@ constexpr int32_t k_pod_thrust = 262;
 constexpr int k_drag_shift = 5;
 constexpr int32_t k_drag_mul = 31;             // v_terminal = a * this
 
+// ---- the cargo, mission two ----
+//
+// A slung crate does two things to a lander, and both of them are the point of
+// carrying it.
+//
+// Weight. Same thrust, more mass, so every acceleration scales down. Thrust to
+// weight goes 2.80 -> 2.15 on four pods and 0.70 -> 0.54 on one, so the rule
+// the whole game is built on still holds loaded: one pod cannot hold you up.
+// Applied to thrust rather than to gravity, because gravity is an
+// acceleration and does not care what the ship weighs, and a heavier ship
+// that also FELL faster would be wrong in a way players notice as mushy.
+constexpr int32_t k_cargo_thrust_num = 197;
+constexpr int32_t k_cargo_thrust_den = 256;    // 0.770
+
+// Sway. The load does not settle when the hull does, so the hull keeps
+// moving. Modelled as less angular damping: v - v/48 loaded against
+// v - v/32 empty, which overshoots and takes about half again as long to
+// come to rest. Pod torque is deliberately NOT reduced, so the ship still
+// answers a button as fast as it did and only stops slower. Reducing both
+// would just read as sluggish, which is a different feeling from heavy.
+constexpr int32_t k_cargo_swing_num = 47;
+constexpr int32_t k_cargo_swing_den = 48;
+
 // Angular acceleration from one pod at full, fp8 angle units per tick.
 //
 // HALVED from the original. tom-lander's arm 0.9 times VTOL_TORQUE 0.002 is

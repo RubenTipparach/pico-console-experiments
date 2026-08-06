@@ -8,8 +8,11 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
+#include "tomlander/block.hpp"
+#include "tomlander/cargo.hpp"
 #include "tomlander/pad.hpp"
 #include "tomlander/tom.hpp"
+#include "tomlander/tower.hpp"
 
 namespace tlr {
 namespace {
@@ -217,6 +220,58 @@ void draw_pads(const World& world) {
     }
 }
 
+// The valley's buildings. Placement comes from tl::k_buildings, the same table
+// ground_at collides against, so a building can never be drawn somewhere the
+// ship would fly straight through it.
+//
+// Both meshes are one unit half width, so `half` is the uniform scale, and the
+// tint darkens some of them so a row does not read as one repeated object.
+// Culling is the renderer's: a building behind the camera or past the far
+// plane costs a handful of rejected vertices and no triangles.
+void draw_buildings(const World& world) {
+    for (int i = 0; i < tl::k_building_count; i++) {
+        const tl::Building& b = tl::k_buildings[i];
+        const float x = static_cast<float>(b.x);
+        const float z = static_cast<float>(b.z);
+        // Founded on the untouched landscape, the same height ground_at uses
+        // for its roof, so the mesh and the collision share a floor.
+        const float y = to_f(tl::terrain_height(
+            world, b.x * 65536, b.z * 65536));
+        g_renderer.draw_mesh(b.tower ? models::tomlander::tower
+                                     : models::tomlander::block,
+                             x, y, z, 0.0f, static_cast<float>(b.half),
+                             b.tint, b.tint, b.tint);
+    }
+}
+
+// The crate, wherever it currently is: sitting on the deck it was left on, or
+// slung under the hull once the ship has it. Slung means it turns with the
+// hull, which is why it goes through the same basis the ship does.
+void draw_cargo(const World& world) {
+    if (world.cargo == tl::kCargoNone || world.cargo == tl::kCargoDone) return;
+
+    if (tl::carrying(world)) {
+        const pse::Basis b = pse::quat_basis(world.q);
+        // Tucked under the belly, between the legs. The hull's feet reach
+        // 1.85 below its origin and the crate is 1.7 tall, so a base at -1.72
+        // puts the whole crate inside the leg span: it never reaches through
+        // the deck on touchdown, and it never has to be drawn at a different
+        // size from the one sitting on the pad.
+        const float my = -1.72f;
+        g_renderer.draw_mesh(models::tomlander::cargo,
+                             to_f(world.x) + b.m[1] * my,
+                             to_f(world.y) + b.m[4] * my,
+                             to_f(world.z) + b.m[7] * my,
+                             b, 1.0f);
+        return;
+    }
+
+    const tl::Pad& pad = world.pads[world.cargo];
+    g_renderer.draw_mesh(models::tomlander::cargo,
+                         to_f(pad.x), to_f(pad.y) + to_f(tl::k_pad_rise),
+                         to_f(pad.z), 0.0f, 1.0f);
+}
+
 void draw_ship(const World& world) {
     // The attitude straight through, as the orientation it is. No angles are
     // extracted on the way, which is the point: extracting them would put the
@@ -412,7 +467,9 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                                 k_cam_reach, k_cam_reach, 0.0f);
 
     draw_ground(world);
+    draw_buildings(world);
     draw_pads(world);
+    draw_cargo(world);
     draw_ship(world);
 
     // A dusk sky: the ground fogs into it rather than ending on a line.

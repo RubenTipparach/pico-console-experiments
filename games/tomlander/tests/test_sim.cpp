@@ -479,6 +479,132 @@ void test_a_flight_is_deterministic() {
     CHECK(a.fuel == b.fuel);
 }
 
+
+// ---- mission two, the delivery ----
+
+namespace {
+
+// Put the ship a unit above a deck and let it settle onto it. A unit of fall
+// reaches about 7000 fp16 per tick, comfortably inside k_safe_descent, so this
+// is a good landing and not a lucky one.
+void land_on(tl::World& world, int pad) {
+    world.x = world.pads[pad].x;
+    world.z = world.pads[pad].z;
+    world.y = tl::ground_at(world, world.x, world.z) + (1 << 16);
+    world.vx = world.vy = world.vz = 0;
+    world.grounded = false;
+    tl::Input none{};
+    for (int i = 0; i < 200 && !world.grounded &&
+                    world.state == tl::Flight::Flying; i++) {
+        tl::world_tick(world, none);
+    }
+}
+
+}  // namespace
+
+void test_mission_two_starts_with_the_crate_on_the_middle_deck() {
+    tl::World world;
+    tl::world_init(world, tl::Mission::Delivery);
+    CHECK(world.mission == tl::Mission::Delivery);
+    CHECK(world.cargo == 1);
+    CHECK(world.target == 1);            // fly to the crate first
+    CHECK(!tl::carrying(world));
+    CHECK(world.landed_on == 0);         // parked on A, same as mission one
+
+    // Mission one must not grow a crate.
+    tl::World hop;
+    tl::world_init(hop, tl::Mission::Hop);
+    CHECK(hop.cargo == tl::kCargoNone);
+    CHECK(!tl::carrying(hop));
+}
+
+// The pickup is a LEG, not an ending: setting down on the crate's deck loads
+// it, re-aims at the next one, and the flight carries on.
+void test_landing_on_the_crate_loads_it_and_flies_on() {
+    tl::World world;
+    tl::world_init(world, tl::Mission::Delivery);
+    land_on(world, 1);
+
+    CHECK(world.state == tl::Flight::Flying);   // NOT over
+    CHECK(tl::carrying(world));
+    CHECK(world.target == 2);                   // now aimed at C
+    CHECK(world.grounded);                      // parked, ready to lift off
+}
+
+void test_delivering_to_the_third_deck_ends_the_flight() {
+    tl::World world;
+    tl::world_init(world, tl::Mission::Delivery);
+    land_on(world, 1);
+    CHECK(tl::carrying(world));
+    land_on(world, 2);
+
+    CHECK(world.state == tl::Flight::Landed);
+    CHECK(world.cargo == tl::kCargoDone);
+    CHECK(!tl::carrying(world));
+    CHECK(world.landed_on == 2);
+}
+
+// Putting the crate's own deck down as the target twice must not re-load it,
+// which is what would happen if the pickup checked "am I on a pad" rather than
+// "is the crate on THIS pad".
+void test_the_crate_is_only_picked_up_once() {
+    tl::World world;
+    tl::world_init(world, tl::Mission::Delivery);
+    land_on(world, 1);
+    const uint8_t target_after = world.target;
+    land_on(world, 1);                          // sit back down on B
+    CHECK(world.target == target_after);        // still aimed at C
+    CHECK(tl::carrying(world));
+}
+
+// ---- what the crate does to the flight ----
+
+void test_the_crate_is_heavy() {
+    // Four pods lift an empty ship faster than a loaded one, and the loaded
+    // one still lifts. Same input, same ticks, so the only difference is mass.
+    tl::World light, heavy;
+    init_airborne(light);
+    init_airborne(heavy);
+    heavy.cargo = tl::kCargoHeld;
+
+    const int32_t start = light.y;
+    run(light, fire_all(), 200);
+    run(heavy, fire_all(), 200);
+
+    CHECK(heavy.y > start);                     // loaded still climbs
+    CHECK(heavy.y < light.y);                   // but not as well
+
+    // The rule the whole game is built on has to survive the load: one pod
+    // cannot hold the ship up, empty or full.
+    tl::World one;
+    init_airborne(one);
+    one.cargo = tl::kCargoHeld;
+    const int32_t before = one.y;
+    run(one, fire(tl::kPodRight), 200);
+    CHECK(one.y < before);
+}
+
+void test_the_crate_sways() {
+    // Spin the hull up on one pod, then let go. The loaded ship keeps turning
+    // for longer, which is the sway: same torque, less damping.
+    tl::World light, heavy;
+    init_airborne(light);
+    init_airborne(heavy);
+    heavy.cargo = tl::kCargoHeld;
+
+    run(light, fire(tl::kPodFront), 60);
+    run(heavy, fire(tl::kPodFront), 60);
+    tl::Input none{};
+    run(light, none, 60);
+    run(heavy, none, 60);
+
+    CHECK(iabs(heavy.wx) > iabs(light.wx));     // still moving when light is not
+
+    // And it is a settle, not a runaway: it does stop eventually.
+    run(heavy, none, 2000);
+    CHECK(iabs(heavy.wx) < iabs(light.wx) + 200);
+}
+
 void test_memory_budget() {
     // The sim is the cheap part and has to stay that way: the rasterizer's
     // depth buffer and the frame queue are what the RAM actually goes on.
@@ -507,6 +633,12 @@ int main() {
     test_landing_off_target_parks_rather_than_ends();
     test_fuel_burns_with_throttle_and_runs_out();
     test_a_flight_is_deterministic();
+    test_mission_two_starts_with_the_crate_on_the_middle_deck();
+    test_landing_on_the_crate_loads_it_and_flies_on();
+    test_delivering_to_the_third_deck_ends_the_flight();
+    test_the_crate_is_only_picked_up_once();
+    test_the_crate_is_heavy();
+    test_the_crate_sways();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

@@ -11,6 +11,9 @@
 # needed to stop being a box it would have become a vertex table in C++, which
 # is the thing the rule exists to prevent. It is a model.
 set(tomlander_model_files
+    block.obj
+    cargo.obj
     pad.obj
     tom.obj
+    tower.obj
 )
