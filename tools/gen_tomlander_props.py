@@ -257,7 +257,14 @@ def build_tower():
 # only thing modulating it.
 # ---- the rocket section, mission three's salvage ------------------------
 #
-# An octagonal prism lying on its side in the swell, 15 long and 4.5 across.
+# An octagonal prism lying on its side in the swell, 7.5 long and 4.5 across
+# at the widest, so half the size it started at.
+#
+# The landing square shrank with it, and it had to: the sim decides a touchdown
+# by a square around the pad centre, and leaving that at the built pads' 14 by
+# 14 would have let the ship set down five units clear of the section, over
+# open water, and score it as a landing. tl::Pad carries its own half width now
+# and the preview harness measures the mesh against it.
 # Octagonal rather than round because a flat facet has to end up on TOP: the
 # ship lands on this, and a cylinder gives it a curved deck to slide off.
 # Eight sides is where a prism stops reading as a box and starts reading as a
@@ -268,8 +275,8 @@ def build_tower():
 # the mesh is sized to roughly match what the sim already treats as landable
 # rather than the other way round.
 
-SEGMENT_LENGTH = 15.0
-SEGMENT_RADIUS = 4.5
+SEGMENT_LENGTH = 7.5
+SEGMENT_RADIUS = 2.25
 SEGMENT_SIDES = 8
 
 

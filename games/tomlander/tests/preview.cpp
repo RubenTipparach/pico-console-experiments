@@ -238,10 +238,12 @@ int main(int argc, char** argv) {
         capture(sea, 2.3f, out, "preview_9_shore.ppm");
 
         // Out over the wreck. The section floats, so this is a deck you can
-        // put down on and the water around it is not.
-        sea.x = sea.pads[1].x + (9 << 16);
-        sea.z = sea.pads[1].z + (7 << 16);
-        sea.y = tl::ground_at(sea, sea.x, sea.z) + (12 << 16);
+        // put down on and the water around it is not. Framed close, because
+        // the section is a half scale one: a wide shot of it is a shot of
+        // open water with something small in the middle of it.
+        sea.x = sea.pads[1].x;
+        sea.z = sea.pads[1].z;
+        sea.y = tl::ground_at(sea, sea.x, sea.z);
         capture(sea, 0.7f, out, "preview_10_wreck.ppm");
 
         if (!tl::over_water(sea, sea.pads[1].x + (24 << 16), sea.pads[1].z)) {

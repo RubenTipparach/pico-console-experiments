@@ -86,10 +86,34 @@ int32_t terrain_raw(int32_t x, int32_t z) {
 
 int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
 
+// How far the sea floor has fallen away under this point. See k_shore_edge
+// for why the ocean needs one at all.
+int32_t seabed_drop(const World& world, int32_t x, int32_t z) {
+    if (world.sea <= k_no_sea) return 0;
+
+    // Seaward is the way the salvage deck lies from the shore deck. Taken
+    // from the pads rather than stored, so a later sea mission laid out along
+    // another axis gets its coast for free and there is no second copy of the
+    // layout to disagree with the first.
+    const int32_t legx = world.pads[1].x - world.pads[0].x;
+    const int32_t legz = world.pads[1].z - world.pads[0].z;
+    int32_t out;
+    if (iabs(legx) > iabs(legz)) {
+        out = legx > 0 ? x - world.pads[0].x : world.pads[0].x - x;
+    } else {
+        out = legz > 0 ? z - world.pads[0].z : world.pads[0].z - z;
+    }
+    if (out <= k_shore_edge) return 0;
+
+    int32_t drop = static_cast<int32_t>(
+        (static_cast<int64_t>(out - k_shore_edge) * k_seabed_grade) >> 8);
+    return drop > k_seabed_floor ? k_seabed_floor : drop;
+}
+
 }  // namespace
 
 int32_t terrain_height(const World& world, int32_t x, int32_t z) {
-    int32_t h = terrain_raw(x, z);
+    int32_t h = terrain_raw(x, z) - seabed_drop(world, x, z);
     for (int i = 0; i < k_pad_count; i++) {
         // A floating deck has no apron. Flattening the sea floor to the
         // waterline around the wreck would have raised a plateau out of the
@@ -121,8 +145,8 @@ int32_t terrain_height(const World& world, int32_t x, int32_t z) {
 
 int pad_at(const World& world, int32_t x, int32_t z) {
     for (int i = 0; i < k_pad_count; i++) {
-        if (iabs(x - world.pads[i].x) <= k_pad_half &&
-            iabs(z - world.pads[i].z) <= k_pad_half) {
+        if (iabs(x - world.pads[i].x) <= world.pads[i].half &&
+            iabs(z - world.pads[i].z) <= world.pads[i].half) {
             return i;
         }
     }
@@ -239,14 +263,14 @@ void world_init(World& world, Mission mission) {
         // the ground for 32 units around it, and the wreck's own landing
         // square takes 7 more, so the actual open water was about six units
         // wide. That is a puddle, and the mission is supposed to be a crossing.
-        world.pads[0] = Pad{-112 * 65536,    4 * 65536, 0};   // the shore
-        world.pads[1] = Pad{-206 * 65536,   34 * 65536, 0};   // the wreck
-        world.pads[2] = Pad{-112 * 65536,    4 * 65536, 0};   // unused here
+        world.pads[0] = Pad{-112 * 65536,  4 * 65536, 0, k_pad_half};
+        world.pads[1] = Pad{-206 * 65536, 34 * 65536, 0, k_salvage_half};
+        world.pads[2] = Pad{-112 * 65536,  4 * 65536, 0, k_pad_half};
         world.sea = k_sea_level;
     } else {
-        world.pads[0] = Pad{-34 * 65536,  -8 * 65536, 0};
-        world.pads[1] = Pad{ 32 * 65536,  22 * 65536, 0};
-        world.pads[2] = Pad{-20 * 65536,  62 * 65536, 0};
+        world.pads[0] = Pad{-34 * 65536,  -8 * 65536, 0, k_pad_half};
+        world.pads[1] = Pad{ 32 * 65536,  22 * 65536, 0, k_pad_half};
+        world.pads[2] = Pad{-20 * 65536,  62 * 65536, 0, k_pad_half};
         world.sea = k_no_sea;
     }
     // The apron sits at whatever the untouched landscape does there, so a pad
@@ -254,7 +278,13 @@ void world_init(World& world, Mission mission) {
     // deck out past the waterline is the exception: it is a rocket section
     // floating in the swell, so it rides the sea rather than the sea floor.
     for (int i = 0; i < k_pad_count; i++) {
-        const int32_t ground = terrain_raw(world.pads[i].x, world.pads[i].z);
+        // terrain_raw plus the seabed, not terrain_height: the apron a deck
+        // lays down is read out of pad.y, which is the value being worked out
+        // here, so asking for the finished ground would be asking a question
+        // that depends on its own answer.
+        const int32_t ground =
+            terrain_raw(world.pads[i].x, world.pads[i].z) -
+            seabed_drop(world, world.pads[i].x, world.pads[i].z);
         world.pads[i].y = ground < world.sea ? world.sea + k_float_rise
                                              : ground;
     }

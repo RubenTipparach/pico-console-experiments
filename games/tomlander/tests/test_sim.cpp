@@ -642,6 +642,83 @@ void test_the_salvage_starts_ashore_with_the_wreck_at_sea() {
     CHECK(dry.deliver_to == 2);     // the delivery still goes onward
 }
 
+// The sea floor slopes away from the coast, and it has to, because a flat
+// datum over three sine waves of relief leaves half of it standing dry: the
+// crossing came out as a tidal flat with sandbanks the whole way across and
+// the wreck sitting on one of them.
+void test_the_sea_floor_falls_away_from_the_coast() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Salvage);
+
+    // Seaward is the way the wreck lies. Walk out along it and the floor has
+    // to keep going down, never up: reading the depths at the same z takes
+    // the terrain's own relief out of the comparison at nothing but the wave
+    // along x, which the slope has to beat.
+    const int32_t z = w.pads[1].z;
+    int32_t shallow = tl::terrain_height(w, w.pads[0].x - (50 << 16), z);
+    const int32_t deep = tl::terrain_height(w, w.pads[1].x, z);
+    CHECK(deep < shallow);
+    CHECK(deep < w.sea - (20 << 16));   // real depth under the wreck, not a puddle
+
+    // At the edge itself nothing has moved yet. Checked against a mission with
+    // no ocean at the very same point, which is the untouched landscape: the
+    // drop has to start where the shore deck's apron has finished rather than
+    // fighting it, or the beach would be pulled out from under the deck.
+    tl::World raw;
+    tl::world_init(raw, tl::Mission::Hop);
+    const int32_t edge = w.pads[0].x - tl::k_shore_edge;
+    CHECK(tl::terrain_height(w, edge, w.pads[0].z) ==
+          tl::terrain_height(raw, edge, w.pads[0].z));
+    CHECK(w.pads[0].y > w.sea);
+
+    // And the land BEHIND the shore is still land. Measuring the drop in every
+    // direction rather than seaward would have sunk the hinterland with the
+    // sea and left the shore deck standing on an islet.
+    int inland_dry = 0;
+    for (int i = 1; i <= 6; i++) {
+        const int32_t x = w.pads[0].x + (i * 20 << 16);
+        if (!tl::over_water(w, x, w.pads[0].z)) inland_dry++;
+    }
+    CHECK(inland_dry >= 3);
+
+    // Out past the wreck the floor stops falling, so the depth cannot run away
+    // to somewhere the height field's own numbers stop meaning anything.
+    const int32_t far_out = tl::terrain_height(w, w.pads[1].x - (400 << 16), z);
+    CHECK(far_out > w.sea - tl::k_seabed_floor - (20 << 16));
+
+    // None of this touches a mission with no ocean.
+    tl::World dry;
+    tl::world_init(dry, tl::Mission::Hop);
+    tl::World dry2;
+    tl::world_init(dry2, tl::Mission::Hop);
+    CHECK(tl::terrain_height(dry, -300 << 16, 0) ==
+          tl::terrain_height(dry2, -300 << 16, 0));
+    CHECK(tl::terrain_height(dry, -300 << 16, 0) > -(60 << 16));
+}
+
+// The salvage's landing square has to stay inside the mesh that is drawn for
+// it. The section is half the size it first was, and a square left at a built
+// deck's k_pad_half would have reached five units clear of a seven unit long
+// object: you could put down on open water beside it and score the landing.
+void test_the_salvage_square_fits_the_section() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Salvage);
+    CHECK(w.pads[1].half == tl::k_salvage_half);
+    CHECK(w.pads[0].half == tl::k_pad_half);
+    CHECK(tl::k_salvage_half < tl::k_pad_half);
+
+    // Dead centre is the deck; a built pad's half width out from it is not.
+    CHECK(tl::pad_at(w, w.pads[1].x, w.pads[1].z) == 1);
+    CHECK(tl::pad_at(w, w.pads[1].x + tl::k_pad_half, w.pads[1].z) < 0);
+    CHECK(tl::pad_at(w, w.pads[1].x, w.pads[1].z + tl::k_pad_half) < 0);
+    // And what is not the deck out there is water, which is a lost flight.
+    CHECK(tl::over_water(w, w.pads[1].x + tl::k_pad_half, w.pads[1].z));
+
+    // The shore deck keeps the full square, so the mission is only harder
+    // where it means to be.
+    CHECK(tl::pad_at(w, w.pads[0].x + tl::k_pad_half, w.pads[0].z) == 0);
+}
+
 // Touching the sea is lost however gently, because a lander is not a boat and
 // a soft ditching that merely parked the ship would make the ocean scenery.
 void test_ditching_is_a_crash_at_any_speed() {
@@ -710,6 +787,8 @@ int main() {
     test_the_salvage_starts_ashore_with_the_wreck_at_sea();
     test_ditching_is_a_crash_at_any_speed();
     test_the_salvage_is_carried_back_to_the_shore();
+    test_the_sea_floor_falls_away_from_the_coast();
+    test_the_salvage_square_fits_the_section();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

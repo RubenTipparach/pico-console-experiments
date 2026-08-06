@@ -178,6 +178,37 @@ constexpr int32_t k_rest_height = (1 << 16) + 56000;  // ~1.85 units
 constexpr int32_t k_sea_level = 0;
 constexpr int32_t k_no_sea = -1000 * 65536;
 
+// The sea floor, which slopes away from the coast the way a real one does.
+//
+// The waterline alone was not enough. Three sine waves of relief means the
+// ground crosses zero every few dozen units in every direction, so a flat
+// datum leaves half the sea floor standing dry no matter how far out you fly:
+// the crossing came out as a tidal flat with sandbanks all the way across it,
+// and the wreck was sitting on a mud bank rather than floating. Raising the
+// waterline instead is not available, because the shore deck stands on the
+// same terrain and would drown with the reefs.
+//
+// So the floor drops with distance seaward, and seaward is whichever way the
+// salvage deck lies from the shore deck, dominant axis only. That makes the
+// coast a straight line and the sum a subtraction, and it means the land
+// BEHIND the shore stays land: measuring the distance in every direction
+// would have sunk the hinterland too and left the shore deck on an islet.
+//
+// Nothing happens inside k_shore_edge, which is past the shore deck's apron,
+// so the beach is untouched and the shallows just off it still break the
+// surface. The relief is 12 units, so the last sandbank goes under about 20
+// units out from the edge and everything past that is open water.
+constexpr int32_t k_shore_edge = 40 << 16;
+constexpr int32_t k_seabed_grade = 160;         // fp8: 0.625 units down per out
+constexpr int32_t k_seabed_floor = 40 << 16;    // deep water stops getting deeper
+
+// The salvage's landing square, half width. Inside the section's narrow axis
+// (2.25 at the widest) with a little margin, so the deck a player aims at is
+// always really under the mesh. Much smaller than a built pad's 7, which is
+// the difficulty of the mission: a rocket stage in the swell is a smaller
+// thing to hit than a deck someone poured concrete for.
+constexpr int32_t k_salvage_half = 2 << 16;
+
 // How far the salvage floats above the waterline. It is a rocket section lying
 // on its side in the swell, so most of it is under: this is the deck the ship
 // actually puts down on.

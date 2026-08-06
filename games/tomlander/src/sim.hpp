@@ -46,6 +46,11 @@ enum class Fault : uint8_t { None, TooFast, TooSteep, Scraped, Ditched };
 struct Pad {
     int32_t x, z;     // fp16 centre
     int32_t y;        // fp16 apron height, filled in by world_init
+    // Half width of the square that counts as a touchdown. Per pad rather
+    // than one constant, because the salvage is a rocket section half the size
+    // of a built deck: a shared half would have let the ship land on the water
+    // beside it and score it.
+    int32_t half;
 };
 
 constexpr int k_pad_count = 3;
