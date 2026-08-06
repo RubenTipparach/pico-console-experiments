@@ -605,6 +605,74 @@ void test_the_crate_sways() {
     CHECK(iabs(heavy.wx) < iabs(light.wx) + 200);
 }
 
+
+// ---- mission three, the ocean salvage ----
+
+void test_the_salvage_starts_ashore_with_the_wreck_at_sea() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Salvage);
+    CHECK(w.mission == tl::Mission::Salvage);
+    CHECK(w.sea == tl::k_sea_level);
+    CHECK(w.cargo == 1);            // the section is the load
+    CHECK(w.target == 1);           // fly out to it first
+    CHECK(w.deliver_to == 0);       // and bring it BACK, not onward
+
+    // The shore is dry and stands above the waterline; the wreck floats.
+    CHECK(!tl::over_water(w, w.pads[0].x, w.pads[0].z));
+    CHECK(w.pads[0].y > w.sea);
+    CHECK(w.pads[1].y == w.sea + tl::k_float_rise);
+
+    // And there is a real crossing, not a puddle. Walk the straight line from
+    // the shore to the wreck and count how much of it is open water: the shore
+    // apron eats the first third whatever happens, so the check is that a
+    // decent share of the leg is genuinely sea.
+    int wet = 0;
+    for (int i = 0; i <= 20; i++) {
+        const int32_t x = w.pads[0].x + (w.pads[1].x - w.pads[0].x) / 20 * i;
+        const int32_t z = w.pads[0].z + (w.pads[1].z - w.pads[0].z) / 20 * i;
+        if (tl::over_water(w, x, z)) wet++;
+    }
+    CHECK(wet >= 8);        // at least 40 percent of the crossing is water
+
+    // The other missions must not have grown a sea.
+    tl::World dry;
+    tl::world_init(dry, tl::Mission::Delivery);
+    CHECK(dry.sea == tl::k_no_sea);
+    CHECK(!tl::over_water(dry, dry.pads[0].x, dry.pads[0].z));
+    CHECK(dry.deliver_to == 2);     // the delivery still goes onward
+}
+
+// Touching the sea is lost however gently, because a lander is not a boat and
+// a soft ditching that merely parked the ship would make the ocean scenery.
+void test_ditching_is_a_crash_at_any_speed() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Salvage);
+    // Halfway between the shore apron's edge and the wreck, which is open
+    // sea rather than the midpoint of the leg (that lands on the apron).
+    w.x = w.pads[0].x + (w.pads[1].x - w.pads[0].x) * 3 / 4;
+    w.z = w.pads[0].z + (w.pads[1].z - w.pads[0].z) * 3 / 4;
+    w.y = tl::ground_at(w, w.x, w.z) + (1 << 16);   // a gentle unit of fall
+    w.grounded = false;
+    tl::Input none{};
+    run(w, none, 200);
+    CHECK(w.state == tl::Flight::Crashed);
+    CHECK(w.fault == tl::Fault::Ditched);
+}
+
+void test_the_salvage_is_carried_back_to_the_shore() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Salvage);
+    land_on(w, 1);                                  // down on the section
+    CHECK(w.state == tl::Flight::Flying);           // a leg, not an ending
+    CHECK(tl::carrying(w));
+    CHECK(w.target == 0);                           // now aimed at the shore
+
+    land_on(w, 0);
+    CHECK(w.state == tl::Flight::Landed);
+    CHECK(w.cargo == tl::kCargoDone);
+    CHECK(w.landed_on == 0);
+}
+
 void test_memory_budget() {
     // The sim is the cheap part and has to stay that way: the rasterizer's
     // depth buffer and the frame queue are what the RAM actually goes on.
@@ -639,6 +707,9 @@ int main() {
     test_the_crate_is_only_picked_up_once();
     test_the_crate_is_heavy();
     test_the_crate_sways();
+    test_the_salvage_starts_ashore_with_the_wreck_at_sea();
+    test_ditching_is_a_crash_at_any_speed();
+    test_the_salvage_is_carried_back_to_the_shore();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

@@ -6,4 +6,5 @@
 set(tomlander_texture_files
     crate.png
     facade.png
+    hull.png
 )

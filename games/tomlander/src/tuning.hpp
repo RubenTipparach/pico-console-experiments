@@ -159,6 +159,30 @@ constexpr int32_t k_pad_rise = (2 << 16) + (26214);   // 2.4 units
 // nozzles reach 3 model units below centre at the scale it is drawn.
 constexpr int32_t k_rest_height = (1 << 16) + 56000;  // ~1.85 units
 
+// ---- the ocean, mission three ----
+//
+// A sea level rather than a sea. The terrain is already three sine waves that
+// dip well below zero, so flooding the basins costs no new geometry and no new
+// height function: the ground mesh clamps to this and changes colour, and the
+// collision floor clamps with it. What was a shadowed hollow becomes water.
+//
+// Missions that have no ocean set k_no_sea, which is below anything the
+// terrain can reach, so every comparison against it is false and the water
+// path costs those missions one branch per ground vertex and nothing else.
+// Datum. The terrain runs plus or minus 12 units, so a waterline at zero
+// floods exactly the half of it that dips below, which is what makes an ocean
+// rather than a chain of ponds. It was at -4 first and only the deepest third
+// went under: the crossing came out as a run of shoals with dry reefs between
+// them, which is a worse hazard than water because you cannot tell by looking
+// whether a patch will kill you.
+constexpr int32_t k_sea_level = 0;
+constexpr int32_t k_no_sea = -1000 * 65536;
+
+// How far the salvage floats above the waterline. It is a rocket section lying
+// on its side in the swell, so most of it is under: this is the deck the ship
+// actually puts down on.
+constexpr int32_t k_float_rise = 39322;        // 0.6 units
+
 // Ceiling. Not a wall, a reminder: past this the ship is above the scene the
 // camera is framed for and the terrain has stopped being readable.
 constexpr int32_t k_max_altitude = 150 << 16;

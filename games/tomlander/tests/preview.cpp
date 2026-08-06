@@ -226,6 +226,35 @@ int main(int argc, char** argv) {
         capture(run2, 0.4f, out, "preview_8_carrying.ppm");
     }
 
+    // 9 and 10: mission three, the ocean salvage. The shore deck with water
+    // beyond it, and the rocket section floating out at the wreck.
+    {
+        tl::World sea;
+        tl::world_init(sea, tl::Mission::Salvage);
+        sea.x = sea.pads[0].x - (10 << 16);
+        sea.z = sea.pads[0].z - (10 << 16);
+        sea.y = tl::ground_at(sea, sea.x, sea.z) + (14 << 16);
+        sea.grounded = false;
+        capture(sea, 2.3f, out, "preview_9_shore.ppm");
+
+        // Out over the wreck. The section floats, so this is a deck you can
+        // put down on and the water around it is not.
+        sea.x = sea.pads[1].x + (9 << 16);
+        sea.z = sea.pads[1].z + (7 << 16);
+        sea.y = tl::ground_at(sea, sea.x, sea.z) + (12 << 16);
+        capture(sea, 0.7f, out, "preview_10_wreck.ppm");
+
+        if (!tl::over_water(sea, sea.pads[1].x + (24 << 16), sea.pads[1].z)) {
+            fail("there must be open water beside the wreck");
+        }
+        if (tl::over_water(sea, sea.pads[1].x, sea.pads[1].z)) {
+            fail("the wreck itself must not count as water");
+        }
+        if (tl::over_water(sea, sea.pads[0].x, sea.pads[0].z)) {
+            fail("the shore deck must be dry");
+        }
+    }
+
     // The arrow promise, checked against the projection that actually draws
     // the deck: it must appear when the deck is out of frame and stay away
     // when it is in frame. The arrow's direction comes from the world bearing

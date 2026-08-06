@@ -91,6 +91,10 @@ int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
 int32_t terrain_height(const World& world, int32_t x, int32_t z) {
     int32_t h = terrain_raw(x, z);
     for (int i = 0; i < k_pad_count; i++) {
+        // A floating deck has no apron. Flattening the sea floor to the
+        // waterline around the wreck would have raised a plateau out of the
+        // ocean, and the ocean is the mission.
+        if (pad_floats(world, i)) continue;
         const Pad& pad = world.pads[i];
         // Chebyshev distance, not the hypotenuse. No square root, and the pad
         // is a square, so a square apron is the honest shape for it anyway.
@@ -157,6 +161,11 @@ int building_at(int32_t x, int32_t z) {
     return -1;
 }
 
+bool over_water(const World& world, int32_t x, int32_t z) {
+    if (pad_at(world, x, z) >= 0) return false;
+    return terrain_height(world, x, z) < world.sea;
+}
+
 int32_t ground_at(const World& world, int32_t x, int32_t z) {
     const int pad = pad_at(world, x, z);
     if (pad >= 0) return world.pads[pad].y + k_pad_rise + k_rest_height;
@@ -165,7 +174,12 @@ int32_t ground_at(const World& world, int32_t x, int32_t z) {
     // one lands it there, and flying into the side of one is a landing at
     // whatever speed you hit it, which the descent and slide gates then judge
     // exactly as they judge the ground.
-    const int32_t terrain = terrain_height(world, x, z);
+    int32_t terrain = terrain_height(world, x, z);
+    // The sea is a floor, not a hole. Clamping here rather than in the terrain
+    // itself is what keeps the water surface and the collision surface the
+    // same number: the renderer clamps the same way, so a splash happens
+    // exactly where the water is drawn.
+    if (terrain < world.sea) terrain = world.sea;
     const int building = building_at(x, z);
     if (building >= 0) {
         const Building& b = k_buildings[building];
@@ -214,13 +228,35 @@ void world_init(World& world, Mission mission) {
     // and B to C is 66. Mission one only ever uses A and B; C is built either
     // way, because a deck that appears when a mission starts would be a deck
     // the player has not been able to see coming.
-    world.pads[0] = Pad{-34 * 65536,  -8 * 65536, 0};
-    world.pads[1] = Pad{ 32 * 65536,  22 * 65536, 0};
-    world.pads[2] = Pad{-20 * 65536,  62 * 65536, 0};
+    if (mission == Mission::Salvage) {
+        // The coast. Not guessed: a probe walked the terrain for dry ground
+        // with deep water a long way off it, and this is what it found. The
+        // shore stands 11.2 above datum, the sea floor at the wreck is 11.3
+        // below, and the crossing is 99 units.
+        //
+        // Long on purpose. The first placement put the wreck 45 units out and
+        // there was barely any sea in between: the shore pad's apron flattens
+        // the ground for 32 units around it, and the wreck's own landing
+        // square takes 7 more, so the actual open water was about six units
+        // wide. That is a puddle, and the mission is supposed to be a crossing.
+        world.pads[0] = Pad{-112 * 65536,    4 * 65536, 0};   // the shore
+        world.pads[1] = Pad{-206 * 65536,   34 * 65536, 0};   // the wreck
+        world.pads[2] = Pad{-112 * 65536,    4 * 65536, 0};   // unused here
+        world.sea = k_sea_level;
+    } else {
+        world.pads[0] = Pad{-34 * 65536,  -8 * 65536, 0};
+        world.pads[1] = Pad{ 32 * 65536,  22 * 65536, 0};
+        world.pads[2] = Pad{-20 * 65536,  62 * 65536, 0};
+        world.sea = k_no_sea;
+    }
     // The apron sits at whatever the untouched landscape does there, so a pad
-    // looks like it was built on the hill rather than punched through it.
+    // looks like it was built on the hill rather than punched through it. A
+    // deck out past the waterline is the exception: it is a rocket section
+    // floating in the swell, so it rides the sea rather than the sea floor.
     for (int i = 0; i < k_pad_count; i++) {
-        world.pads[i].y = terrain_raw(world.pads[i].x, world.pads[i].z);
+        const int32_t ground = terrain_raw(world.pads[i].x, world.pads[i].z);
+        world.pads[i].y = ground < world.sea ? world.sea + k_float_rise
+                                             : ground;
     }
 
     // Both missions fly to B first. Mission one lands there and is done;
@@ -228,7 +264,11 @@ void world_init(World& world, Mission mission) {
     // leg is a flight the player has already made and the new thing is what
     // happens after it.
     world.target = 1;
-    world.cargo = mission == Mission::Delivery ? 1 : kCargoNone;
+    world.cargo = mission == Mission::Hop ? kCargoNone : 1;
+    // The delivery carries its crate ONWARD to a third deck; the salvage
+    // brings the rocket section BACK to the shore it launched from. Naming
+    // the destination is what lets one pickup serve both.
+    world.deliver_to = mission == Mission::Salvage ? 0 : 2;
     world.landed_on = 0;
     world.grounded = true;
     world.state = Flight::Flying;
@@ -387,7 +427,14 @@ void world_tick(World& world, const Input& input) {
         world.vx = world.vy = world.vz = 0;
         world.wx = world.wy = world.wz = 0;
 
-        if (fall > k_safe_descent) {
+        if (over_water(world, world.x, world.z)) {
+            // Anything that touches the sea is lost, however gently. A lander
+            // is not a boat, and a soft ditching that merely parked the ship
+            // would make the ocean scenery rather than the hazard the mission
+            // is built around.
+            world.state = Flight::Crashed;
+            world.fault = Fault::Ditched;
+        } else if (fall > k_safe_descent) {
             world.state = Flight::Crashed;
             world.fault = Fault::TooFast;
         } else if (tilt(world) > k_safe_tilt) {
@@ -403,7 +450,7 @@ void world_tick(World& world, const Input& input) {
             // exactly the take off the player already knows how to do.
             if (world.cargo == static_cast<uint8_t>(pad)) {
                 world.cargo = kCargoHeld;
-                world.target = static_cast<uint8_t>(pad) + 1;
+                world.target = world.deliver_to;
                 world.grounded = true;
                 world.landed_on = static_cast<uint8_t>(pad);
             } else {

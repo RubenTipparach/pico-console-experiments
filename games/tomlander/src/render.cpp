@@ -12,7 +12,9 @@
 #include "tomlander/facade.hpp"
 #include "tomlander/cargo.hpp"
 #include "tomlander/crate.hpp"
+#include "tomlander/hull.hpp"
 #include "tomlander/pad.hpp"
+#include "tomlander/segment.hpp"
 #include "tomlander/tom.hpp"
 #include "tomlander/tower.hpp"
 
@@ -47,9 +49,11 @@ FrameStats g_stats{};
 const pse::Texture k_textures[] = {
     models::tomlander::facade,
     models::tomlander::crate,
+    models::tomlander::hull,
 };
 constexpr uint8_t k_tex_facade = 1;   // 1 based, 0 means untextured
 constexpr uint8_t k_tex_crate = 2;
+constexpr uint8_t k_tex_hull = 3;
 
 constexpr float k_pi = 3.14159265f;
 
@@ -126,6 +130,11 @@ Rgb ground_colour(float height) {
     return lerp_rgb(mid, high, t);
 }
 
+// Standing water. One flat tone rather than a ramp: a clamped surface has no
+// height variation left to shade by, and the lambert the ground triangles get
+// is what stops it reading as a painted hole.
+const Rgb k_water{34, 58, 92};
+
 // One ground triangle: three projected corners with their own colours.
 void ground_tri(const int sx[3], const int sy[3], const int sz[3],
                 const Rgb c[3]) {
@@ -160,11 +169,21 @@ void draw_ground(const World& world) {
             float hy[4];
             Rgb col[4];
             bool visible = true;
+            const float sea = to_f(world.sea);
             for (int i = 0; i < 4; i++) {
                 hy[i] = to_f(tl::terrain_height(
                     world, static_cast<int32_t>(wx[i] * 65536.0f),
                     static_cast<int32_t>(wz[i] * 65536.0f)));
-                col[i] = ground_colour(hy[i]);
+                // The sea is the same clamp the collision floor uses, so the
+                // surface the ship splashes on is the surface that is drawn.
+                // Costs no triangles: the ground mesh already had vertices
+                // here and they simply stop going down.
+                if (hy[i] < sea) {
+                    hy[i] = sea;
+                    col[i] = k_water;
+                } else {
+                    col[i] = ground_colour(hy[i]);
+                }
                 if (!g_renderer.project(wx[i], hy[i], wz[i],
                                         sx[i], sy[i], sz[i])) {
                     visible = false;
@@ -244,6 +263,27 @@ void draw_ground(const World& world) {
 void draw_pads(const World& world) {
     for (int i = 0; i < tl::k_pad_count; i++) {
         const tl::Pad& pad = world.pads[i];
+        // A deck out past the waterline is not a deck, it is the rocket
+        // section the salvage is about. Same landing square either way, so the
+        // sim never has to know which mesh got drawn.
+        const bool floating =
+            world.sea > tl::k_no_sea && pad.y <= world.sea + tl::k_float_rise;
+        if (floating) {
+            // Mission three duplicates pad 0 into slot 2, so the shore deck
+            // does not get drawn twice.
+            if (i > 0 && pad.x == world.pads[0].x &&
+                pad.z == world.pads[0].z) {
+                continue;
+            }
+            g_renderer.draw_mesh(models::tomlander::segment,
+                                 to_f(pad.x), to_f(pad.y), to_f(pad.z),
+                                 0.0f, 1.0f, 255, 255, 255, 0.0f, 0, 0.0f,
+                                 k_tex_hull);
+            continue;
+        }
+        if (i > 0 && pad.x == world.pads[0].x && pad.z == world.pads[0].z) {
+            continue;
+        }
         g_renderer.draw_mesh(models::tomlander::pad,
                              to_f(pad.x), to_f(pad.y), to_f(pad.z),
                              0.0f, 1.0f);
