@@ -97,7 +97,11 @@ PALETTES = {
 #
 # Ours, one row shorter overall:
 #
-#   rows  0 .. 12    head: hair dome 0-7, face 8-12, eyes on 9 and 10
+#   rows  0 .. 12    head: rows 0-1 empty, hair dome 2-7, face 8-12, eyes
+#                    on 9 and 10. The empty rows are the point: the chin is
+#                    pinned at 12 by the body construction, so a shorter
+#                    head loses rows off the top, and the figure stands 18
+#                    inked rows in the 20 row frame.
 #   rows  8 .. 16    body: arms beside the face and down the flanks, four
 #                    torso rows from 13, May's own count
 #   rows 17 .. 19    legs
@@ -130,12 +134,12 @@ LEGS_H = 3
 
 HEAD = {
     "hero.down": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkhhhhkk...",
         "..khhhhhhhhk..",
-        ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhsssssShhk.",
@@ -147,12 +151,12 @@ HEAD = {
     # Facing away is all hair on the same egg, so the character does
     # not change size when they turn round.
     "hero.up": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkhhhhkk...",
         "..khhhhhhhhk..",
-        ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
@@ -163,12 +167,12 @@ HEAD = {
     ],
     # In profile the hair is behind the face, not half of it.
     "hero.side": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkhhhhkk...",
         "..khhhhhhhhk..",
-        ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhssssSk..",
@@ -180,12 +184,12 @@ HEAD = {
     # Longer hair: it frames the jaw, so the jaw row keeps a hair
     # column the others do not.
     "villager.down": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkhhhhkk...",
         "..khhhhhhhhk..",
-        ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
-        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhsssssShhk.",
@@ -197,11 +201,11 @@ HEAD = {
     # The cap follows the same egg. Its brim costs the forehead a row,
     # and the eyes stay on the same rows as everyone else's.
     "trainer.down": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkrrrrkk...",
-        "..krrrrrrrrk..",
-        ".krrrrrrrrrrk.",
-        ".krrRRRRrrrrk.",
+        "..krrRRrrrrk..",
         ".kkRRRRRRRRkk.",
         ".khsssssssShk.",
         ".khsssssssShk.",
@@ -212,11 +216,11 @@ HEAD = {
         "....kkkkkk....",
     ],
     "trainer.up": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkrrrrkk...",
-        "..krrrrrrrrk..",
-        ".krrrrrrrrrrk.",
-        ".krrRRRRrrrrk.",
+        "..krrRRrrrrk..",
         ".kkrrrrrrrrkk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
@@ -229,13 +233,13 @@ HEAD = {
     # A white cap with the same red cross the coat carries, so the nurse
     # is recognisable from the top of the head down.
     "healer.down": [
+        "..............",
+        "..............",
         ".....kkkk.....",
         "...kkcccckk...",
         "..kccwwccck...",
         ".kcccccccccck.",
-        ".kcccccccccck.",
         ".kkhhhhhhhhkk.",
-        ".khsssssssShk.",
         ".khsssssssShk.",
         ".khsssssssShk.",
         ".khssessesShk.",

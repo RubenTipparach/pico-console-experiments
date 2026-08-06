@@ -27,10 +27,18 @@ sprite pixel by pixel rather than paraphrased from memory. Brendan's facts:
 Ours, one row shorter overall:
 
 ```
-rows  0 .. 12    head: hair dome 0-7, face 8-12, eyes on rows 9 and 10
+rows  0 .. 12    head band: rows 0-1 empty, hair dome 2-7, face 8-12,
+                 eyes on rows 9 and 10
 rows  8 .. 16    body: arms at the flanks, four torso rows from 13
 rows 17 .. 19    legs
 ```
+
+The two empty rows are an art direction call, made looking at the sprite in
+the world: a full 13 row head read too tall on the 10 pixel tile grid. The
+chin is pinned at row 12 by the body construction, so a shorter head loses
+rows off the top, and the figure stands 18 inked rows, 1.8 tiles. Inked, the
+head is 11 of 18 rows, 61 per cent, a shade under May's 65: the tile grid is
+the constraint she does not have.
 
 The skull is an egg, not a box. The crown widens one two-pixel step a row,
 4 to 8 to 10 to 12, and the hairline is an arc: hair wraps the forehead's
@@ -76,7 +84,7 @@ splits finds the gap between the boots.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-12** | **8-16** | **17-19** | **20** | **13 (65%)** | overlaps | **3 (15%)** |
+| **Picomon, current** | **2-12** | **8-16** | **17-19** | **18** | **11 (61%)** | overlaps | **3 (16%)** |
 
 Picomon's body row range overlaps its head's by five rows, which is why its
 columns do not add up like the others: the references' rows were read as
