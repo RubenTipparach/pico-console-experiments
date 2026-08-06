@@ -188,6 +188,16 @@ Practical consequence: no globals shared between engine and game. The city's
 buildings and gems used to be file scope arrays that the game reached into
 directly; they are owned by `santa::City` now. Keep it that way.
 
+A game exports exactly one symbol, `PSE_GAME(<slug>, init, update, render)`,
+and everything else it owns has internal linkage. It must not define the SDK's
+`init`, `update` or `render`: `cmake/standalone_main.cpp.in` is generated per
+game and writes those, forwarding to the exported symbol, which is the seam
+that lets the console link several games into one binary. Defining them in a
+game is a duplicate symbol at the device link and nothing before it, because
+the host tests never compile a game's SDK facing file, and this repo does not
+build pull requests, so the first thing to notice is main. That is what
+`tools/tests/test_game_entry.py` is for; do not weaken it to get a game out.
+
 ### 8. The PicoSystem is tiny. Budget everything.
 
 Hardware: RP2040 dual core Cortex-M0+ at 133 MHz (no FPU), 264 KB SRAM, 16 MB

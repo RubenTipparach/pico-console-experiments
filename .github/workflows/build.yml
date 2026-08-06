@@ -63,7 +63,10 @@ jobs:
       # nothing downstream would notice if it silently stopped reaching the
       # binary. gen_library is what the console's menu is made of, and it is
       # the only thing standing between a bad console.yaml and a device that
-      # boots into the wrong game.
+      # boots into the wrong game. game_entry is here because a game that
+      # defines the SDK's own init/update/render compiles perfectly, passes
+      # every host test, and then collides with the generated shim at the
+      # device link, which is the first job on main and far too late.
       - name: Test the build tooling
         run: |
           python3 tools/tests/test_game_meta.py
@@ -71,6 +74,7 @@ jobs:
           python3 tools/tests/test_make_thumbnail.py
           python3 tools/tests/test_gen_gallery.py
           python3 tools/tests/test_gen_shell.py
+          python3 tools/tests/test_game_entry.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
