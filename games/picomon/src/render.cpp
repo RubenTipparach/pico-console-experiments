@@ -737,7 +737,7 @@ void draw_battle(const World& w, uint32_t t) {
     // them look near.
     const float foe_x = 2.5f, foe_z = 6.0f;
     const float me_x = -1.8f, me_z = 0.2f;
-    const float k_me_scale = 1.72f, k_foe_scale = 1.40f;
+    const float k_me_scale = 1.73f, k_foe_scale = 1.42f;
 
     // Each of them stands on a rock, which is the other half of the same
     // illusion: a creature on a mound has a ground plane under it and a

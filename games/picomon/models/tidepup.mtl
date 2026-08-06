@@ -1,26 +1,45 @@
-# Colours for tidepup.obj.
+# Colours for tidepup.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# pelt
-newmtl tidepup_body
-Kd 0.333333 0.666667 0.866667   # #55AADD
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
 
-# chest blaze and underside
-newmtl tidepup_belly
-Kd 0.866667 0.933333 1.000000   # #DDEEFF
+newmtl c3377AA
+Kd 0.200000 0.466667 0.666667   # #3377AA
 
-newmtl tidepup_snout
-Kd 0.866667 0.933333 1.000000   # #DDEEFF
+newmtl c4488CC
+Kd 0.266667 0.533333 0.800000   # #4488CC
 
-newmtl tidepup_fin
-Kd 0.533333 0.800000 0.933333   # #88CCEE
+newmtl c5588CC
+Kd 0.333333 0.533333 0.800000   # #5588CC
 
-newmtl tidepup_fin2
-Kd 0.266667 0.533333 0.733333   # #4488BB
+newmtl c5599DD
+Kd 0.333333 0.600000 0.866667   # #5599DD
 
-newmtl tidepup_leg
-Kd 0.266667 0.600000 0.800000   # #4499CC
+newmtl c6699DD
+Kd 0.400000 0.600000 0.866667   # #6699DD
+
+newmtl c66AAEE
+Kd 0.400000 0.666667 0.933333   # #66AAEE
+
+newmtl c77AADD
+Kd 0.466667 0.666667 0.866667   # #77AADD
+
+newmtl c77BBEE
+Kd 0.466667 0.733333 0.933333   # #77BBEE
+
+newmtl c88BBEE
+Kd 0.533333 0.733333 0.933333   # #88BBEE
+
+newmtl cAACCEE
+Kd 0.666667 0.800000 0.933333   # #AACCEE
+
+newmtl cAADDFF
+Kd 0.666667 0.866667 1.000000   # #AADDFF
+
+newmtl cBBDDFF
+Kd 0.733333 0.866667 1.000000   # #BBDDFF

@@ -1,24 +1,30 @@
-# Colours for pebblin.obj.
+# Colours for pebblin.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# shell
-newmtl pebblin_rock
-Kd 0.666667 0.600000 0.466667   # #AA9977
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
 
-# sunlit top
-newmtl pebblin_light
-Kd 0.800000 0.733333 0.600000   # #CCBB99
+newmtl c555544
+Kd 0.333333 0.333333 0.266667   # #555544
 
-# underside
-newmtl pebblin_dark
-Kd 0.533333 0.466667 0.333333   # #887755
+newmtl c776655
+Kd 0.466667 0.400000 0.333333   # #776655
 
-newmtl pebblin_head
-Kd 0.600000 0.533333 0.400000   # #998866
+newmtl c887766
+Kd 0.533333 0.466667 0.400000   # #887766
 
-newmtl pebblin_leg
-Kd 0.466667 0.400000 0.266667   # #776644
+newmtl c998877
+Kd 0.600000 0.533333 0.466667   # #998877
+
+newmtl cAA9988
+Kd 0.666667 0.600000 0.533333   # #AA9988
+
+newmtl cBBAA99
+Kd 0.733333 0.666667 0.600000   # #BBAA99
+
+newmtl cCCBBAA
+Kd 0.800000 0.733333 0.666667   # #CCBBAA

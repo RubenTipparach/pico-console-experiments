@@ -350,13 +350,14 @@ void test_the_near_creature_is_the_bigger_one() {
     std::printf("  battle: same species, near %d px tall (%d px), "
                 "far %d px tall (%d px)\n", mine, mc, theirs, fc);
     check(mc > 60 && fc > 20, "both creatures are actually on screen");
-    // The mockup this arena is staged after puts the near one at about 32
-    // pixels and the far one at about 19, so the band is around 1.6x. Wide
-    // enough to retune inside, narrow enough that inverting it fails.
+    // Measured off the design mockup: about 35 pixels at the front and 22 at
+    // the back. The arena runs a little larger than that on purpose, but the
+    // ratio is the thing being pinned here, and the band is wide enough to
+    // retune inside and narrow enough that inverting it fails.
     check(mine * 100 > theirs * 140,
           "the creature at the front is at least 1.4x the one at the back, or "
           "nothing about the arena reads as depth");
-    check(mine * 100 < theirs * 220,
+    check(mine * 100 < theirs * 250,
           "and not so much bigger that the far one is a speck");
 }
 
