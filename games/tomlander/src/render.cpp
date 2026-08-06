@@ -8,6 +8,7 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
+#include "tomlander/pad.hpp"
 #include "tomlander/tom.hpp"
 
 namespace tlr {
@@ -184,176 +185,35 @@ void draw_ground(const World& world) {
     }
 }
 
-// One deck quad with its own four corner colours.
-void deck_quad(const float px[4], const float py, const float pz[4],
-               const Rgb c[4]) {
-    int sx[4], sy[4], sz[4];
-    for (int i = 0; i < 4; i++) {
-        if (!g_renderer.project(px[i], py, pz[i], sx[i], sy[i], sz[i])) return;
-    }
-    const int t0[3] = {0, 1, 2}, t1[3] = {0, 2, 3};
-    const int* tris[2] = {t0, t1};
-    for (int t = 0; t < 2; t++) {
-        const int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
-        const int qx[3] = {sx[i0], sx[i1], sx[i2]};
-        const int qy[3] = {sy[i0], sy[i1], sy[i2]};
-        const int qz[3] = {sz[i0], sz[i1], sz[i2]};
-        const Rgb qc[3] = {c[i0], c[i1], c[i2]};
-        ground_tri(qx, qy, qz, qc);
-    }
-}
-
-// Grey steel, and cool rather than warm on purpose: everything else out
-// there is warm, the regolith browns and the flames, so a cool grey is
-// the one hue that cannot be mistaken for ground. These go straight to the
-// framebuffer, ground_tri applies no lighting, so what is written here is
-// exactly what shows and the contrast has to be built in. The first pass was
-// a near white 255,241,232 against 214,202,196, a 16 percent step, and at
-// 120x120 that is not plating, it is a white rectangle with a suggestion.
-const Rgb k_deck_lit{170, 179, 188};
-const Rgb k_deck_dark{104, 112, 121};
-// What the lit corner of the deck reaches. The engine's light is at
-// (0.40, 0.82, -0.40), so the sheen runs from the -X +Z corner up to the
-// +X -Z one.
-const Rgb k_deck_sheen{226, 233, 240};
-// The block under the deck. Its sides are the pad's silhouette, so they have
-// to be darker than the deck and darker than the ground's mid tone
-// (95,87,79), which the old warm brown sides matched almost exactly and
-// disappeared into.
-const Rgb k_pad_side{62, 69, 77};
-
-// The four walls carry draw_box's own per face shading, so the body reads the
-// same as it did when it was a box. Indices run the same cycle the walls are
-// drawn in: -Z, +X, +Z, -X.
-const float k_wall_shade[4] = {0.70f, 1.00f, 0.90f, 0.60f};
-
-// The deck, as a 3x3 grid of vertices rather than one flat quad.
+// The pads, as the model they are.
 //
-// draw_box paints its lid a single colour, and a plain white slab is the one
-// thing out there that looks untextured, because it is: the engine has no
-// texture mapping. Per vertex colour is the whole of what it does have, and
-// it is free, since ScreenTriangle already carries three colours and the
-// rasterizer already interpolates them. Nine vertices over four quads is
-// enough to read as plating, alternating light and shadow so the seams fall
-// where a real deck's panel joins would, and it costs 8 triangles.
-void draw_deck(const tl::Pad& pad, float y) {
-    const float half = to_f(tl::k_pad_half);
-    const float x0 = to_f(pad.x) - half, z0 = to_f(pad.z) - half;
-    const float step = half;
-
-    for (int gz = 0; gz < 2; gz++) {
-        for (int gx = 0; gx < 2; gx++) {
-            const float qx[4] = {x0 + gx * step, x0 + (gx + 1) * step,
-                                 x0 + (gx + 1) * step, x0 + gx * step};
-            const float qz[4] = {z0 + gz * step, z0 + gz * step,
-                                 z0 + (gz + 1) * step, z0 + (gz + 1) * step};
-            Rgb c[4];
-            for (int i = 0; i < 4; i++) {
-                // Corner index in the 3x3 grid, so neighbouring quads share a
-                // colour at the vertex they share and the plating reads as one
-                // surface rather than four tiles.
-                const int cx = gx + ((i == 1 || i == 2) ? 1 : 0);
-                const int cz = gz + ((i == 2 || i == 3) ? 1 : 0);
-                // Two terms. The sheen runs across the deck toward the
-                // engine's own light, which is what makes a flat horizontal
-                // slab read as metal instead of as a hole cut in the scene:
-                // lambert alone gives a horizontal surface one constant
-                // value, so without this the deck is the only unlit thing out
-                // there. The plate checker then rides on top of it.
-                const int sheen = (cx - cz + 2) * 255 / 4;    // 0..255
-                const bool bright = ((cx + cz) & 1) == 0;
-                const Rgb base = bright ? k_deck_lit : k_deck_dark;
-                const int r = base.r + (k_deck_sheen.r - base.r) * sheen / 255;
-                const int g = base.g + (k_deck_sheen.g - base.g) * sheen / 255;
-                const int b = base.b + (k_deck_sheen.b - base.b) * sheen / 255;
-                c[i] = Rgb{static_cast<uint8_t>(r), static_cast<uint8_t>(g),
-                           static_cast<uint8_t>(b)};
-            }
-            deck_quad(qx, y, qz, c);
-        }
-    }
-}
-
-// One vertical wall of the pad body, wound outward so the rasterizer's own
-// backface cull (`area <= 0` in draw_typed) drops the walls facing away.
+// This was a draw_box with a hand laid deck over its lid, and that lid is what
+// made the pad mottle. draw_box always paints a top face, so the pad carried
+// two horizontal surfaces 0.048 units apart, and this depth buffer cannot tell
+// them apart: one byte over the whole 6 to 170 range means that at the 23
+// units the camera works at, 0.048 of vertical separation is about a fifth of
+// a single depth step. The two tied nearly everywhere, ties go to whoever drew
+// first, the lid drew first, and the deck lost most of its own surface to the
+// grey underneath it.
 //
-// Corners run A_low, B_low, B_high, A_high, which is the REVERSE of the order
-// draw_box's own face table uses. That is not a tidy up: wound draw_box's way
-// the cull keeps the far wall and drops the near one, so the pad showed the
-// inside of its back face and nothing at all where the front should be. The
-// engine's boxes have the same inversion, but every one of them is either
-// viewed from a distance or hidden inside something, so it has never shown;
-// fixing it there reaches every game and belongs in its own change.
-void pad_wall(float ax, float az, float bx, float bz,
-              float y_low, float y_high, float shade) {
-    const float wx[4] = {ax, bx, bx, ax};
-    const float wy[4] = {y_low, y_low, y_high, y_high};
-    const float wz[4] = {az, bz, bz, az};
-
-    int sx[4], sy[4], sz[4];
-    for (int i = 0; i < 4; i++) {
-        if (!g_renderer.project(wx[i], wy[i], wz[i], sx[i], sy[i], sz[i])) return;
-    }
-
-    const Rgb flat{static_cast<uint8_t>(k_pad_side.r * shade),
-                   static_cast<uint8_t>(k_pad_side.g * shade),
-                   static_cast<uint8_t>(k_pad_side.b * shade)};
-    // The same two corner lift draw_box gives a wall, so a flat face still
-    // reads with a gradient across it rather than as paper.
-    const Rgb lift{static_cast<uint8_t>(flat.r + 30 > 255 ? 255 : flat.r + 30),
-                   static_cast<uint8_t>(flat.g + 30 > 255 ? 255 : flat.g + 30),
-                   static_cast<uint8_t>(flat.b + 30 > 255 ? 255 : flat.b + 30)};
-    const Rgb c[4] = {flat, lift, lift, flat};
-
-    const int t0[3] = {0, 1, 2}, t1[3] = {0, 2, 3};
-    const int* tris[2] = {t0, t1};
-    for (int t = 0; t < 2; t++) {
-        const int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
-        const int qx[3] = {sx[i0], sx[i1], sx[i2]};
-        const int qy[3] = {sy[i0], sy[i1], sy[i2]};
-        const int qz[3] = {sz[i0], sz[i1], sz[i2]};
-        const Rgb qc[3] = {c[i0], c[i1], c[i2]};
-        ground_tri(qx, qy, qz, qc);
-    }
-}
-
-// The pads. Four walls for the body and the plated deck on top, and NOTHING
-// underneath that deck.
+// Widening the gap would not have fixed it. A gap big enough to win at 23
+// units is still too small at 40, and the pads are looked at from across the
+// valley. pad.obj has one surface up there and nothing under it, so there is
+// nothing left to tie with.
 //
-// This was a draw_box plus a deck laid over its lid, and that lid is what made
-// the pad mottle. draw_box always paints a top face, so the pad had two
-// horizontal surfaces 0.048 units apart, and this depth buffer cannot tell
-// them apart: it is one byte over the whole 6 to 170 range, so at the 23 units
-// the camera works at, 0.048 of vertical separation is about a fifth of a
-// single depth step. The two tied nearly everywhere, ties go to whoever drew
-// first, and the lid drew first, so the deck lost most of its own surface to
-// the grey lid underneath and kept only the pixels where the interpolation
-// happened to round its way.
+// The deck standing proud of its apron is a different question and it still
+// earns its 2.4 units: apron to deck is about ten depth steps, which separates
+// cleanly. That is why k_pad_rise exists and it has not moved.
 //
-// Widening the gap is not the fix. A gap large enough to win at 23 units is
-// still too small at 40, the pads are seen from across the valley, and a gap
-// that big would show daylight between the deck and the body it sits on.
-// The fix is that there is only one surface up there now, so there is nothing
-// left to tie with. The deck stands proud of its apron for that same reason
-// and that part still earns its 2.4 units: apron to deck is about ten depth
-// steps, which separates cleanly.
+// Model space is world space here. pad.obj is authored at the real 7 by 2.4,
+// so this draws at scale 1.0 and preview.cpp holds the model to k_pad_half and
+// k_pad_rise rather than trusting the two to stay in step on their own.
 void draw_pads(const World& world) {
-    const float half = to_f(tl::k_pad_half);
-    const float rise = to_f(tl::k_pad_rise);
-
     for (int i = 0; i < tl::k_pad_count; i++) {
         const tl::Pad& pad = world.pads[i];
-        const float x0 = to_f(pad.x) - half, x1 = to_f(pad.x) + half;
-        const float z0 = to_f(pad.z) - half, z1 = to_f(pad.z) + half;
-        const float y_low = to_f(pad.y), y_high = y_low + rise;
-
-        // Round the rim: -Z, +X, +Z, -X, matching k_wall_shade.
-        pad_wall(x0, z0, x1, z0, y_low, y_high, k_wall_shade[0]);
-        pad_wall(x1, z0, x1, z1, y_low, y_high, k_wall_shade[1]);
-        pad_wall(x1, z1, x0, z1, y_low, y_high, k_wall_shade[2]);
-        pad_wall(x0, z1, x0, z0, y_low, y_high, k_wall_shade[3]);
-
-        draw_deck(pad, y_high);
+        g_renderer.draw_mesh(models::tomlander::pad,
+                             to_f(pad.x), to_f(pad.y), to_f(pad.z),
+                             0.0f, 1.0f);
     }
 }
 

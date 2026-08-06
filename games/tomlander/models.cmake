@@ -5,9 +5,12 @@
 # missing picture, it is a missing header and a broken build. Add a model here
 # and both builds see it. There is no second list.
 #
-# The pads are not here on purpose. They are boxes, and draw_box is the
-# engine's own primitive: rule 11 keeps hand written vertex tables out of C++
-# and exempts exactly the trivial shapes the engine already generates.
+# The pad used to be left out of here as a draw_box, on the grounds that rule
+# 11 exempts the trivial shapes the engine already generates. It is not one:
+# it is a plated deck on a block, it is a fixed object, and the moment it
+# needed to stop being a box it would have become a vertex table in C++, which
+# is the thing the rule exists to prevent. It is a model.
 set(tomlander_model_files
+    pad.obj
     tom.obj
 )

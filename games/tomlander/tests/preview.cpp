@@ -17,6 +17,8 @@
 
 #include "pse/pixel.hpp"
 
+#include "tomlander/pad.hpp"
+
 #include "render.hpp"
 #include "sim.hpp"
 
@@ -107,8 +109,57 @@ void fly_toward_target(tl::World& world, int max_ticks) {
 
 }  // namespace
 
+// The pad model against the numbers the sim lands on.
+//
+// pad.obj is drawn at scale 1.0, so its own coordinates ARE world units and
+// nothing at run time would notice them drifting from the constants that
+// decide where a landing counts. A deck an inch smaller than k_pad_half is a
+// touchdown on the rim that scores as a miss, and it looks exactly like a
+// misjudged landing, which is the kind of bug that gets blamed on the player.
+void check_pad_model_matches_the_sim() {
+    const pse::MeshData& m = models::tomlander::pad;
+    if (m.vertex_count == 0 || m.scale <= 0) {
+        fail("the pad model is empty");
+        return;
+    }
+
+    int16_t max_x = 0, max_z = 0, min_y = 0, max_y = 0;
+    for (uint16_t i = 0; i < m.vertex_count; i++) {
+        const pse::MeshVertex& v = m.vertices[i];
+        if (v.x > max_x) max_x = v.x;
+        if (v.z > max_z) max_z = v.z;
+        if (v.y < min_y) min_y = v.y;
+        if (v.y > max_y) max_y = v.y;
+    }
+
+    const float unit = 1.0f / static_cast<float>(m.scale);
+    const float half_x = max_x * unit, half_z = max_z * unit;
+    const float rise = (max_y - min_y) * unit;
+    const float want_half = tl::k_pad_half / 65536.0f;
+    const float want_rise = tl::k_pad_rise / 65536.0f;
+
+    std::printf("pad model: %.3f x %.3f half, %.3f rise (want %.3f, %.3f)\n",
+                half_x, half_z, rise, want_half, want_rise);
+
+    // A sixteenth of a unit, which is well inside one pixel at any range the
+    // pad is looked at and well outside the 1/256 the model is quantised to.
+    const float slop = 0.0625f;
+    if (half_x < want_half - slop || half_x > want_half + slop ||
+        half_z < want_half - slop || half_z > want_half + slop) {
+        fail("the pad model must be k_pad_half across");
+    }
+    if (rise < want_rise - slop || rise > want_rise + slop) {
+        fail("the pad model must stand k_pad_rise above its apron");
+    }
+    if (min_y != 0) {
+        fail("the pad model must sit on y = 0, the apron it is drawn at");
+    }
+}
+
 int main(int argc, char** argv) {
     const std::string out = argc > 1 ? argv[1] : ".";
+
+    check_pad_model_matches_the_sim();
 
     // 1: sitting on pad A, which is exactly what the title screen sits over.
     tl::World world;

@@ -43,3 +43,11 @@ target_include_directories(tomlander_preview PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 target_link_libraries(tomlander_preview pse-core)
+
+# It is a tool AND it is the only thing that checks the render side promises:
+# the arrow appears exactly when the deck does not, a plume leaves along the
+# hull's own down axis, a frame never overflows the triangle queue, and the pad
+# model still measures what the sim lands on. It returns non zero when any of
+# those breaks, and until it was registered here none of them ran in CI, so
+# they were checks that only fired when somebody happened to run the binary.
+add_test(NAME tomlander_preview COMMAND tomlander_preview)
