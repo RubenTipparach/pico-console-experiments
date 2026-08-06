@@ -20,9 +20,14 @@ tl::World g_world;
 Shell g_shell = Shell::Title;
 float g_cam_yaw = 0.0f;
 uint8_t g_pause_item = 0;
+uint8_t g_title_item = 0;
 uint32_t g_best_fuel = 0;      // fp8 fuel left on the best landing
 bool g_new_record = false;
 bool g_save_pending = false;
+bool g_sound_on = true;
+// The furthest mission reached, and the one START flies. Saved, so the game
+// comes back where it was left rather than making the delivery earned again.
+uint8_t g_progress = 1;
 
 constexpr uint32_t k_any_face =
     Button::A | Button::B | Button::X | Button::Y;
@@ -39,7 +44,9 @@ uint32_t g_last_time = 0;
 struct SaveData {
     uint32_t magic;
     uint32_t best_fuel;
-    uint8_t reserved[8];
+    uint8_t sound_on;
+    uint8_t progress;
+    uint8_t reserved[6];
 };
 constexpr uint32_t k_save_magic = 0x314C4D54u;   // 'T','M','L','1'
 
@@ -65,6 +72,73 @@ constexpr uint32_t k_pod_button[tl::kPodCount] = {
     Button::B,   // back pod
 };
 
+// ---- sound ----
+//
+// An engine and three cues, synthesised rather than sampled: the 32blit
+// channels can make all of this from waveforms, so it costs a few hundred
+// bytes of code and no asset at all. The alternative was a wave file per cue,
+// which is flash spent on something a square wave says just as well at 120
+// pixels.
+//
+// The thruster is noise, because that is what a rocket is. Its volume and its
+// filter frequency both follow total throttle, so a single pod mutters and
+// four of them roar, and the player can hear how hard they are burning without
+// looking at the fuel bar.
+constexpr uint8_t k_ch_thrust = 0;
+constexpr uint8_t k_ch_cue = 1;
+bool g_thrust_sounding = false;
+
+void sound_init() {
+    channels[k_ch_thrust].waveforms = Waveform::NOISE;
+    channels[k_ch_thrust].attack_ms = 15;
+    channels[k_ch_thrust].decay_ms = 30;
+    channels[k_ch_thrust].sustain = 0xffff;
+    channels[k_ch_thrust].release_ms = 150;
+    channels[k_ch_thrust].volume = 0;
+
+    channels[k_ch_cue].waveforms = Waveform::TRIANGLE | Waveform::SQUARE;
+    channels[k_ch_cue].attack_ms = 4;
+    channels[k_ch_cue].sustain = 0;
+    channels[k_ch_cue].release_ms = 80;
+}
+
+void sound_stop() {
+    channels[k_ch_thrust].volume = 0;
+    if (g_thrust_sounding) {
+        channels[k_ch_thrust].trigger_release();
+        g_thrust_sounding = false;
+    }
+}
+
+void sound_cue(uint16_t frequency, uint16_t decay_ms, uint16_t volume) {
+    if (!g_sound_on) return;
+    channels[k_ch_cue].frequency = frequency;
+    channels[k_ch_cue].decay_ms = decay_ms;
+    channels[k_ch_cue].volume = volume;
+    channels[k_ch_cue].trigger_attack();
+}
+
+// Called every frame while flying, from the total the pods are actually
+// pulling, so it follows the auto leveller's partial throttles too and not
+// just whether a button is down.
+void sound_thrust(int total) {
+    if (!g_sound_on || total <= 8) {
+        sound_stop();
+        return;
+    }
+    // total is 0..1020. Frequency climbs with it so the noise brightens as
+    // well as loudens, which is what stops four pods sounding like one loud
+    // pod.
+    channels[k_ch_thrust].frequency =
+        static_cast<uint16_t>(300 + (total * 500) / 1020);
+    channels[k_ch_thrust].volume =
+        static_cast<uint16_t>(1200 + (total * 4200) / 1020);
+    if (!g_thrust_sounding) {
+        channels[k_ch_thrust].trigger_attack();
+        g_thrust_sounding = true;
+    }
+}
+
 void save_if_needed() {
     // update() runs outside run_split, so core 1 is parked in its RAM idle
     // loop and a flash write is safe here.
@@ -72,15 +146,42 @@ void save_if_needed() {
     SaveData data{};
     data.magic = k_save_magic;
     data.best_fuel = g_best_fuel;
+    data.sound_on = g_sound_on ? 1 : 0;
+    data.progress = g_progress;
     write_save(data);
     g_save_pending = false;
 }
 
-void start_flight() {
-    tl::world_init(g_world);
+void start_flight(uint8_t mission) {
+    tl::world_init(g_world, mission >= 2 ? tl::Mission::Delivery
+                                         : tl::Mission::Hop);
     g_cam_yaw = 0.0f;
     g_new_record = false;
     g_shell = Shell::Play;
+    sound_stop();
+}
+
+// What the SOUND row reads, which is the whole of how the toggle reports
+// itself. Nothing has to say it worked: the word changes.
+const char* sound_word() { return g_sound_on ? "SOUND ON" : "SOUND OFF"; }
+
+void toggle_sound() {
+    g_sound_on = !g_sound_on;
+    if (!g_sound_on) sound_stop();
+    g_save_pending = true;
+}
+
+// One menu, driven the same way in both places it appears: up and down move,
+// any face button picks. No prompt says so, per rule 9, and with nothing on
+// screen naming a button no press can be the wrong guess.
+void menu_move(uint8_t& item, uint8_t count) {
+    if (buttons.pressed & Button::DPAD_UP) {
+        item = item == 0 ? static_cast<uint8_t>(count - 1)
+                         : static_cast<uint8_t>(item - 1);
+    }
+    if (buttons.pressed & Button::DPAD_DOWN) {
+        item = static_cast<uint8_t>((item + 1) % count);
+    }
 }
 
 // Centre one line. Every string is measured rather than placed by eye: a hand
@@ -145,10 +246,28 @@ void draw_hud() {
     screen.pen = Pen(200, 200, 214);
     screen.text(line, minimal_font, Point(3, h - size.h - 3));
 
-    std::snprintf(line, sizeof(line), "B %d", tl::range_to_target(g_world));
+    // The deck letter follows the target rather than being spelled B, because
+    // the delivery retargets mid flight and a fixed letter would then name the
+    // wrong deck at exactly the moment the player is looking for the right one.
+    std::snprintf(line, sizeof(line), "%c %d",
+                  static_cast<char>('A' + g_world.target),
+                  tl::range_to_target(g_world));
     size = screen.measure_text(line, minimal_font);
     screen.pen = Pen(255, 163, 0);
     screen.text(line, minimal_font, Point(w - size.w - 3, h - size.h - 3));
+
+    // One word for which leg of the delivery this is, and only on the delivery.
+    // Mission one has nothing to say here and says nothing.
+    if (g_world.mission == tl::Mission::Delivery &&
+        g_world.cargo != tl::kCargoDone) {
+        const bool loaded = tl::carrying(g_world);
+        // Below the fuel bar, not beside it. The bar is 6 tall at y = 3 and
+        // reaches a third of the way across, and a centred "GET CARGO" is wide
+        // enough to reach back into it, so the two would have overlapped on
+        // exactly the leg the word matters on.
+        text_centered(loaded ? "CARGO" : "GET CARGO", 11,
+                      loaded ? Pen(194, 112, 58) : Pen(255, 163, 0));
+    }
 }
 
 const char* fault_word(tl::Fault fault) {
@@ -169,7 +288,7 @@ void draw_outcome() {
     if (g_world.state == tl::Flight::Landed) {
         std::snprintf(fuel_line, sizeof(fuel_line), "FUEL %d",
                       (g_world.fuel * 100) / tl::k_fuel_full);
-        lines[0] = "DOWN SAFE";
+        lines[0] = g_world.cargo == tl::kCargoDone ? "DELIVERED" : "DOWN SAFE";
         lines[1] = fuel_line;
         lines[2] = "RECORD";
         pens[0] = Pen(0, 228, 54);
@@ -187,26 +306,56 @@ void draw_outcome() {
                 Pen(12, 14, 28, 210));
 }
 
+const Pen k_pick = Pen(255, 163, 0);
+const Pen k_rest = Pen(150, 150, 170);
+
+Pen row_pen(uint8_t item, uint8_t self) {
+    return item == self ? k_pick : k_rest;
+}
+
+// The title, which is now a menu. START flies the furthest mission reached,
+// SOUND toggles in place, and the best fuel line stays where it was under
+// them.
 void draw_title() {
+    char start[16];
     char best[20];
-    const char* lines[2] = {"TOM LANDER", best};
-    const Pen pens[2] = {Pen(255, 163, 0), Pen(210, 210, 220)};
-    int count = 1;
+    const char* lines[4];
+    Pen pens[4];
+    int count = 0;
+
+    lines[count] = "TOM LANDER";
+    pens[count++] = k_pick;
+
+    // The row names the mission when there is more than one to name, so
+    // "START" alone never leaves the player guessing which flight it means.
+    if (g_progress > 1) {
+        std::snprintf(start, sizeof(start), "START %d", g_progress);
+        lines[count] = start;
+    } else {
+        lines[count] = "START";
+    }
+    pens[count++] = row_pen(g_title_item, 0);
+
+    lines[count] = sound_word();
+    pens[count++] = row_pen(g_title_item, 1);
+
     if (g_best_fuel > 0) {
         std::snprintf(best, sizeof(best), "best fuel %d",
                       static_cast<int>((g_best_fuel * 100) / tl::k_fuel_full));
-        count = 2;
+        lines[count] = best;
+        pens[count++] = Pen(180, 180, 195);
     }
-    panel_lines(screen.bounds.h / 2 - 14, lines, pens, count,
+    panel_lines(screen.bounds.h / 2 - 20, lines, pens, count,
                 Pen(12, 14, 28, 200));
 }
 
+// Pause gains the same toggle, because sound is the one setting worth changing
+// without quitting the flight to do it.
 void draw_pause() {
-    const char* items[2] = {"RESUME", "RESTART"};
-    const Pen pens[2] = {
-        g_pause_item == 0 ? Pen(255, 163, 0) : Pen(150, 150, 170),
-        g_pause_item == 1 ? Pen(255, 163, 0) : Pen(150, 150, 170)};
-    panel_lines(screen.bounds.h / 2 - 14, items, pens, 2, Pen(12, 14, 28, 220));
+    const char* items[3] = {"RESUME", "RESTART", sound_word()};
+    const Pen pens[3] = {row_pen(g_pause_item, 0), row_pen(g_pause_item, 1),
+                         row_pen(g_pause_item, 2)};
+    panel_lines(screen.bounds.h / 2 - 18, items, pens, 3, Pen(12, 14, 28, 220));
 }
 
 void game_init() {
@@ -217,6 +366,7 @@ void game_init() {
     // wreck from a previous session.
     g_shell = Shell::Title;
     g_pause_item = 0;
+    g_title_item = 0;
     g_new_record = false;
     g_save_pending = false;
     g_tick_accumulator = 0;
@@ -225,10 +375,16 @@ void game_init() {
     SaveData data;
     if (read_save(data) && data.magic == k_save_magic) {
         g_best_fuel = data.best_fuel;
+        g_sound_on = data.sound_on != 0;
+        g_progress = data.progress >= 1 && data.progress <= tl::k_mission_count
+                         ? data.progress : 1;
     } else {
         g_best_fuel = 0;
+        g_sound_on = true;         // sound on until someone turns it off
+        g_progress = 1;
     }
 
+    sound_init();
     tl::world_init(g_world);
     g_cam_yaw = 0.0f;
 }
@@ -241,13 +397,35 @@ void step_sim() {
     input.level = (buttons & Button::DPAD_DOWN) != 0;
 
     const tl::Flight before = g_world.state;
+    const bool had_cargo = tl::carrying(g_world);
     tl::world_tick(g_world, input);
 
-    if (before == tl::Flight::Flying && g_world.state == tl::Flight::Landed) {
-        if (static_cast<uint32_t>(g_world.fuel) > g_best_fuel) {
-            g_best_fuel = static_cast<uint32_t>(g_world.fuel);
-            g_new_record = true;
-            g_save_pending = true;
+    int total = 0;
+    for (int i = 0; i < tl::kPodCount; i++) total += g_world.throttle[i];
+    sound_thrust(total);
+
+    // The crate coming aboard, which is the one event in the flight with no
+    // panel and no state change to announce it.
+    if (!had_cargo && tl::carrying(g_world)) sound_cue(900, 160, 5000);
+
+    if (before == tl::Flight::Flying && g_world.state != tl::Flight::Flying) {
+        sound_stop();
+        if (g_world.state == tl::Flight::Landed) {
+            sound_cue(520, 220, 5200);
+            if (static_cast<uint32_t>(g_world.fuel) > g_best_fuel) {
+                g_best_fuel = static_cast<uint32_t>(g_world.fuel);
+                g_new_record = true;
+                g_save_pending = true;
+            }
+            // The delivery is unlocked by finishing the hop, and stays
+            // unlocked. Nothing here ever counts progress back down.
+            const uint8_t next = static_cast<uint8_t>(g_world.mission) + 1;
+            if (next <= tl::k_mission_count && next > g_progress) {
+                g_progress = next;
+                g_save_pending = true;
+            }
+        } else {
+            sound_cue(110, 420, 6000);       // a crash, low and long
         }
     }
 }
@@ -266,22 +444,33 @@ void game_update(uint32_t time) {
 
     if (g_shell == Shell::Title) {
         g_tick_accumulator = 0;
-        if (buttons.pressed & (k_any_face | Button::DPAD_DOWN)) start_flight();
+        sound_stop();
+        menu_move(g_title_item, 2);
+        if (buttons.pressed & k_any_face) {
+            if (g_title_item == 0) {
+                start_flight(g_progress);
+            } else {
+                toggle_sound();
+            }
+        }
+        save_if_needed();
         return;
     }
 
     if (g_shell == Shell::Paused) {
         g_tick_accumulator = 0;
-        if (buttons.pressed & Button::DPAD_UP) g_shell = Shell::Play;
-        if (buttons.pressed & Button::DPAD_LEFT) g_pause_item = 0;
-        if (buttons.pressed & Button::DPAD_RIGHT) g_pause_item = 1;
+        sound_stop();
+        menu_move(g_pause_item, 3);
         if (buttons.pressed & k_any_face) {
             if (g_pause_item == 0) {
                 g_shell = Shell::Play;
+            } else if (g_pause_item == 1) {
+                start_flight(static_cast<uint8_t>(g_world.mission));
             } else {
-                start_flight();
+                toggle_sound();
             }
         }
+        save_if_needed();
         return;
     }
 
@@ -292,7 +481,12 @@ void game_update(uint32_t time) {
         // touched down does not skip the card it produced.
         if (g_world.ticks_in_state > 40 &&
             (buttons.pressed & (k_any_face | Button::DPAD_DOWN))) {
-            start_flight();
+            // Landing the hop rolls straight on into the delivery. A crash
+            // flies the same mission again, because the thing that just went
+            // wrong is the thing worth another go.
+            start_flight(g_world.state == tl::Flight::Landed
+                             ? g_progress
+                             : static_cast<uint8_t>(g_world.mission));
         }
         tl::Input none{};
         tl::world_tick(g_world, none);       // counts out the grace period

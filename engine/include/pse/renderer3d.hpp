@@ -107,7 +107,7 @@ public:
                    float yaw, float scale,
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
                    uint8_t tint_b = 255, float pitch = 0.0f,
-                   uint8_t whiten = 0, float roll = 0.0f);
+                   uint8_t whiten = 0, float roll = 0.0f, uint8_t tex = 0);
 
     // The same draw, given the orientation as a basis instead of three angles.
     //
@@ -125,7 +125,7 @@ public:
                    float x, float y, float z,
                    const Basis& basis, float scale,
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
-                   uint8_t tint_b = 255, uint8_t whiten = 0);
+                   uint8_t tint_b = 255, uint8_t whiten = 0, uint8_t tex = 0);
 
     // Screen position and pixel size for a camera facing sprite. Returns false
     // when the point is off screen or behind the camera. The caller draws the

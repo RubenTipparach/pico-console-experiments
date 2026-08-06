@@ -303,7 +303,8 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
                            float x, float y, float z,
                            float yaw, float scale,
                            uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
-                           float pitch, uint8_t whiten, float roll) {
+                           float pitch, uint8_t whiten, float roll,
+                           uint8_t tex) {
     // The three angle form composes Ry(yaw) Rx(pitch) Rz(roll) into the basis
     // and hands over. One implementation, so the two forms cannot disagree
     // about what an orientation means, and the angles keep the exact meaning
@@ -323,19 +324,25 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
     basis.m[7] = sr * sy - cr * sp * cy;
     basis.m[8] = cp * cy;
 
-    draw_mesh(mesh, x, y, z, basis, scale, tint_r, tint_g, tint_b, whiten);
+    draw_mesh(mesh, x, y, z, basis, scale, tint_r, tint_g, tint_b, whiten, tex);
 }
 
 void Renderer3D::draw_mesh(const MeshData& mesh,
                            float x, float y, float z,
                            const Basis& basis, float scale,
                            uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
-                           uint8_t whiten) {
+                           uint8_t whiten, uint8_t tex) {
     if (mesh.vertices == nullptr || mesh.faces == nullptr) return;
     if (mesh.scale <= 0) return;
 
     const float* m = basis.m;
     const float unit = scale / static_cast<float>(mesh.scale);
+    // A texture index means nothing without coordinates to sample at, so a
+    // mesh that carried no `vt` draws untextured however it is called. Silent
+    // rather than an error: it is the same mesh either way, and a model
+    // swapped for an untextured one should lose its picture, not its picture
+    // and the frame it was in.
+    const uint8_t use_tex = mesh.uvs != nullptr ? tex : 0;
 
     for (uint16_t f = 0; f < mesh.face_count; f++) {
         const MeshFace& face = mesh.faces[f];
@@ -410,6 +417,14 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
         tri.r0 = tri.r1 = tri.r2 = r;
         tri.g0 = tri.g1 = tri.g2 = g;
         tri.b0 = tri.b1 = tri.b2 = b;
+
+        tri.tex = use_tex;
+        if (use_tex != 0) {
+            const MeshUv& uv = mesh.uvs[f];
+            tri.u0 = uv.u0; tri.v0 = uv.v0;
+            tri.u1 = uv.u1; tri.v1 = uv.v1;
+            tri.u2 = uv.u2; tri.v2 = uv.v2;
+        }
 
         if (fade_enabled_) {
             uint8_t* cr[3] = {&tri.r0, &tri.r1, &tri.r2};

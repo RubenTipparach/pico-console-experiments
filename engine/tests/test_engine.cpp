@@ -17,6 +17,7 @@
 #include "pse/pixel.hpp"
 #include "pse/parallel.hpp"
 #include "pse/quat.hpp"
+#include "pse/texture.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
 
@@ -804,6 +805,156 @@ void test_quat_basis_agrees_with_quat_rotate() {
     }
 }
 
+
+// ---- texturing ----
+
+namespace {
+
+// A 4x4 checker, red and blue, so a sample either side of a boundary is
+// unmistakable and no interpolation could produce it by accident.
+const uint8_t k_checker_texels[4 * 4 * 3] = {
+    255,0,0,  0,0,255,  255,0,0,  0,0,255,
+    0,0,255,  255,0,0,  0,0,255,  255,0,0,
+    255,0,0,  0,0,255,  255,0,0,  0,0,255,
+    0,0,255,  255,0,0,  0,0,255,  255,0,0,
+};
+const pse::Texture k_checker{k_checker_texels, 2, 2};
+
+// The tests below all draw into a 120x120 surface, the render size the
+// engine is configured for.
+constexpr int k_w = 120, k_h = 120;
+
+}  // namespace
+
+// The promise every existing caller depends on: a triangle that names no
+// texture renders exactly as it did before textures existed. This is the
+// regression that would be silent, because three other games draw through this
+// loop and none of them will ever set a tex index.
+void test_untextured_is_unchanged_by_the_texture_path() {
+    pse::Rasterizer raster;
+    std::vector<uint8_t> a(k_w * k_h * 3), b(k_w * k_h * 3);
+
+    pse::ScreenTriangle tri{};
+    tri.x0 = 10; tri.y0 = 10; tri.z0 = 400;
+    tri.x1 = 100; tri.y1 = 30; tri.z1 = 500;
+    tri.x2 = 40; tri.y2 = 100; tri.z2 = 600;
+    tri.r0 = 255; tri.g0 = 40; tri.b0 = 40;
+    tri.r1 = 40; tri.g1 = 255; tri.b1 = 40;
+    tri.r2 = 40; tri.g2 = 40; tri.b2 = 255;
+
+    pse::RenderTarget ta{a.data(), k_w, k_h, k_w * 3, pse::PixelFormat::rgb888};
+    raster.set_textures(nullptr, 0);
+    raster.begin_frame(ta);
+    raster.draw(tri);
+
+    // Same triangle again, with a texture table present but the triangle still
+    // naming none of it. Setting a table must not change an untextured draw.
+    pse::RenderTarget tb{b.data(), k_w, k_h, k_w * 3, pse::PixelFormat::rgb888};
+    raster.set_textures(&k_checker, 1);
+    raster.begin_frame(tb);
+    raster.draw(tri);
+
+    CHECK(std::memcmp(a.data(), b.data(), a.size()) == 0);
+}
+
+// A textured triangle has to actually sample. Drawn flat on (all three depths
+// equal) so the expected texel is a plain barycentric lookup and the check does
+// not depend on the perspective maths.
+void test_a_textured_triangle_samples_its_texture() {
+    pse::Rasterizer raster;
+    std::vector<uint8_t> buf(k_w * k_h * 3, 0);
+    pse::RenderTarget target{buf.data(), k_w, k_h, k_w * 3,
+                             pse::PixelFormat::rgb888};
+
+    pse::ScreenTriangle tri{};
+    // Wound so the signed area comes out positive, which is what the backface
+    // test wants. Given the other way round this draws nothing at all, and
+    // every "is it sampling" check below then passes vacuously on a blank
+    // buffer, which is how this test first went green while proving nothing.
+    tri.x0 = 0;   tri.y0 = 0;
+    tri.x1 = 0;   tri.y1 = 119;
+    tri.x2 = 119; tri.y2 = 0;
+    tri.z0 = tri.z1 = tri.z2 = 500;
+    tri.r0 = tri.r1 = tri.r2 = 255;
+    tri.g0 = tri.g1 = tri.g2 = 255;
+    tri.b0 = tri.b1 = tri.b2 = 255;
+    tri.tex = 1;
+    tri.u0 = 0;   tri.v0 = 0;
+    tri.u1 = 0;   tri.v1 = 255;
+    tri.u2 = 255; tri.v2 = 0;
+
+    raster.set_textures(&k_checker, 1);
+    raster.begin_frame(target);
+    raster.draw(tri);
+
+    // Every filled pixel must be one of the two texel colours, modulated by a
+    // white vertex colour, so nothing in between. A blend would mean the
+    // texture was being interpolated rather than sampled.
+    int red = 0, blue = 0, other = 0;
+    for (int y = 2; y < 100; y++) {
+        for (int x = 2; x < 100 - y; x++) {
+            const uint8_t* p = &buf[(y * k_w + x) * 3];
+            const bool is_red = p[0] > 200 && p[2] < 40;
+            const bool is_blue = p[2] > 200 && p[0] < 40;
+            if (is_red) red++;
+            else if (is_blue) blue++;
+            else other++;
+        }
+    }
+    CHECK(red > 200);
+    CHECK(blue > 200);
+    CHECK(other == 0);       // no in between colour anywhere
+}
+
+// The reason the UVs are interpolated in 1/z. A quad receding from the camera
+// must show its texture compressing with distance, not spread evenly: affine
+// mapping would put the halfway texel at the halfway pixel, and perspective
+// correct mapping puts it much nearer the far end.
+void test_texture_mapping_is_perspective_correct() {
+    pse::Rasterizer raster;
+    std::vector<uint8_t> buf(k_w * k_h * 3, 0);
+    pse::RenderTarget target{buf.data(), k_w, k_h, k_w * 3,
+                             pse::PixelFormat::rgb888};
+
+    // A tall strip, near at the bottom and far at the top, a 12x the depth
+    // range so the effect is unmistakable.
+    pse::ScreenTriangle tri{};
+    tri.x0 = 10;  tri.y0 = 118; tri.z0 = 80;     // near
+    tri.x1 = 110; tri.y1 = 118; tri.z1 = 80;     // near
+    tri.x2 = 60;  tri.y2 = 2;   tri.z2 = 960;    // far
+    tri.r0 = tri.r1 = tri.r2 = 255;
+    tri.g0 = tri.g1 = tri.g2 = 255;
+    tri.b0 = tri.b1 = tri.b2 = 255;
+    tri.tex = 1;
+    tri.u0 = 0; tri.v0 = 0;
+    tri.u1 = 0; tri.v1 = 0;
+    tri.u2 = 0; tri.v2 = 255;        // v runs 0 at the near edge to 255 far
+
+    raster.set_textures(&k_checker, 1);
+    raster.begin_frame(target);
+    raster.draw(tri);
+
+    // Walk up the centre line and find where v crosses into the second texel
+    // row, which the checker makes visible as the first colour flip. With a
+    // 2x2 checker that boundary is v = 128, which affine mapping would place
+    // at the halfway row and perspective mapping places much closer to the far
+    // end, because the far half of the strip holds most of the texture.
+    int first_flip = -1;
+    const uint8_t* start = &buf[(117 * k_w + 60) * 3];
+    const bool start_red = start[0] > 200;
+    for (int y = 116; y >= 4; y--) {
+        const uint8_t* p = &buf[(y * k_w + 60) * 3];
+        if (p[0] < 10 && p[2] < 10) continue;          // outside the triangle
+        if ((p[0] > 200) != start_red) { first_flip = y; break; }
+    }
+    CHECK(first_flip > 0);
+    // Affine would flip around the middle of the strip, y about 60. Perspective
+    // correct pushes it well past that, toward the far edge.
+    std::printf("perspective: texture flips at row %d (affine would be ~60)\n",
+                first_flip);
+    CHECK(first_flip < 45);
+}
+
 int main() {
     test_winding_and_fill();
     test_depth_ordering();
@@ -821,6 +972,9 @@ int main() {
     test_quat_integration_stays_unit_and_lands_where_it_should();
     test_quat_body_turn_keeps_its_own_axis();
     test_quat_basis_agrees_with_quat_rotate();
+    test_untextured_is_unchanged_by_the_texture_path();
+    test_a_textured_triangle_samples_its_texture();
+    test_texture_mapping_is_perspective_correct();
     test_rgb565_matches_the_sdk();
     test_memory_budget();
     test_split_matches_immediate();

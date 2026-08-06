@@ -48,7 +48,62 @@ struct Pad {
     int32_t y;        // fp16 apron height, filled in by world_init
 };
 
-constexpr int k_pad_count = 2;
+constexpr int k_pad_count = 3;
+
+// Which flight this is. Mission one is the hop the game opens on; mission two
+// is the delivery, and it is the same world with a crate on it.
+enum class Mission : uint8_t { Hop = 1, Delivery = 2 };
+constexpr uint8_t k_mission_count = 2;
+
+// Where the crate is, in mission two. A pad index while it is sitting on one,
+// kCargoHeld once the ship has it, kCargoDone after it is delivered. Mission
+// one leaves it kCargoNone and nothing in the flight model reads it.
+constexpr uint8_t kCargoNone = 0xFD;
+constexpr uint8_t kCargoHeld = 0xFE;
+constexpr uint8_t kCargoDone = 0xFF;
+
+// A building standing in the valley.
+//
+// This is PLACEMENT, not geometry: the meshes are block.obj and tower.obj and
+// this says where they stand and how big. Rule 11 forbids writing polygons in
+// C++; instancing a real model from a table is what it expects instead.
+//
+// It lives in the sim rather than in the renderer because a building is solid.
+// ground_at reads this table, so the roof is a floor you can put down on and
+// the wall is something you can hit, and the picture and the collision cannot
+// disagree about where a building is because there is only one table.
+// Both meshes are one unit half width and stand on y = 0, so `half` is the
+// whole of the size: a building is drawn at a uniform scale of `half`, and its
+// height follows from which mesh it is. Uniform on purpose. draw_mesh turns a
+// baked normal by the same basis it turns a vertex by, which is exact for a
+// rotation and for a uniform scale and WRONG for a squashed one, because a
+// squashed normal wants the inverse transpose. Stretching a building here
+// would have lit its walls by how tall it was.
+struct Building {
+    int16_t x, z;      // whole world units, centre
+    int16_t half;      // half width, square footprint, and the draw scale
+    bool tower;        // false is block.obj, true is tower.obj
+    uint8_t tint;      // 0..255 multiplied over the mesh colours
+};
+
+// How tall each mesh is per unit of half width, matching the constants in
+// tools/gen_tomlander_props.py. The preview harness measures the models
+// against these rather than trusting the two files to stay in step.
+constexpr int32_t k_block_aspect_num = 8, k_block_aspect_den = 5;   // 1.6
+constexpr int32_t k_tower_aspect_num = 5, k_tower_aspect_den = 1;   // 5.0
+
+inline int32_t building_height(const Building& b) {
+    const int32_t half = b.half * 65536;
+    return b.tower ? (half * k_tower_aspect_num) / k_tower_aspect_den
+                   : (half * k_block_aspect_num) / k_block_aspect_den;
+}
+
+// Scattered along the two legs, and deliberately NOT within a pad's flat
+// apron: a building inside the apron would be an obstacle exactly where the
+// player has to be slow and low, which is where an obstacle stops being
+// scenery and starts being a trap.
+constexpr int k_building_count = 11;
+extern const Building k_buildings[k_building_count];
 
 // One tick's worth of input. Every field is a held state, not an edge: the
 // pods burn while a button is down and stop when it is not.
@@ -95,14 +150,21 @@ struct World {
     uint8_t landed_on;            // index, or 0xFF when airborne
     bool grounded;
 
+    Mission mission;
+    uint8_t cargo;                // a pad index, or kCargo* above
+
     Flight state;
     Fault fault;
     uint32_t ticks_in_state;
     uint32_t fuel_used;           // fp8, for the debrief
 };
 
-void world_init(World& world);
+void world_init(World& world, Mission mission = Mission::Hop);
 void world_tick(World& world, const Input& input);
+
+// Is the ship carrying the crate right now? The one question the flight model
+// asks about cargo, so it is the one the renderer and the HUD ask too.
+inline bool carrying(const World& world) { return world.cargo == kCargoHeld; }
 
 // ---- the fixed point trigonometry the sim runs on ----
 //

@@ -207,6 +207,25 @@ int main(int argc, char** argv) {
         capture(doomed, 0.0f, out, "preview_6_wreck.ppm");
     }
 
+    // 7 and 8: mission two, both halves of it. The crate sitting on the deck
+    // it starts on, and the crate slung under a hull that has picked it up.
+    // Both go through capture, so the buildings and the crate are inside the
+    // triangle budget this harness fails on rather than outside it.
+    {
+        tl::World run2;
+        tl::world_init(run2, tl::Mission::Delivery);
+        run2.x = run2.pads[1].x - (12 << 16);
+        run2.z = run2.pads[1].z - (10 << 16);
+        run2.y = tl::ground_at(run2, run2.x, run2.z) + (16 << 16);
+        run2.grounded = false;
+        capture(run2, 0.4f, out, "preview_7_crate.ppm");
+        if (tl::carrying(run2)) fail("the crate must start on its deck");
+
+        run2.cargo = tl::kCargoHeld;
+        run2.target = 2;
+        capture(run2, 0.4f, out, "preview_8_carrying.ppm");
+    }
+
     // The arrow promise, checked against the projection that actually draws
     // the deck: it must appear when the deck is out of frame and stay away
     // when it is in frame. The arrow's direction comes from the world bearing

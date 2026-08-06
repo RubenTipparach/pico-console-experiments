@@ -240,6 +240,34 @@ void Rasterizer::draw_typed(const ScreenTriangle& tri, int row_begin,
     const int inv_z1 = (k_fixed_one * k_fixed_one) / z1;
     const int inv_z2 = (k_fixed_one * k_fixed_one) / z2;
 
+    // Texturing rides on work this loop already does. u and v have to be
+    // interpolated in 1/z to be perspective correct, and the reciprocal depths
+    // above plus the z recovered per pixel are exactly what that needs, so the
+    // inner loop gains multiplies and NOT a divide. On a core with no divide
+    // instruction that is the difference between affordable and not.
+    //
+    // Premultiplied per triangle here, three multiplies each, so the per pixel
+    // cost is three multiplies and an add per coordinate.
+    // Scaled down by k_fixed_shift on the way in, which is what keeps every
+    // step of this in int32 on a 32 bit core:
+    //   inv_z    <= 2^20         (k_fixed_one^2 / 1)
+    //   u * inv_z >> 10          <= 255 * 2^10, about 2^18
+    //   w * that                 <= 2^10 * 2^18 = 2^28, and three of them sum
+    //                               to under 2^30
+    //   that * z                 is bounded at 255 * 2^20, about 2^28, because
+    //                               uz and z are reciprocal: where one is large
+    //                               the other is small.
+    // Without the shift the third line reaches 2^38 and wraps, which shows up
+    // as texture coordinates tearing on whichever surface happens to be
+    // closest to the camera.
+    const Texture* tex = texture(tri.tex);
+    const int u0z = (tri.u0 * inv_z0) >> k_fixed_shift;
+    const int u1z = (tri.u1 * inv_z1) >> k_fixed_shift;
+    const int u2z = (tri.u2 * inv_z2) >> k_fixed_shift;
+    const int v0z = (tri.v0 * inv_z0) >> k_fixed_shift;
+    const int v1z = (tri.v1 * inv_z1) >> k_fixed_shift;
+    const int v2z = (tri.v2 * inv_z2) >> k_fixed_shift;
+
     for (int y = min_y; y <= max_y; y++) {
         uint8_t* row = target_.pixels + static_cast<size_t>(y) * target_.row_stride;
         uint8_t* depth_row = depth_ + static_cast<size_t>(y) * target_.width;
@@ -270,12 +298,30 @@ void Rasterizer::draw_typed(const ScreenTriangle& tri, int row_begin,
             if (depth >= depth_row[x]) continue;
             depth_row[x] = depth;
 
-            const int r = clamp_int(
+            int r = clamp_int(
                 (w0 * tri.r0 + w1 * tri.r1 + w2 * tri.r2) / k_fixed_one, 0, 255);
-            const int g = clamp_int(
+            int g = clamp_int(
                 (w0 * tri.g0 + w1 * tri.g1 + w2 * tri.g2) / k_fixed_one, 0, 255);
-            const int b = clamp_int(
+            int b = clamp_int(
                 (w0 * tri.b0 + w1 * tri.b1 + w2 * tri.b2) / k_fixed_one, 0, 255);
+
+            if (tex != nullptr) {
+                // Interpolate u/z and v/z, then multiply back by the z this
+                // pixel already had to recover u and v. No divide: z came out
+                // of the depth test three lines up.
+                const int uz = w0 * u0z + w1 * u1z + w2 * u2z;
+                const int vz = w0 * v0z + w1 * v1z + w2 * v2z;
+                const int u = (uz * z) >> (2 * k_fixed_shift);
+                const int v = (vz * z) >> (2 * k_fixed_shift);
+                uint8_t tr, tg, tb;
+                texture_fetch(*tex, u, v, tr, tg, tb);
+                // Modulate, so the texel is lit by whatever the vertex colours
+                // carried. >> 8 rather than / 255: one count darker at the top
+                // of the range, and no divide in the inner loop.
+                r = (r * tr) >> 8;
+                g = (g * tg) >> 8;
+                b = (b * tb) >> 8;
+            }
 
             Format::store(row + static_cast<size_t>(x) * Format::k_bytes_per_pixel,
                           static_cast<uint8_t>(r), static_cast<uint8_t>(g),

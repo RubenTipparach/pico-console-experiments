@@ -8,8 +8,12 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
+#include "tomlander/block.hpp"
+#include "tomlander/facade.hpp"
+#include "tomlander/cargo.hpp"
 #include "tomlander/pad.hpp"
 #include "tomlander/tom.hpp"
+#include "tomlander/tower.hpp"
 
 namespace tlr {
 namespace {
@@ -28,6 +32,21 @@ pse::Renderer3D g_renderer(g_raster);
 pse::FrameQueue& g_queue = pse::shared_queue();
 
 FrameStats g_stats{};
+
+// The textures a ScreenTriangle's index resolves against. One entry, so the
+// tower's facade is index 1. The table is const and lives in flash; the
+// Rasterizer only holds a pointer to it.
+//
+// The tower used to be a banded facade: five bands on four walls, 42
+// triangles, 32 of them slivers covering about twenty pixels each. A sliver is
+// the worst case for a scanline rasterizer, paying a full bounding box, three
+// edge setups and three divides to fill almost nothing. As a texture it is one
+// quad per wall, 10 triangles, and the detail went UP, because a picture can
+// have windows in columns as well as rows.
+const pse::Texture k_textures[] = {
+    models::tomlander::facade,
+};
+constexpr uint8_t k_tex_facade = 1;   // 1 based, 0 means untextured
 
 constexpr float k_pi = 3.14159265f;
 
@@ -217,6 +236,59 @@ void draw_pads(const World& world) {
     }
 }
 
+// The valley's buildings. Placement comes from tl::k_buildings, the same table
+// ground_at collides against, so a building can never be drawn somewhere the
+// ship would fly straight through it.
+//
+// Both meshes are one unit half width, so `half` is the uniform scale, and the
+// tint darkens some of them so a row does not read as one repeated object.
+// Culling is the renderer's: a building behind the camera or past the far
+// plane costs a handful of rejected vertices and no triangles.
+void draw_buildings(const World& world) {
+    for (int i = 0; i < tl::k_building_count; i++) {
+        const tl::Building& b = tl::k_buildings[i];
+        const float x = static_cast<float>(b.x);
+        const float z = static_cast<float>(b.z);
+        // Founded on the untouched landscape, the same height ground_at uses
+        // for its roof, so the mesh and the collision share a floor.
+        const float y = to_f(tl::terrain_height(
+            world, b.x * 65536, b.z * 65536));
+        g_renderer.draw_mesh(b.tower ? models::tomlander::tower
+                                     : models::tomlander::block,
+                             x, y, z, 0.0f, static_cast<float>(b.half),
+                             b.tint, b.tint, b.tint, 0.0f, 0, 0.0f,
+                             b.tower ? k_tex_facade : 0);
+    }
+}
+
+// The crate, wherever it currently is: sitting on the deck it was left on, or
+// slung under the hull once the ship has it. Slung means it turns with the
+// hull, which is why it goes through the same basis the ship does.
+void draw_cargo(const World& world) {
+    if (world.cargo == tl::kCargoNone || world.cargo == tl::kCargoDone) return;
+
+    if (tl::carrying(world)) {
+        const pse::Basis b = pse::quat_basis(world.q);
+        // Tucked under the belly, between the legs. The hull's feet reach
+        // 1.85 below its origin and the crate is 1.7 tall, so a base at -1.72
+        // puts the whole crate inside the leg span: it never reaches through
+        // the deck on touchdown, and it never has to be drawn at a different
+        // size from the one sitting on the pad.
+        const float my = -1.72f;
+        g_renderer.draw_mesh(models::tomlander::cargo,
+                             to_f(world.x) + b.m[1] * my,
+                             to_f(world.y) + b.m[4] * my,
+                             to_f(world.z) + b.m[7] * my,
+                             b, 1.0f);
+        return;
+    }
+
+    const tl::Pad& pad = world.pads[world.cargo];
+    g_renderer.draw_mesh(models::tomlander::cargo,
+                         to_f(pad.x), to_f(pad.y) + to_f(tl::k_pad_rise),
+                         to_f(pad.z), 0.0f, 1.0f);
+}
+
 void draw_ship(const World& world) {
     // The attitude straight through, as the orientation it is. No angles are
     // extracted on the way, which is the point: extracting them would put the
@@ -400,6 +472,9 @@ FrameStats last_frame_stats() { return g_stats; }
 void render_scene(const World& world, const pse::RenderTarget& target,
                   float yaw, uint32_t time_ms) {
     g_queue.reset();
+    g_raster.set_textures(k_textures,
+                          static_cast<uint8_t>(sizeof(k_textures) /
+                                               sizeof(k_textures[0])));
     g_raster.begin_frame_collect(target, g_queue);
 
     g_renderer.set_fov(k_cam_fov);
@@ -412,7 +487,9 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                                 k_cam_reach, k_cam_reach, 0.0f);
 
     draw_ground(world);
+    draw_buildings(world);
     draw_pads(world);
+    draw_cargo(world);
     draw_ship(world);
 
     // A dusk sky: the ground fogs into it rather than ending on a line.
