@@ -11,4 +11,8 @@ start
   bag picoball 5
   bag potion 1
   money 300
+  # Said after a whiteout. Where the player wakes up is the last CENTRE they
+  # rested at, or here if they have never rested at one, so this line has to
+  # be true of both.
+  whiteout ALL YOUR PICOMON FAINTED! YOU HURRIED TO A CENTRE.
 end

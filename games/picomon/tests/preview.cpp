@@ -77,11 +77,15 @@ void battle_shots(const pm::World& at_menu, const std::string& out) {
         pm::world_tick(w, press_a());
         for (int i = 0; i < 40 && w.battle.state != pm::BattleState::Attack; i++)
             pm::world_tick(w, pm::Input{});
-        run(w, pm::Input{}, 3);
-        capture(w, 5400, out + "/battle_2_attack.ppm");
-        // And what it said afterwards.
-        for (int i = 0; i < 40 && w.battle.state == pm::BattleState::Attack; i++)
+        capture(w, 5300, out + "/battle_2_attack.ppm");
+        // Every tick of the beat, because the whole point of it is motion and
+        // a single frame of a flash proves nothing about the flash.
+        for (int i = 0; w.battle.state == pm::BattleState::Attack && i < 20; i++) {
+            char name[64];
+            std::snprintf(name, sizeof name, "/beat_%02d.ppm", i);
+            capture(w, 5400 + uint32_t(i) * 30, out + name);
             pm::world_tick(w, pm::Input{});
+        }
         capture(w, 5800, out + "/battle_3_damage.ppm");
     }
 
@@ -167,11 +171,39 @@ void town_shots(const std::string& out) {
     capture(w, 7600, out + "/town_7_gym_leader.ppm");
     pm::world_tick(w, press_a());
     capture(w, 7800, out + "/town_8_gym_challenge.ppm");
+    // Walk away from a challenge that has been issued and not yet started,
+    // which the shots below do, so leave it in a state a player could be in.
+    w.battle = pm::Battle{};
+    w.battle.trainer_npc = 0xFF;
 
     // The gate on Route 1 that the badge opens.
     go(w, pm::zone_route1, 11, 4, 0);
     run(w, pm::Input{}, 2);
     capture(w, 8000, out + "/town_9_gate.ppm");
+
+    // The Centre: the nurse, and what a whiteout looks like from the other
+    // side of it.
+    go(w, pm::zone_healcentre, 6, 3, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 8200, out + "/town_10_centre.ppm");
+    pm::world_tick(w, press_a());
+    capture(w, 8400, out + "/town_11_nurse.ppm");
+    run(w, press_a(), 4);
+
+    // Lose everything out on the route, and wake up back at that counter.
+    go(w, pm::zone_route1, 11, 20, 0);
+    run(w, pm::Input{}, 2);
+    w.mode = pm::Mode::Battle;
+    w.battle = pm::Battle{};
+    w.battle.foe = pm::make_mon(2, 30);
+    w.battle.wild = true;
+    w.battle.trainer_npc = 0xFF;
+    w.battle.state = pm::BattleState::Message;
+    for (int i = 0; i < w.party_count; i++) w.party[i].hp = 0;
+    for (int i = 0; i < 200 && w.mode == pm::Mode::Battle; i++) {
+        pm::world_tick(w, press_a());
+    }
+    capture(w, 8600, out + "/town_12_whiteout.ppm");
 }
 
 }  // namespace

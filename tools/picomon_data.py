@@ -39,6 +39,9 @@ ITEM_EFFECTS = ["ball", "heal", "cure", "revive", "key"]
 FACINGS = ["north", "east", "south", "west"]
 NPC_KINDS = ["villager", "trainer", "healer", "shop"]
 EVENT_KINDS = ["sign", "item", "trigger"]
+# Which tree grows in a zone. The order matches art/build_art.py's
+# TREE_KINDS, and render.cpp static_asserts that the two agree.
+TREE_KINDS = ["pine", "broadleaf"]
 TILE_FLAGS = {
     "walk": 0x01, "block": 0x02, "water": 0x04, "encounter": 0x08,
     "door": 0x10, "ledge_north": 0x20, "ledge_east": 0x40,
@@ -104,6 +107,7 @@ class Data:
         self.sheets, self.sheet_ix = [], {}
         self.flag_set, self.flag_read = {}, {}
         self.text = []           # the page pool
+        self.text_sealed = False
         self.start = None
 
     # ---- shared helpers
@@ -114,6 +118,13 @@ class Data:
         return self.sheet_ix[name]
 
     def add_text(self, pages, where):
+        # Once the pool has been written out, an index handed back from here
+        # points past the end of the array the game will actually carry. That
+        # is not a theoretical hazard: it shipped once, silently, and only
+        # showed up under a sanitiser.
+        if self.text_sealed:
+            fail(where, "text added after the pool was written out, so this "
+                        "index would point past the end of k_text")
         for p in pages:
             if not wraps_within(p, DIALOGUE_COLS, DIALOGUE_LINES):
                 fail(where, f"text does not fit {DIALOGUE_LINES} lines of "
@@ -121,6 +132,9 @@ class Data:
         first = len(self.text)
         self.text.extend(pages)
         return first, len(pages)
+
+    def seal_text(self):
+        self.text_sealed = True
 
     def flag(self, name, where, writing):
         book = self.flag_set if writing else self.flag_read
@@ -355,7 +369,7 @@ class Data:
             fail(path, "expected exactly one start block")
         where, header, body = got[0]
         st = dict(zone=None, x=0, y=0, facing="south", party=[], bag=[],
-                  money=0)
+                  money=0, whiteout=[])
         for w, line in body:
             k, _, v = line.partition(" ")
             v = v.strip()
@@ -378,12 +392,17 @@ class Data:
                 st["bag"].append((it, int(cnt)))
             elif k == "money":
                 st["money"] = int(v)
+            elif k == "whiteout":
+                st["whiteout"].append(v)
             else:
                 fail(w, f"unknown key {k!r} in the start block")
         if not st["zone"]:
             fail(where, "the start block has no zone")
         if not st["party"]:
             fail(where, "the player starts with nothing to fight with")
+        if not st["whiteout"]:
+            fail(where, "the start block has no whiteout line, so losing every "
+                        "creature would teleport the player with no explanation")
         self.start = (where, st)
 
     # ---- zones
@@ -397,7 +416,7 @@ class Data:
     def load_zone(self, path):
         expect = os.path.splitext(os.path.basename(path))[0]
         z = dict(id=None, name=None, w=0, h=0, tiles=[], enc=[], npcs=[],
-                 warps=[], events=[], indoor=False, path=path)
+                 warps=[], events=[], indoor=False, trees="pine", path=path)
         lines = list(read_records(path))
         i = 0
         while i < len(lines):
@@ -430,6 +449,12 @@ class Data:
                 if rest:
                     fail(where, "indoor takes no argument")
                 z["indoor"] = True
+                i += 1
+            elif key == "trees":
+                if rest not in TREE_KINDS:
+                    fail(where, f"unknown tree {rest!r}, expected one of "
+                                f"{', '.join(TREE_KINDS)}")
+                z["trees"] = rest
                 i += 1
             elif key == "tiles":
                 i += 1
@@ -772,6 +797,8 @@ def emit(d, hpp_path, cpp_path):
       + ", Count };")
     w("enum class ItemEffect : uint8_t { "
       + ", ".join(e.capitalize() for e in ITEM_EFFECTS) + " };")
+    w("enum class TreeKind : uint8_t { "
+      + ", ".join(k.capitalize() for k in TREE_KINDS) + ", Count };")
     w("enum class NpcKind : uint8_t { "
       + ", ".join(k.capitalize() for k in NPC_KINDS) + " };")
     w("enum class EventKind : uint8_t { "
@@ -830,6 +857,7 @@ def emit(d, hpp_path, cpp_path):
     w("    const uint8_t* tiles;      // w * h tile indices into k_tiles")
     w("    uint8_t w, h;")
     w("    uint8_t indoor;            // no sky, and the border is wall")
+    w("    uint8_t trees;             // which TreeKind grows here")
     w("    const EncTable* enc;   uint8_t enc_count;")
     w("    const EncSlot* enc_slots;")
     w("    const NpcDef* npcs;    uint8_t npc_count;")
@@ -888,6 +916,8 @@ def emit(d, hpp_path, cpp_path):
     w("    uint16_t money;")
     w("    uint8_t party_first, party_count;")
     w("    uint8_t bag_first, bag_count;")
+    w("    uint16_t whiteout_first;   // what is said after a whiteout")
+    w("    uint8_t whiteout_count;")
     w("};")
     w("struct BagEntry { uint8_t item, count; };")
     w("extern const StartState k_start;")
@@ -1044,17 +1074,6 @@ def emit(d, hpp_path, cpp_path):
             w("};")
         w("")
 
-    # The text pool is only complete once every zone has been walked, so it is
-    # emitted after the zone tables that index into it. C++ does not care about
-    # the order of definitions at file scope, and this keeps one pass.
-    ci = c.index("const char* const k_text[] = {")
-    pool = ["const char* const k_text[] = {"]
-    for t in d.text:
-        pool.append(f'    "{t}",')
-    pool.append("};")
-    end = c.index("};", ci)
-    c[ci:end + 1] = pool
-
     w("const Zone k_zones[] = {")
     for z in d.zones:
         zid = ident(z["id"])
@@ -1064,7 +1083,8 @@ def emit(d, hpp_path, cpp_path):
         warps = f"k_warps_{zid}, {len(z['warps'])}" if z["warps"] else "nullptr, 0"
         evs = f"k_events_{zid}, {len(z['events'])}" if z["events"] else "nullptr, 0"
         w(f'    {{"{z["name"]}", k_tiles_{zid}, {z["w"]}, {z["h"]}, '
-          f"{1 if z['indoor'] else 0}, {enc}, {npcs}, {warps}, {evs}}},"
+          f"{1 if z['indoor'] else 0}, {TREE_KINDS.index(z['trees'])}, "
+          f"{enc}, {npcs}, {warps}, {evs}}},"
           f"   // {z['id']}")
     w("};")
     w("")
@@ -1073,11 +1093,36 @@ def emit(d, hpp_path, cpp_path):
         w(f"    {{item_{ident(it)}, {cnt}}},")
     w("};")
     w("")
+    whiteout = d.add_text(st["whiteout"], d.start[0])
     w(f'const StartState k_start = {{zone_{ident(st["zone"])}, {st["x"]}, '
       f'{st["y"]}, {FACINGS.index(st["facing"])}, {st["money"]}, '
-      f'{start_party_first}, {len(st["party"])}, 0, {len(st["bag"])}}};')
+      f'{start_party_first}, {len(st["party"])}, 0, {len(st["bag"])}, '
+      f'{whiteout[0]}, {whiteout[1]}}};')
     w("")
     w("}  // namespace pm")
+
+    # The text pool goes in last, once nothing else can add to it.
+    #
+    # It is emitted as an empty placeholder early, because C++ does not care
+    # about the order of definitions at file scope and one pass is simpler
+    # than two. This splice used to happen before k_start was written, and
+    # k_start's whiteout line is added to the pool at that point: the index
+    # went in as 53 and the array shipped with 53 entries, so the game read
+    # one past the end of k_text the first time a player lost every creature.
+    # It reached a device build green. Nothing but ASan saw it.
+    #
+    # So the seal is here, after the last thing that can call add_text, and
+    # add_text refuses to run once it has happened.
+    d.seal_text()
+    ci = c.index("const char* const k_text[] = {")
+    pool = ["const char* const k_text[] = {"]
+    for t in d.text:
+        pool.append(f'    "{t}",')
+    pool.append("};")
+    end = c.index("};", ci)
+    c[ci:end + 1] = pool
+    if len(pool) - 2 != len(d.text):
+        raise DataError("the text pool and its count disagree")
 
     # k_text is emitted with the final pool, but the extern declaration in the
     # header carries the count, so it has to be patched after the walk too.

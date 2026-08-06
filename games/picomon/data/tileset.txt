@@ -26,3 +26,13 @@ C       cavewall    block                   33 33 44
 # its own tile and the renderer stands a plain block on it.
 W       wall        block                   77 66 55
 =       counter     block                   99 77 55
+
+# The CENTRE. A room reads as a hospital from its fittings, not from a label
+# on the door, so the machine bank, the reception desk and the plants are
+# tiles rather than decoration painted into one map.
+l       clinic      walk                    ee ee dd
++       cross       walk                    dd 55 55
+M       machine     block                   cc cc dd
+K       desk        block                   ee ee ee
+Y       plant       block                   88 aa 66
+B       bench       block                   bb 99 77

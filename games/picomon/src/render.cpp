@@ -9,17 +9,19 @@
 
 #include "ball.hpp"
 #include "counter.hpp"
+#include "desk.hpp"
 #include "emberkit.hpp"
 #include "house.hpp"
+#include "machine.hpp"
 #include "mossling.hpp"
 #include "mothlet.hpp"
 #include "pebblin.hpp"
+#include "pine.hpp"
+#include "plant.hpp"
 #include "rock.hpp"
 #include "sign.hpp"
 #include "sparklet.hpp"
 #include "tidepup.hpp"
-#include "tree.hpp"
-#include "tree_far.hpp"
 #include "wall.hpp"
 
 namespace pmr {
@@ -236,6 +238,91 @@ void draw_sprite(int sheet, int frame, int cx, int top, uint8_t depth,
     }
 }
 
+// A tree, as a sprite standing on its tile.
+//
+// It used to be a mesh, and a screenful of Route 1 is up to 87 tree tiles: at
+// twenty triangles each that is more triangles spent on trees than on the
+// whole rest of the frame, on a chip with no FPU. A sprite is one blit.
+//
+// It is also the better picture here. The lens is long enough that a tile is
+// ten pixels across near the player and eight at the far edge of the window,
+// so one fixed size is very nearly right everywhere, and two sizes cover the
+// rest of the falloff.
+//
+// A zone says which species grows in it and the shape varies only within that
+// species, so an area is one kind of forest rather than a mixture. The
+// variation is a hash of the tile, which keeps a forest from being one tree
+// stamped in a grid, and the hash is the same every frame, which is what
+// stops the treeline crawling as the player walks.
+static_assert(int(TreeKind::Count) == k_tree_kind_count,
+              "the tree species in the level data and the runs of frames in "
+              "the art have to be the same list, in the same order");
+
+void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
+    int px = 0, py = 0, depth = 0;
+    if (!g_renderer.project(wx, 0.0f, wz, px, py, depth)) return;
+    const int sheet = far ? art_treefar : art_treenear;
+    const SpriteSheet& sh = k_sheets[sheet];
+    const TreeKindFrames& k = k_tree_kinds[kind < k_tree_kind_count ? kind : 0];
+    const int frame = k.first + (tx * 37 + ty * 11) % (k.count ? k.count : 1);
+    // Depth one step nearer than the ground it stands on, the same as every
+    // other billboard here, so a tree wins against its own tile and loses to
+    // anything genuinely in front of it.
+    const uint8_t d = uint8_t(depth * 255 / pse::k_fixed_one - 1);
+    draw_sprite(sheet, frame, px, py - sh.h, d, false, 0);
+}
+
+// The colour a hit throws off, by the attacking move's type. One rule and no
+// table of effect sprites: at 120 pixels a coloured burst reads instantly and
+// a six frame animation reads as noise.
+void type_colour(uint8_t type, uint8_t& r, uint8_t& g, uint8_t& b) {
+    switch (Type(type)) {
+        case Type::Ember: r = 0xFF; g = 0x88; b = 0x22; return;
+        case Type::Tide:  r = 0x55; g = 0xBB; b = 0xFF; return;
+        case Type::Leaf:  r = 0x66; g = 0xDD; b = 0x55; return;
+        case Type::Spark: r = 0xFF; g = 0xEE; b = 0x44; return;
+        case Type::Stone: r = 0xCC; g = 0xAA; b = 0x66; return;
+        default:          r = 0xEE; g = 0x88; b = 0xEE; return;
+    }
+}
+
+// The burst itself: a ring of sparks thrown out from where the blow landed,
+// expanding and thinning across the strike. Drawn straight to the target with
+// no depth test, because it is in front of everything by definition and a
+// depth tested spark that loses to the creature it just hit is a spark nobody
+// sees.
+//
+// The spread is a fixed pattern rather than a random one on purpose: it costs
+// no state, it is identical on every device, and it cannot flicker.
+void impact_burst(int cx, int cy, float k, int strength, uint8_t type) {
+    if (k < 0.0f || k > 1.0f) return;
+    uint8_t r, g, b;
+    type_colour(type, r, g, b);
+    static const int8_t k_dir[12][2] = {
+        {4, 0}, {3, 3}, {0, 4}, {-3, 3}, {-4, 0}, {-3, -3},
+        {0, -4}, {3, -3}, {5, 2}, {-5, 2}, {2, -5}, {-2, -5},
+    };
+    const int reach = 3 + strength * 5 / 4;
+    const int n = strength > 4 ? 12 : 8;
+    // Fades as it flies, and stops rather than darkening to black: a spark
+    // scaled toward zero is a black pixel, and a ring of black pixels on
+    // green grass is not a burst ending, it is soot.
+    const int fade = int(255.0f * (1.0f - k));
+    if (fade < 70) return;
+    for (int i = 0; i < n; i++) {
+        const float d = 0.25f + k * 1.15f;
+        const int x = cx + int(float(k_dir[i][0]) * d * float(reach) / 4.0f);
+        const int y = cy + int(float(k_dir[i][1]) * d * float(reach) / 4.0f);
+        const uint8_t rr = uint8_t(r * fade / 255);
+        const uint8_t gg = uint8_t(g * fade / 255);
+        const uint8_t bb = uint8_t(b * fade / 255);
+        plot(x, y, rr, gg, bb);
+        plot(x + 1, y, rr, gg, bb);
+        plot(x, y + 1, rr, gg, bb);
+        if (strength > 4) plot(x + 1, y + 1, rr, gg, bb);
+    }
+}
+
 // A darkened ellipse of ground under a billboard. No geometry and no art, and
 // it is the single thing that stops a sprite reading as a sticker on screen.
 void ground_shadow(float wx, float wz, float radius) {
@@ -419,8 +506,8 @@ void draw_overworld(const World& w, uint32_t t) {
             const float far = wz - pz > 4.0f ? 1.0f : 0.0f;
             switch (tile) {
                 case tile_tree:
-                    g_renderer.draw_mesh(far ? tree_far : tree, wx, 0.0f, wz,
-                                         float((x * 37 + y * 11) % 6), 1.0f);
+                    // Sprites, not meshes: see draw_tree.
+                    draw_tree(x, y, wx, wz, far != 0.0f, z.trees);
                     break;
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);
@@ -436,7 +523,19 @@ void draw_overworld(const World& w, uint32_t t) {
                     g_renderer.draw_mesh(wall, wx, 0.0f, wz, 0.0f, 1.0f);
                     break;
                 case tile_counter:
+                    // A bench is a counter in a different room. One mesh, and
+                    // the tile colour under it does the rest.
+                case tile_bench:
                     g_renderer.draw_mesh(counter, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_desk:
+                    g_renderer.draw_mesh(desk, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_machine:
+                    g_renderer.draw_mesh(machine, wx, 0.0f, wz, 0.0f, 1.0f);
+                    break;
+                case tile_plant:
+                    g_renderer.draw_mesh(plant, wx, 0.0f, wz, 0.0f, 1.0f);
                     break;
                 case tile_house:
                     // One mesh per building, on its own north west corner
@@ -513,8 +612,15 @@ void draw_dialogue(const World& w, uint32_t t) {
 
 // ---- battle --------------------------------------------------------------
 
+// `shown` is the HP the bar draws at, which is not always the HP the creature
+// has: across the strike it walks down from what it had to what it has, so a
+// player sees the damage happen rather than finding it already applied. The
+// number beside it walks with the bar, because a bar and a number disagreeing
+// is worse than either being late.
 void hp_plate(int x, int y, const char* name, int level, int hp, int max_hp,
-              bool show_numbers) {
+              bool show_numbers, int shown = -1) {
+    if (shown < 0) shown = hp;
+    hp = shown;
     panel(x, y, 56, show_numbers ? 24 : 19);
     text(name, x + 3, y + 3, 0xEE, 0xEE, 0xEE);
     char lv[8] = "L";
@@ -598,9 +704,14 @@ void draw_battle(const World& w, uint32_t t) {
     ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
     ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
     ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
-    for (int i = 0; i < 9; i++) {
-        g_renderer.draw_mesh(tree, -10.0f + float(i) * 2.5f, 0.0f,
-                             16.0f + float(i % 3) * 2.0f, float(i), 1.6f);
+    // The treeline, as real geometry. The overworld cannot afford it, with up
+    // to 87 tree tiles on screen; the arena has five and nothing else in the
+    // shot, so they can be lit, sit properly in the depth buffer, and pick up
+    // the camera's angle the way a billboard never will.
+    for (int i = 0; i < 5; i++) {
+        g_renderer.draw_mesh(pine, -9.0f + float(i) * 4.5f, 0.0f,
+                             17.0f + float(i % 3) * 2.5f,
+                             float(i) * 1.3f, 2.4f);
     }
 
     // Where the two of them stand. The foe is further out than it looks like
@@ -611,15 +722,48 @@ void draw_battle(const World& w, uint32_t t) {
     const float foe_x = 2.5f, foe_z = 6.0f;
     const float me_x = -1.8f, me_z = 0.2f;
 
-    // The lunge. The whole turn is already resolved by the time the sim
-    // reaches Attack, so this beat covers both moves; it shows whoever went
-    // first stepping in, which is the part a player is watching for.
+    // The turn, played back.
+    //
+    // The sim resolves both moves before it reaches Attack, so this beat has
+    // to replay something rather than watch it happen. It reads fx_dmg,
+    // fx_mult and fx_type, which use_move wrote down as it went.
+    //
+    // Fourteen ticks, split in two: the first mover swings in the first half
+    // and the second mover in the second, which is the order the messages
+    // underneath will then explain. Before this the whole thing was one lunge
+    // and a line of text, and a player could not tell a hit from a miss.
+    const int k_beat = 14, k_half = 7;
     float lunge_me = 0.0f, lunge_foe = 0.0f;
+    int hit_side = -1;              // who is being hit right now, -1 for nobody
+    float hit_k = 0.0f;             // 0 at the moment of impact, 1 when spent
     if (b.state == BattleState::Attack) {
-        const float k = sinf((1.0f - float(b.timer) / 14.0f) * 3.14159f);
-        (b.player_first ? lunge_me : lunge_foe) = k * 0.9f;
+        const int elapsed = k_beat - int(b.timer);
+        const bool second = elapsed >= k_half;
+        const int phase = second ? elapsed - k_half : elapsed;
+        const bool attacker_is_player = second ? !b.player_first : b.player_first;
+        const float k = sinf(float(phase) / float(k_half) * 3.14159f);
+        (attacker_is_player ? lunge_me : lunge_foe) = k * 0.9f;
+        // The strike lands at the top of the lunge, not at the start of it.
+        const int side = attacker_is_player ? Battle::k_foe : Battle::k_you;
+        if (b.fx_dmg[side] > 0 && phase >= 3) {
+            hit_side = side;
+            hit_k = float(phase - 3) / float(k_half - 3);
+        }
     }
     const float ux = 0.595f, uz = 0.803f;   // player to foe, normalised
+
+    // A hit whitens the thing that took it and knocks it sideways. The white
+    // is what reads at 120 pixels; the shake is what makes the white feel
+    // like a blow rather than a lamp coming on.
+    const int flash_you = hit_side == Battle::k_you
+                              ? int(255.0f * (1.0f - hit_k)) : 0;
+    const int flash_foe = hit_side == Battle::k_foe
+                              ? int(255.0f * (1.0f - hit_k)) : 0;
+    const float shake = hit_side < 0 ? 0.0f
+        : 0.28f * (1.0f - hit_k) * sinf(hit_k * 22.0f) *
+          (b.fx_mult[hit_side] > 4 ? 1.8f : 1.0f);
+    const float shake_you = hit_side == Battle::k_you ? shake : 0.0f;
+    const float shake_foe = hit_side == Battle::k_foe ? shake : 0.0f;
 
     const float bob = 0.04f * sinf(float(t) * 0.0024f);
 
@@ -637,18 +781,22 @@ void draw_battle(const World& w, uint32_t t) {
         const Species& fs = k_species[b.foe.species];
         const float scale = float(fs.scale) / 100.0f;
         if (foe_out) {
-            g_renderer.draw_mesh(*mesh_for(fs.mesh), foe_x - lunge_foe * ux,
+            g_renderer.draw_mesh(*mesh_for(fs.mesh),
+                                 foe_x - lunge_foe * ux + shake_foe,
                                  0.02f + bob, foe_z - lunge_foe * uz,
                                  3.14159f, scale * 2.15f,
-                                 fs.tint_r, fs.tint_g, fs.tint_b);
+                                 fs.tint_r, fs.tint_g, fs.tint_b, 0.0f,
+                                 uint8_t(flash_foe));
         }
     }
     {
         const Species& ms = k_species[me.species];
-        g_renderer.draw_mesh(*mesh_for(ms.mesh), me_x + lunge_me * ux,
+        g_renderer.draw_mesh(*mesh_for(ms.mesh),
+                             me_x + lunge_me * ux + shake_you,
                              0.02f - bob, me_z + lunge_me * uz, 0.15f,
                              float(ms.scale) / 100.0f * 1.25f,
-                             ms.tint_r, ms.tint_g, ms.tint_b);
+                             ms.tint_r, ms.tint_g, ms.tint_b, 0.0f,
+                             uint8_t(flash_you));
     }
     if (b.state == BattleState::Throw || b.state == BattleState::Wobble ||
         b.state == BattleState::Caught) {
@@ -660,9 +808,31 @@ void draw_battle(const World& w, uint32_t t) {
         g_renderer.draw_mesh(ball, bx, by, bz, float(t) * 0.01f, 1.0f);
     }
 
+    // The burst, over the creature that took the blow.
+    if (hit_side >= 0) {
+        const float hx = hit_side == Battle::k_foe
+                             ? foe_x - lunge_foe * ux + shake_foe
+                             : me_x + lunge_me * ux + shake_you;
+        const float hz = hit_side == Battle::k_foe
+                             ? foe_z - lunge_foe * uz : me_z + lunge_me * uz;
+        int sx = 0, sy = 0, sd = 0;
+        if (g_renderer.project(hx, hit_side == Battle::k_foe ? 0.6f : 0.8f,
+                               hz, sx, sy, sd)) {
+            impact_burst(sx, sy, hit_k, b.fx_mult[hit_side], b.fx_type[hit_side]);
+        }
+    }
+
+    // The plates, with the bar of whoever is being hit still draining.
+    int shown_foe = -1, shown_you = -1;
+    if (hit_side == Battle::k_foe) {
+        shown_foe = int(b.foe.hp) + int(float(b.fx_dmg[Battle::k_foe]) * (1.0f - hit_k));
+    } else if (hit_side == Battle::k_you) {
+        shown_you = int(me.hp) + int(float(b.fx_dmg[Battle::k_you]) * (1.0f - hit_k));
+    }
     hp_plate(3, 4, k_species[b.foe.species].name, b.foe.level, b.foe.hp,
-             b.foe.max_hp, false);
-    hp_plate(61, 55, k_species[me.species].name, me.level, me.hp, me.max_hp, true);
+             b.foe.max_hp, false, shown_foe);
+    hp_plate(61, 55, k_species[me.species].name, me.level, me.hp, me.max_hp,
+             true, shown_you);
 
     panel(0, 84, 120, 36);
     char line[64];
@@ -894,9 +1064,14 @@ void draw_title(uint32_t t) {
     ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
     ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
     ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
-    for (int i = 0; i < 9; i++) {
-        g_renderer.draw_mesh(tree, -10.0f + float(i) * 2.5f, 0.0f,
-                             16.0f + float(i % 3) * 2.0f, float(i), 1.6f);
+    // The treeline, as real geometry. The overworld cannot afford it, with up
+    // to 87 tree tiles on screen; the arena has five and nothing else in the
+    // shot, so they can be lit, sit properly in the depth buffer, and pick up
+    // the camera's angle the way a billboard never will.
+    for (int i = 0; i < 5; i++) {
+        g_renderer.draw_mesh(pine, -9.0f + float(i) * 4.5f, 0.0f,
+                             17.0f + float(i % 3) * 2.5f,
+                             float(i) * 1.3f, 2.4f);
     }
     g_renderer.draw_mesh(emberkit, -1.6f, 0.02f, 1.4f, 0.5f, 1.4f);
     g_renderer.draw_mesh(ball, 1.6f, 0.35f, 1.2f, float(t) * 0.003f, 1.2f);

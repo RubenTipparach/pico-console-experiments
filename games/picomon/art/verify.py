@@ -67,7 +67,13 @@ def read(path):
     return w, h, layers, frames, tags
 
 
-for name in ("hero", "villager", "trainer", "healer"):
+# Every sheet build_art.py writes, read back out of the directory rather
+# than listed here: a new sheet that nobody verifies is the one that ships
+# broken.
+import json as _json
+with open(os.path.join(HERE, "sheets.json")) as _f:
+    _names = sorted(_json.load(_f))
+for name in _names:
     base = os.path.join(HERE, name)
     w, h, layers, frames, tags = read(base + ".aseprite")
     print("   layers:", layers, " tags:", tags)

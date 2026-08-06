@@ -1,0 +1,53 @@
+# The CENTRE's healing machine: one tile of the bank along the back wall.
+#
+# Y is up, +Z is north, one world unit is one map tile. The lowest vertex sits
+# on y = 0 and the model is centred on x = 0 and z = 0, so the game places it
+# by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark.
+#
+# A cabinet with a lit panel across its front and a tray of ball slots on
+# top. 1.15 units, so the bank clears the desk in front of it and reads as
+# two rows of fittings rather than one lumpy one.
+#
+# 16 triangles. There are five of these in the room, which is the whole
+# reason the tray is a slab with a coloured top rather than three domes:
+# domes at this size are four pixels each and cost twelve triangles apiece.
+
+mtllib machine.mtl
+
+# the cabinet
+v -0.52 0.00 -0.52
+v  0.52 0.00 -0.52
+v  0.52 0.00  0.52
+v -0.52 0.00  0.52
+v -0.52 1.15 -0.52
+v  0.52 1.15 -0.52
+v  0.52 1.15  0.52
+v -0.52 1.15  0.52
+
+# the tray of slots, sitting on top and set back
+v -0.40 1.15 -0.30
+v  0.40 1.15 -0.30
+v  0.40 1.15  0.30
+v -0.40 1.15  0.30
+v -0.40 1.32 -0.30
+v  0.40 1.32 -0.30
+v  0.40 1.32  0.30
+v -0.40 1.32  0.30
+
+usemtl machine_body
+f 5 6 7 8
+f 2 3 7 6
+f 4 1 5 8
+
+usemtl machine_panel
+f 1 2 6 5
+
+usemtl machine_slots
+f 13 14 15 16
+
+usemtl machine_tray
+f 9 10 14 13

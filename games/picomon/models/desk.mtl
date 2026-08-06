@@ -1,0 +1,16 @@
+# Colours for desk.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+#
+# White top, red front. The red is the only saturated thing at that height in
+# the room and it is what the eye lands on when the player walks in.
+
+newmtl desk_top
+Kd 0.933333 0.933333 0.933333   # #EEEEEE
+
+newmtl desk_face
+Kd 0.800000 0.266667 0.266667   # #CC4444
+
+newmtl desk_side
+Kd 0.733333 0.733333 0.733333   # #BBBBBB

@@ -54,5 +54,27 @@
         3
       ]
     }
+  },
+  "treenear": {
+    "frame_w": 16,
+    "frame_h": 26,
+    "frames": 3,
+    "tags": {
+      "shapes": [
+        0,
+        2
+      ]
+    }
+  },
+  "treefar": {
+    "frame_w": 12,
+    "frame_h": 18,
+    "frames": 3,
+    "tags": {
+      "shapes": [
+        0,
+        2
+      ]
+    }
   }
 }

@@ -63,6 +63,11 @@ void test_data_is_sane() {
             check(pm::tile_walkable(zone, wp.x, wp.y),
                   "the warp tile itself is walkable");
         }
+        // The species of tree a zone grows has to be one the art has frames
+        // for. The renderer indexes a table with it and a stray value would
+        // read past the end of that table.
+        check(zone.trees < uint8_t(pm::TreeKind::Count),
+              "zone names a tree species that exists");
         // An NPC standing in a wall can never be talked to.
         for (int i = 0; i < zone.npc_count; i++) {
             check(pm::tile_walkable(zone, zone.npcs[i].x, zone.npcs[i].y),
@@ -227,6 +232,201 @@ void test_save_round_trips() {
     data.version = pm::k_save_version;
     data.zone = 200;
     check(!pm::world_load(bad, data), "a save naming no zone is refused");
+    data.zone = w.zone;
+    data.home_zone = 200;
+    check(!pm::world_load(bad, data),
+          "a save whose home is nowhere is refused, because a whiteout would "
+          "read it and put the player there");
+}
+
+// ---- fainting, and where you wake up ------------------------------------
+
+// Walk up to an NPC and press A until whatever it does has happened.
+pm::World talk_to(uint8_t zone, uint8_t x, uint8_t y, uint8_t facing) {
+    pm::World w = start_world(2468);
+    w.zone = zone;
+    w.tx = x;
+    w.ty = y;
+    w.facing = facing;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    pm::world_tick(w, press_a());
+    return w;
+}
+
+// Knock the whole party out mid battle and press through to the other side.
+void faint_the_party(pm::World& w) {
+    w.mode = pm::Mode::Battle;
+    w.battle = pm::Battle{};
+    w.battle.foe = pm::make_mon(2, 30);
+    w.battle.wild = true;
+    w.battle.trainer_npc = 0xFF;
+    w.battle.active = 0;
+    w.battle.state = pm::BattleState::Menu;
+    for (int i = 0; i < w.party_count; i++) w.party[i].hp = 0;
+    // Fight anyway: the sim notices the active creature is down when the
+    // turn's messages have finished, which is the path a real loss takes.
+    w.battle.state = pm::BattleState::Message;
+    for (int i = 0; i < 200 && w.mode == pm::Mode::Battle; i++) {
+        pm::world_tick(w, press_a());
+    }
+}
+
+void test_a_whiteout_goes_home_and_says_so() {
+    pm::World w = start_world(1357);
+    // Somewhere far from anywhere, so "went home" cannot be confused with
+    // "stayed put".
+    w.zone = pm::zone_route1;
+    w.tx = 11;
+    w.ty = 20;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    // Spend the PP first. A party that loses with moves still charged proves
+    // nothing about whether the whiteout gives them back.
+    for (int i = 0; i < w.party_count; i++) {
+        for (int m = 0; m < 4; m++) w.party[i].pp[m] = 0;
+    }
+
+    faint_the_party(w);
+    check(w.mode != pm::Mode::Battle, "a lost battle ends");
+    check(w.mode == pm::Mode::Dialogue,
+          "and says something rather than cutting to another town in silence");
+    check(w.zone == pm::k_start.zone && w.tx == pm::k_start.x &&
+          w.ty == pm::k_start.y,
+          "with no CENTRE rested at, home is where the game started");
+    for (int i = 0; i < w.party_count; i++) {
+        check(w.party[i].hp == w.party[i].max_hp, "everyone is patched up");
+        for (int m = 0; m < 4; m++) {
+            if (w.party[i].moves[m] == 0xFF) continue;
+            check(w.party[i].pp[m] == pm::k_moves[w.party[i].moves[m]].pp,
+                  "and has its moves back, not just its health");
+        }
+    }
+    check(w.save_pending, "and it is worth writing down");
+
+    // Dismissing the line leaves the player standing in the world, not stuck
+    // in a menu and not back in the battle.
+    for (int i = 0; i < 10 && w.mode == pm::Mode::Dialogue; i++) {
+        pm::world_tick(w, press_a());
+    }
+    check(w.mode == pm::Mode::Overworld, "and then hands control back");
+    check(pm::tile_walkable(pm::zone_of(w), w.tx, w.ty),
+          "on a tile that can be stood on");
+}
+
+void test_resting_at_a_centre_moves_home() {
+    // The nurse is at 6,2 in the CENTRE; stand below her and face north.
+    pm::World w = talk_to(pm::zone_healcentre, 6, 3, 0);
+    check(w.mode == pm::Mode::Dialogue, "the nurse says something");
+    check(w.home_zone == pm::zone_healcentre && w.home_x == 6 && w.home_y == 3,
+          "resting at a CENTRE makes it home");
+    check(w.home_x != 6 || w.home_y != 2,
+          "and home is the player's tile, not the nurse's, which she blocks");
+
+    // Now lose, and wake up there rather than at the start.
+    w.mode = pm::Mode::Overworld;
+    w.zone = pm::zone_route1;
+    w.tx = 11;
+    w.ty = 20;
+    w.fade = 0;
+    faint_the_party(w);
+    check(w.zone == pm::zone_healcentre && w.tx == 6 && w.ty == 3,
+          "a whiteout goes to the last CENTRE rested at");
+    check(w.zone != pm::k_start.zone || w.ty != pm::k_start.y,
+          "which is not where the game started");
+    check(pm::tile_walkable(pm::zone_of(w), w.tx, w.ty),
+          "and is somewhere the player can stand");
+}
+
+void test_the_nurse_actually_heals() {
+    pm::World w = start_world(8642);
+    w.party[0].hp = 1;
+    for (int m = 0; m < 4; m++) if (w.party[0].moves[m] != 0xFF) w.party[0].pp[m] = 0;
+    w.zone = pm::zone_healcentre;
+    w.tx = 6;
+    w.ty = 3;
+    w.facing = 0;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    pm::world_tick(w, press_a());
+    check(w.party[0].hp == w.party[0].max_hp, "the nurse restores health");
+    for (int m = 0; m < 4; m++) {
+        if (w.party[0].moves[m] == 0xFF) continue;
+        check(w.party[0].pp[m] == pm::k_moves[w.party[0].moves[m]].pp,
+              "and PP, which is the other half of being able to carry on");
+    }
+}
+
+// trainer_npc indexes the zone the challenge was issued in. Carrying it
+// through a warp read past the end of the destination zone's NPC array, which
+// ASan caught in the preview harness and an ordinary build got away with.
+void test_a_challenge_does_not_follow_you_between_zones() {
+    pm::World w = start_world(1122);
+    // Take a challenge from the gym leader, who is the last NPC in the
+    // largest cast in the game.
+    w.zone = pm::zone_stonegym;
+    w.tx = 6;
+    w.ty = 3;
+    w.facing = 0;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    pm::world_tick(w, press_a());
+    check(w.mode == pm::Mode::Dialogue, "the leader issues a challenge");
+    check(w.battle.trainer_npc != 0xFF, "and the battle is armed");
+    const uint8_t armed = w.battle.trainer_npc;
+
+    // Now be somewhere else, in a zone with fewer NPCs than that index.
+    const pm::Zone& small = pm::k_zones[pm::zone_healcentre];
+    check(armed >= small.npc_count,
+          "the armed index is out of range for the destination, which is the "
+          "whole point of this test");
+    w.zone = pm::zone_healcentre;
+    w.tx = 6;
+    w.ty = 3;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+
+    // Talk to the nurse and dismiss her, which is the path that read out of
+    // bounds. Any answer other than a crash is fine; what must not happen is
+    // a battle against whatever was in that memory.
+    pm::world_tick(w, press_a());
+    for (int i = 0; i < 10 && w.mode == pm::Mode::Dialogue; i++) {
+        pm::world_tick(w, press_a());
+    }
+    check(w.mode != pm::Mode::Battle,
+          "and no battle starts against an NPC from another zone");
+
+    // And through the front door, the index is cleared on the way.
+    pm::World v = start_world(1122);
+    v.zone = pm::zone_stonegym;
+    v.tx = 6;
+    v.ty = 3;
+    v.facing = 0;
+    v.mode = pm::Mode::Overworld;
+    v.fade = 0;
+    pm::world_tick(v, press_a());
+    v.mode = pm::Mode::Overworld;
+    v.tx = 6;
+    v.ty = 14;
+    v.fade = 0;
+    for (int i = 0; i < 40 && v.zone == pm::zone_stonegym; i++) {
+        pm::world_tick(v, hold(2));       // south, out of the door
+    }
+    check(v.zone != pm::zone_stonegym, "the player leaves through the door");
+    check(v.battle.trainer_npc == 0xFF,
+          "and the armed challenge does not come with them");
+}
+
+void test_home_survives_a_save() {
+    pm::World w = talk_to(pm::zone_healcentre, 6, 3, 0);
+    pm::SaveData data;
+    pm::world_make_save(w, data);
+    pm::World loaded;
+    pm::world_init(loaded, 1);
+    check(pm::world_load(loaded, data), "the save loads");
+    check(loaded.home_zone == w.home_zone && loaded.home_x == w.home_x &&
+          loaded.home_y == w.home_y,
+          "where the player wakes up survives being turned off");
 }
 
 // ---- the mart ------------------------------------------------------------
@@ -403,6 +603,11 @@ int main() {
     test_damage_is_bounded();
     test_levelling_never_overflows();
     test_save_round_trips();
+    test_a_whiteout_goes_home_and_says_so();
+    test_resting_at_a_centre_moves_home();
+    test_the_nurse_actually_heals();
+    test_a_challenge_does_not_follow_you_between_zones();
+    test_home_survives_a_save();
     test_the_shop_takes_money_and_gives_goods();
     test_the_gym_is_three_minions_and_a_leader();
     test_the_badge_opens_the_cave();

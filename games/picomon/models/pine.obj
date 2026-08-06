@@ -1,0 +1,80 @@
+# A pine, for the battle backdrop and nothing else.
+#
+# Y is up, +Z is north, one world unit is one map tile. The lowest vertex sits
+# on y = 0 and the model is centred on x = 0 and z = 0, so the game places it
+# by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark. The ring convention here
+# is rock.obj's: (r cos t, y, r sin t) with the angle increasing, cones wound
+# apex then ring[i] then ring[i+1], and the trunk's quads wound top[i],
+# bottom[i], bottom[i+1], top[i+1].
+#
+# Three overlapping six sided cones and a four sided trunk: 26 triangles,
+# 2.05 units tall.
+#
+# The overworld does NOT use this. There a tree is a sprite, because a
+# screenful of Route 1 is up to 87 of them and 26 triangles each is more
+# triangles than the rest of the frame put together. The battle backdrop has
+# five, they are the only scenery in the shot, and geometry there catches the
+# light and sits in the depth buffer in a way a billboard cannot.
+
+mtllib pine.mtl
+
+v 0.000 2.050 0.000
+v 0.340 1.320 0.000
+v 0.170 1.320 0.294
+v -0.170 1.320 0.294
+v -0.340 1.320 0.000
+v -0.170 1.320 -0.294
+v 0.170 1.320 -0.294
+v 0.000 1.620 0.000
+v 0.500 0.920 0.000
+v 0.250 0.920 0.433
+v -0.250 0.920 0.433
+v -0.500 0.920 0.000
+v -0.250 0.920 -0.433
+v 0.250 0.920 -0.433
+v 0.000 1.200 0.000
+v 0.620 0.520 0.000
+v 0.310 0.520 0.537
+v -0.310 0.520 0.537
+v -0.620 0.520 0.000
+v -0.310 0.520 -0.537
+v 0.310 0.520 -0.537
+v 0.100 0.620 0.000
+v 0.000 0.620 0.100
+v -0.100 0.620 0.000
+v -0.000 0.620 -0.100
+v 0.130 0.000 0.000
+v 0.000 0.000 0.130
+v -0.130 0.000 0.000
+v -0.000 0.000 -0.130
+
+usemtl pine_needles
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 6
+f 1 6 7
+f 1 7 2
+f 8 9 10
+f 8 10 11
+f 8 11 12
+f 8 12 13
+f 8 13 14
+f 8 14 9
+f 15 16 17
+f 15 17 18
+f 15 18 19
+f 15 19 20
+f 15 20 21
+f 15 21 16
+
+usemtl pine_bark
+f 22 26 27 23
+f 23 27 28 24
+f 24 28 29 25
+f 25 29 26 22
+

@@ -1,0 +1,10 @@
+# Colours for plant.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+
+newmtl plant_pot
+Kd 0.733333 0.466667 0.333333   # #BB7755
+
+newmtl plant_leaf
+Kd 0.333333 0.666667 0.333333   # #55AA55

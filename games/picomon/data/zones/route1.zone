@@ -3,6 +3,9 @@
 zone route1
 name ROUTE 1
 size 28 32
+# Same forest as Hometown. A route that mixed conifers and broadleaves
+# read as two areas stitched together.
+trees pine
 
 tiles
 TTTTTTTTTTTpTTTTTTTTTTTTTTTT

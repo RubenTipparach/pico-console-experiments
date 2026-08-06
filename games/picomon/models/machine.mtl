@@ -1,0 +1,16 @@
+# Colours for machine.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+
+newmtl machine_body
+Kd 0.800000 0.800000 0.866667   # #CCCCDD
+
+newmtl machine_panel
+Kd 0.400000 0.800000 0.933333   # #66CCEE
+
+newmtl machine_slots
+Kd 0.866667 0.333333 0.333333   # #DD5555
+
+newmtl machine_tray
+Kd 0.666667 0.666667 0.733333   # #AAAABB

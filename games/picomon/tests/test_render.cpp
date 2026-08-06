@@ -198,6 +198,115 @@ void test_the_shop_screen_draws() {
     check(gold > 10, "the money and the cursor are drawn");
 }
 
+// Trees are sprites now. The check is not "a sprite was drawn" but "the thing
+// that makes a tree a tree is on screen": the tree palette's outline and its
+// trunk, neither of which any other material in the overworld uses.
+void test_the_treeline_is_drawn() {
+    pm::World w = fresh();
+    w.zone = pm::zone_route1;
+    w.tx = 11;
+    w.ty = 3;                        // deep in the border trees
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    Frame f;
+    render(w, f, 1000);
+
+    int trunk = 0, outline = 0;
+    for (int y = 0; y < k_h; y++) {
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, y);
+            if (p[0] == 0x77 && p[1] == 0x55 && p[2] == 0x33) trunk++;
+            if (p[0] == 0x22 && p[1] == 0x33 && p[2] == 0x22) outline++;
+        }
+    }
+    std::printf("  route: %d trunk pixels, %d tree outline pixels\n",
+                trunk, outline);
+    check(trunk > 20, "the trees have trunks");
+    check(outline > 100, "and the outlines that make them read as pixel art");
+}
+
+// The strike. Every one of these was missing: a turn resolved, a line of text
+// appeared, and nothing on screen moved, so a player could not tell a hit
+// from a miss or a strong hit from a weak one.
+void test_a_hit_flashes_shakes_and_drains() {
+    pm::World base = fresh();
+    base.mode = pm::Mode::Battle;
+    base.battle = pm::Battle{};
+    base.battle.foe = pm::make_mon(2, 12);
+    base.battle.trainer_npc = 0xFF;
+    base.battle.active = 0;
+    base.battle.state = pm::BattleState::Attack;
+    base.battle.player_first = true;
+    // The tick the blow lands on: the flash and the burst are brightest here
+    // and decay over the four ticks after it, so this is where they are
+    // measurable rather than merely present.
+    base.battle.timer = 11;
+
+    // A frame with nothing landing, as the control.
+    pm::World quiet = base;
+    Frame calm;
+    render(quiet, calm, 1000);
+
+    // And the same frame with a hit on the foe recorded.
+    pm::World hit = base;
+    hit.battle.fx_dmg[pm::Battle::k_foe] = 9;
+    hit.battle.fx_mult[pm::Battle::k_foe] = 8;      // super effective
+    hit.battle.fx_type[pm::Battle::k_foe] = uint8_t(pm::Type::Ember);
+    Frame flash;
+    render(hit, flash, 1000);
+
+    // The foe stands in the upper right of the arena. The window stops short
+    // of y 55, where the player's own HP plate starts: that panel is white
+    // trim and would drown the signal.
+    auto near_white = [](const Frame& f) {
+        int n = 0;
+        for (int y = 22; y < 52; y++)
+            for (int x = 68; x < 112; x++) {
+                const uint8_t* p = f.at(x, y);
+                if (p[0] > 0xD0 && p[1] > 0xD0 && p[2] > 0xD0) n++;
+            }
+        return n;
+    };
+    const int calm_white = near_white(calm), flash_white = near_white(flash);
+    std::printf("  battle: %d white pixels calm, %d mid strike\n",
+                calm_white, flash_white);
+    check(flash_white > calm_white + 15, "the creature taking a hit whitens");
+
+    // The burst throws the attacking type's colour around it. Ember is warm,
+    // and nothing else in that corner of the arena is.
+    auto warm_sparks = [](const Frame& f) {
+        int n = 0;
+        for (int y = 15; y < 54; y++)
+            for (int x = 60; x < 118; x++) {
+                const uint8_t* p = f.at(x, y);
+                if (p[0] > 0xE0 && p[1] > 0x60 && p[1] < 0xC0 && p[2] < 0x60) n++;
+            }
+        return n;
+    };
+    std::printf("  battle: %d burst pixels\n", warm_sparks(flash));
+    check(warm_sparks(flash) > warm_sparks(calm) + 4,
+          "and a burst in the attacking move's colour");
+
+    // The bar drains across the strike rather than having already jumped:
+    // partway through, the foe's bar has to be wider than its real HP.
+    auto bar_width = [](const Frame& f) {
+        int n = 0;
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, 17);          // the foe plate's bar row
+            if (p[1] > p[0] && p[1] > p[2] && p[1] > 0x90) n++;
+        }
+        return n;
+    };
+    pm::World done = hit;
+    done.battle.timer = 0;                            // the beat has finished
+    Frame settled;
+    render(done, settled, 1000);
+    std::printf("  battle: bar %d px mid strike, %d px after\n",
+                bar_width(flash), bar_width(settled));
+    check(bar_width(flash) > bar_width(settled),
+          "the HP bar is still draining mid strike");
+}
+
 void test_battle_floor_is_solid() {
     pm::World w = fresh();
     w.mode = pm::Mode::Battle;
@@ -247,6 +356,8 @@ int main() {
     test_north_is_up();
     test_indoors_has_no_sky();
     test_the_shop_screen_draws();
+    test_the_treeline_is_drawn();
+    test_a_hit_flashes_shakes_and_drains();
     test_battle_floor_is_solid();
     test_title_shows_its_creature();
     test_menus_draw_something();

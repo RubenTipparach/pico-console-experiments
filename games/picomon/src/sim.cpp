@@ -22,6 +22,7 @@ int roll(World& w, int n) { return n > 0 ? int(next_random(w) % uint32_t(n)) : 0
 
 const int8_t k_dx[4] = {0, 1, 0, -1};      // north, east, south, west
 const int8_t k_dy[4] = {-1, 0, 1, 0};
+constexpr uint8_t k_facing_south = 2;
 
 // Stat stages as a fraction, so a stage is a shift and a divide rather than a
 // table of floats.
@@ -207,6 +208,10 @@ void world_new_game(World& w) {
     w.ty = k_start.y;
     w.facing = k_start.facing;
     w.step = 0;
+    // Until the player rests at a CENTRE, home is where they woke up.
+    w.home_zone = k_start.zone;
+    w.home_x = k_start.x;
+    w.home_y = k_start.y;
     w.money = k_start.money;
     w.party_count = 0;
     for (int i = 0; i < k_start.party_count && i < k_max_party; i++) {
@@ -239,6 +244,9 @@ void world_make_save(const World& w, SaveData& out) {
     out.x = w.tx;
     out.y = w.ty;
     out.facing = w.facing;
+    out.home_zone = w.home_zone;
+    out.home_x = w.home_x;
+    out.home_y = w.home_y;
     out.money = w.money;
     out.party_count = w.party_count;
     for (int i = 0; i < k_max_party; i++) out.party[i] = w.party[i];
@@ -256,6 +264,11 @@ bool world_load(World& w, const SaveData& in) {
     w.tx = in.x;
     w.ty = in.y;
     w.facing = in.facing & 3;
+    if (in.home_zone >= k_zone_count) return false;
+    if (!tile_walkable(k_zones[in.home_zone], in.home_x, in.home_y)) return false;
+    w.home_zone = in.home_zone;
+    w.home_x = in.home_x;
+    w.home_y = in.home_y;
     w.money = in.money;
     w.party_count = in.party_count;
     for (int i = 0; i < k_max_party; i++) w.party[i] = in.party[i];
@@ -310,6 +323,21 @@ void bag_take(World& w, int slot) {
 int first_alive(const World& w) {
     for (int i = 0; i < w.party_count; i++) if (w.party[i].hp > 0) return i;
     return -1;
+}
+
+// Full HP and full PP for the whole party. The nurse does this, and so does a
+// whiteout: waking up with no health is a soft lock, and waking up with no PP
+// is the same soft lock two steps later, which is why both are here and not
+// just the health.
+void party_restore(World& w) {
+    for (int i = 0; i < w.party_count; i++) {
+        w.party[i].hp = w.party[i].max_hp;
+        for (int m = 0; m < 4; m++) {
+            if (w.party[i].moves[m] != 0xFF) {
+                w.party[i].pp[m] = k_moves[w.party[i].moves[m]].pp;
+            }
+        }
+    }
 }
 
 }  // namespace
@@ -422,7 +450,14 @@ bool use_move(World& w, Battle& b, bool by_player, uint8_t move_slot) {
                               by_player ? b.atk_stage : b.foe_atk_stage,
                               by_player ? b.foe_def_stage : b.def_stage,
                               uint8_t(next_random(w)));
-    target.hp = uint8_t(dmg >= target.hp ? 0 : target.hp - dmg);
+    const int taken = dmg >= target.hp ? target.hp : dmg;
+    target.hp = uint8_t(target.hp - taken);
+    // Record it for the animation beat. What it lost, not what was rolled, so
+    // the bar the renderer drains matches the bar it lands on.
+    const int side = by_player ? Battle::k_foe : Battle::k_you;
+    b.fx_dmg[side] = uint8_t(taken);
+    b.fx_mult[side] = uint8_t(mult);
+    b.fx_type[side] = mv.type;
     w.sfx = mult > 4 ? Sfx::SuperHit : Sfx::Hit;
     if (mult > 4) push_msg(b, Msg::SuperEffective);
     else if (mult < 4) push_msg(b, Msg::NotVery);
@@ -453,6 +488,10 @@ void foe_turn(World& w, Battle& b) {
 }
 
 void resolve_turn(World& w, Battle& b) {
+    // A fresh turn, so nothing from the last one plays again.
+    b.fx_dmg[0] = b.fx_dmg[1] = 0;
+    b.fx_mult[0] = b.fx_mult[1] = 4;
+    b.fx_type[0] = b.fx_type[1] = 0;
     const Mon& me = w.party[b.active];
     const int my_spd = apply_stage(stat_of(k_species[me.species].spd, me.level), b.spd_stage);
     const int foe_spd = apply_stage(
@@ -520,6 +559,26 @@ void after_foe_faint(World& w, Battle& b) {
     b.state = BattleState::Over;
 }
 
+// Defined with the rest of the overworld, below. A whiteout is a zone change
+// like any other and should not grow its own copy of one.
+void enter_zone(World& w, uint8_t zone, uint8_t x, uint8_t y, uint8_t facing);
+
+// Every creature is down.
+//
+// The party is patched up and the player wakes at the last CENTRE they rested
+// at, which is what `home` records; before they have rested anywhere it is
+// where the game started them. It used to be the start of the game
+// unconditionally, and silently: the screen simply cut to a different town
+// with no line of text, which reads as a bug rather than as a defeat.
+void whiteout(World& w) {
+    party_restore(w);
+    w.battle = Battle{};
+    w.battle.trainer_npc = 0xFF;
+    w.mode = Mode::Overworld;
+    enter_zone(w, w.home_zone, w.home_x, w.home_y, k_facing_south);
+    say(w, k_start.whiteout_first, k_start.whiteout_count);
+}
+
 void battle_tick(World& w, const Input& in) {
     Battle& b = w.battle;
     const bool go = in.a_pressed || in.b_pressed;
@@ -533,17 +592,7 @@ void battle_tick(World& w, const Input& in) {
             if (w.party[b.active].hp == 0) {
                 const int next = first_alive(w);
                 if (next < 0) {
-                    // Whited out. Back to the start, patched up, as every one
-                    // of these games has always done it.
-                    for (int i = 0; i < w.party_count; i++) {
-                        w.party[i].hp = w.party[i].max_hp;
-                    }
-                    w.zone = k_start.zone;
-                    w.tx = k_start.x;
-                    w.ty = k_start.y;
-                    w.mode = Mode::Overworld;
-                    w.battle.trainer_npc = 0xFF;
-                    w.save_pending = true;
+                    whiteout(w);
                     return;
                 }
                 b.active = uint8_t(next);
@@ -708,6 +757,13 @@ void enter_zone(World& w, uint8_t zone, uint8_t x, uint8_t y, uint8_t facing) {
     w.facing = facing;
     w.step = 0;
     w.fade = 10;
+    // An armed but unstarted trainer battle does not travel. trainer_npc is
+    // an index into the zone the challenge was issued in, so carrying it
+    // across a warp points it at a different zone's array, or at nothing.
+    // Nothing in normal play can walk away mid challenge, because a dialogue
+    // holds the d pad, but the invariant should hold because it is enforced
+    // rather than because no path happens to break it today.
+    if (w.battle.foe.max_hp == 0) w.battle.trainer_npc = 0xFF;
     w.save_pending = true;
 }
 
@@ -795,14 +851,13 @@ void interact(World& w) {
             return;
         }
         if (NpcKind(n->kind) == NpcKind::Healer) {
-            for (int i = 0; i < w.party_count; i++) {
-                w.party[i].hp = w.party[i].max_hp;
-                for (int m = 0; m < 4; m++) {
-                    if (w.party[i].moves[m] != 0xFF) {
-                        w.party[i].pp[m] = k_moves[w.party[i].moves[m]].pp;
-                    }
-                }
-            }
+            party_restore(w);
+            // Resting here also makes it home. The tile recorded is the one
+            // the player is standing on, not the nurse's: an NPC blocks its
+            // own tile, so waking up on it would trap them inside her.
+            w.home_zone = w.zone;
+            w.home_x = w.tx;
+            w.home_y = w.ty;
             w.sfx = Sfx::Heal;
             w.save_pending = true;
         }
@@ -887,7 +942,13 @@ void dialogue_tick(World& w, const Input& in) {
         }
         return;
     }
-    const NpcDef& n = zone_of(w).npcs[npc];
+    // trainer_npc is an index into whatever zone the player was in when the
+    // challenge started. enter_zone clears it, so it cannot be stale here,
+    // and this checks anyway: it is the difference between reading a
+    // neighbouring array and doing nothing, and it costs one compare.
+    const Zone& z = zone_of(w);
+    if (npc >= z.npc_count) { w.battle.trainer_npc = 0xFF; return; }
+    const NpcDef& n = z.npcs[npc];
     const PartyEntry& p = k_parties[n.party_first];
     start_battle(w, make_mon(p.species, p.level), false, npc, n.reward);
 }

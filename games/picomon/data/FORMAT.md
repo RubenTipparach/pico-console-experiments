@@ -24,6 +24,7 @@ data/
   species.txt      the creatures
   moves.txt        what they do
   items.txt        the bag
+  start.txt        where a new game begins, and what a whiteout says
   zones/*.zone     the maps, one file per zone
 ```
 
@@ -143,11 +144,24 @@ handing it over for nothing, which is what the key items rely on.
 zone route1
 name ROUTE 1
 size 40 32
+trees pine          # pine (default) or broadleaf
 indoor              # optional, and only for rooms
 ```
 
 `zone` must match the filename. `name` is what the banner shows and is capped
 at 16 characters, because that is what fits.
+
+`trees` says which species of tree grows here, `pine` (the default) or
+`broadleaf`. One species per area on purpose: the renderer still varies the
+silhouette within the species by hashing the tile, so a forest is not one tree
+stamped in a grid, but a route that mixed conifers and broadleaves read as two
+areas stitched together. The list of species lives in two places, this
+compiler and `art/build_art.py`, because one is level data and the other is
+art and neither owns the other; `render.cpp` static_asserts that the two agree.
+
+Outdoor trees are sprites, not meshes. The battle backdrop uses a real pine
+mesh, because it has five of them and nothing else in the shot, while a
+screenful of Route 1 is up to 87 tree tiles.
 
 `indoor` says this zone is a room. The renderer drops the sky for it, stops
 the ground at the walls rather than running the border tile out into the
@@ -264,6 +278,33 @@ end
 
 An `item` or `trigger` with a `flag` fires once ever: the flag is both the
 record that it happened and the reason it does not happen again.
+
+## start.txt
+
+Where a new game begins, and the one line the game says that belongs to no
+zone.
+
+```
+start
+  zone hometown
+  at 11 9 south            # x, y, facing
+  party emberkit 5         # repeat for more, up to six
+  bag picoball 5           # repeat for more
+  money 300
+  whiteout ALL YOUR PICOMON FAINTED! YOU HURRIED TO A CENTRE.
+end
+```
+
+`whiteout` is required, and it is what the player reads after losing every
+creature. Without it the screen would cut to a different town with nothing on
+it to say why, which reads as a bug rather than as a defeat. Repeat the key
+for more pages.
+
+Where they wake up is not written here: it is the last PICOMON CENTRE they
+rested at, recorded when they talk to a `kind healer` NPC, and it falls back
+to `at` above until they have rested anywhere. The last CENTRE rather than the
+nearest one, because nearest needs a graph of how the zones join up and would
+answer with a CENTRE in a town the player has never reached.
 
 ## Flags
 

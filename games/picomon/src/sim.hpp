@@ -76,6 +76,9 @@ struct BagSlot {
 struct SaveData {
     uint8_t version;
     uint8_t zone, x, y, facing;
+    // Where a whiteout puts the player back. Saved rather than recomputed:
+    // it is a record of somewhere they have been, and no rule derives it.
+    uint8_t home_zone, home_x, home_y;
     uint16_t money;
     uint8_t party_count;
     Mon party[k_max_party];
@@ -130,6 +133,18 @@ struct Battle {
     uint8_t trainer_next;        // index into the trainer's party list
     uint16_t reward;
 
+    // What the turn just did, so the animation beat can play it back rather
+    // than guess at it. Both moves are resolved before the beat runs, which
+    // is why the beat cannot work any of this out for itself: by then the HP
+    // has already changed and the message queue is the only record left.
+    //
+    // Index 0 is the player's creature and 1 is the foe, in both arrays, and
+    // the index is who it happened TO.
+    static constexpr int k_you = 0, k_foe = 1;
+    uint8_t fx_dmg[2];      // how much it lost, 0 if nothing landed on it
+    uint8_t fx_mult[2];     // the type multiplier in eighths: 2, 4 or 8
+    uint8_t fx_type[2];     // the attacking move's type, for the burst colour
+
     // Capture.
     uint8_t ball_item;
     uint8_t wobbles;
@@ -149,6 +164,16 @@ struct World {
     uint8_t zone;
     uint8_t tx, ty;              // the tile the player occupies
     uint8_t facing;
+
+    // Where a whiteout puts the player back: the last PICOMON CENTRE they
+    // rested at, or the start of the game until they rest at one.
+    //
+    // The last one rested at, not the nearest one. Nearest would need a graph
+    // of how the zones join up, and it would answer with a CENTRE the player
+    // may never have seen, in a town they have not reached. Every game in this
+    // genre uses the last one for that reason, and it is also the only one the
+    // player can predict.
+    uint8_t home_zone, home_x, home_y;
     uint8_t step;                // 0 standing, else ticks into the current step
     uint8_t step_from_x, step_from_y;
     uint8_t anim_phase;          // which walk frame
