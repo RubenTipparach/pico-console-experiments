@@ -11,6 +11,7 @@
 #include "tomlander/block.hpp"
 #include "tomlander/facade.hpp"
 #include "tomlander/cargo.hpp"
+#include "tomlander/crate.hpp"
 #include "tomlander/pad.hpp"
 #include "tomlander/tom.hpp"
 #include "tomlander/tower.hpp"
@@ -45,8 +46,10 @@ FrameStats g_stats{};
 // have windows in columns as well as rows.
 const pse::Texture k_textures[] = {
     models::tomlander::facade,
+    models::tomlander::crate,
 };
 constexpr uint8_t k_tex_facade = 1;   // 1 based, 0 means untextured
+constexpr uint8_t k_tex_crate = 2;
 
 constexpr float k_pi = 3.14159265f;
 
@@ -290,14 +293,15 @@ void draw_cargo(const World& world) {
                              to_f(world.x) + b.m[1] * my,
                              to_f(world.y) + b.m[4] * my,
                              to_f(world.z) + b.m[7] * my,
-                             b, 1.0f);
+                             b, 1.0f, 255, 255, 255, 0, k_tex_crate);
         return;
     }
 
     const tl::Pad& pad = world.pads[world.cargo];
     g_renderer.draw_mesh(models::tomlander::cargo,
                          to_f(pad.x), to_f(pad.y) + to_f(tl::k_pad_rise),
-                         to_f(pad.z), 0.0f, 1.0f);
+                         to_f(pad.z), 0.0f, 1.0f,
+                         255, 255, 255, 0.0f, 0, 0.0f, k_tex_crate);
 }
 
 void draw_ship(const World& world) {

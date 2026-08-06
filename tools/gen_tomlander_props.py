@@ -136,23 +136,41 @@ class Mesh:
 
 # ---- the crate -------------------------------------------------------------
 #
-# 1.7 units on a side. Sized by where it has to FIT rather than by how it
-# looks on its own: carried, it tucks under the hull between the legs, and the
-# hull's feet reach 1.85 below its origin, so anything taller either hangs
-# through the deck on touchdown or has to be drawn at a different size in the
-# two places it appears. Banded so it is obviously a container.
+# A plain prism, 1.7 units on a side, with the detail in a 16x16 texture. It
+# was a banded box of 28 triangles: a body, a strap ring standing proud of it,
+# and a lid. Same trade the tower made, for the same reason. Those bands were
+# slivers, and a sliver pays a whole per triangle bill (a bounding box, three
+# edge setups, three divides) plus three software float vertex transforms to
+# fill about twenty pixels.
+#
+# Sized by where it has to FIT rather than by how it looks alone: carried, it
+# tucks under the hull between the legs, and the hull's feet reach 1.85 below
+# its origin, so anything taller either hangs through the deck on touchdown or
+# has to be drawn at a different size in the two places it appears.
+#
+# The bottom is skipped. It is either sitting on a deck or tucked against the
+# hull, so nothing ever sees it, and two triangles is two triangles.
 
 def build_cargo():
     m = Mesh()
     h, top = 0.85, 1.7
-    m.box("crate", -h, 0.0, -h, h, top, h, skip=("bottom",))
-    # A strap around the middle, standing a hair proud so it cannot z fight
-    # with the wall it sits on. The depth buffer is one byte, so "a hair" has
-    # to be enough to clear a whole depth step at the range this is seen.
-    e = h + 0.05
-    m.box("strap", -e, 0.62, -e, e, 0.95, e,
-          skip=("top", "bottom"))
-    m.box("crate_top", -h, top, -h, h, top + 0.10, h, skip=("bottom",))
+    # The texture is one picture on each wall, 0..1. Same one byte uv limit
+    # the tower documents: a coordinate spans exactly one repeat, so tiling
+    # has to live in the picture rather than in the coordinates.
+    walls = [
+        ("back",  ((-h, 0, -h), (-h, top, -h), (h, top, -h), (h, 0, -h))),
+        ("front", ((h, 0, h), (h, top, h), (-h, top, h), (-h, 0, h))),
+        ("left",  ((-h, 0, h), (-h, top, h), (-h, top, -h), (-h, 0, -h))),
+        ("right", ((h, 0, -h), (h, top, -h), (h, top, h), (h, 0, h))),
+    ]
+    side_uv = ((0, 0), (0, 1), (1, 1), (1, 0))
+    for _name, corners in walls:
+        m.quad("lit", *corners, uvs=side_uv)
+    # The lid samples the texture's top left corner, which the picture keeps as
+    # a plain panel, so a crate seen from above reads as a lid and not as a
+    # wall lying on its back.
+    m.quad("lit", (-h, top, -h), (-h, top, h), (h, top, h), (h, top, -h),
+           uvs=((0.02, 0.02), (0.02, 0.20), (0.20, 0.20), (0.20, 0.02)))
     return m
 
 
