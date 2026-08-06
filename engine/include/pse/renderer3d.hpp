@@ -92,12 +92,21 @@ public:
     // recolour but never brighten. `whiten` lerps the result toward white
     // afterwards, 0 for none and 255 for fully white, which is what a hit
     // flash needs and what draw_sprite has always had.
+    //
+    // Roll rotates about the model's local Z axis and is applied FIRST, inside
+    // pitch and yaw, so the composed rotation is Ry(yaw) Rx(pitch) Rz(roll):
+    // the model banks about its own nose line whichever way the other two have
+    // pointed it. A craft that tilts on two axes at once needs all three, and
+    // an aircraft that pitches and rolls in the wrong order visibly yaws when
+    // it should not. It trails every existing parameter so no current call
+    // changes meaning, and it costs one more sin and cos per draw_mesh, once,
+    // not per vertex.
     void draw_mesh(const MeshData& mesh,
                    float x, float y, float z,
                    float yaw, float scale,
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
                    uint8_t tint_b = 255, float pitch = 0.0f,
-                   uint8_t whiten = 0);
+                   uint8_t whiten = 0, float roll = 0.0f);
 
     // Screen position and pixel size for a camera facing sprite. Returns false
     // when the point is off screen or behind the camera. The caller draws the

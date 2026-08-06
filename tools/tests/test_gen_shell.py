@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -125,12 +126,63 @@ def test_the_keyboard_keys_come_from_the_pad():
     # Every console button has to be in there. If the pad's markup changes
     # shape the regex quietly matches nothing, the hints vanish from every
     # page, and nothing else would notice: that is what this guards.
-    for button, expected in (("a", "Z"), ("b", "X"), ("x", "C"), ("y", "V")):
+    #
+    # The face keys are WASD laid over the diamond in the positions the buttons
+    # physically sit in, which is what the shell intercepts: X is the top
+    # button so it is W, Y is the left one so it is A, B is the bottom one so
+    # it is S, A is the right one so it is D. These are `data-kbd`, what a
+    # person presses, not `data-key`, what the button dispatches to SDL.
+    for button, expected in (("x", "W"), ("y", "A"), ("b", "S"), ("a", "D")):
         check(mapping.get(button) == expected,
               "the pad says %s is %s" % (button.upper(), expected))
     for direction in ("up", "down", "left", "right"):
         check(direction in mapping, "the pad maps %s" % direction)
     check(len(mapping) >= 8, "all four buttons and four directions are mapped")
+
+
+def test_the_pad_dispatches_what_sdl_reads():
+    """The two keys on a face button are different things, and swapping them
+    breaks something that still looks fine.
+
+    `data-kbd` is what a person presses. `data-key` is what the button
+    dispatches, and the SDL build reads only z x c v for A B X Y: dispatch a
+    `KeyW` and the game gets a D-pad press, or nothing. So the panels follow
+    data-kbd and the wire stays data-key, and this pins both.
+    """
+    with open(SHELL, encoding="utf-8") as handle:
+        shell = handle.read()
+
+    pad = gen_shell.pad_buttons(shell)
+    for button, dispatched, pressed in (("x", "KeyC", "KeyW"),
+                                        ("y", "KeyV", "KeyA"),
+                                        ("a", "KeyZ", "KeyD"),
+                                        ("b", "KeyX", "KeyS")):
+        tag = pad.get(button)
+        check(tag is not None, "the pad still has a %s button" % button.upper())
+        if not tag:
+            continue
+        check(tag["key"] == dispatched,
+              "%s dispatches %s, which is what SDL reads"
+              % (button.upper(), dispatched))
+        check(tag["kbd"] == pressed,
+              "%s is pressed with %s" % (button.upper(), pressed))
+
+    # The D-pad is the control case: arrows are already the key you press, so
+    # those buttons carry no data-kbd and must keep dispatching the arrows.
+    for direction, dispatched in (("up", "ArrowUp"), ("down", "ArrowDown"),
+                                  ("left", "ArrowLeft"), ("right", "ArrowRight")):
+        tag = pad.get(direction)
+        check(tag is not None and tag["key"] == dispatched and not tag["kbd"],
+              "%s dispatches %s and is not reassigned" % (direction, dispatched))
+
+    # The interception is the whole reason WASD can mean anything but the
+    # D-pad: the SDL build binds those keys itself, so the shell has to take
+    # them before it sees them. Without capture, this silently does nothing.
+    check("data-kbd" in shell and "stopImmediatePropagation" in shell,
+          "the shell still intercepts the reassigned keys")
+    check(re.search(r"addEventListener\('keydown'[\s\S]{0,400}?\}, true\)", shell)
+          is not None,
+          "and does it in the capture phase, before the SDL port's listener")
 
 
 def test_a_control_carries_its_keyboard_key():
@@ -214,6 +266,7 @@ def main():
     test_controls_split_across_panels()
     test_no_arrows_for_a_single_panel()
     test_the_keyboard_keys_come_from_the_pad()
+    test_the_pad_dispatches_what_sdl_reads()
     test_a_control_carries_its_keyboard_key()
     test_the_shell_is_filled_in()
     test_a_shell_without_the_placeholder_is_an_error()

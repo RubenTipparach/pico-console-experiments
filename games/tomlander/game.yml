@@ -1,0 +1,22 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: tomlander
+title: Tom Lander
+blurb: Four pods, one hull, and a pad on the far side of the valley.
+target: tomlander
+sdk: 32blit
+web: true
+
+objective: "Get off pad A and put the ship down on the lit pad without breaking it. Each button fires the pod it sits at on the diamond, a firing pod lifts its own corner, and the hull goes wherever it ends up pointing. One pod cannot hold you up. Two can."
+
+controls:
+  - "X: fire the front pod"
+  - "Y: fire the left pod"
+  - "A: fire the right pod"
+  - "B: fire the back pod"
+  - "down: level the hull and fire all four"
+  - "left/right: turn the camera"
+  - "up: pause"
+
+models:
+  - tom.obj

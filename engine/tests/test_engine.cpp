@@ -258,6 +258,61 @@ void test_renderer_projects_and_culls() {
     CHECK(behind_raster.triangles_drawn() == 0);
 }
 
+// A box's lid has to be visible from above, which is the only side anyone
+// looks at one from.
+//
+// It was not. The two end faces were wound like the four walls, so they faced
+// inward, the backface cull dropped them, and a box seen from above showed
+// the ground through the hole where its top should be. draw_box's top colour
+// was reachable only by a camera underneath the box. The old test above
+// checked that SOME pixel was set and that a box behind the camera drew
+// nothing, both of which stayed true the whole time.
+void test_box_has_a_lid() {
+    // A distinctive top colour that cannot be confused with the sides, and a
+    // camera directly above looking down.
+    const uint8_t top_r = 250, top_g = 40, top_b = 10;
+
+    TestSurface surface(pse::k_render_width, pse::k_render_height,
+                        pse::PixelFormat::rgb888);
+    pse::Rasterizer raster;
+    pse::Renderer3D renderer(raster);
+    raster.begin_frame(surface.target());
+    renderer.set_orbit_camera(0.0f, 0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f);
+    renderer.draw_box(0.0f, 0.0f, 0.0f, 6.0f, 2.0f, 6.0f,
+                      top_r, top_g, top_b, 30, 30, 30);
+
+    int lid_pixels = 0;
+    const pse::RenderTarget& t = surface.target();
+    for (int y = 0; y < t.height; y++) {
+        for (int x = 0; x < t.width; x++) {
+            const uint8_t* p = t.pixels + y * t.row_stride + x * 3;
+            // The lid is emitted unshaded, so it lands on screen exactly.
+            if (p[0] == top_r && p[1] == top_g && p[2] == top_b) lid_pixels++;
+        }
+    }
+    CHECK(lid_pixels > 100);
+
+    // And the underside still faces the other way, so the box is solid rather
+    // than merely inside out.
+    TestSurface below(pse::k_render_width, pse::k_render_height,
+                      pse::PixelFormat::rgb888);
+    pse::Rasterizer under_raster;
+    pse::Renderer3D under(under_raster);
+    under_raster.begin_frame(below.target());
+    under.set_orbit_camera(0.0f, 0.0f, 0.0f, 0.0f, 10.0f, -10.0f, 0.0f);
+    under.draw_box(0.0f, 0.0f, 0.0f, 6.0f, 2.0f, 6.0f,
+                   top_r, top_g, top_b, 30, 30, 30);
+    int lid_from_below = 0;
+    const pse::RenderTarget& b = below.target();
+    for (int y = 0; y < b.height; y++) {
+        for (int x = 0; x < b.width; x++) {
+            const uint8_t* p = b.pixels + y * b.row_stride + x * 3;
+            if (p[0] == top_r && p[1] == top_g && p[2] == top_b) lid_from_below++;
+        }
+    }
+    CHECK(lid_from_below == 0);
+}
+
 // A mesh from obj2cpp must render, and must survive a corrupt index without
 // reading out of bounds.
 void test_mesh_rendering_and_bounds() {
@@ -555,6 +610,7 @@ int main() {
     test_gradient_covers_every_pixel();
     test_billboard_depth_claim();
     test_renderer_projects_and_culls();
+    test_box_has_a_lid();
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
     test_rgb565_matches_the_sdk();
