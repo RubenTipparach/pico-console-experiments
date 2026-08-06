@@ -8,7 +8,7 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
-#include "tom.hpp"
+#include "tomlander/tom.hpp"
 
 namespace tlr {
 namespace {
@@ -224,7 +224,7 @@ void draw_pads(const World& world, uint32_t time_ms) {
 }
 
 void draw_ship(const World& world) {
-    g_renderer.draw_mesh(models::tom,
+    g_renderer.draw_mesh(models::tomlander::tom,
                          to_f(world.x), to_f(world.y), to_f(world.z),
                          0.0f, k_ship_scale,
                          255, 255, 255,

@@ -22,7 +22,9 @@ include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
 
 set(tomlander_models "")
 foreach(model ${tomlander_model_files})
-    add_obj_model(tomlander_preview
+    # The SLUG, not the target: the preview compiles the same render.cpp the
+    # device does, so the model has to land in the namespace that source names.
+    add_obj_model(tomlander
         ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} tomlander_models)
 endforeach()
 

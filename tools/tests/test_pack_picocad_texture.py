@@ -119,9 +119,12 @@ def run_tool(args):
 
 
 def run_obj2cpp(obj, out_cpp, out_hpp, name):
+    # --namespace is required: models are generated one directory per game so
+    # two games can both ship a tree.obj without colliding in the console.
     return subprocess.run(
         [sys.executable, os.path.join(TOOLS, "obj2cpp.py"), obj,
-         "--out-cpp", out_cpp, "--out-hpp", out_hpp, "--name", name],
+         "--out-cpp", out_cpp, "--out-hpp", out_hpp, "--name", name,
+         "--namespace", "packtest"],
         capture_output=True, text=True)
 
 
