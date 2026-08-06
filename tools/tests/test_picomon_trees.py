@@ -10,8 +10,8 @@ and sees more than one side of it, and it is worth the triangles.
 
 tools/picomon_data.py tells them apart with two rules: flood inward from the
 map edge across tree tiles, and then also promote anything the flood DID
-reach that stands with three or more open sides, because that is a spur the
-player walks around rather than a wall they walk past.
+reach that has open ground on both opposite sides, in either axis, because
+that is a spur the player walks around rather than a wall they walk past.
 
 This tests that flood fill, on maps built to make its failure modes obvious
 and then on the real ones. It matters because both ways of getting it wrong
@@ -63,8 +63,8 @@ def tile_ids(d):
 def split(rows, w, h, tree, core):
     """Run the real split over a throwaway map.
 
-    Tile 0 is open ground and both tree tiles block, which is what the open
-    side count reads.
+    Tile 0 is open ground and both tree tiles block, which is what the
+    walk-past rule reads.
     """
     d = picomon_data.Data.__new__(picomon_data.Data)
     block = picomon_data.TILE_FLAGS["block"]
@@ -117,7 +117,7 @@ def test_a_thick_treeline_stays_sprites():
     out, n = split(g, 8, 8, T, C)
     if n != 0:
         fail(f"a four row treeline across the top produced {n} mesh trees, "
-             "expected 0: nothing in it has three open sides")
+             "expected 0: nothing in it can be walked past on both sides")
     print("  a deep treeline hanging off the edge stays sprites")
 
 
