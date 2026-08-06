@@ -489,7 +489,7 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
       <button type="button" id="map-hull" aria-pressed="true">Hull</button>
       <button type="button" id="map-screen" aria-pressed="false">Screen</button>
     </span>
-    <span class="maplabel" id="mapnote">X is always the right hand pod</span>
+    <span class="maplabel" id="mapnote">Y is always the left hand pod</span>
   </div>
 
   <div class="maprow">
@@ -585,6 +585,15 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
       always short of lift unless two pods are lit. In C every press lights a
       pair. Scheme B idles exactly on hover and sinks the moment you tip a
       nozzle, because vectoring spends lift on going sideways.
+    </p>
+    <p>
+      <b>The button diamond is the ship seen from above.</b> X is the top
+      button and works the front pod, B the back, Y the left, A the right. A
+      pod lifts its own corner, so you always travel away from the one that is
+      lit. One rule, four buttons, nothing to remember per axis. That does
+      diverge from tom-lander, where keyboard A works the RIGHT thruster so
+      that pressing left takes you left, and both readings are defensible:
+      the original ships an invert setting for this exact pair.
     </p>
     <p>
       <b>One constant did not survive the port.</b> The original's torque
@@ -804,7 +813,7 @@ $ tools/obj2cpp.py tom.obj --out-cpp tom.cpp --out-hpp tom.hpp --name tom
         <div class="q"><span class="qn">1</span><span><span class="qt">Which scheme</span><span class="qd">Direct, Gimbal, or Direct with screen relative buttons. This is the one that changes the game rather than the code.</span></span></div>
         <div class="q"><span class="qn">2</span><span><span class="qt">Where mission one goes next</span><span class="qd">A to B is in and flyable. The obvious ladder from here is more pads, a fuel budget that makes the route matter, then cargo that changes the mass. Say which and it gets built in that order.</span></span></div>
         <div class="q"><span class="qn">3</span><span><span class="qt">Camera speed</span><span class="qd">Left and right currently rotate the camera continuously. Snapping to 45 degree detents is calmer and never leaves the buttons ambiguous.</span></span></div>
-        <div class="q"><span class="qn">4</span><span><span class="qt">Should the top button swap with the bottom one</span><span class="qd">With the torque signs fixed, a pod lifts its own corner and the ship travels away from it. That makes the sides read perfectly: Y is the left button, it fires the right pod, and you go left. But the same rule makes X, the top button, fire the front pod and carry you DOWN the screen. tom-lander has the same split, because W works the front thruster there too. Swapping which pod X and B work is one line and makes all four buttons mean the direction you travel. Say the word.</span></span></div>
+        <div class="q"><span class="qn">4</span><span><span class="qt">Settled: the diamond is the ship</span><span class="qd">All four buttons are positional now. X is the top button and works the front pod, B the back, Y the left, A the right, so the diamond is the hull seen from above and the ship always travels away from the pod that is lit. This diverges from tom-lander, where keyboard A works the RIGHT thruster so pressing left takes you left. Both readings are defensible, which is presumably why the original ships an invert setting for this exact pair.</span></span></div>
         <div class="q"><span class="qn">5</span><span><span class="qt">Does tilt break a landing</span><span class="qd">tom-lander has no tilt gate. Damage is speed only until the hull passes 90 degrees. The bench adds a 20 degree gate because a lander that can land on its side is a strange lander. Say if you want the original behaviour.</span></span></div>
       </div>
     </div>
@@ -1322,23 +1331,27 @@ const TUNE = {
    physically sit in, which is the same mapping web/shell.html now intercepts:
    W is the top button X, A the left one Y, S the bottom one B, D the right
    one A.
-     cross_lander   key   button   pod
-     Right (+X)      A      Y      lifts the right side, so the ship goes left
-     Left  (-X)      D      A      lifts the left side, so the ship goes right
-     Front (+Z)      W      X      lifts the nose
-     Back  (-Z)      S      B      lifts the tail
-   The side pods read backwards on purpose and the original does the same:
-   the button on the left of the diamond takes you left, which is what a
-   player means by it, even though the pod that fires is the right one. A pod
-   lifts its own corner, so you always travel away from the one that is lit.
+     cross_lander   key   button   pod position on the diamond
+     Front (+Z)      W      X      top
+     Back  (-Z)      S      B      bottom
+     Left  (-X)      A      Y      left
+     Right (+X)      D      A      right
 
-   The front and back pods inherit that rule and come out the other way: X is
-   the top button, it works the front pod, the nose rises and the ship slides
-   DOWN the screen. tom-lander has the same split. Swapping the btn fields on
-   FRONT and BACK below is the whole fix if that is the call. */
+   All four are positional now: the button diamond IS the ship seen from
+   above, and the button you press is the pod that lights. A pod lifts its own
+   corner, so you always travel AWAY from the one that is lit. One rule, four
+   buttons, no exceptions to remember.
+
+   That is a deliberate divergence from tom-lander, where keyboard A works the
+   RIGHT thruster so that pressing left takes you left. Both readings are
+   defensible, which is presumably why the original ships an invert setting
+   for this exact pair (ship.lua:386-399). The demake picks the one where the
+   button names the pod, because with only four buttons and no analog stick
+   the diamond doubling as a picture of the hull is worth more than matching
+   the direction of travel on one axis. */
 const THR = [
-  {name:"RIGHT", btn:"y", key:"A", ox: 1, oz: 0, lx: 4, lz: 0},
-  {name:"LEFT",  btn:"a", key:"D", ox:-1, oz: 0, lx:-4, lz: 0},
+  {name:"RIGHT", btn:"a", key:"D", ox: 1, oz: 0, lx: 4, lz: 0},
+  {name:"LEFT",  btn:"y", key:"A", ox:-1, oz: 0, lx:-4, lz: 0},
   {name:"FRONT", btn:"x", key:"W", ox: 0, oz: 1, lx: 0, lz: 4},
   {name:"BACK",  btn:"b", key:"S", ox: 0, oz:-1, lx: 0, lz:-4}
 ];
@@ -1887,7 +1900,7 @@ const KEYMAP={KeyW:"x",KeyA:"y",KeyS:"b",KeyD:"a",
 function resolveHeld(){
   if(mapMode==="hull") return held;
   // At yaw 0 the camera sits on -Z looking at +Z, so its right vector is +X and
-  // the right hand pod really is on the right of the frame. Every 90 degrees of
+  // the left hand pod really is on the left of the frame. Every 90 degrees of
   // orbit shifts which pod that is. rot[q] lists the pod index that appears
   // right, left, top and bottom of the frame for that quadrant.
   const q = Math.round(cam.yaw/(Math.PI/2)) & 3;
@@ -1895,8 +1908,8 @@ function resolveHeld(){
   const m=rot[q];
   const o={...held};
   // Whatever a button means with the camera home, it keeps meaning as the
-  // camera turns: the button that works the right hand pod at yaw 0 works
-  // whichever pod is on the right of the frame now. Reading the buttons out
+  // camera turns: the button that works the left hand pod at yaw 0 works
+  // whichever pod is on the left of the frame now. Reading the buttons out
   // of THR rather than listing them again is what keeps that true after a
   // remap, which is exactly what just went stale here once.
   for(let i=0;i<4;i++) o[THR[m[i]].btn] = held[THR[i].btn];
@@ -1978,8 +1991,8 @@ function syncMap(){
   mh.setAttribute("aria-pressed",String(mapMode==="hull"));
   ms.setAttribute("aria-pressed",String(mapMode==="screen"));
   document.getElementById("mapnote").textContent = mapMode==="hull"
-    ? "Y is always the right hand pod"
-    : "Y is always the pod on the right of the frame";
+    ? "Y is always the left hand pod"
+    : "Y is always the pod on the left of the frame";
   buildMapTable();
 }
 
@@ -1987,7 +2000,10 @@ function buildMapTable(){
   // Built from THR, so the table is the mapping rather than a description of
   // it. The pods are listed in diamond order (top, left, right, bottom) so
   // the table reads in the shape of the thing it is describing.
-  const order=[2,0,1,3];   // front, right, left, back
+  // THR indices in diamond order: top, left, right, bottom. Which pods those
+  // are follows the bindings, so this is the one place that has to know the
+  // shape of the pad rather than the order of the pods.
+  const order=[2,1,0,3];   // front (top), left, right, back (bottom)
   const where={2:"the top of the frame", 0:"the right of the frame",
                1:"the left of the frame", 3:"the bottom of the frame"};
   const goes={2:"Front pod, hull fixed", 0:"Right pod, hull fixed",

@@ -76,16 +76,25 @@ PicoSystem, whose diamond is **X top, Y left, A right, B bottom**. That is not
 the Xbox arrangement, which is its mirror, and the layout here is taken from
 `web/shell.html`, the one place in the repo that says where those buttons sit.
 
-| key | button | cross_lander pod |
-| --- | --- | --- |
-| W | X, top | Front, lifts the nose |
-| A | Y, left | Right, lifts the right side so the ship goes left |
-| S | B, bottom | Back, lifts the tail |
-| D | A, right | Left, lifts the left side so the ship goes right |
+| key | button | pod | position |
+| --- | --- | --- | --- |
+| W | X | Front, lifts the nose | top |
+| A | Y | Left, lifts the left side | left |
+| S | B | Back, lifts the tail | bottom |
+| D | A | Right, lifts the right side | right |
 
-The side pods read backwards on purpose, and tom-lander does the same: the
-button on the left of the diamond takes you left, which is what a player means
-by it, even though the pod that fires is the right hand one.
+**The button diamond is the ship seen from above.** All four are positional:
+the button you press is the pod that lights, and a pod lifts its own corner,
+so you always travel away from the one that is lit. One rule, four buttons, no
+per axis exception to remember.
+
+That diverges from tom-lander, where keyboard A works the RIGHT thruster so
+that pressing left takes you left. Both readings are defensible, which is
+presumably why the original ships an invert setting for this exact pair
+(`ship.lua:386-399`). The demake picks the one where the button names the pod,
+because with four buttons and no analog stick the diamond doubling as a
+picture of the hull is worth more than matching the direction of travel on one
+axis.
 
 `z x c v` still work, because those are what the SDL build reads natively and
 what the gallery shell dispatches underneath.
