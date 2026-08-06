@@ -24,6 +24,7 @@ data/
   species.txt      the creatures
   moves.txt        what they do
   items.txt        the bag
+  start.txt        where a new game begins, and what a whiteout says
   zones/*.zone     the maps, one file per zone
 ```
 
@@ -264,6 +265,33 @@ end
 
 An `item` or `trigger` with a `flag` fires once ever: the flag is both the
 record that it happened and the reason it does not happen again.
+
+## start.txt
+
+Where a new game begins, and the one line the game says that belongs to no
+zone.
+
+```
+start
+  zone hometown
+  at 11 9 south            # x, y, facing
+  party emberkit 5         # repeat for more, up to six
+  bag picoball 5           # repeat for more
+  money 300
+  whiteout ALL YOUR PICOMON FAINTED! YOU HURRIED TO A CENTRE.
+end
+```
+
+`whiteout` is required, and it is what the player reads after losing every
+creature. Without it the screen would cut to a different town with nothing on
+it to say why, which reads as a bug rather than as a defeat. Repeat the key
+for more pages.
+
+Where they wake up is not written here: it is the last PICOMON CENTRE they
+rested at, recorded when they talk to a `kind healer` NPC, and it falls back
+to `at` above until they have rested anywhere. The last CENTRE rather than the
+nearest one, because nearest needs a graph of how the zones join up and would
+answer with a CENTRE in a town the player has never reached.
 
 ## Flags
 

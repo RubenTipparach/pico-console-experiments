@@ -104,6 +104,7 @@ class Data:
         self.sheets, self.sheet_ix = [], {}
         self.flag_set, self.flag_read = {}, {}
         self.text = []           # the page pool
+        self.text_sealed = False
         self.start = None
 
     # ---- shared helpers
@@ -114,6 +115,13 @@ class Data:
         return self.sheet_ix[name]
 
     def add_text(self, pages, where):
+        # Once the pool has been written out, an index handed back from here
+        # points past the end of the array the game will actually carry. That
+        # is not a theoretical hazard: it shipped once, silently, and only
+        # showed up under a sanitiser.
+        if self.text_sealed:
+            fail(where, "text added after the pool was written out, so this "
+                        "index would point past the end of k_text")
         for p in pages:
             if not wraps_within(p, DIALOGUE_COLS, DIALOGUE_LINES):
                 fail(where, f"text does not fit {DIALOGUE_LINES} lines of "
@@ -121,6 +129,9 @@ class Data:
         first = len(self.text)
         self.text.extend(pages)
         return first, len(pages)
+
+    def seal_text(self):
+        self.text_sealed = True
 
     def flag(self, name, where, writing):
         book = self.flag_set if writing else self.flag_read
@@ -355,7 +366,7 @@ class Data:
             fail(path, "expected exactly one start block")
         where, header, body = got[0]
         st = dict(zone=None, x=0, y=0, facing="south", party=[], bag=[],
-                  money=0)
+                  money=0, whiteout=[])
         for w, line in body:
             k, _, v = line.partition(" ")
             v = v.strip()
@@ -378,12 +389,17 @@ class Data:
                 st["bag"].append((it, int(cnt)))
             elif k == "money":
                 st["money"] = int(v)
+            elif k == "whiteout":
+                st["whiteout"].append(v)
             else:
                 fail(w, f"unknown key {k!r} in the start block")
         if not st["zone"]:
             fail(where, "the start block has no zone")
         if not st["party"]:
             fail(where, "the player starts with nothing to fight with")
+        if not st["whiteout"]:
+            fail(where, "the start block has no whiteout line, so losing every "
+                        "creature would teleport the player with no explanation")
         self.start = (where, st)
 
     # ---- zones
@@ -888,6 +904,8 @@ def emit(d, hpp_path, cpp_path):
     w("    uint16_t money;")
     w("    uint8_t party_first, party_count;")
     w("    uint8_t bag_first, bag_count;")
+    w("    uint16_t whiteout_first;   // what is said after a whiteout")
+    w("    uint8_t whiteout_count;")
     w("};")
     w("struct BagEntry { uint8_t item, count; };")
     w("extern const StartState k_start;")
@@ -1044,17 +1062,6 @@ def emit(d, hpp_path, cpp_path):
             w("};")
         w("")
 
-    # The text pool is only complete once every zone has been walked, so it is
-    # emitted after the zone tables that index into it. C++ does not care about
-    # the order of definitions at file scope, and this keeps one pass.
-    ci = c.index("const char* const k_text[] = {")
-    pool = ["const char* const k_text[] = {"]
-    for t in d.text:
-        pool.append(f'    "{t}",')
-    pool.append("};")
-    end = c.index("};", ci)
-    c[ci:end + 1] = pool
-
     w("const Zone k_zones[] = {")
     for z in d.zones:
         zid = ident(z["id"])
@@ -1073,11 +1080,36 @@ def emit(d, hpp_path, cpp_path):
         w(f"    {{item_{ident(it)}, {cnt}}},")
     w("};")
     w("")
+    whiteout = d.add_text(st["whiteout"], d.start[0])
     w(f'const StartState k_start = {{zone_{ident(st["zone"])}, {st["x"]}, '
       f'{st["y"]}, {FACINGS.index(st["facing"])}, {st["money"]}, '
-      f'{start_party_first}, {len(st["party"])}, 0, {len(st["bag"])}}};')
+      f'{start_party_first}, {len(st["party"])}, 0, {len(st["bag"])}, '
+      f'{whiteout[0]}, {whiteout[1]}}};')
     w("")
     w("}  // namespace pm")
+
+    # The text pool goes in last, once nothing else can add to it.
+    #
+    # It is emitted as an empty placeholder early, because C++ does not care
+    # about the order of definitions at file scope and one pass is simpler
+    # than two. This splice used to happen before k_start was written, and
+    # k_start's whiteout line is added to the pool at that point: the index
+    # went in as 53 and the array shipped with 53 entries, so the game read
+    # one past the end of k_text the first time a player lost every creature.
+    # It reached a device build green. Nothing but ASan saw it.
+    #
+    # So the seal is here, after the last thing that can call add_text, and
+    # add_text refuses to run once it has happened.
+    d.seal_text()
+    ci = c.index("const char* const k_text[] = {")
+    pool = ["const char* const k_text[] = {"]
+    for t in d.text:
+        pool.append(f'    "{t}",')
+    pool.append("};")
+    end = c.index("};", ci)
+    c[ci:end + 1] = pool
+    if len(pool) - 2 != len(d.text):
+        raise DataError("the text pool and its count disagree")
 
     # k_text is emitted with the final pool, but the extern declaration in the
     # header carries the count, so it has to be patched after the walk too.
