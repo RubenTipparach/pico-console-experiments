@@ -80,7 +80,7 @@ constexpr int32_t k_tumble_tilt = 16384;
 
 // Vertical speed a touchdown survives, fp16 per tick. tom-lander's threshold
 // is 0.05 per 60 Hz tick, which is 3.0 u/s there and 9.5 u/s at this scale.
-constexpr int32_t k_safe_descent = 6225;
+constexpr int32_t k_safe_descent = 11225;
 
 // And how far off level, in the fp14 measure above. tom-lander has NO tilt
 // gate at all: damage is speed only until the hull passes 90 degrees. A lander

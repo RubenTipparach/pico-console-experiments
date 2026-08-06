@@ -115,7 +115,9 @@ void panel_lines(int top, const char* const* lines, const Pen* pens, int count,
 //   fuel  a bar, because a number you have to read is a number you do not
 //   fall  descent rate, red once it would break the ship
 //   alt   how far above whatever is underneath
-//   B nn  which deck, and how far, in the colour the deck itself is
+//   B nn  which deck, and how far, in the colour of the arrow that points at
+//         it. The decks no longer mark themselves, so this and the arrow are
+//         between them the whole of how the target is named.
 void draw_hud() {
     const int w = screen.bounds.w, h = screen.bounds.h;
 

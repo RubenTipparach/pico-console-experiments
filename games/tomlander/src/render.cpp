@@ -204,7 +204,7 @@ void deck_quad(const float px[4], const float py, const float pz[4],
 }
 
 // Grey steel, and cool rather than warm on purpose: everything else out
-// there is warm, the regolith browns and the orange pulse, so a cool grey is
+// there is warm, the regolith browns and the flames, so a cool grey is
 // the one hue that cannot be mistaken for ground. These go straight to the
 // framebuffer, ground_tri applies no lighting, so what is written here is
 // exactly what shows and the contrast has to be built in. The first pass was
@@ -216,12 +216,16 @@ const Rgb k_deck_dark{104, 112, 121};
 // (0.40, 0.82, -0.40), so the sheen runs from the -X +Z corner up to the
 // +X -Z one.
 const Rgb k_deck_sheen{226, 233, 240};
-// The block under the deck. Its lid barely shows, but its sides are the pad's
-// silhouette, so they have to be darker than the deck and darker than the
-// ground's mid tone (95,87,79), which the old warm brown sides matched almost
-// exactly and disappeared into.
-const Rgb k_pad_lid{140, 148, 157};
+// The block under the deck. Its sides are the pad's silhouette, so they have
+// to be darker than the deck and darker than the ground's mid tone
+// (95,87,79), which the old warm brown sides matched almost exactly and
+// disappeared into.
 const Rgb k_pad_side{62, 69, 77};
+
+// The four walls carry draw_box's own per face shading, so the body reads the
+// same as it did when it was a box. Indices run the same cycle the walls are
+// drawn in: -Z, +X, +Z, -X.
+const float k_wall_shade[4] = {0.70f, 1.00f, 0.90f, 0.60f};
 
 // The deck, as a 3x3 grid of vertices rather than one flat quad.
 //
@@ -232,7 +236,7 @@ const Rgb k_pad_side{62, 69, 77};
 // rasterizer already interpolates them. Nine vertices over four quads is
 // enough to read as plating, alternating light and shadow so the seams fall
 // where a real deck's panel joins would, and it costs 8 triangles.
-void draw_deck(const tl::Pad& pad, float y, bool target, int pulse256) {
+void draw_deck(const tl::Pad& pad, float y) {
     const float half = to_f(tl::k_pad_half);
     const float x0 = to_f(pad.x) - half, z0 = to_f(pad.z) - half;
     const float step = half;
@@ -259,16 +263,9 @@ void draw_deck(const tl::Pad& pad, float y, bool target, int pulse256) {
                 const int sheen = (cx - cz + 2) * 255 / 4;    // 0..255
                 const bool bright = ((cx + cz) & 1) == 0;
                 const Rgb base = bright ? k_deck_lit : k_deck_dark;
-                int r = base.r + (k_deck_sheen.r - base.r) * sheen / 255;
-                int g = base.g + (k_deck_sheen.g - base.g) * sheen / 255;
-                int b = base.b + (k_deck_sheen.b - base.b) * sheen / 255;
-                // The target deck warms toward the orange its sides carry, so
-                // the pulse reaches the surface you are aiming at and not just
-                // its edges.
-                if (target) {
-                    g = g - (g - 190) * pulse256 / 256;
-                    b = b - b * pulse256 / 256;
-                }
+                const int r = base.r + (k_deck_sheen.r - base.r) * sheen / 255;
+                const int g = base.g + (k_deck_sheen.g - base.g) * sheen / 255;
+                const int b = base.b + (k_deck_sheen.b - base.b) * sheen / 255;
                 c[i] = Rgb{static_cast<uint8_t>(r), static_cast<uint8_t>(g),
                            static_cast<uint8_t>(b)};
             }
@@ -277,54 +274,86 @@ void draw_deck(const tl::Pad& pad, float y, bool target, int pulse256) {
     }
 }
 
-// The pads. A box each for the body, which is the engine's own primitive, and
-// a hand laid deck on top for the vertex colour draw_box cannot give.
+// One vertical wall of the pad body, wound outward so the rasterizer's own
+// backface cull (`area <= 0` in draw_typed) drops the walls facing away.
 //
-// The deck stands proud of its apron for a reason that is not looks. Lying
-// flat it shared a depth step with the ground and they tied, and ties go to
-// whoever drew first, so the pad flickered.
-void draw_pads(const World& world, uint32_t time_ms) {
+// Corners run A_low, B_low, B_high, A_high, which is the REVERSE of the order
+// draw_box's own face table uses. That is not a tidy up: wound draw_box's way
+// the cull keeps the far wall and drops the near one, so the pad showed the
+// inside of its back face and nothing at all where the front should be. The
+// engine's boxes have the same inversion, but every one of them is either
+// viewed from a distance or hidden inside something, so it has never shown;
+// fixing it there reaches every game and belongs in its own change.
+void pad_wall(float ax, float az, float bx, float bz,
+              float y_low, float y_high, float shade) {
+    const float wx[4] = {ax, bx, bx, ax};
+    const float wy[4] = {y_low, y_low, y_high, y_high};
+    const float wz[4] = {az, bz, bz, az};
+
+    int sx[4], sy[4], sz[4];
+    for (int i = 0; i < 4; i++) {
+        if (!g_renderer.project(wx[i], wy[i], wz[i], sx[i], sy[i], sz[i])) return;
+    }
+
+    const Rgb flat{static_cast<uint8_t>(k_pad_side.r * shade),
+                   static_cast<uint8_t>(k_pad_side.g * shade),
+                   static_cast<uint8_t>(k_pad_side.b * shade)};
+    // The same two corner lift draw_box gives a wall, so a flat face still
+    // reads with a gradient across it rather than as paper.
+    const Rgb lift{static_cast<uint8_t>(flat.r + 30 > 255 ? 255 : flat.r + 30),
+                   static_cast<uint8_t>(flat.g + 30 > 255 ? 255 : flat.g + 30),
+                   static_cast<uint8_t>(flat.b + 30 > 255 ? 255 : flat.b + 30)};
+    const Rgb c[4] = {flat, lift, lift, flat};
+
+    const int t0[3] = {0, 1, 2}, t1[3] = {0, 2, 3};
+    const int* tris[2] = {t0, t1};
+    for (int t = 0; t < 2; t++) {
+        const int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
+        const int qx[3] = {sx[i0], sx[i1], sx[i2]};
+        const int qy[3] = {sy[i0], sy[i1], sy[i2]};
+        const int qz[3] = {sz[i0], sz[i1], sz[i2]};
+        const Rgb qc[3] = {c[i0], c[i1], c[i2]};
+        ground_tri(qx, qy, qz, qc);
+    }
+}
+
+// The pads. Four walls for the body and the plated deck on top, and NOTHING
+// underneath that deck.
+//
+// This was a draw_box plus a deck laid over its lid, and that lid is what made
+// the pad mottle. draw_box always paints a top face, so the pad had two
+// horizontal surfaces 0.048 units apart, and this depth buffer cannot tell
+// them apart: it is one byte over the whole 6 to 170 range, so at the 23 units
+// the camera works at, 0.048 of vertical separation is about a fifth of a
+// single depth step. The two tied nearly everywhere, ties go to whoever drew
+// first, and the lid drew first, so the deck lost most of its own surface to
+// the grey lid underneath and kept only the pixels where the interpolation
+// happened to round its way.
+//
+// Widening the gap is not the fix. A gap large enough to win at 23 units is
+// still too small at 40, the pads are seen from across the valley, and a gap
+// that big would show daylight between the deck and the body it sits on.
+// The fix is that there is only one surface up there now, so there is nothing
+// left to tie with. The deck stands proud of its apron for that same reason
+// and that part still earns its 2.4 units: apron to deck is about ten depth
+// steps, which separates cleanly.
+void draw_pads(const World& world) {
+    const float half = to_f(tl::k_pad_half);
+    const float rise = to_f(tl::k_pad_rise);
+
     for (int i = 0; i < tl::k_pad_count; i++) {
         const tl::Pad& pad = world.pads[i];
-        const bool done = world.state == tl::Flight::Landed &&
-                          world.landed_on == i;
-        const bool target = i == world.target && !done;
+        const float x0 = to_f(pad.x) - half, x1 = to_f(pad.x) + half;
+        const float z0 = to_f(pad.z) - half, z1 = to_f(pad.z) + half;
+        const float y_low = to_f(pad.y), y_high = y_low + rise;
 
-        // The deck you are aiming at pulses. Nothing else out there is
-        // saturated, so it reads from across the valley with no marker.
-        uint8_t sr = k_pad_side.r, sg = k_pad_side.g, sb = k_pad_side.b;
-        int pulse256 = 0;
-        if (target) {
-            const int phase = static_cast<int>((time_ms / 12) % 256);
-            const int wave = tl::sin_fp(phase * 16) >> 7;      // -128..128
-            const int lit = 190 + wave / 2;
-            sr = static_cast<uint8_t>(lit);
-            sg = static_cast<uint8_t>(lit * 163 / 255);
-            sb = 0;
-            pulse256 = 150 + wave / 2;
-            if (pulse256 < 0) pulse256 = 0;
-            if (pulse256 > 256) pulse256 = 256;
-        }
+        // Round the rim: -Z, +X, +Z, -X, matching k_wall_shade.
+        pad_wall(x0, z0, x1, z0, y_low, y_high, k_wall_shade[0]);
+        pad_wall(x1, z0, x1, z1, y_low, y_high, k_wall_shade[1]);
+        pad_wall(x1, z1, x0, z1, y_low, y_high, k_wall_shade[2]);
+        pad_wall(x0, z1, x0, z0, y_low, y_high, k_wall_shade[3]);
 
-        // draw_box's own vertex table puts x and z at +/- 0.5 and y at 0 to 1,
-        // so the sizes it wants are the FULL width and the FULL height, and
-        // the box grows UP from the y it is given rather than being centred
-        // on it. Passing half extents and a centre, which is what the name
-        // suggests, drew a deck half the size of the area that counts as the
-        // pad, floating above its own apron.
-        const float full = to_f(tl::k_pad_half) * 2.0f;
-        const float rise = to_f(tl::k_pad_rise);
-        // The block gives the silhouette and the sides. Its lid is drawn just
-        // under the real deck so nothing shows through if a deck quad is
-        // rejected at the frame edge, and the deck goes on top with its own
-        // vertex colours.
-        g_renderer.draw_box(to_f(pad.x), to_f(pad.y), to_f(pad.z),
-                            full, rise * 0.98f, full,
-                            k_pad_lid.r, k_pad_lid.g, k_pad_lid.b,
-                            sr, sg, sb);
-        draw_deck(pad, to_f(pad.y) + rise, i == world.target &&
-                  !(world.state == tl::Flight::Landed && world.landed_on == i),
-                  pulse256);
+        draw_deck(pad, y_high);
     }
 }
 
@@ -414,7 +443,7 @@ void draw_flames(const World& world, const pse::RenderTarget& target,
         const int len = 2 + (throttle * 7) / 255 + flick;
         for (int k = 0; k < len; k++) {
             const int half = 1 + (2 * (len - k)) / (len * 2 + 1);
-            // White at the throat, yellow, then the orange the pads use.
+            // White at the throat, then yellow, then orange.
             const uint8_t r = 255;
             const uint8_t g = k * 3 < len ? 255 : (k * 3 < len * 2 ? 236 : 163);
             const uint8_t b = k * 3 < len ? 232 : (k * 3 < len * 2 ? 39 : 0);
@@ -437,8 +466,10 @@ void draw_flames(const World& world, const pse::RenderTarget& target,
 }
 
 // An arrow at the edge of the screen for the deck you cannot see, and only
-// then: the deck pulses, and a marker stuck on top of something already in
-// frame is the decorative status line rule 9 exists to keep off this screen.
+// then: a marker stuck on top of something already in frame is the decorative
+// status line rule 9 exists to keep off this screen. With the pads no longer
+// marking themselves, the HUD's own range readout is what names the target
+// while it is on screen.
 //
 // Direction comes from the world bearing rotated into the camera's own frame,
 // NOT from the projection, because a pad behind the camera has no valid
@@ -521,7 +552,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                                 k_cam_reach, k_cam_reach, 0.0f);
 
     draw_ground(world);
-    draw_pads(world, time_ms);
+    draw_pads(world);
     draw_ship(world);
 
     // A dusk sky: the ground fogs into it rather than ending on a line.
