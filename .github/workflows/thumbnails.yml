@@ -28,6 +28,9 @@ permissions:
 jobs:
   capture:
     runs-on: ubuntu-latest
+    # This job takes the same pico-console-publish lock as the build, so a
+    # hang here keeps a merge to main off the site just as effectively.
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

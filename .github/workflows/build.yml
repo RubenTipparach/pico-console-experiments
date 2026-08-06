@@ -23,8 +23,10 @@ on:
 # One publish at a time. Every run of this workflow publishes now, and two runs
 # overlaying the gh-pages tree concurrently will race until one push is
 # rejected. cancel-in-progress stays false: a half applied overlay is worse
-# than a slow queue. Keep an eye on that queue, because a job wedged in apt
-# once held this lock for over an hour and kept a merge to main off the site.
+# than a slow queue. That queue is only as good as the run at the head of it,
+# which is why every job below carries a timeout-minutes: a job wedged in apt
+# has twice held this lock for over an hour and kept a merge to main off the
+# site, and GitHub's default would have let it hold the lock for six.
 concurrency:
   group: pico-console-publish
   cancel-in-progress: false
@@ -50,6 +52,8 @@ jobs:
   # Fails in seconds if the renderer is broken, before any cross compile starts.
   engine-tests:
     runs-on: ubuntu-latest
+    # Runs in about ten seconds. Everything past a minute is a hang.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -89,6 +93,8 @@ jobs:
   # not something inferred from content hashes.
   detect:
     runs-on: ubuntu-latest
+    # Reads build.yaml and writes the matrix. Seconds.
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       has_work: ${{ steps.plan.outputs.has_work }}
@@ -129,6 +135,10 @@ jobs:
     # against '[]' because that string coercion is not reliable.
     if: needs.detect.outputs.has_work == 'true'
     runs-on: ubuntu-latest
+    # A matrix leg is about three minutes warm and about six from a cold
+    # cache, since the emscripten half deliberately never caches. 25 leaves
+    # room for a slow mirror and still fails a wedged apt in minutes.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
@@ -312,6 +322,9 @@ jobs:
               || (needs.build.result == 'skipped'
                   && needs.detect.outputs.has_work != 'true')) }}
     runs-on: ubuntu-latest
+    # Assembles the site, boot checks every page in a real browser, deploys.
+    # The browser setup is the slow part and is the other place apt has hung.
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -559,6 +572,8 @@ jobs:
     needs: [engine-tests, detect, build]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    # Writes the run summary and nothing else.
+    timeout-minutes: 10
     steps:
       - name: Summarise
         env:
