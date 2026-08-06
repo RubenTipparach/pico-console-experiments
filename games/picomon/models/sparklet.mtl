@@ -1,27 +1,39 @@
-# Colours for sparklet.obj.
+# Colours for sparklet.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# pelt
-newmtl sparklet_body
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
+
+newmtl cBB9922
+Kd 0.733333 0.600000 0.133333   # #BB9922
+
+newmtl cBBAA44
+Kd 0.733333 0.666667 0.266667   # #BBAA44
+
+newmtl cDDBB33
+Kd 0.866667 0.733333 0.200000   # #DDBB33
+
+newmtl cDDBB44
+Kd 0.866667 0.733333 0.266667   # #DDBB44
+
+newmtl cEECC44
 Kd 0.933333 0.800000 0.266667   # #EECC44
 
-# chest blaze and underside
-newmtl sparklet_belly
-Kd 1.000000 0.933333 0.666667   # #FFEEAA
+newmtl cEECC66
+Kd 0.933333 0.800000 0.400000   # #EECC66
 
-newmtl sparklet_crest
-Kd 0.866667 0.666667 0.200000   # #DDAA33
+newmtl cEEDD66
+Kd 0.933333 0.866667 0.400000   # #EEDD66
 
-# the tail, brightest thing on the model
-newmtl sparklet_bolt
-Kd 1.000000 0.866667 0.133333   # #FFDD22
+newmtl cFFDD99
+Kd 1.000000 0.866667 0.600000   # #FFDD99
 
-newmtl sparklet_bolt2
-Kd 0.866667 0.733333 0.133333   # #DDBB22
+newmtl cFFEE66
+Kd 1.000000 0.933333 0.400000   # #FFEE66
 
-newmtl sparklet_leg
-Kd 0.800000 0.666667 0.200000   # #CCAA33
+newmtl cFFEE99
+Kd 1.000000 0.933333 0.600000   # #FFEE99

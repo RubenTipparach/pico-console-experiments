@@ -1,27 +1,39 @@
-# Colours for mossling.obj.
+# Colours for mossling.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# hide
-newmtl mossling_body
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
+
+newmtl c449944
+Kd 0.266667 0.600000 0.266667   # #449944
+
+newmtl c559933
+Kd 0.333333 0.600000 0.200000   # #559933
+
+newmtl c55AA55
 Kd 0.333333 0.666667 0.333333   # #55AA55
 
-# chest blaze and underside
-newmtl mossling_belly
-Kd 0.800000 0.933333 0.600000   # #CCEE99
+newmtl c66AA55
+Kd 0.400000 0.666667 0.333333   # #66AA55
 
-newmtl mossling_stem
-Kd 0.400000 0.600000 0.266667   # #669944
+newmtl c66BB55
+Kd 0.400000 0.733333 0.333333   # #66BB55
 
-# the sprout, and the whole silhouette
-newmtl mossling_leaf
+newmtl c77BB44
+Kd 0.466667 0.733333 0.266667   # #77BB44
+
+newmtl c88CC77
+Kd 0.533333 0.800000 0.466667   # #88CC77
+
+newmtl c88DD55
 Kd 0.533333 0.866667 0.333333   # #88DD55
 
-newmtl mossling_leaf2
-Kd 0.400000 0.733333 0.266667   # #66BB44
+newmtl cBBDD88
+Kd 0.733333 0.866667 0.533333   # #BBDD88
 
-newmtl mossling_leg
-Kd 0.266667 0.600000 0.266667   # #449944
+newmtl cBBDD99
+Kd 0.733333 0.866667 0.600000   # #BBDD99

@@ -744,6 +744,46 @@ class Data:
                         fail(z["path"], f"indoor zone has a walkable edge tile "
                                         f"at {x},{y}, so the room is open to "
                                         "the void outside it")
+            # Every building opens. A run of house tiles with no door beside
+            # it is a door that is broken rather than a door that is locked,
+            # and a player who walks up to it learns nothing except that the
+            # map is lying. Route 1's day care was exactly that.
+            house = next((i for i, t in enumerate(self.tiles)
+                          if t["name"] == "house"), None)
+            if house is not None:
+                seen = [[False] * z["w"] for _ in range(z["h"])]
+                for y0 in range(z["h"]):
+                    for x0 in range(z["w"]):
+                        if z["tiles"][y0][x0] != house or seen[y0][x0]:
+                            continue
+                        stack, cells = [(x0, y0)], []
+                        seen[y0][x0] = True
+                        while stack:
+                            cx, cy = stack.pop()
+                            cells.append((cx, cy))
+                            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                                nx, ny = cx + dx, cy + dy
+                                if not (0 <= nx < z["w"] and 0 <= ny < z["h"]):
+                                    continue
+                                if seen[ny][nx] or z["tiles"][ny][nx] != house:
+                                    continue
+                                seen[ny][nx] = True
+                                stack.append((nx, ny))
+                        has_door = any(
+                            0 <= cx + dx < z["w"] and 0 <= cy + dy < z["h"] and
+                            self.tiles[z["tiles"][cy + dy][cx + dx]]["flags"]
+                            & TILE_FLAGS["door"]
+                            for cx, cy in cells
+                            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                        if not has_door:
+                            xs = [c[0] for c in cells]
+                            ys = [c[1] for c in cells]
+                            fail(z["path"],
+                                 f"the building at {min(xs)},{min(ys)} to "
+                                 f"{max(xs)},{max(ys)} has no door tile beside "
+                                 "it, so the player can walk up to it and "
+                                 "never get in")
+
             if z["indoor"] and z["enc"]:
                 fail(z["path"], "an indoor zone has an encounter table, and "
                                 "nothing wanders into a room")

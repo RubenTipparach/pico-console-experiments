@@ -17,7 +17,7 @@ species emberkit
   catch 45
   xp 62
   mesh emberkit
-  tint ff cc 99
+  tint ff ff ff
   scale 100
   learn 1 scratch
   learn 1 ember

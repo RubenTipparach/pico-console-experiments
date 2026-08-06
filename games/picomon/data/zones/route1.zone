@@ -20,7 +20,7 @@ T..GGGGGG.ppp......GGGGG...T
 T..GGGGGGTppp..T...........T
 T..GGGGGG.ppp..HHHH........T
 TT........ppp..HHHH.TTT....T
-T....T....ppp..HHHH........T
+T....T....ppp..HdHH........T
 T.........ppp.T............T
 TppppppppppppppppppppppppppT
 TppppppppppppppppppppppppppT
@@ -81,9 +81,11 @@ npc camper 21 20 west trainer
   flag beat_camper
 end
 
-npc daycare 16 13 south villager
-  say The DAY CARE is closed today.
-  say Come back when you have two.
+warp 16 12 daycare 4 7 north
+
+npc walkerdc 18 13 west villager
+  say The DAY CARE takes them in while you travel.
+  say Mine came back a level up and twice as rude.
 end
 
 # The gate. A badge opens the cave, and this is what makes the gym worth

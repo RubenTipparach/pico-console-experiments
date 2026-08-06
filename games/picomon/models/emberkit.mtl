@@ -1,30 +1,48 @@
-# Colours for emberkit.obj.
+# Colours for emberkit.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# coat
-newmtl emberkit_body
-Kd 0.933333 0.533333 0.200000   # #EE8833
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
 
-# chest blaze and underside
-newmtl emberkit_belly
-Kd 1.000000 0.866667 0.666667   # #FFDDAA
+newmtl c884422
+Kd 0.533333 0.266667 0.133333   # #884422
 
-newmtl emberkit_snout
-Kd 1.000000 0.933333 0.800000   # #FFEECC
+newmtl cBB6622
+Kd 0.733333 0.400000 0.133333   # #BB6622
 
-newmtl emberkit_ear
+newmtl cCC7733
+Kd 0.800000 0.466667 0.200000   # #CC7733
+
+newmtl cDD7733
 Kd 0.866667 0.466667 0.200000   # #DD7733
 
-newmtl emberkit_tail
+newmtl cEE8833
+Kd 0.933333 0.533333 0.200000   # #EE8833
+
+newmtl cEE8844
+Kd 0.933333 0.533333 0.266667   # #EE8844
+
+newmtl cEE9944
+Kd 0.933333 0.600000 0.266667   # #EE9944
+
+newmtl cEEAA66
+Kd 0.933333 0.666667 0.400000   # #EEAA66
+
+newmtl cEEBB77
+Kd 0.933333 0.733333 0.466667   # #EEBB77
+
+newmtl cFFAA55
 Kd 1.000000 0.666667 0.333333   # #FFAA55
 
-# the tail tip, which is most of the read
-newmtl emberkit_tip
-Kd 1.000000 0.933333 0.800000   # #FFEECC
+newmtl cFFBB77
+Kd 1.000000 0.733333 0.466667   # #FFBB77
 
-newmtl emberkit_leg
-Kd 0.800000 0.466667 0.200000   # #CC7733
+newmtl cFFCC99
+Kd 1.000000 0.800000 0.600000   # #FFCC99
+
+newmtl cFFDDAA
+Kd 1.000000 0.866667 0.666667   # #FFDDAA

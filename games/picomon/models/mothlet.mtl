@@ -1,28 +1,42 @@
-# Colours for mothlet.obj.
+# Colours for mothlet.obj, generated with the model.
 #
 # Every channel is a multiple of 0x11, because the panel is four bits per
 # channel and a colour that is not shifts on the device and nowhere else.
 # Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly
 # on the byte it was written for.
 
-# fur
-newmtl mothlet_body
+newmtl c111122
+Kd 0.066667 0.066667 0.133333   # #111122
+
+newmtl c775588
+Kd 0.466667 0.333333 0.533333   # #775588
+
+newmtl c8866AA
+Kd 0.533333 0.400000 0.666667   # #8866AA
+
+newmtl c9977BB
+Kd 0.600000 0.466667 0.733333   # #9977BB
+
+newmtl cAA88CC
+Kd 0.666667 0.533333 0.800000   # #AA88CC
+
+newmtl cBB99DD
 Kd 0.733333 0.600000 0.866667   # #BB99DD
 
-# chest blaze and underside
-newmtl mothlet_belly
-Kd 0.933333 0.866667 1.000000   # #EEDDFF
+newmtl cCCAADD
+Kd 0.800000 0.666667 0.866667   # #CCAADD
 
-# forewing
-newmtl mothlet_wing
+newmtl cCCAAEE
 Kd 0.800000 0.666667 0.933333   # #CCAAEE
 
-# hindwing and wing underside
-newmtl mothlet_wing2
-Kd 0.600000 0.466667 0.800000   # #9977CC
+newmtl cDDBBEE
+Kd 0.866667 0.733333 0.933333   # #DDBBEE
 
-newmtl mothlet_antenna
-Kd 0.533333 0.400000 0.600000   # #886699
+newmtl cDDCCEE
+Kd 0.866667 0.800000 0.933333   # #DDCCEE
 
-newmtl mothlet_leg
-Kd 0.466667 0.333333 0.533333   # #775588
+newmtl cDDCCFF
+Kd 0.866667 0.800000 1.000000   # #DDCCFF
+
+newmtl cEEDDFF
+Kd 0.933333 0.866667 1.000000   # #EEDDFF

@@ -163,6 +163,11 @@ Outdoor trees are sprites, not meshes. The battle backdrop uses a real pine
 mesh, because it has five of them and nothing else in the shot, while a
 screenful of Route 1 is up to 87 tree tiles.
 
+Every run of `house` tiles must have a `door` tile beside it. A building the
+player can walk up to and never get into is a door that looks broken rather
+than a door that is locked, and Route 1's day care was exactly that until the
+check went in.
+
 `indoor` says this zone is a room. The renderer drops the sky for it, stops
 the ground at the walls rather than running the border tile out into the
 void, and draws the room as a cutaway with its near wall left off. An indoor

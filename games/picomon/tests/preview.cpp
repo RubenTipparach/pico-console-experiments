@@ -181,6 +181,15 @@ void town_shots(const std::string& out) {
     run(w, pm::Input{}, 2);
     capture(w, 8000, out + "/town_9_gate.ppm");
 
+    // The DAY CARE on Route 1, which is the last building on the map that
+    // opens rather than being scenery.
+    go(w, pm::zone_route1, 16, 13, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 8100, out + "/town_13_daycare_door.ppm");
+    go(w, pm::zone_daycare, 4, 5, 0);
+    run(w, pm::Input{}, 2);
+    capture(w, 8150, out + "/town_14_daycare.ppm");
+
     // The Centre: the nurse, and what a whiteout looks like from the other
     // side of it.
     go(w, pm::zone_healcentre, 6, 3, 0);

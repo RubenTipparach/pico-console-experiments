@@ -1,0 +1,38 @@
+# The Day Care, on Route 1.
+#
+# Small on purpose: one counter, one keeper, and a pen of plants at the back.
+# Every building a player can walk up to opens, and this one was the last on
+# the map that did not, which reads as a door that is broken rather than a
+# door that is locked.
+
+zone daycare
+name DAY CARE
+size 9 8
+indoor
+
+tiles
+WWWWWWWWW
+WlYYYYYlW
+WlKKKKKlW
+WlllllllW
+WBlllllBW
+WBlllllBW
+WlllllllW
+WWWWdWWWW
+end
+
+warp 4 7 route1 16 13 south
+
+npc keeper 4 3 south villager
+  say Leave one with me and it will train while you walk.
+  say It is not open for business yet. Soon.
+end
+
+npc dcvisitor 2 6 east villager
+  say I left mine here a week ago.
+  say I think it has forgotten me.
+end
+
+event sign 6 6
+  say DAY CARE. WE MIND THEM WHILE YOU WALK.
+end

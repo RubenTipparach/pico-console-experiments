@@ -307,6 +307,60 @@ void test_a_hit_flashes_shakes_and_drains() {
           "the HP bar is still draining mid strike");
 }
 
+// The one at the front is the bigger one.
+//
+// The camera gives the player's side 13 pixels per world unit and the foe's
+// 10, so the same species drawn at the same scale is only 30 percent smaller
+// at the back, which does not read as distance at all. An attempt to pay the
+// foe back for its distance overshot and inverted it: the same species came
+// out taller at the back than at the front, and the depth illusion broke
+// completely. Both creatures here are EMBERKIT, so any difference on screen
+// is staging and nothing else.
+void test_the_near_creature_is_the_bigger_one() {
+    pm::World w = fresh();
+    w.mode = pm::Mode::Battle;
+    w.battle = pm::Battle{};
+    w.battle.foe = pm::make_mon(0, 5);          // the same species as the starter
+    w.battle.trainer_npc = 0xFF;
+    w.battle.active = 0;
+    w.battle.state = pm::BattleState::Menu;
+    check(w.party[0].species == w.battle.foe.species,
+          "both sides of this test are the same species");
+    Frame f;
+    render(w, f, 1000);
+
+    // Emberkit is orange and nothing else in the arena is. Measure each side's
+    // patch of it, splitting the frame down the middle between them.
+    auto span = [&f](int x0, int x1, int& top, int& bottom, int& count) {
+        top = 999; bottom = -1; count = 0;
+        for (int y = 0; y < 84; y++)
+            for (int x = x0; x < x1; x++) {
+                const uint8_t* p = f.at(x, y);
+                if (!(p[0] > 0xA0 && p[1] > 0x40 && p[1] < 0xA0 && p[2] < 0x50))
+                    continue;
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+                count++;
+            }
+    };
+    int mt, mb, mc, ft, fb, fc;
+    span(0, 58, mt, mb, mc);            // the player's half
+    span(62, 120, ft, fb, fc);          // the foe's half
+    const int mine = mb - mt, theirs = fb - ft;
+    std::printf("  battle: same species, near %d px tall (%d px), "
+                "far %d px tall (%d px)\n", mine, mc, theirs, fc);
+    check(mc > 60 && fc > 20, "both creatures are actually on screen");
+    // Measured off the design mockup: about 35 pixels at the front and 22 at
+    // the back. The arena runs a little larger than that on purpose, but the
+    // ratio is the thing being pinned here, and the band is wide enough to
+    // retune inside and narrow enough that inverting it fails.
+    check(mine * 100 > theirs * 140,
+          "the creature at the front is at least 1.4x the one at the back, or "
+          "nothing about the arena reads as depth");
+    check(mine * 100 < theirs * 250,
+          "and not so much bigger that the far one is a speck");
+}
+
 void test_battle_floor_is_solid() {
     pm::World w = fresh();
     w.mode = pm::Mode::Battle;
@@ -358,6 +412,7 @@ int main() {
     test_the_shop_screen_draws();
     test_the_treeline_is_drawn();
     test_a_hit_flashes_shakes_and_drains();
+    test_the_near_creature_is_the_bigger_one();
     test_battle_floor_is_solid();
     test_title_shows_its_creature();
     test_menus_draw_something();
