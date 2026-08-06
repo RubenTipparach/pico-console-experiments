@@ -51,9 +51,17 @@ const float k_box_vertices[8][3] = {
     {0.5f, 1.0f, 0.5f},   {-0.5f, 1.0f, 0.5f},
 };
 
+// The two end faces are wound the other way round from the four walls, and
+// that is not a style choice: written the same way as the walls they face
+// INWARD, the backface cull drops them, and a box viewed from above shows the
+// ground through the hole where its lid should be. It shipped that way, and
+// the reason nobody caught it is that the lid is only missing from the side
+// you normally look from: draw_box's top_r/g/b was reachable exclusively by a
+// camera underneath the box, which is to say never. test_engine.cpp now
+// renders one from above and checks the top colour actually lands on screen.
 const uint8_t k_box_faces[6][4] = {
     {0, 3, 2, 1}, {5, 6, 7, 4}, {4, 7, 3, 0},
-    {1, 2, 6, 5}, {3, 7, 6, 2}, {4, 0, 1, 5},
+    {1, 2, 6, 5}, {2, 6, 7, 3}, {5, 1, 0, 4},
 };
 
 constexpr int k_face_top = 4;
@@ -295,7 +303,7 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
                            float x, float y, float z,
                            float yaw, float scale,
                            uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
-                           float pitch, uint8_t whiten) {
+                           float pitch, uint8_t whiten, float roll) {
     if (mesh.vertices == nullptr || mesh.faces == nullptr) return;
     if (mesh.scale <= 0) return;
 
@@ -303,6 +311,8 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
     const float cos_yaw = cosf(yaw);
     const float sin_pitch = sinf(pitch);
     const float cos_pitch = cosf(pitch);
+    const float sin_roll = sinf(roll);
+    const float cos_roll = cosf(roll);
     const float unit = scale / static_cast<float>(mesh.scale);
 
     for (uint16_t f = 0; f < mesh.face_count; f++) {
@@ -315,9 +325,11 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
 
         // Rotate the baked normal with the model so lighting follows it,
         // pitch about local X first, then yaw, same order as the vertices.
-        const float nx = face.nx / 127.0f;
-        const float raw_ny = face.ny / 127.0f;
+        const float base_nx = face.nx / 127.0f;
+        const float base_ny = face.ny / 127.0f;
         const float raw_nz = face.nz / 127.0f;
+        const float nx = base_nx * cos_roll - base_ny * sin_roll;
+        const float raw_ny = base_nx * sin_roll + base_ny * cos_roll;
         const float ny = raw_ny * cos_pitch + raw_nz * sin_pitch;
         const float pitched_nz = raw_nz * cos_pitch - raw_ny * sin_pitch;
         const float world_nx = nx * cos_yaw + pitched_nz * sin_yaw;
@@ -350,9 +362,11 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
 
         for (int corner = 0; corner < 3; corner++) {
             const MeshVertex& v = mesh.vertices[indices[corner]];
-            const float lx = v.x * unit;
-            const float raw_ly = v.y * unit;
+            const float base_lx = v.x * unit;
+            const float base_ly = v.y * unit;
             const float raw_lz = v.z * unit;
+            const float lx = base_lx * cos_roll - base_ly * sin_roll;
+            const float raw_ly = base_lx * sin_roll + base_ly * cos_roll;
             const float ly = raw_ly * cos_pitch + raw_lz * sin_pitch;
             const float lz = raw_lz * cos_pitch - raw_ly * sin_pitch;
             const float wx = x + lx * cos_yaw + lz * sin_yaw;
