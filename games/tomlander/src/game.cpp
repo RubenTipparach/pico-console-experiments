@@ -258,7 +258,7 @@ void draw_hud() {
 
     // One word for which leg of the delivery this is, and only on the delivery.
     // Mission one has nothing to say here and says nothing.
-    if (g_world.mission == tl::Mission::Delivery &&
+    if (g_world.mission != tl::Mission::Hop &&
         g_world.cargo != tl::kCargoDone) {
         const bool loaded = tl::carrying(g_world);
         // Below the fuel bar, not beside it. The bar is 6 tall at y = 3 and
@@ -275,6 +275,7 @@ const char* fault_word(tl::Fault fault) {
         case tl::Fault::TooFast: return "TOO FAST";
         case tl::Fault::TooSteep: return "TOO STEEP";
         case tl::Fault::Scraped: return "SCRAPED";
+        case tl::Fault::Ditched: return "DITCHED";
         default: return "TUMBLED";
     }
 }
@@ -288,7 +289,10 @@ void draw_outcome() {
     if (g_world.state == tl::Flight::Landed) {
         std::snprintf(fuel_line, sizeof(fuel_line), "FUEL %d",
                       (g_world.fuel * 100) / tl::k_fuel_full);
-        lines[0] = g_world.cargo == tl::kCargoDone ? "DELIVERED" : "DOWN SAFE";
+        lines[0] = g_world.cargo == tl::kCargoDone
+                       ? (g_world.mission == tl::Mission::Salvage ? "RECOVERED"
+                                                                  : "DELIVERED")
+                       : "DOWN SAFE";
         lines[1] = fuel_line;
         lines[2] = "RECORD";
         pens[0] = Pen(0, 228, 54);

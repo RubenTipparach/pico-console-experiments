@@ -41,19 +41,24 @@ enum class Flight : uint8_t {
     Tumbled,
 };
 
-enum class Fault : uint8_t { None, TooFast, TooSteep, Scraped };
+enum class Fault : uint8_t { None, TooFast, TooSteep, Scraped, Ditched };
 
 struct Pad {
     int32_t x, z;     // fp16 centre
     int32_t y;        // fp16 apron height, filled in by world_init
+    // Half width of the square that counts as a touchdown. Per pad rather
+    // than one constant, because the salvage is a rocket section half the size
+    // of a built deck: a shared half would have let the ship land on the water
+    // beside it and score it.
+    int32_t half;
 };
 
 constexpr int k_pad_count = 3;
 
 // Which flight this is. Mission one is the hop the game opens on; mission two
 // is the delivery, and it is the same world with a crate on it.
-enum class Mission : uint8_t { Hop = 1, Delivery = 2 };
-constexpr uint8_t k_mission_count = 2;
+enum class Mission : uint8_t { Hop = 1, Delivery = 2, Salvage = 3 };
+constexpr uint8_t k_mission_count = 3;
 
 // Where the crate is, in mission two. A pad index while it is sitting on one,
 // kCargoHeld once the ship has it, kCargoDone after it is delivered. Mission
@@ -152,6 +157,13 @@ struct World {
 
     Mission mission;
     uint8_t cargo;                // a pad index, or kCargo* above
+    // Where the load goes once it is aboard. Named rather than inferred: the
+    // delivery carries its crate ONWARD to a third deck and the salvage brings
+    // it BACK to the one it launched from, so "the next pad along" is right for
+    // one mission and wrong for the other.
+    uint8_t deliver_to;
+    // Waterline, fp16, or k_no_sea when this mission has no ocean.
+    int32_t sea;
 
     Flight state;
     Fault fault;
@@ -182,6 +194,20 @@ int32_t terrain_height(const World& world, int32_t x, int32_t z);
 
 // Index of the pad whose deck covers this point, or -1.
 int pad_at(const World& world, int32_t x, int32_t z);
+
+// Is this deck floating on the sea rather than built on the ground? A floating
+// deck gets NO apron: the apron exists so a pad looks built into its hill, and
+// flattening the sea floor around a wreck would raise a plateau out of the
+// ocean the mission is supposed to be flown across.
+inline bool pad_floats(const World& world, int index) {
+    return world.sea > k_no_sea &&
+           world.pads[index].y <= world.sea + k_float_rise;
+}
+
+// Is this point over open water? True only where the terrain floor is below
+// the waterline AND no pad or salvage deck covers it, because a deck floating
+// on the sea is somewhere you land rather than somewhere you drown.
+bool over_water(const World& world, int32_t x, int32_t z);
 
 // What the hull rests on here: the deck if it is over a pad, the ground
 // otherwise, plus the resting height. One function so the collision, the

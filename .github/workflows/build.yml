@@ -564,6 +564,24 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Twenty minutes, up from this action's own ten minute default.
+          #
+          # Two consecutive runs failed here and nowhere else, both at exactly
+          # ten minutes, with everything before them green: run 112 sat in
+          # deployment_queued and run 113 in deployment_in_progress. Neither is
+          # a build problem. Both had already compiled every game for device
+          # and for the browser, boot checked the assembled site in a real
+          # browser, and uploaded it. Pages was simply slower than the action
+          # was willing to wait, and the run then CANCELLED a deployment that
+          # was still making progress, so a good build never reached the site.
+          #
+          # This is the job's own budget being spent honestly rather than a
+          # retry: publish is timeout-minutes 30 and the steps ahead of this
+          # one take about a minute, so twenty here still leaves the job able
+          # to fail on its own terms if Pages is genuinely wedged instead of
+          # merely slow. Raising it further would start hiding a real outage.
+          timeout: 1200000
 
   # A terminal job so a run with every game held still reports success. A
   # skipped matrix job never reports, which silently blocks branch protection if

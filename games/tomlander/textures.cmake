@@ -4,5 +4,7 @@
 # compiled into the game AND into the host preview harness, so a texture listed
 # for one and not the other is a missing header rather than a missing picture.
 set(tomlander_texture_files
+    crate.png
     facade.png
+    hull.png
 )
