@@ -11,23 +11,35 @@ tall. The height is fixed by the camera. The width is not, and it is 14
 because of section 1.
 
 
-## 1. The head overlaps the body
+## 1. The head overlaps the body, and the arms live inside the skull
 
 This is the construction, and everything else follows from it. The parts are
-**not stacked**:
+**not stacked**, and the overlap is not free-form either. Two rules, both
+measured off the reference:
+
+1. **The arms live inside the skull's footprint**, in the room the jaw taper
+   frees up. Brendan's skull spans 14 of his 16 columns, his jaw narrows to
+   10, and his arms tuck into the two column gap either side of the jaw. His
+   arms appear beside the jaw, about two rows above the chin, with the hands
+   arriving at torso level.
+2. **The torso is narrower than the skull.** His torso core is about 8
+   columns under a 14 column skull. Get this backwards, torso wider than the
+   head and arms hung outside it, and the character reads as a little head on
+   a table. That was a real revision of this art.
+
+Scaled to our frame:
 
 ```
-rows  0 .. 11    head, ten columns wide, centred
-rows  7 .. 15    body, fourteen wide, starting behind the head
+rows  0 .. 11    head: skull 12 wide with a rounded crown, jaw 8, chin 6
+rows  9 .. 15    body: arms beside the jaw on rows 9-11, torso 10 wide
+                 from row 12
 rows 16 .. 19    legs
 ```
 
-Rows 7 to 11 belong to both. There the head occupies the middle ten columns
-and the body's arms occupy the two columns either side of it, so a shoulder
-rises past the ear and a forearm hangs beside the jaw.
+Three rows of overlap, 9 to 11. `compose()` draws the body first and the
+head over it; reversing that order paints the shirt across the chin.
 
-Pokemon Gen 3 is built exactly this way. Brendan, frame 0, row 18, by real
-palette index rather than by classification:
+The proof row, Brendan frame 0 row 18, by real palette index:
 
 ```
      0123456789012345
@@ -35,39 +47,23 @@ palette index rather than by classification:
        ^^          ^^
 ```
 
-`B` is #7B4141 sleeve, `J` is #FFC594 arm skin, `A` is the head's black
-outline, `D` is #FFD5B4 face. His arms are at columns 1 to 2 and 13 to 14 on
-**the same rows as his eyes**. His body starts at row 18 and his head runs to
-row 23: six rows of overlap.
-
-`compose()` draws the body first and the head over it. That order is the
-whole mechanism, and reversing it paints the shirt over the chin.
-
-### Why the frame is 14 wide
-
-Stacked parts do not need width. Overlapping ones do, because the arm has to
-be somewhere the head is not. The references run a face eight columns wide
-with two columns of arm either side of the head; at 12 wide the head alone
-ate the frame and the arms had to become one pixel stubs on the shoulders.
-
-14 also matches the references' inked aspect: Brendan is 14 by 21, we are 14
-by 20.
-
-The cost is 20 bytes a frame, 560 across all 28 character frames.
+`B` #7B4141 sleeve, `J` #FFC594 arm skin, `A` head outline, `D` #FFD5B4
+face: arm columns directly beside jaw columns, inside the width his skull
+occupies five rows higher.
 
 ### The column plan
 
-Every head shares it, which is what keeps four characters looking like one
+Shared by every head, which is what keeps four characters reading as one
 cast:
 
 ```
-columns  0 .. 1    arm, and nothing else ever
-column   2         head outline
-column   3         hair
-columns  4 .. 9    face, six wide
-column   10        hair
-column   11        head outline
-columns 12 .. 13   arm
+columns  1 .. 2    arm, on the overlap rows only (11 .. 12 mirrored)
+column   1         skull outline on the full width rows
+column   2         hair
+columns  3 .. 10   face, eight wide: cheek, eye at 5, two of cheek,
+                   eye at 8, cheek, shade at 10
+column   11        hair
+column   12        skull outline
 ```
 
 The boundaries are declared, never inferred. Do not try to detect them from
@@ -82,9 +78,9 @@ splits finds the gap between the boots.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-11** | **7-15** | **16-19** | **20** | **12 (60%)** | overlaps | **4 (20%)** |
+| **Picomon, current** | **0-11** | **9-15** | **16-19** | **20** | **12 (60%)** | overlaps | **4 (20%)** |
 
-Picomon's body row range overlaps its head's by five rows, which is why its
+Picomon's body row range overlaps its head's by three rows, which is why its
 columns do not add up like the others: the references' rows were read as
 disjoint bands off a ruler, and only the pixel dump showed that they are not.
 

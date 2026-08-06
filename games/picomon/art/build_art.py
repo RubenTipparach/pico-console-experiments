@@ -47,7 +47,6 @@ import zlib
 
 import aseprite
 
-W, H = 12, 20
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # --- palettes -------------------------------------------------------------
@@ -93,371 +92,316 @@ PALETTES = {
 }
 
 # --- parts ----------------------------------------------------------------
-# A frame is 14 x 20 and the parts OVERLAP. That is the whole construction,
-# and it is what the previous version of this file got wrong.
+# A frame is 14 x 20 and the parts overlap, the way the reference is actually
+# put together. The rule that everything below follows from: the arms live
+# INSIDE the skull's footprint, in the room the jaw taper frees up, and the
+# torso is NARROWER than the skull. Brendan's skull is 14 of his 16 columns,
+# his jaw narrows to 10, his arms tuck into that two column gap either side,
+# and his torso spans less than his head. Get that backwards, torso wider
+# than skull and arms hung outside it, and the character reads as a little
+# head on a table: that was the previous revision of this file.
 #
-#   rows  0 .. 11    head, ten columns wide, centred
-#   rows  7 .. 15    body, which is fourteen wide and starts under the head
+#   rows  0 .. 11    head: skull 12 wide, rounded crown, jaw 8, chin 6
+#   rows  9 .. 15    body: arms beside the jaw on rows 9-11, torso 10 wide
+#                    from row 12
 #   rows 16 .. 19    legs
 #
-# The head and the body share rows 7 to 11. In those rows the head occupies
-# the middle ten columns and the body's arms occupy the two columns either
-# side of it, so a shoulder rises past the ear and a forearm hangs beside the
-# jaw. Pokemon Gen 3 is built exactly this way. Brendan, frame 0, row 18:
+# Three rows of overlap, 9 to 11. compose() draws the body first and the head
+# over it; reversing that paints the shirt across the chin.
 #
-#        .BJADDDDDDDDAJB.
-#          ^^          ^^     B sleeve, J arm skin, A outline, D face
+# The column plan, shared by every head so the cast reads as one cast:
 #
-# His arms are at columns 1 to 2 and 13 to 14 on the same rows as his eyes.
-# His body starts at row 18 and his head runs to row 23: six rows of overlap.
+#   columns  1 .. 2    arm, on the overlap rows only (11 .. 12 mirrored)
+#   column   1         skull outline on the full width rows
+#   column   2         hair
+#   columns  3 .. 10   face, eight wide: cheek, eye at 5, two of cheek,
+#                      eye at 8, cheek, shade at 10
+#   column   11        hair
+#   column   12        skull outline
 #
-# Stacking the three parts instead, head then body then legs with no overlap,
-# is what this file did before. It cannot put an arm beside a face, so the
-# arms had to become one pixel stubs on the shoulders, and the character came
-# out as three blocks balanced on each other rather than as a body with a head
-# on it. compose() draws the body first and the head over it, which is the
-# order that makes the overlap mean something.
-#
-# The frame went from 12 wide to 14 for this. Twelve wide left no columns
-# outside a head that could hold a readable face: the references run a face
-# eight wide with two columns of arm either side of the head, and at twelve
-# the head alone ate the frame. Fourteen also matches the references' inked
-# aspect, 14 by 21 for Brendan against our 14 by 20.
-#
-# The column plan, which every head shares:
-#
-#   columns  0 .. 1    arm, and nothing else ever
-#   column   2         head outline
-#   column   3         hair
-#   columns  4 .. 9    face, six wide
-#   column   10        hair
-#   column   11        head outline
-#   columns 12 .. 13   arm
+# Eyes are the reference's construction exactly: one pixel wide, two rows
+# tall, white catchlight above pupil, two columns of cheek between the pair.
 
 W, H = 14, 20
 HEAD_H = 12
-BODY_TOP = 7
-BODY_H = 9
+BODY_TOP = 9
+BODY_H = 7
 LEGS_TOP = 16
 LEGS_H = 4
 
 HEAD = {
     "hero.down": [
-        ".....kkkk.....",
-        "...kkhhhhkk...",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhHHhhhhk..",
+        "....kkkkkk....",
         "..kkhhhhhhkk..",
-        "..khsssssShk..",
-        "..khsissiShk..",
-        "..khsesseShk..",
-        "..khsssssShk..",
-        "..khsssssShk..",
-        "..kkkkkkkkkk..",
+        ".khhhhhhhhhhk.",
+        ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".kkhhhhhhhhkk.",
+        ".khsssssssShk.",
+        ".khssissisShk.",
+        ".khssessesShk.",
+        "...ksssssSk...",
+        "...ksssssSk...",
+        "....kkkkkk....",
     ],
-    # Facing away there is no face to draw, so the whole head is hair. Same
-    # silhouette as the front, which is what stops the character appearing to
-    # change size when they turn round.
+    # Facing away is all hair, on the same silhouette, so the character
+    # does not change size when they turn round.
     "hero.up": [
-        ".....kkkk.....",
-        "...kkhhhhkk...",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhHHhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..kkkkkkkkkk..",
+        "....kkkkkk....",
+        "..kkhhhhhhkk..",
+        ".khhhhhhhhhhk.",
+        ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        "...khhhhhhk...",
+        "...khhhhhhk...",
+        "....kkkkkk....",
     ],
-    # In profile the hair sits behind the face rather than beside it, so the
-    # split is three columns of hair to five of face.
+    # In profile the hair is behind the face, not half of it.
     "hero.side": [
-        ".....kkkk.....",
-        "...kkhhhhkk...",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhHHhhhhk..",
+        "....kkkkkk....",
         "..kkhhhhhhkk..",
-        "..khhhsssssk..",
-        "..khhhsiesSk..",
-        "..khhhseesSk..",
-        "..khhhsssSSk..",
-        "..khhhsssssk..",
-        "..kkkkkkkkkk..",
+        ".khhhhhhhhhhk.",
+        ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".kkhhhhhhhhkk.",
+        ".khhhhhssssSk.",
+        ".khhhhhsissSk.",
+        ".khhhhhsessSk.",
+        "...khhsssSk...",
+        "...khhsssSk...",
+        "....kkkkkk....",
     ],
-    # Longer hair: it stays beside the cheeks a row further down, so the chin
-    # outline is wider to match.
+    # Longer hair: it stays beside the cheeks down the jaw, so this is
+    # the one head whose jaw keeps the full ten columns.
     "villager.down": [
-        ".....kkkk.....",
-        "...kkhhhhkk...",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhHHhhhhk..",
+        "....kkkkkk....",
         "..kkhhhhhhkk..",
+        ".khhhhhhhhhhk.",
+        ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".kkhhhhhhhhkk.",
+        ".khhssssssShk.",
+        ".khssissisShk.",
+        ".khssessesShk.",
         "..khsssssShk..",
-        "..khsissiShk..",
-        "..khsesseShk..",
         "..khsssssShk..",
-        "..khhsssShhk..",
-        "..kkkkkkkkkk..",
+        "...kkkkkkkk...",
     ],
-    # The cap costs the forehead a row, so the eyes sit a row lower than
-    # everyone else's. That is the point of a cap.
+    # The cap brim costs the forehead a row, so the eyes sit one row
+    # lower than everyone else's. That is the point of a cap.
     "trainer.down": [
-        ".....kkkk.....",
-        "...kkrrrrkk...",
-        "..krrrrrrrrk..",
-        "..krrRRrrrrk..",
-        "..krrrrrrrrk..",
-        "..kkRRRRRRkk..",
-        "..khsssssShk..",
-        "..khsissiShk..",
-        "..khsesseShk..",
-        "..khsssssShk..",
-        "..khsssssShk..",
-        "..kkkkkkkkkk..",
+        "....kkkkkk....",
+        "..kkrrrrrrkk..",
+        ".krrrrrrrrrrk.",
+        ".krrRRRRrrrrk.",
+        ".kkRRRRRRRRkk.",
+        ".khsssssssShk.",
+        ".khsssssssShk.",
+        ".khssissisShk.",
+        ".khssessesShk.",
+        "...ksssssSk...",
+        "...ksssssSk...",
+        "....kkkkkk....",
     ],
     "trainer.up": [
-        ".....kkkk.....",
-        "...kkrrrrkk...",
-        "..krrrrrrrrk..",
-        "..krrRRrrrrk..",
-        "..krrrrrrrrk..",
-        "..kkRRRRRRkk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..khhhhhhhhk..",
-        "..kkkkkkkkkk..",
+        "....kkkkkk....",
+        "..kkrrrrrrkk..",
+        ".krrrrrrrrrrk.",
+        ".krrRRRRrrrrk.",
+        ".kkrrrrrrrrkk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
+        "...khhhhhhk...",
+        "...khhhhhhk...",
+        "....kkkkkk....",
     ],
-    # A white cap with the same red cross the coat carries, so the nurse is
-    # recognisable from the top of the head down.
+    # A white cap with the same red cross the coat carries, so the nurse
+    # is recognisable from the top of the head down.
     "healer.down": [
-        ".....kkkk.....",
-        "...kkcccckk...",
-        "..kccwwcccck..",
-        "..kcccccccck..",
-        "..kchhhhhhck..",
-        "..kkhhhhhhkk..",
-        "..khsssssShk..",
-        "..khsissiShk..",
-        "..khsesseShk..",
-        "..khsssssShk..",
-        "..khsssssShk..",
-        "..kkkkkkkkkk..",
+        "....kkkkkk....",
+        "..kkcccccckk..",
+        ".kcccwwccccck.",
+        ".kcccccccccck.",
+        ".kkhhhhhhhhkk.",
+        ".khsssssssShk.",
+        ".khsssssssShk.",
+        ".khssissisShk.",
+        ".khssessesShk.",
+        "...ksssssSk...",
+        "...ksssssSk...",
+        "....kkkkkk....",
     ],
 }
 
-# Bodies are nine rows starting at row 7, so the top five rows of every body
-# sit behind the head and only their outer two columns are ever seen. Those
-# columns are the arm: a sleeve column outside and a skin column inside,
-# which is Brendan's construction pixel for pixel.
-#
-# The three poses move the hand, which is where the arm's skin reaches
-# furthest down. That is a smaller swing than the old shoulder stubs had and
-# it reads as more, because there is a whole arm for it to happen on.
+# Bodies run rows 9 to 15: three rows of arm beside the jaw, then a torso two
+# columns narrower than the skull. An arm is outline outside and sleeve
+# inside, its hand arriving at torso level, which is where the reference
+# keeps its hands. The pose moves the hands a row, and that is the whole arm
+# swing.
 BODY = {
     "hero.front": {
         "mid": [
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kccwwwwwwcck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".ks........sk.",
+            "..kcccccccck..",
+            "..kccwwwwcck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "down": [
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kccwwwwwwcck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".skccccccccks.",
+            "..kccwwwwcck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "up": [
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kccwwwwwwcck.",
-            ".kcCCCCCCCCck.",
+            ".ks........sk.",
+            ".kc........ck.",
+            ".kk........kk.",
+            "..kcccccccck..",
+            "..kccwwwwcck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
     },
     "hero.back": {
         "mid": [
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccccccccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".ks........sk.",
+            "..kcccccccck..",
+            "..kcccccccck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "down": [
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccccccccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".skccccccccks.",
+            "..kcccccccck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "up": [
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccccccccck.",
-            ".kcCCCCCCCCck.",
+            ".ks........sk.",
+            ".kc........ck.",
+            ".kk........kk.",
+            "..kcccccccck..",
+            "..kcccccccck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
     },
-    # In profile only the near arm is drawn and the far side of the torso
+    # In profile only the near arm shows, and the far side of the torso
     # carries the shade colour, which gives a flat block a front and a back.
     "hero.side": {
         "mid": [
-            "kC............",
-            "kC............",
-            "ks............",
-            "ks............",
-            "kC............",
-            "kCcccccccccck.",
-            ".kCcccccccck..",
-            ".kCcwwwwwwck..",
-            ".kCCCCCCCCck..",
+            "..........ck..",
+            "..........ck..",
+            "..........sk..",
+            "..kCccccccck..",
+            "..kCcwwwwcck..",
+            "..kCccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "down": [
-            "kC............",
-            "kC............",
-            "kC............",
-            "ks............",
-            "ks............",
-            "kCcccccccccck.",
-            ".kCcccccccck..",
-            ".kCcwwwwwwck..",
-            ".kCCCCCCCCck..",
+            "..........ck..",
+            "..........ck..",
+            "..........ck..",
+            "..kCccccccsk..",
+            "..kCcwwwwcck..",
+            "..kCccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "up": [
-            "ks............",
-            "ks............",
-            "kC............",
-            "kC............",
-            "kC............",
-            "kCcccccccccck.",
-            ".kCcccccccck..",
-            ".kCcwwwwwwck..",
-            ".kCCCCCCCCck..",
+            "..........sk..",
+            "..........ck..",
+            "..........kk..",
+            "..kCccccccck..",
+            "..kCcwwwwcck..",
+            "..kCccccccck..",
+            "..kCCCCCCCCk..",
         ],
     },
     "villager.front": {
         "mid": [
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccwwwwccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".ks........sk.",
+            "..kcccccccck..",
+            "..kcwwwwwwck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "down": [
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccwwwwccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".skccccccccks.",
+            "..kcwwwwwwck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
         "up": [
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ksccccccccccsk",
-            ".kcccccccccck.",
-            ".kcccwwwwccck.",
-            ".kcCCCCCCCCck.",
+            ".ks........sk.",
+            ".kc........ck.",
+            ".kk........kk.",
+            "..kcccccccck..",
+            "..kcwwwwwwck..",
+            "..kcccccccck..",
+            "..kCCCCCCCCk..",
         ],
     },
-    # The cross keeps its three rows whatever the arms are doing: an upright
-    # above the bar, the bar, an upright below. Drawn as a bar alone it reads
-    # as a red stripe on a coat, not as a medical cross, and the nurse stops
-    # being identifiable as the thing the building is for.
+    # The cross keeps its plus shape in every pose: upright, bar, upright.
+    # Drawn as a bar alone it reads as a stripe on a coat, and the nurse
+    # stops being identifiable as the thing the building is for.
     "healer.front": {
         "mid": [
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "ksccccwwccccsk",
-            ".kcccwwwwccck.",
-            ".kccccwwcccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".ks........sk.",
+            "..kcccwwccck..",
+            "..kccwwwwcck..",
+            "..kcccwwccck..",
+            "..kCCCCCCCCk..",
         ],
         "down": [
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ks..........sk",
-            "ks..........sk",
-            "ksccccwwccccsk",
-            ".kcccwwwwccck.",
-            ".kccccwwcccck.",
-            ".kcCCCCCCCCck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".kc........ck.",
+            ".skcccwwcccks.",
+            "..kccwwwwcck..",
+            "..kcccwwccck..",
+            "..kCCCCCCCCk..",
         ],
         "up": [
-            "ks..........sk",
-            "ks..........sk",
-            "kc..........ck",
-            "kc..........ck",
-            "kc..........ck",
-            "ksccccwwccccsk",
-            ".kcccwwwwccck.",
-            ".kccccwwcccck.",
-            ".kcCCCCCCCCck.",
+            ".ks........sk.",
+            ".kc........ck.",
+            ".kk........kk.",
+            "..kcccwwccck..",
+            "..kccwwwwcck..",
+            "..kcccwwccck..",
+            "..kCCCCCCCCk..",
         ],
     },
 }
 BODY["trainer.front"] = BODY["hero.front"]
 BODY["trainer.back"] = BODY["hero.back"]
 
-# Legs, and this is where the walk happens.
-#
-# Three poses: a stance and two steps that are mirror silhouettes of each
-# other. The planted foot reaches the bottom row and the trailing foot stops
-# one row short, so the silhouette is uneven, and an uneven silhouette
-# alternating left and right is a walk. At four rows there are no hips to
-# swing, so the step has to read through the feet.
-#
-# The version before this had `apart`, `stand` and `together`, every one of
-# them left to right symmetric, so no frame ever put one leg in front of the
-# other and the character sprang up and down while sliding forward.
+# Legs, where the walk happens. A stance and two steps that are mirror
+# silhouettes: the planted foot reaches the bottom row, the trailing foot
+# stops one short, and the uneven silhouette alternating sides is the walk.
 LEGS = {
     "trousers": {
         "stand": [
