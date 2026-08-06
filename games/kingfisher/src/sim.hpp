@@ -213,6 +213,16 @@ struct World {
 
 constexpr uint16_t k_day_length = 18000;      // 3 minutes per full cycle
 
+// The fishing day runs dawn to midnight, and day_tick spans exactly that. A
+// tournament day therefore ends when the clock reads midnight, which is what
+// makes the time on the HUD worth showing: it is the deadline, not decoration.
+constexpr uint8_t k_day_start_hour = 6;
+constexpr uint8_t k_day_end_hour = 24;
+// When the light goes and the night feeders come up. Kept in step with the
+// sky's night keyframe in render.cpp, so what the water looks like and what
+// is biting in it never disagree.
+constexpr uint8_t k_night_hour = 20;
+
 // Fight tuning, including the tension danger model, lives in tuning.hpp.
 
 void world_init(World& world, uint32_t seed);
@@ -224,6 +234,11 @@ void world_make_save(const World& world, SaveData& out);
 // 0..255 position in the day cycle, for palette lerping.
 uint8_t day_phase(const World& world);
 bool is_night(const World& world);
+
+// The wall clock, in minutes since midnight. Runs from k_day_start_hour to
+// one minute short of k_day_end_hour, so it never reads 24:00: the day is
+// over at that point and the tick has already wrapped to the next dawn.
+uint16_t clock_minutes(const World& world);
 
 // The hook's distance from the boat in tenths of a meter, for the HUD. One
 // world unit is one meter. Shown for the hook's whole life: rising as a

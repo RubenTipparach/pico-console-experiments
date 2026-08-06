@@ -1,0 +1,552 @@
+namespace PicoFlasher;
+
+/// <summary>
+/// Choosing what is on the console: the games available on the left, the
+/// menu being built on the right, and a button that makes the .uf2.
+///
+/// This talks to IConsoleBackend and nothing else. It has no idea the recipe
+/// is a yaml file or that building runs CMake, which is the point: the last
+/// version of this window knew it was assembling flash slots, so when the
+/// console stopped being slots the window had to go. Whatever replaces the
+/// backend next, this file should not need to change.
+/// </summary>
+public sealed class ConsoleTab : UserControl
+{
+    private readonly ListView _available = new();
+    private readonly ListView _menu = new();
+    private readonly ImageList _icons = new();
+    private readonly TextBox _title = new();
+    private readonly TextBox _log = new();
+    private readonly Label _status = new();
+
+    private readonly Button _add = new();
+    private readonly Button _remove = new();
+    private readonly Button _heading = new();
+    private readonly Button _rename = new();
+    private readonly Button _up = new();
+    private readonly Button _down = new();
+    private readonly Button _build = new();
+    private readonly Button _buildAndFlash = new();
+
+    private readonly List<RecipeEntry> _rows = new();
+    private IReadOnlyList<AvailableGame> _games = Array.Empty<AvailableGame>();
+    private IConsoleBackend _backend;
+    private bool _building;
+
+    // The last validation, so UpdateButtons does not run a second full pass
+    // over the filesystem for an answer Revalidate just worked out.
+    private IReadOnlyList<Problem> _problems = Array.Empty<Problem>();
+
+    /// <summary>Raised with a freshly built .uf2 the user asked to flash.</summary>
+    public event Action<string>? FlashRequested;
+
+    public ConsoleTab(IConsoleBackend backend)
+    {
+        _backend = backend;
+
+        Dock = DockStyle.Fill;
+        Padding = new Padding(10);
+
+        _icons.ImageSize = new Size(48, 48);
+        _icons.ColorDepth = ColorDepth.Depth32Bit;
+
+        _available.Dock = DockStyle.Fill;
+        _available.View = View.LargeIcon;
+        _available.MultiSelect = true;
+        _available.HideSelection = false;
+        _available.LargeImageList = _icons;
+        _available.DoubleClick += (_, _) => AddSelected();
+
+        _menu.Dock = DockStyle.Fill;
+        _menu.View = View.Details;
+        _menu.MultiSelect = true;
+        _menu.HideSelection = false;
+        _menu.FullRowSelect = true;
+        _menu.HeaderStyle = ColumnHeaderStyle.None;
+        _menu.SmallImageList = _icons;
+        _menu.Columns.Add("Row", 320);
+        _menu.DoubleClick += (_, _) => RenameSelected();
+        _menu.SelectedIndexChanged += (_, _) => UpdateButtons();
+
+        _title.Dock = DockStyle.Fill;
+        _title.TextChanged += (_, _) => Revalidate();
+
+        _log.Dock = DockStyle.Fill;
+        _log.Multiline = true;
+        _log.ReadOnly = true;
+        _log.ScrollBars = ScrollBars.Vertical;
+        _log.Font = new Font("Consolas", 8F);
+        _log.Height = 90;
+
+        _status.Dock = DockStyle.Fill;
+        _status.AutoSize = true;
+
+        foreach (var (button, text, handler) in new (Button, string, Action)[]
+                 {
+                     (_add, "Add →", AddSelected),
+                     (_remove, "← Remove", RemoveSelected),
+                     (_heading, "Heading...", AddHeading),
+                     (_rename, "Rename...", RenameSelected),
+                     (_up, "Move up", () => MoveSelected(-1)),
+                     (_down, "Move down", () => MoveSelected(1)),
+                 })
+        {
+            button.Text = text;
+            button.AutoSize = true;
+            button.Width = 104;
+            button.Margin = new Padding(6, 4, 6, 4);
+            button.Click += (_, _) => handler();
+        }
+
+        _build.Text = "Build console";
+        _build.AutoSize = true;
+        _build.Height = 32;
+        _build.Click += (_, _) => Build(thenFlash: false);
+
+        _buildAndFlash.Text = "Build and flash";
+        _buildAndFlash.AutoSize = true;
+        _buildAndFlash.Height = 32;
+        _buildAndFlash.Click += (_, _) => Build(thenFlash: true);
+
+        Controls.Add(BuildLayout());
+
+        Reload();
+    }
+
+    private Control BuildLayout()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 5,
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var titleRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+        };
+        titleRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        titleRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        titleRow.Controls.Add(new Label
+        {
+            Text = "Console title",
+            AutoSize = true,
+            Margin = new Padding(0, 6, 8, 0),
+        }, 0, 0);
+        titleRow.Controls.Add(_title, 1, 0);
+        layout.Controls.Add(titleRow, 0, 0);
+        layout.SetColumnSpan(titleRow, 3);
+
+        var middle = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.TopDown,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            Padding = new Padding(0, 40, 0, 0),
+        };
+        foreach (var button in new[] { _add, _remove, _heading, _rename, _up, _down })
+        {
+            middle.Controls.Add(button);
+        }
+
+        layout.Controls.Add(_available, 0, 1);
+        layout.Controls.Add(middle, 1, 1);
+        layout.Controls.Add(_menu, 2, 1);
+
+        var buttons = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+        };
+        buttons.Controls.Add(_build);
+        buttons.Controls.Add(_buildAndFlash);
+        layout.Controls.Add(buttons, 0, 2);
+        layout.SetColumnSpan(buttons, 3);
+
+        layout.Controls.Add(_status, 0, 3);
+        layout.SetColumnSpan(_status, 3);
+        layout.Controls.Add(_log, 0, 4);
+        layout.SetColumnSpan(_log, 3);
+
+        return layout;
+    }
+
+    /// <summary>Points the tab at a different checkout.</summary>
+    public void SetBackend(IConsoleBackend backend)
+    {
+        _backend = backend;
+        Reload();
+    }
+
+    private void Reload()
+    {
+        _games = _backend.DiscoverGames();
+
+        _icons.Images.Clear();
+        _available.Items.Clear();
+        foreach (var game in _games)
+        {
+            _icons.Images.Add(LoadIcon(game.ThumbnailPath));
+            _available.Items.Add(new ListViewItem(game.Title)
+            {
+                Tag = game,
+                ImageIndex = _icons.Images.Count - 1,
+                ToolTipText = string.IsNullOrWhiteSpace(game.Blurb)
+                    ? game.Slug
+                    : $"{game.Slug}\n{game.Blurb}",
+            });
+        }
+
+        var recipe = _backend.Load();
+        _title.Text = recipe.Title;
+        _rows.Clear();
+        _rows.AddRange(recipe.Entries);
+        RefreshMenu();
+    }
+
+    private static Image LoadIcon(string? path)
+    {
+        if (path is not null)
+        {
+            try
+            {
+                // Through a copy in memory so the file is not left locked:
+                // the build rewrites thumbnails, and a tool holding one open
+                // fails that build with a permission error nobody expects.
+                using var stream = new MemoryStream(File.ReadAllBytes(path));
+                using var original = Image.FromStream(stream);
+                return new Bitmap(original, new Size(48, 48));
+            }
+            catch (IOException) { }
+            catch (ArgumentException) { }
+        }
+
+        var placeholder = new Bitmap(48, 48);
+        using var graphics = Graphics.FromImage(placeholder);
+        graphics.Clear(Color.FromArgb(58, 58, 68));
+        using var pen = new Pen(Color.FromArgb(150, 150, 160), 3);
+        graphics.DrawLine(pen, 8, 8, 40, 40);
+        return placeholder;
+    }
+
+    private ConsoleRecipe CurrentRecipe() => new(_title.Text, _rows.ToList());
+
+    private void RefreshMenu()
+    {
+        var selected = _menu.SelectedIndices.Cast<int>().ToHashSet();
+        _menu.BeginUpdate();
+        _menu.Items.Clear();
+
+        for (var i = 0; i < _rows.Count; i++)
+        {
+            var item = new ListViewItem(RowLabel(_rows[i])) { Tag = _rows[i] };
+            if (_rows[i] is GameEntry game)
+            {
+                var at = _games.ToList().FindIndex(g => g.Slug == game.Slug);
+                if (at >= 0) item.ImageIndex = at;
+            }
+            else
+            {
+                item.ForeColor = Color.FromArgb(90, 100, 120);
+            }
+            _menu.Items.Add(item);
+        }
+
+        foreach (var index in selected)
+        {
+            if (index < _menu.Items.Count) _menu.Items[index].Selected = true;
+        }
+        _menu.EndUpdate();
+
+        Revalidate();
+    }
+
+    // The rules either side of a heading are plain ASCII hyphens. They used to
+    // be U+2500 box drawing characters, which join up into one long dash and
+    // read on screen as an em dash, and that character does not go in front of
+    // anyone in this project.
+    private string RowLabel(RecipeEntry entry) => entry switch
+    {
+        HeadingEntry heading => $"-- {ConsoleYamlBackend.DisplayName(heading.Text)} --",
+        GameEntry game => ConsoleYamlBackend.DisplayName(NameOf(game)),
+        _ => "?",
+    };
+
+    private string NameOf(GameEntry entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.Name)) return entry.Name!;
+        return _games.FirstOrDefault(g => g.Slug == entry.Slug)?.Title ?? entry.Slug;
+    }
+
+    /// <summary>
+    /// Re-checks the whole recipe and marks the rows that are wrong. Runs on
+    /// every edit rather than at build time: a name one letter too wide for a
+    /// menu row should be red here, not a failure after a compile.
+    /// </summary>
+    private void Revalidate()
+    {
+        var problems = _backend.Validate(CurrentRecipe());
+        _problems = problems;
+
+        foreach (ListViewItem item in _menu.Items)
+        {
+            item.BackColor = Color.White;
+            item.ToolTipText = "";
+        }
+
+        foreach (var problem in problems.Where(p => p.EntryIndex >= 0))
+        {
+            if (problem.EntryIndex >= _menu.Items.Count) continue;
+            var item = _menu.Items[problem.EntryIndex];
+            item.BackColor = Color.FromArgb(255, 226, 226);
+            item.ToolTipText = string.IsNullOrEmpty(item.ToolTipText)
+                ? problem.Message
+                : item.ToolTipText + "\n" + problem.Message;
+        }
+
+        var games = _rows.OfType<GameEntry>().Count();
+        if (problems.Count == 0)
+        {
+            _status.ForeColor = SystemColors.ControlText;
+            _status.Text = $"{games} game(s), {_rows.Count} row(s). Ready to build.";
+        }
+        else
+        {
+            _status.ForeColor = Color.FromArgb(168, 32, 32);
+            _status.Text = problems[0].Message;
+        }
+
+        UpdateButtons();
+    }
+
+    private void UpdateButtons()
+    {
+        var hasSelection = _menu.SelectedIndices.Count > 0;
+        var ready = !_building && _problems.Count == 0;
+
+        _add.Enabled = !_building;
+        _heading.Enabled = !_building;
+        _remove.Enabled = hasSelection && !_building;
+        _rename.Enabled = _menu.SelectedIndices.Count == 1 && !_building;
+        _up.Enabled = hasSelection && !_building;
+        _down.Enabled = hasSelection && !_building;
+        _build.Enabled = ready;
+        _buildAndFlash.Enabled = ready;
+    }
+
+    // ---- editing ----
+
+    private void AddSelected()
+    {
+        foreach (ListViewItem item in _available.SelectedItems)
+        {
+            if (item.Tag is not AvailableGame game) continue;
+            _rows.Add(new GameEntry(game.Slug, null));
+        }
+        RefreshMenu();
+    }
+
+    private void RemoveSelected()
+    {
+        foreach (var index in _menu.SelectedIndices.Cast<int>().OrderByDescending(i => i))
+        {
+            if (index < _rows.Count) _rows.RemoveAt(index);
+        }
+        RefreshMenu();
+    }
+
+    private void AddHeading()
+    {
+        var text = Prompt.Ask(this, "Heading", "Text for the heading row:", "");
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var at = _menu.SelectedIndices.Count > 0
+            ? _menu.SelectedIndices[^1] + 1
+            : _rows.Count;
+        _rows.Insert(Math.Clamp(at, 0, _rows.Count), new HeadingEntry(text));
+        RefreshMenu();
+    }
+
+    private void RenameSelected()
+    {
+        if (_menu.SelectedIndices.Count != 1) return;
+        var index = _menu.SelectedIndices[0];
+        if (index >= _rows.Count) return;
+
+        switch (_rows[index])
+        {
+            case HeadingEntry heading:
+            {
+                var text = Prompt.Ask(this, "Heading", "Text for the heading row:",
+                                      heading.Text);
+                if (text is null) return;
+                _rows[index] = new HeadingEntry(text);
+                break;
+            }
+            case GameEntry game:
+            {
+                var text = Prompt.Ask(this, "Name on the menu",
+                    $"What {game.Slug} is called on the console.\n" +
+                    "Leave it empty to follow the game's own title.",
+                    game.Name ?? "");
+                if (text is null) return;
+                _rows[index] = game with
+                {
+                    Name = string.IsNullOrWhiteSpace(text) ? null : text,
+                };
+                break;
+            }
+        }
+        RefreshMenu();
+    }
+
+    private void MoveSelected(int direction)
+    {
+        var indices = _menu.SelectedIndices.Cast<int>().ToList();
+        if (indices.Count == 0) return;
+
+        // Walked from the end the row is moving toward, so a block of rows
+        // moving together does not have them swap past each other.
+        var order = direction < 0 ? indices.OrderBy(i => i) : indices.OrderByDescending(i => i);
+        var moved = new List<int>();
+        foreach (var index in order)
+        {
+            var target = index + direction;
+            if (target < 0 || target >= _rows.Count || moved.Contains(target))
+            {
+                moved.Add(index);
+                continue;
+            }
+            (_rows[index], _rows[target]) = (_rows[target], _rows[index]);
+            moved.Add(target);
+        }
+
+        RefreshMenu();
+        _menu.SelectedIndices.Clear();
+        foreach (var index in moved)
+        {
+            if (index >= 0 && index < _menu.Items.Count) _menu.Items[index].Selected = true;
+        }
+    }
+
+    // ---- building ----
+
+    private async void Build(bool thenFlash)
+    {
+        if (_building) return;
+
+        if (!_backend.CanBuild(out var why))
+        {
+            MessageBox.Show(this, why, "Cannot build here",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _building = true;
+        UpdateButtons();
+        _log.Clear();
+        _status.ForeColor = SystemColors.ControlText;
+        _status.Text = $"Building with {_backend.Description}. This takes a while.";
+
+        var log = new Progress<string>(line =>
+        {
+            _log.AppendText(line + Environment.NewLine);
+        });
+
+        BuildOutcome outcome;
+        try
+        {
+            outcome = await _backend.BuildAsync(CurrentRecipe(), log, CancellationToken.None);
+        }
+        catch (Exception error)
+        {
+            outcome = new BuildOutcome(false, $"The build threw: {error.Message}", null);
+        }
+
+        _building = false;
+        _status.ForeColor = outcome.Success
+            ? SystemColors.ControlText
+            : Color.FromArgb(168, 32, 32);
+        _status.Text = outcome.Message;
+        UpdateButtons();
+
+        if (outcome.Success && thenFlash && outcome.Uf2Path is not null)
+        {
+            FlashRequested?.Invoke(outcome.Uf2Path);
+        }
+    }
+
+    /// <summary>Persists the current list, so closing the window keeps the edit.</summary>
+    public void SaveQuietly()
+    {
+        try { _backend.Save(CurrentRecipe()); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
+
+/// <summary>
+/// A one line text prompt, because WinForms has no InputBox and the two
+/// things this tab asks for are both one line of text.
+/// </summary>
+internal static class Prompt
+{
+    public static string? Ask(IWin32Window owner, string title, string message,
+                              string initial)
+    {
+        using var form = new Form
+        {
+            Text = title,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ClientSize = new Size(420, 150),
+        };
+
+        var label = new Label
+        {
+            Text = message,
+            Left = 12,
+            Top = 12,
+            Width = 396,
+            Height = 48,
+        };
+        var box = new TextBox { Text = initial, Left = 12, Top = 66, Width = 396 };
+        var ok = new Button
+        {
+            Text = "OK",
+            DialogResult = DialogResult.OK,
+            Left = 232,
+            Top = 100,
+            Width = 84,
+        };
+        var cancel = new Button
+        {
+            Text = "Cancel",
+            DialogResult = DialogResult.Cancel,
+            Left = 324,
+            Top = 100,
+            Width = 84,
+        };
+
+        form.Controls.AddRange(new Control[] { label, box, ok, cancel });
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+
+        return form.ShowDialog(owner) == DialogResult.OK ? box.Text : null;
+    }
+}

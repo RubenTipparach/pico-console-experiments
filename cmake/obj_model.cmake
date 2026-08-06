@@ -1,8 +1,14 @@
-# add_obj_model(<target> <model.obj> <out_sources_var>)
+# add_obj_model(<slug> <model.obj> <out_sources_var>)
 #
 # Converts a Wavefront .obj into a const C++ table at build time and appends the
 # generated .cpp to `out_sources_var`. Models stay editable in a modeller, and
 # nothing generated is ever committed.
+#
+# `slug` is the game the model belongs to, and it is what keeps two games from
+# colliding when the console links them into one binary. It must be the game's
+# own slug and not the name of the target being built: the preview harnesses
+# compile the same render.cpp as the device, so a model reached through
+# `<slug>_preview` would be a different namespace to the one that source says.
 
 include_guard(GLOBAL)
 
@@ -19,12 +25,21 @@ set(PICO_PYTHON3 ${Python3_EXECUTABLE}
 set(PICO_OBJ2CPP ${CMAKE_CURRENT_LIST_DIR}/../tools/obj2cpp.py
     CACHE INTERNAL "obj2cpp converter")
 
-function(add_obj_model TARGET MODEL OUT_SOURCES)
+function(add_obj_model SLUG MODEL OUT_SOURCES)
     get_filename_component(model_path ${MODEL} ABSOLUTE
                            BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/models)
     get_filename_component(model_name ${MODEL} NAME_WE)
 
-    set(generated_dir ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    # Hyphens are fine in a directory and not in an identifier, and pico-santa
+    # is exactly that case. obj2cpp.py sanitizes this too; doing it here as
+    # well is what keeps the include path and the namespace the same word.
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" model_ns ${SLUG})
+
+    # One directory per game, on an include path that stops at its parent, so a
+    # game includes "<game>/tree.hpp" and gets its own. Flat, every game's
+    # generated directory is on the console's include path at once and
+    # "tree.hpp" is whichever game the -I order happened to reach first.
+    set(generated_dir ${CMAKE_CURRENT_BINARY_DIR}/generated/${model_ns})
     set(generated_cpp ${generated_dir}/${model_name}.cpp)
     set(generated_hpp ${generated_dir}/${model_name}.hpp)
 
@@ -49,6 +64,7 @@ function(add_obj_model TARGET MODEL OUT_SOURCES)
                 --out-cpp ${generated_cpp}
                 --out-hpp ${generated_hpp}
                 --name ${model_name}
+                --namespace ${model_ns}
         DEPENDS ${model_path} ${material_path} ${PICO_OBJ2CPP}
         COMMENT "obj2cpp ${model_name}.obj"
         VERBATIM

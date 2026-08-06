@@ -37,6 +37,12 @@ add_custom_command(
     VERBATIM
 )
 
+# No target_include_directories(picomon ...) after this call, however much it
+# looks like one is needed for the generated headers above. add_picosystem_game
+# already puts this game's generated directory on the include path, and in a
+# console build there is no picomon target to name: the sources are compiled
+# into the console binary, so asking for include directories on it was a hard
+# configure error the moment picomon went on the menu.
 add_picosystem_game(picomon
     SOURCES
         src/game.cpp
@@ -47,5 +53,3 @@ add_picosystem_game(picomon
     MODELS
         ${picomon_model_files}
 )
-
-target_include_directories(picomon PRIVATE ${picomon_gen})

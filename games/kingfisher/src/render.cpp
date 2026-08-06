@@ -7,10 +7,10 @@
 #include "pse/renderer3d.hpp"
 #include "pse/shared_render.hpp"
 
-#include "boat.hpp"
-#include "bobber.hpp"
-#include "fish.hpp"
-#include "tree.hpp"
+#include "kingfisher/boat.hpp"
+#include "kingfisher/bobber.hpp"
+#include "kingfisher/fish.hpp"
+#include "kingfisher/tree.hpp"
 
 namespace kfr {
 namespace {
@@ -104,14 +104,23 @@ struct SkyKey {
     uint8_t wat_r, wat_g, wat_b;
     uint8_t light;   // 0..255 overall brightness for meshes
 };
+// Keyed to the clock, not to a bare fraction of the cycle: phase 0 is
+// kf::k_day_start_hour and phase 255 is the midnight the day ends at, so an
+// hour on the HUD is phase * 18 / 256 past dawn. The colours are unchanged,
+// only their times: an 18 hour day put sunset at 3pm while these still read
+// 128, which is a sky disagreeing with the clock printed on top of it.
+//
+// The last key is night rather than a second dawn. A 24 hour cycle wrapped
+// back around to its own first key; this one stops at midnight, so free play
+// cuts from midnight to dawn rather than easing through it. That cut is the
+// next morning, and a tournament never sees it: the day ends there.
 const SkyKey k_sky[] = {
-    {0,   235, 140, 90,   250, 190, 140,   60, 75, 95,    200},
-    {28,  95, 155, 225,   170, 210, 240,   35, 95, 120,   255},
-    {100, 95, 155, 225,   170, 210, 240,   35, 95, 120,   255},
-    {128, 95, 60, 110,    235, 130, 85,    45, 55, 85,    190},
-    {150, 12, 16, 42,     30, 40, 80,      14, 28, 48,    110},
-    {230, 12, 16, 42,     30, 40, 80,      14, 28, 48,    110},
-    {255, 235, 140, 90,   250, 190, 140,   60, 75, 95,    200},
+    {0,   235, 140, 90,   250, 190, 140,   60, 75, 95,    200},  // 6am dawn
+    {28,  95, 155, 225,   170, 210, 240,   35, 95, 120,   255},  // 8am
+    {150, 95, 155, 225,   170, 210, 240,   35, 95, 120,   255},  // 4:30pm
+    {185, 95, 60, 110,    235, 130, 85,    45, 55, 85,    190},  // 7pm dusk
+    {199, 12, 16, 42,     30, 40, 80,      14, 28, 48,    110},  // 8pm night
+    {255, 12, 16, 42,     30, 40, 80,      14, 28, 48,    110},  // midnight
 };
 
 SkyKey sky_now(const World& world) {
@@ -215,7 +224,7 @@ void draw_shore(const SkyKey& sky) {
         {24.0f, 74.0f, 7.4f}, {44.0f, 68.0f, 6.2f},  {64.0f, 76.0f, 6.6f},
     };
     for (const auto& spot : k_trees) {
-        g_renderer.draw_mesh(models::tree, spot.x, 0.05f, spot.z, 0.0f,
+        g_renderer.draw_mesh(models::kingfisher::tree, spot.x, 0.05f, spot.z, 0.0f,
                              spot.scale, sky.light, sky.light, sky.light);
     }
 }
@@ -633,7 +642,7 @@ void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
                           static_cast<float>(fish.vz == 0 ? 1 : fish.vz));
         }
         const float scale = 0.30f + fish.size_cm * 0.006f;
-        g_renderer.draw_mesh(models::fish, fx, fy, fz, fyaw, scale,
+        g_renderer.draw_mesh(models::kingfisher::fish, fx, fy, fz, fyaw, scale,
                              shade8(s.r, sky.light), shade8(s.g, sky.light),
                              shade8(s.b, sky.light));
     }
@@ -647,7 +656,7 @@ void draw_underwater_scene(const World& world, const SkyKey& sky, uint32_t t,
         }
         g_hook_depth += (target - g_hook_depth) * 0.08f;
         const float bob = sin64(t * 2) / 2000.0f;
-        g_renderer.draw_mesh(models::bobber, fp_to_f(world.lure_x),
+        g_renderer.draw_mesh(models::kingfisher::bobber, fp_to_f(world.lure_x),
                              -g_hook_depth + bob, fp_to_f(world.lure_z), 0.0f,
                              0.18f, sky.light, sky.light, sky.light);
     }
@@ -674,7 +683,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
 
     // Boat, bobbing on the same water function so it sits in the waves.
     const float boat_bob = wave_fp(4, 1, t, world.raining != 0) / 256.0f;
-    g_renderer.draw_mesh(models::boat, 0.0f, 0.02f + boat_bob, 0.2f, 0.0f,
+    g_renderer.draw_mesh(models::kingfisher::boat, 0.0f, 0.02f + boat_bob, 0.2f, 0.0f,
                          0.85f, sky.light, sky.light, sky.light);
 
     // A hooked fish breaching the surface is the one moment a fish belongs
@@ -687,7 +696,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
         const float y = 0.045f + (lt * (45 - lt)) / 900.0f;
         const float fyaw = atan2f(fp_to_f(fish.x), fp_to_f(fish.z));
         const float scale = 0.30f + fish.size_cm * 0.006f;
-        g_renderer.draw_mesh(models::fish, fp_to_f(fish.x), y,
+        g_renderer.draw_mesh(models::kingfisher::fish, fp_to_f(fish.x), y,
                              fp_to_f(fish.z), fyaw, scale, s.r, s.g, s.b);
     }
 
@@ -695,7 +704,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     if (world.mode == kf::Mode::Landed && world.card_species >= 0) {
         const kf::Species& s = kf::k_species[world.card_species];
         const float scale = 0.30f + world.card_size * 0.006f;
-        g_renderer.draw_mesh(models::fish, 0.0f, 0.55f, 3.1f,
+        g_renderer.draw_mesh(models::kingfisher::fish, 0.0f, 0.55f, 3.1f,
                              t * 0.05f, scale, s.r, s.g, s.b);
     }
 
@@ -711,7 +720,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
                 if (fish.state == kf::FishState::Biting) bob_y -= 0.22f;
             }
         }
-        g_renderer.draw_mesh(models::bobber, fp_to_f(world.lure_x), bob_y,
+        g_renderer.draw_mesh(models::kingfisher::bobber, fp_to_f(world.lure_x), bob_y,
                              fp_to_f(world.lure_z), 0.0f, 0.22f,
                              sky.light, sky.light, sky.light);
     }

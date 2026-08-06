@@ -7,9 +7,9 @@
 #include "pse/renderer3d.hpp"
 #include "pse/shared_render.hpp"
 
-#include "bike.hpp"
-#include "cactus.hpp"
-#include "rock.hpp"
+#include "dustrider/bike.hpp"
+#include "dustrider/cactus.hpp"
+#include "dustrider/rock.hpp"
 #include "diagnostic_led.hpp"  // TEMPORARY, see that file
 
 namespace drr {
@@ -282,7 +282,7 @@ void draw_ground_detail(const World& world, float cam_x, float cam_z) {
             const float yaw = static_cast<float>((h >> 25) & 15) *
                               (k_pi / 8.0f);
             const uint8_t tint = clamp8(215 - tone * 5);
-            g_renderer.draw_mesh(models::rock, jx, 0.0f, cz, yaw, scale,
+            g_renderer.draw_mesh(models::dustrider::rock, jx, 0.0f, cz, yaw, scale,
                                  tint, tint, tint);
         }
     }
@@ -349,7 +349,7 @@ void draw_cacti(const World& world, float cam_x) {
         const float yaw = ((hash >> 3) & 1) ? jitter : k_pi + jitter;
         const float scale =
             0.85f + static_cast<float>((hash >> 8) & 63) / 160.0f;
-        g_renderer.draw_mesh(models::cactus, fp_to_f(cx), 0.0f, fp_to_f(cz),
+        g_renderer.draw_mesh(models::dustrider::cactus, fp_to_f(cx), 0.0f, fp_to_f(cz),
                              yaw, scale);
         scan = cx + 1;
     }
@@ -364,7 +364,7 @@ void measure_bike_span(float x, float y, float z, float yaw, float pitch) {
     static float bz0 = 0.0f, bz1 = 0.0f;
     static bool bounds_ready = false;
     if (!bounds_ready) {
-        const pse::MeshData& m = models::bike;
+        const pse::MeshData& m = models::dustrider::bike;
         const float unit = 1.0f / static_cast<float>(m.scale);
         for (uint16_t i = 0; i < m.vertex_count; i++) {
             const float vx = m.vertices[i].x * unit;
@@ -592,7 +592,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     const float lift = 0.62f * std::sin(wheelie);
 
     draw_shadow(bike_x, bike_z, lift);
-    g_renderer.draw_mesh(models::bike, bike_x, lift, bike_z,
+    g_renderer.draw_mesh(models::dustrider::bike, bike_x, lift, bike_z,
                          k_pi / 2.0f, 1.0f, 255, 255, 255, g_pitch);
     measure_bike_span(bike_x, lift, bike_z, k_pi / 2.0f, g_pitch);
 

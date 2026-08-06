@@ -12,11 +12,13 @@
 # The console's font is a picture file, not a hex table (rule 11's reasoning
 # applied to glyphs). tools/gen_font.py packs it at configure time into the
 # build tree, where every generated file in this repo lives.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/python.cmake)
+
 set(PSE_FONT_ART ${CMAKE_CURRENT_SOURCE_DIR}/font/console5x7.txt)
 set(PSE_FONT_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PSE_FONT_ART})
 execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env python3
+    COMMAND ${PSE_PYTHON3}
             ${CMAKE_CURRENT_SOURCE_DIR}/../tools/gen_font.py
             --art ${PSE_FONT_ART} --out ${PSE_FONT_DIR}
     RESULT_VARIABLE pse_font_result)

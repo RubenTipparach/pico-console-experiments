@@ -51,7 +51,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
 
 set(picomon_models "")
 foreach(model ${picomon_model_files})
-    add_obj_model(picomon_preview
+    add_obj_model(picomon
         ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} picomon_models)
 endforeach()
 

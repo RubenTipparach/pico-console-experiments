@@ -45,27 +45,82 @@ void save_if_safe() {
     g_world.save_pending = false;
 }
 
-void draw_records_overlay() {
-    screen.pen = Pen(8, 6, 20, 220);
-    screen.rectangle(Rect(6, 4, 108, 112));
-    screen.pen = Pen(255, 255, 238);
-    screen.text("RECORDS", minimal_font, Point(10, 7));
+// The screen is 120x120 (lores) and text is minimal_font, which is as small
+// as text goes here: there is no smaller font and the glyph is already 3x5.
+//
+// Drawing text at the panel's native 240x240 would halve its apparent size,
+// and it was tried. The 3D cost is fine, because the scene still rasterizes
+// at 120x120 and is stretched over the screen, but two 240x240 pages do not
+// fit in 264 KB, so the display loses its second buffer and every frame also
+// pays a 57,600 pixel expand. Not worth it for smaller text.
+//
+// Panels and menus are built outwards from the centre and sized from
+// measure_text, never from a hand picked x: a tuned x is only correct for the
+// exact string it was tuned against, and the first wording change prints
+// through the edge of its own panel, which is how "FREE FISHING" came to run
+// out through the side of the title menu.
+constexpr int k_screen_w = 120;
+constexpr int k_screen_h = 120;
+constexpr int k_screen_cx = k_screen_w / 2;
 
+// One row of minimal_font plus breathing room, and the glyph height itself.
+constexpr int k_row = 10;
+constexpr int k_text_h = 6;
+// The cursor hangs in a gutter left of the item, and the panel holds both.
+constexpr int k_cursor_gutter = 8;
+constexpr int k_panel_pad = 4;
+
+// The widest of a set of labels, for sizing a panel from what goes in it.
+int widest_text(const char* const* labels, int count) {
+    int widest = 0;
+    for (int i = 0; i < count; i++) {
+        const int w = screen.measure_text(labels[i], minimal_font).w;
+        if (w > widest) widest = w;
+    }
+    return widest;
+}
+
+// A centred panel wide enough for `labels`, drawn at `y` for `h` rows.
+void draw_panel(const char* const* labels, int count, int y, int h) {
+    const int w = widest_text(labels, count) +
+                  2 * (k_cursor_gutter + k_panel_pad);
+    screen.pen = Pen(8, 6, 20, 190);
+    screen.rectangle(Rect(k_screen_cx - w / 2, y, w, h));
+}
+
+void draw_centred(const char* text, int y) {
+    const int w = screen.measure_text(text, minimal_font).w;
+    screen.text(text, minimal_font, Point(k_screen_cx - w / 2, y));
+}
+
+void draw_records_overlay() {
+    const int panel_x = 6;
+    const int panel_w = k_screen_w - 2 * panel_x;
+    const int rows_top = 12;
+    const int row_h = 8;   // tighter than k_row: this list has to fit 120 rows
+
+    screen.pen = Pen(8, 6, 20, 220);
+    screen.rectangle(Rect(panel_x, 4, panel_w, 112));
+    screen.pen = Pen(255, 255, 238);
+    screen.text("RECORDS", minimal_font, Point(panel_x + 4, 7));
+
+    const int name_x = panel_x + 4;
+    const int stat_x = panel_x + 60;
     char line[24];
     for (int i = 0; i < kf::k_species_count; i++) {
         const kf::Species& s = kf::k_species[i];
-        const int y = 16 + i * 8;
+        const int y = 4 + rows_top + i * row_h;
         if (g_world.records.caught[i] == 0) {
             screen.pen = Pen(90, 85, 120);
-            screen.text("--------", minimal_font, Point(10, y));
+            screen.text("--------", minimal_font, Point(name_x, y));
             continue;
         }
         screen.pen = Pen(s.r, s.g, s.b);
-        screen.text(s.name, minimal_font, Point(10, y));
+        screen.text(s.name, minimal_font, Point(name_x, y));
         snprintf(line, sizeof(line), "%dcm x%d",
                  g_world.records.best_cm[i], g_world.records.caught[i]);
         screen.pen = Pen(210, 210, 220);
-        screen.text(line, minimal_font, Point(66, y));
+        screen.text(line, minimal_font, Point(stat_x, y));
     }
 }
 
@@ -80,60 +135,136 @@ void draw_fight_distance() {
     const int dm = kf::hook_distance_dm(g_world);
     char line[12];
     snprintf(line, sizeof(line), "%d.%dm", dm / 10, dm % 10);
+    // Pinned to the bottom right corner and sized to the reading, which grows
+    // a digit past 9.9m.
+    const int text_w = screen.measure_text(line, minimal_font).w;
+    const int box_w = text_w + 2 * k_panel_pad;
+    const int box_x = k_screen_w - box_w - 2;
+    const int box_y = 101;
     screen.pen = Pen(8, 6, 20, 170);
-    screen.rectangle(Rect(84, 101, 34, 9));
+    screen.rectangle(Rect(box_x, box_y, box_w, k_text_h + 4));
     screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(87, 103));
+    screen.text(line, minimal_font, Point(box_x + k_panel_pad, box_y + 2));
 }
 
 void draw_card() {
     if (g_world.mode != kf::Mode::Landed || g_world.card_species < 0) return;
     const kf::Species& s = kf::k_species[g_world.card_species];
 
-    // The card sits in the bottom viewport, under the water line. The trophy
-    // fish is held up in the top one, and the card used to be drawn across it:
-    // the bigger the fish, the more of it its own name covered.
-    screen.pen = Pen(8, 6, 20, 200);
-    screen.rectangle(Rect(0, 64, 120, 24));
-
+    // A card floating over the scene, like the menus, not a bar living inside
+    // the lower viewport. It used to be a full width strip pinned under the
+    // water line, which read as text jammed into the bottom half rather than
+    // as a card, and left its first line tight against that line.
+    //
+    // It still hangs low enough to leave the trophy fish alone: the fish is
+    // held up in the middle of the top viewport, and a card centred on the
+    // screen would cover the belly of exactly the biggest ones worth showing.
+    // Crossing the split by a couple of rows is what makes it read as an
+    // overlay on both viewports rather than as furniture in one.
     char line[28];
     snprintf(line, sizeof(line), "%s %dcm", s.name, g_world.card_size);
-    screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(6, 68));
 
-    if (g_world.card_record) {
-        screen.pen = Pen(255, 220, 90);
-        screen.text("RECORD", minimal_font, Point(6, 77));
-    }
-    // In a tournament the weight is the point, so it goes on the card beside
-    // the length: a card that only said 30cm would not tell a player whether
-    // that fish moved them any closer to the day's quota.
+    char weight[12];
+    weight[0] = '\0';
+    // In a tournament the weight is the point: a card that only said 30cm
+    // would not tell a player whether that fish moved them any closer to the
+    // day's quota.
     if (g_world.tour_state == kf::TourState::Running) {
         const uint32_t grams = kf::fish_weight_g(g_world.card_species,
                                                  g_world.card_size);
-        snprintf(line, sizeof(line), "%u.%02ukg",
+        snprintf(weight, sizeof(weight), "%u.%02ukg",
                  static_cast<unsigned>(grams / 1000),
                  static_cast<unsigned>((grams % 1000) / 10));
-        screen.pen = Pen(150, 220, 255);
-        screen.text(line, minimal_font,
-                    Point(g_world.card_record ? 62 : 6, 77));
+    }
+
+    // The second row carries the record flag and the weight side by side, so
+    // its width is both of them plus the gap between, and the card is sized
+    // from whichever row is wider.
+    constexpr int k_gap = 4;
+    const int record_w = g_world.card_record
+        ? screen.measure_text("RECORD", minimal_font).w : 0;
+    const int weight_w = weight[0]
+        ? screen.measure_text(weight, minimal_font).w : 0;
+    int second_w = record_w + weight_w;
+    if (record_w && weight_w) second_w += k_gap;
+
+    const int name_w = screen.measure_text(line, minimal_font).w;
+    const int content_w = name_w > second_w ? name_w : second_w;
+    const int card_w = content_w + 2 * k_panel_pad + 2;
+    const int card_h = second_w > 0 ? 23 : 14;
+    // Just above the water line, which is halfway down the screen.
+    constexpr int k_card_y = 58;
+
+    screen.pen = Pen(8, 6, 20, 200);
+    screen.rectangle(Rect(k_screen_cx - card_w / 2, k_card_y, card_w, card_h));
+
+    screen.pen = Pen(255, 255, 238);
+    draw_centred(line, k_card_y + 4);
+
+    if (second_w > 0) {
+        int x = k_screen_cx - second_w / 2;
+        const int y = k_card_y + 4 + k_row;
+        if (record_w) {
+            screen.pen = Pen(255, 220, 90);
+            screen.text("RECORD", minimal_font, Point(x, y));
+            x += record_w + k_gap;
+        }
+        if (weight_w) {
+            screen.pen = Pen(150, 220, 255);
+            screen.text(weight, minimal_font, Point(x, y));
+        }
     }
 }
 
-// The tournament readout: which day, what it wants, what is in the boat. It
-// sits along the top of the water, so it covers neither the sky scene nor the
-// fight meters down the left edge.
+// The tournament readout: which day, what it wants, what is in the boat, and
+// the time. It runs along the very top of the sky viewport, above the power
+// meter that starts at row 8, so it covers no part of either scene and never
+// meets the catch card down in the water.
+//
+// The clock is here because the day ends at midnight: a quota with no time
+// against it says how far there is to go and nothing about how long there is
+// to do it in.
 void draw_tour_hud() {
     if (g_world.tour_state != kf::TourState::Running) return;
     char line[28];
+    // Two lines: which day it is and what time, then what the day wants and
+    // what is in the boat. One line held all four readings across 120 pixels
+    // with about 16 spare, which left no room for a target that reaches 10kg
+    // and read as a wall of digits.
+    constexpr int k_line1 = 1;
+    constexpr int k_line2 = k_line1 + k_text_h + 2;
+    const int bar_h = k_line2 + k_text_h + 2;
     screen.pen = Pen(8, 6, 20, 170);
-    screen.rectangle(Rect(0, 61, 120, 9));
+    screen.rectangle(Rect(0, 0, k_screen_w, bar_h));
 
+    // 12 hour clock, hours only. The hour is the unit the day is worth
+    // reading in: 18 of them, each a few seconds of play, and a minute field
+    // would be four more characters of a 120 pixel line spent on noise.
+    const uint16_t mins = kf::clock_minutes(g_world);
+    const int hour24 = mins / 60;
+    const int hour12 = (hour24 % 12) == 0 ? 12 : (hour24 % 12);
+    char clock[8];
+    snprintf(clock, sizeof(clock), "%d%s", hour12, hour24 >= 12 ? "pm" : "am");
+
+    // Laid out from the right edge inwards, measured rather than guessed: the
+    // quota string grows a digit the moment a target reaches 10kg, and a
+    // hand placed x would print that through the edge of the panel.
+    constexpr int k_left = 3;
+    const int k_right = k_screen_w - 3;
+
+    // Line one: the day, and the clock hard against the right edge.
     snprintf(line, sizeof(line), "DAY %d/%d", g_world.tour_day,
              kf::k_tour_days);
     screen.pen = Pen(255, 220, 90);
-    screen.text(line, minimal_font, Point(3, 62));
+    screen.text(line, minimal_font, Point(k_left, k_line1));
 
+    const int clock_w = screen.measure_text(clock, minimal_font).w;
+    screen.pen = Pen(120, 200, 255);
+    screen.text(clock, minimal_font, Point(k_right - clock_w, k_line1));
+
+    // Line two: the day's target and what is against it, under the day it
+    // belongs to. Left justified so the leading digit sits at a fixed x and
+    // the number does not walk sideways as it climbs.
     const bool made = g_world.tour_today_g >= g_world.tour_target_g;
     snprintf(line, sizeof(line), "%u.%02u/%u.%02ukg",
              static_cast<unsigned>(g_world.tour_today_g / 1000),
@@ -141,7 +272,7 @@ void draw_tour_hud() {
              static_cast<unsigned>(g_world.tour_target_g / 1000),
              static_cast<unsigned>((g_world.tour_target_g % 1000) / 10));
     screen.pen = made ? Pen(120, 255, 170) : Pen(230, 230, 240);
-    screen.text(line, minimal_font, Point(44, 62));
+    screen.text(line, minimal_font, Point(k_left, k_line2));
 }
 
 // The day result, and the end of a run. One panel, because all three say the
@@ -150,96 +281,127 @@ void draw_tour_card() {
     const kf::TourState state = g_world.tour_state;
     if (state == kf::TourState::Idle || state == kf::TourState::Running) return;
 
+    // Every line is centred by measurement. These x positions used to be hand
+    // picked per string (42 for one heading, 20 for another, 30 for a third),
+    // which is only ever correct for the exact wording it was tuned against.
+    const int panel_h = 48;
+    const int panel_y = 34;
+    const int top = panel_y + 6;
     screen.pen = Pen(8, 6, 20, 215);
-    screen.rectangle(Rect(10, 34, 100, 48));
+    screen.rectangle(Rect(10, panel_y, k_screen_w - 20, panel_h));
 
     char line[28];
     if (state == kf::TourState::DayPassed) {
         screen.pen = Pen(120, 255, 170);
-        screen.text("DAY MADE", minimal_font, Point(42, 40));
+        draw_centred("DAY MADE", top);
         snprintf(line, sizeof(line), "DAY %d WANTS %u.%02ukg",
                  g_world.tour_day,
                  static_cast<unsigned>(g_world.tour_target_g / 1000),
                  static_cast<unsigned>((g_world.tour_target_g % 1000) / 10));
         screen.pen = Pen(230, 230, 240);
-        screen.text(line, minimal_font, Point(14, 56));
+        draw_centred(line, top + 2 * k_row);
         return;
     }
 
     if (state == kf::TourState::Won) {
         screen.pen = Pen(255, 220, 90);
-        screen.text("TOURNAMENT WON", minimal_font, Point(20, 40));
+        draw_centred("TOURNAMENT WON", top);
     } else {
         screen.pen = Pen(255, 120, 120);
-        screen.text("SHORT OF QUOTA", minimal_font, Point(20, 40));
+        draw_centred("SHORT OF QUOTA", top);
         const int lasted = g_world.tour_day > 0 ? g_world.tour_day - 1 : 0;
         snprintf(line, sizeof(line), "LASTED %d DAY%s", lasted,
                  lasted == 1 ? "" : "S");
         screen.pen = Pen(200, 200, 215);
-        screen.text(line, minimal_font, Point(30, 50));
+        draw_centred(line, top + k_row);
     }
     snprintf(line, sizeof(line), "SCORE %u",
              static_cast<unsigned>(g_world.tour_score));
     screen.pen = Pen(255, 255, 238);
-    screen.text(line, minimal_font, Point(36, 62));
+    draw_centred(line, top + 2 * k_row);
     screen.pen = Pen(160, 155, 190);
-    screen.text("A: TITLE", minimal_font, Point(38, 72));
+    draw_centred("A: TITLE", top + 3 * k_row);
 }
 
 void draw_scores() {
-    screen.pen = Pen(8, 6, 20, 220);
-    screen.rectangle(Rect(6, 4, 108, 112));
-    screen.pen = Pen(255, 220, 90);
-    screen.text("BEST TOURNAMENTS", minimal_font, Point(10, 7));
+    const int panel_x = 6;
+    const int panel_w = k_screen_w - 2 * panel_x;
+    const int rows_top = 16;
+    const int row_h = 9;
 
+    screen.pen = Pen(8, 6, 20, 220);
+    screen.rectangle(Rect(panel_x, 4, panel_w, 112));
+    screen.pen = Pen(255, 220, 90);
+    draw_centred("BEST TOURNAMENTS", 7);
+
+    const int rank_x = panel_x + 8;
+    const int score_x = panel_x + 36;
     char line[24];
     for (int i = 0; i < kf::k_high_scores; i++) {
-        const int y = 20 + i * 9;
+        const int y = 4 + rows_top + i * row_h;
         const uint32_t score = g_world.records.high[i];
         screen.pen = score ? Pen(230, 230, 240) : Pen(90, 85, 120);
         snprintf(line, sizeof(line), "%2d.", i + 1);
-        screen.text(line, minimal_font, Point(14, y));
+        screen.text(line, minimal_font, Point(rank_x, y));
         if (score) {
             snprintf(line, sizeof(line), "%u", static_cast<unsigned>(score));
-            screen.text(line, minimal_font, Point(42, y));
+            screen.text(line, minimal_font, Point(score_x, y));
         } else {
-            screen.text("----", minimal_font, Point(42, y));
+            screen.text("----", minimal_font, Point(score_x, y));
         }
     }
     screen.pen = Pen(160, 155, 190);
-    screen.text("A: BACK", minimal_font, Point(14, 108));
+    screen.text("A: BACK", minimal_font, Point(rank_x, 108));
 }
 
 void draw_menu_item(const char* label, int y, bool selected) {
+    const int w = screen.measure_text(label, minimal_font).w;
+    const int x = k_screen_cx - w / 2;
     if (selected) {
         screen.pen = Pen(255, 220, 90);
-        screen.text(">", minimal_font, Point(38, y));
+        screen.text(">", minimal_font, Point(x - k_cursor_gutter, y));
     }
     screen.pen = selected ? Pen(255, 255, 238) : Pen(160, 155, 190);
-    screen.text(label, minimal_font, Point(46, y));
+    screen.text(label, minimal_font, Point(x, y));
+}
+
+// Everything here is centred on k_screen_cx and the panel is measured from
+// its own contents. It used to be a 92 pixel panel with items at a fixed
+// x = 46, and "FREE FISHING" printed straight out through the right edge:
+// the width was tuned for wording that had since grown.
+const char* const k_title_items[] = {
+    "KINGFISHER", "FREE FISHING", "TOURNAMENT", "SCORES", "OPTIONS",
+};
+
+// A menu panel: a heading, then `count` rows, sized to hold exactly that and
+// centred on the screen. Returns the y of the first row.
+int draw_menu_panel(const char* const* labels, int label_count, int rows) {
+    const int head_h = 22;
+    const int panel_h = head_h + rows * k_row + 8;
+    const int panel_y = (k_screen_h - panel_h) / 2;
+    draw_panel(labels, label_count, panel_y, panel_h);
+    screen.pen = Pen(120, 200, 255);
+    draw_centred(labels[0], panel_y + 6);
+    return panel_y + head_h;
 }
 
 void draw_title() {
-    screen.pen = Pen(8, 6, 20, 190);
-    screen.rectangle(Rect(14, 26, 92, 72));
-    screen.pen = Pen(120, 200, 255);
-    screen.text("KINGFISHER", minimal_font, Point(36, 32));
-
-    draw_menu_item("FREE FISHING", 48, g_cursor == 0);
-    draw_menu_item("TOURNAMENT", 58, g_cursor == 1);
-    draw_menu_item("SCORES", 68, g_cursor == 2);
-    draw_menu_item("OPTIONS", 78, g_cursor == 3);
+    const int row = draw_menu_panel(k_title_items, 5, 4);
+    draw_menu_item("FREE FISHING", row, g_cursor == 0);
+    draw_menu_item("TOURNAMENT", row + k_row, g_cursor == 1);
+    draw_menu_item("SCORES", row + 2 * k_row, g_cursor == 2);
+    draw_menu_item("OPTIONS", row + 3 * k_row, g_cursor == 3);
 }
 
 void draw_options() {
-    screen.pen = Pen(8, 6, 20, 190);
-    screen.rectangle(Rect(14, 30, 92, 52));
-    screen.pen = Pen(120, 200, 255);
-    screen.text("OPTIONS", minimal_font, Point(42, 38));
-
-    draw_menu_item(g_sound_off ? "SOUND: OFF" : "SOUND: ON", 56,
+    // Both sound wordings, so the panel does not resize as it is toggled.
+    const char* const items[] = {
+        "OPTIONS", "SOUND: OFF", "SOUND: ON", "BACK",
+    };
+    const int row = draw_menu_panel(items, 4, 2);
+    draw_menu_item(g_sound_off ? "SOUND: OFF" : "SOUND: ON", row,
                    g_cursor == 0);
-    draw_menu_item("BACK", 66, g_cursor == 1);
+    draw_menu_item("BACK", row + k_row, g_cursor == 1);
 }
 
 void toggle_sound() {

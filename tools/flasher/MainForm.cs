@@ -1,14 +1,15 @@
 namespace PicoFlasher;
 
 /// <summary>
-/// One window: pick a .uf2, pick the board, copy it across.
+/// Two tabs: Flash copies a .uf2 to the board, Console chooses what goes on
+/// one.
 ///
-/// It used to have a second tab that composed a multi game bundle out of
-/// per slot builds, assigned slots, and wrote the result. None of that is
-/// needed now and none of it ever produced a console that booted: the games
-/// are linked into one console.uf2 at build time, so what reaches the device
-/// is a file, and copying a file is all a flasher has to do. The library is a
-/// decision in console.yaml, not a thing to assemble on a desktop.
+/// The Console tab is the bundle builder, back after the console stopped
+/// being a set of flash slots and became one binary. The job it does for a
+/// person did not change with that ("pick some games, make a console"), so
+/// losing the window when the backend changed was a regression, not a
+/// consequence. It now talks to IConsoleBackend, which is the seam that
+/// should keep it alive through the next change too.
 ///
 /// Quick and dirty on purpose (rule 13). No installer, no settings, no
 /// framework. This is a tool, not a product, and every feature added here is a
@@ -28,12 +29,15 @@ public sealed class MainForm : Form
     private readonly Label _status = new();
     private readonly TextBox _root = new();
 
+    private readonly TabControl _tabs = new();
+    private readonly ConsoleTab _console;
+
     public MainForm()
     {
         Text = "PicoFlasher";
-        Width = 620;
-        Height = 480;
-        MinimumSize = new Size(520, 400);
+        Width = 760;
+        Height = 620;
+        MinimumSize = new Size(640, 520);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
 
@@ -65,7 +69,13 @@ public sealed class MainForm : Form
 
         _root.Dock = DockStyle.Fill;
         _root.Text = GuessRepositoryRoot();
-        _root.TextChanged += (_, _) => ReloadFiles();
+        _root.TextChanged += (_, _) =>
+        {
+            ReloadFiles();
+            // A different folder is a different checkout, so the console tab
+            // is looking at a different set of games and a different menu.
+            _console?.SetBackend(new ConsoleYamlBackend(_root.Text));
+        };
 
         _browse.Text = "Folder...";
         _browse.AutoSize = true;
@@ -107,11 +117,50 @@ public sealed class MainForm : Form
         layout.Controls.Add(_status, 0, 5);
         layout.SetColumnSpan(_status, 3);
 
-        Controls.Add(layout);
+        var flashPage = new TabPage("Flash") { Padding = new Padding(4) };
+        flashPage.Controls.Add(layout);
+
+        _console = new ConsoleTab(new ConsoleYamlBackend(_root.Text));
+        _console.FlashRequested += OnFlashRequested;
+        var consolePage = new TabPage("Console") { Padding = new Padding(4) };
+        consolePage.Controls.Add(_console);
+
+        _tabs.Dock = DockStyle.Fill;
+        _tabs.TabPages.Add(flashPage);
+        _tabs.TabPages.Add(consolePage);
+        Controls.Add(_tabs);
 
         _watcher.DrivesChanged += OnDrivesChanged;
         _watcher.Start();
         ReloadFiles();
+    }
+
+    /// <summary>
+    /// The console tab finished a build and wants it on the device. The file
+    /// is new, so the list has to be rebuilt before it can be selected in it.
+    /// </summary>
+    private void OnFlashRequested(string path)
+    {
+        ReloadFiles();
+        _tabs.SelectedIndex = 0;
+
+        for (var i = 0; i < _files.Items.Count; i++)
+        {
+            if (_files.Items[i] is Uf2File file
+                && string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                _files.SelectedIndex = i;
+                break;
+            }
+        }
+
+        if (_devices.SelectedItem is not BootselDrive)
+        {
+            _status.Text = "Built. Put the board in BOOTSEL (hold X, press power) " +
+                           "and press Flash.";
+            return;
+        }
+        DoFlash();
     }
 
     /// <summary>
@@ -213,6 +262,13 @@ public sealed class MainForm : Form
             directory = directory.Parent;
         }
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    /// <summary>An edited menu should survive closing the window without a build.</summary>
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        _console?.SaveQuietly();
+        base.OnFormClosing(e);
     }
 
     protected override void Dispose(bool disposing)

@@ -7,28 +7,31 @@
 
 #include "sprites.hpp"
 
-#include "ball.hpp"
-#include "counter.hpp"
-#include "desk.hpp"
-#include "emberkit.hpp"
-#include "house.hpp"
-#include "machine.hpp"
-#include "mossling.hpp"
-#include "mothlet.hpp"
-#include "pebblin.hpp"
-#include "pine.hpp"
-#include "plant.hpp"
-#include "rock.hpp"
-#include "sign.hpp"
-#include "sparklet.hpp"
-#include "tidepup.hpp"
-#include "wall.hpp"
+#include "picomon/ball.hpp"
+#include "picomon/counter.hpp"
+#include "picomon/desk.hpp"
+#include "picomon/emberkit.hpp"
+#include "picomon/house.hpp"
+#include "picomon/machine.hpp"
+#include "picomon/mossling.hpp"
+#include "picomon/mothlet.hpp"
+#include "picomon/pebblin.hpp"
+#include "picomon/pine.hpp"
+#include "picomon/plant.hpp"
+#include "picomon/rock.hpp"
+#include "picomon/sign.hpp"
+#include "picomon/sparklet.hpp"
+#include "picomon/tidepup.hpp"
+#include "picomon/wall.hpp"
 
 namespace pmr {
 namespace {
 
 using namespace pm;
-using namespace models;   // the generated meshes
+// The generated meshes. Namespaced by game because the console links every
+// game into one binary, and this one shares a tree with kingfisher and a rock
+// with dustrider.
+using namespace models::picomon;
 
 // Rendering state. Static because dynamic allocation is banned, and this is
 // the documented RAM cost of drawing the game:

@@ -1076,6 +1076,47 @@ void test_single_bite_window() {
     }
 }
 
+// The clock is a deadline, so the two ends of it are worth pinning down: a
+// tournament day opens at dawn and the last minute it can show is the one
+// before midnight. If the span ever drifts, the HUD promises a player time
+// that the sim does not give them.
+void test_the_day_runs_dawn_to_midnight() {
+    kf::World world;
+    kf::world_init(world, 0xC10C1234u);
+    kf::world_start(world, kf::GameMode::Tournament);
+
+    CHECK(world.day_tick == 0);
+    CHECK(kf::clock_minutes(world) == kf::k_day_start_hour * 60);
+
+    world.day_tick = kf::k_day_length - 1;
+    const uint16_t last = kf::clock_minutes(world);
+    CHECK(last == kf::k_day_end_hour * 60 - 1);
+    CHECK(last / 60 == 23);   // reads 11pm, and the next tick is a new day
+
+    // Night is the sky's night, not half the tick range: mid afternoon is day
+    // and late evening is night.
+    world.day_tick = kf::k_day_length / 2;
+    CHECK(kf::clock_minutes(world) / 60 == 15);
+    CHECK(!kf::is_night(world));
+
+    world.day_tick = kf::k_day_length - 1;
+    CHECK(kf::is_night(world));
+
+    // The clock never runs backwards or leaves the day.
+    uint16_t previous = 0;
+    for (uint16_t tick = 0; tick < kf::k_day_length; tick++) {
+        world.day_tick = tick;
+        const uint16_t now = kf::clock_minutes(world);
+        if (now < previous) { check(false, "clock never goes backwards"); break; }
+        if (now < kf::k_day_start_hour * 60 ||
+            now >= kf::k_day_end_hour * 60) {
+            check(false, "clock stays inside the fishing day");
+            break;
+        }
+        previous = now;
+    }
+}
+
 void test_records_and_save_roundtrip() {
     kf::World world;
     kf::world_init(world, 11);
@@ -1134,6 +1175,7 @@ int main() {
     test_break_needs_sustained_danger();
     test_weight_grows_with_the_cube_of_length();
     test_the_quota_climbs_every_day();
+    test_the_day_runs_dawn_to_midnight();
     test_a_missed_quota_ends_the_run();
     test_making_the_quota_carries_the_run();
     test_ten_days_wins_and_scores();

@@ -7,6 +7,8 @@
 
 include_guard(GLOBAL)
 
+include(${CMAKE_CURRENT_LIST_DIR}/python.cmake)
+
 # Captured while this file is being read, so it is the repository root and not
 # whatever directory happens to be calling the function.
 set(PSE_REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/.. CACHE INTERNAL "repository root")
@@ -32,7 +34,7 @@ function(console_generate_library out_dir)
                  ${PSE_REPO_ROOT}/tools/gen_library.py)
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E env python3
+        COMMAND ${PSE_PYTHON3}
                 ${PSE_REPO_ROOT}/tools/gen_library.py
                 --config ${config}
                 --games ${PSE_REPO_ROOT}/games

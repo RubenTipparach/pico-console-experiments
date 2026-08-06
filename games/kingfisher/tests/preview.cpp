@@ -134,9 +134,11 @@ int main(int argc, char** argv) {
         }
     }
 
-    // 6: night, in the rain.
+    // 6: night, in the rain. Eight ninths of the day is 10pm; three quarters
+    // used to be night and is 7:30pm now that the day ends at midnight, which
+    // would have quietly turned this into a dusk frame.
     {
-        world.day_tick = 3 * kf::k_day_length / 4;
+        world.day_tick = 8 * kf::k_day_length / 9;
         world.raining = 1;
         world.weather_timer = 4000;
         run(world, kf::Input{}, 900);

@@ -9,8 +9,8 @@
 #include "pse/shared_render.hpp"
 
 #include "city.hpp"
-#include "gem.hpp"
-#include "sleigh.hpp"
+#include "pico_santa/gem.hpp"
+#include "pico_santa/sleigh.hpp"
 
 using namespace blit;
 
@@ -134,9 +134,9 @@ void game_render(uint32_t time) {
     }
 
     g_city.render(g_renderer);
-    g_city.render_gems(g_renderer, models::gem, time);
+    g_city.render_gems(g_renderer, models::pico_santa::gem, time);
 
-    g_renderer.draw_mesh(models::sleigh, g_player.x, g_player.y, g_player.z,
+    g_renderer.draw_mesh(models::pico_santa::sleigh, g_player.x, g_player.y, g_player.z,
                          g_player.yaw, 1.0f);
 
     g_frame_us = now_us() - frame_start;

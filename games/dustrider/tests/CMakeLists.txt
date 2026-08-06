@@ -23,7 +23,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
 
 set(dustrider_models "")
 foreach(model ${dustrider_model_files})
-    add_obj_model(dustrider_preview
+    add_obj_model(dustrider
         ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} dustrider_models)
 endforeach()
 

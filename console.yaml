@@ -21,9 +21,8 @@
 title: PICO CONSOLE
 
 menu:
-  - heading: 3D
+  - heading: ARCADE
   - game: dustrider
   - game: kingfisher
-  - game: pico-santa
-  - heading: ARCADE
-  - game: chicken
+  - heading: RPG
+  - game: picomon

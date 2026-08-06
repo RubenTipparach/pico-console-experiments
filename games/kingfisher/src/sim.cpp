@@ -119,8 +119,17 @@ uint8_t day_phase(const World& world) {
     return static_cast<uint8_t>((world.day_tick * 256u) / k_day_length);
 }
 
+uint16_t clock_minutes(const World& world) {
+    constexpr uint32_t span = (k_day_end_hour - k_day_start_hour) * 60u;
+    return static_cast<uint16_t>(k_day_start_hour * 60u +
+                                 (world.day_tick * span) / k_day_length);
+}
+
+// Night is a time on the clock now, not half the tick range. Those used to be
+// the same statement when the cycle was a full 24 hours; with the day ending
+// at midnight, a half way point would call mid afternoon night.
 bool is_night(const World& world) {
-    return world.day_tick >= k_day_length / 2;
+    return clock_minutes(world) >= k_night_hour * 60u;
 }
 
 void world_init(World& world, uint32_t seed) {

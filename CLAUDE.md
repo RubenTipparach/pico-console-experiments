@@ -433,6 +433,55 @@ Do not edit the workflow, the gallery template, or the top level CMakeLists to
 add a game. If you find yourself needing to, the discovery mechanism is broken
 and that is the bug to fix.
 
+## Testing on the Windows desktop
+
+The preview harness (`<game>_preview`) renders real frames with no SDK and no
+window, and it is the right tool for anything drawn through
+`pse::RenderTarget`. It cannot see the HUD. Text, menus, and cards are drawn
+with `screen.text` in `games/<slug>/src/game.cpp`, which is SDK code and does
+not exist in a host build, so **a change to any of those is unverified until
+the game has actually been run**.
+
+Run one game:
+
+```
+run_<slug>.bat                 build (incremental) and launch it
+```
+
+Drive it and photograph it without a human at the keyboard:
+
+```
+tools\desktop_drive.ps1 -Slug kingfisher -Keys "DOWN,Z" -Shots 6
+```
+
+That launches the desktop build, walks the menu (down, then A), then takes six
+screenshots at intervals into `build.desktop/<slug>/shots`. **Look at the
+images.** A blank frame, or a frame still showing the title screen, means the
+input never arrived, not that the change works.
+
+Four things make automating this harder than it looks, and all four have
+already wasted a session:
+
+- **`$proc.MainWindowHandle` is the console window, not the game.** The SDL
+  build opens a console that prints the runtime banner, and that window is
+  what the process reports. Screenshots of it are black, or worse, whatever
+  else is on the desktop behind it. Find the game by class name, `SDL_app`.
+- **`SendKeys` does not reach SDL,** and `keybd_event` with `scan = 0`
+  delivers the arrow keys but not the letters, because SDL resolves a key
+  from the hardware scan code in the message. Pass a real one from
+  `MapVirtualKey(vk, 0)`. Without it the dpad works and A does nothing, which
+  reads as a wrong key mapping and is not one.
+- **A press has to be held across several frames.** The games read edge
+  triggered `buttons.pressed`, and a press and release inside a single frame
+  can fall between two polls.
+- **PowerShell splits `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`** into `3` and
+  `.5` unless the whole argument is quoted, and CMake then rejects `"3"` as a
+  version. Quote it.
+
+The keyboard is the SDK's, in `32blit-sdl/Input.cpp`: arrows or WASD for the
+dpad, and `Z` `X` `C` `V` for A B X Y. Never write those keys into a game's
+`game.yml`; see rule 12.
+
 ### 14. Sync with main before every push
 
 Before each push to any branch, the branch must be synced up with main so it

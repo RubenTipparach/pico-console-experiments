@@ -17,6 +17,7 @@
 
 include_guard(GLOBAL)
 
+include(${CMAKE_CURRENT_LIST_DIR}/python.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/obj_model.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/game_meta.cmake)
 
@@ -63,14 +64,32 @@ function(add_picosystem_game NAME)
     # stop. Everything below this line is about being a program, and in a
     # console build this game is not one.
     if(PSE_CONSOLE)
-        # The model tables are generated in this directory and consumed by a
+        # Generated sources are written in this directory and consumed by a
         # target in another one, and a cross directory custom command carries
         # no ordering with it. Without this, ninja is free to compile
         # render.cpp while obj2cpp is still writing the header it includes,
         # which it duly did. A target level dependency is the ordering.
-        if(generated_sources)
-            add_custom_target(${NAME}_models DEPENDS ${generated_sources})
-            add_dependencies(console ${NAME}_models)
+        #
+        # Model tables are not the only generated header a game can have, and
+        # covering only those was the same bug a second time: picomon compiles
+        # its maps and its sprite sheets this way too, and they arrive through
+        # SOURCES rather than MODELS, so the console started compiling
+        # game.cpp before picomon_data.hpp existed. Anything a game lists that
+        # lands in its build directory is generated, whichever keyword carried
+        # it, and has to be written before the console compiles an include of
+        # it.
+        set(ordering_deps ${generated_sources})
+        foreach(source ${GAME_SOURCES})
+            get_filename_component(source_path ${source} ABSOLUTE)
+            string(FIND ${source_path} ${CMAKE_CURRENT_BINARY_DIR} in_build_dir)
+            if(in_build_dir EQUAL 0)
+                list(APPEND ordering_deps ${source_path})
+            endif()
+        endforeach()
+
+        if(ordering_deps)
+            add_custom_target(${NAME}_generated DEPENDS ${ordering_deps})
+            add_dependencies(console ${NAME}_generated)
         endif()
 
         target_sources(console PRIVATE ${GAME_SOURCES} ${generated_sources})
@@ -128,7 +147,7 @@ function(add_picosystem_game NAME)
         set_property(DIRECTORY APPEND PROPERTY
                      CMAKE_CONFIGURE_DEPENDS ${game_yml} ${PICO_WEB_SHELL})
         execute_process(
-            COMMAND ${CMAKE_COMMAND} -E env python3 ${PICO_GEN_SHELL}
+            COMMAND ${PSE_PYTHON3} ${PICO_GEN_SHELL}
                     --game ${CMAKE_CURRENT_SOURCE_DIR}
                     --shell ${PICO_WEB_SHELL}
                     --out ${shell_out}

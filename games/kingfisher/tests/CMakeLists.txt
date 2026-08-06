@@ -22,7 +22,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
 
 set(kingfisher_models "")
 foreach(model ${kingfisher_model_files})
-    add_obj_model(kingfisher_preview
+    add_obj_model(kingfisher
         ${CMAKE_CURRENT_SOURCE_DIR}/../models/${model} kingfisher_models)
 endforeach()
 
