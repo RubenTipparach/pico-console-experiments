@@ -15,7 +15,7 @@ real state of this art at some point in an afternoon:
     without complaint and stands a character at the wrong height
   - a head stacked on a body rather than drawn over it, which leaves nowhere
     for an arm except below the chin
-  - a face with no eye whites, which reads as blank at any distance
+  - a face with no eyes at all, which reads as blank at any distance
   - eyes drawn touching, which merge into a single dark bar
   - one character drawn to different proportions from the rest, which reads
     as a different game rather than a different person
@@ -130,20 +130,28 @@ def faces_forward(rows):
     return any("s" in r for r in rows)
 
 
-def test_every_face_has_eyes_with_whites():
+def test_every_face_has_gen3_eyes():
+    """Eyes are the reference's construction: 1 wide, 2 tall, solid dark.
+
+    Measured off Brendan's sheet: his eye is a single column of #102039, two
+    rows deep, on light skin. No white catchlight; an earlier revision of
+    this test demanded one, and that rule came from our own failed art
+    rather than from the reference, which has none.
+    """
     for name, rows in sorted(art.HEAD.items()):
         if not faces_forward(rows):
             continue                      # the back of a head has no face
-        pupils = sum(r.count("e") for r in rows)
-        whites = sum(r.count("i") for r in rows)
-        if pupils == 0:
+        eye_rows = [r for r in rows if "e" in r]
+        if not eye_rows:
             fail(f"head {name!r} has skin but no pupils, so it is a blank "
-                 "face. This is exactly what the pre-chibi art shipped")
-        if whites == 0:
-            fail(f"head {name!r} has pupils but no eye whites. Without them "
-                 "the eye is a dark blob on skin and the face reads as blank "
-                 "at the size it is actually seen")
-    print(f"  every face that is turned toward the player has eyes")
+                 "face. This is exactly what the first art shipped")
+        if len(eye_rows) != 2:
+            fail(f"head {name!r} draws its eyes across {len(eye_rows)} rows, "
+                 "not the reference's 2")
+        if eye_rows[0] != eye_rows[1]:
+            fail(f"head {name!r}'s two eye rows differ, so the eye is not "
+                 "the solid 1 x 2 block the reference draws")
+    print(f"  every face has the reference's 1 x 2 solid dark eyes")
 
 
 def test_the_eyes_do_not_touch():
@@ -308,7 +316,7 @@ def main():
     test_the_head_overlaps_the_body()
     test_the_head_is_half_the_character()
     test_every_part_is_the_height_it_claims()
-    test_every_face_has_eyes_with_whites()
+    test_every_face_has_gen3_eyes()
     test_the_eyes_do_not_touch()
     test_the_cast_shares_one_face()
     test_every_head_closes_with_an_outline()

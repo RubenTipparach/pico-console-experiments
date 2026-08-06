@@ -11,59 +11,50 @@ tall. The height is fixed by the camera. The width is not, and it is 14
 because of section 1.
 
 
-## 1. The head overlaps the body, and the arms live inside the skull
+## 1. The construction, transplanted from the reference
 
-This is the construction, and everything else follows from it. The parts are
-**not stacked**, and the overlap is not free-form either. Two rules, both
-measured off the reference:
+The parts overlap, and the whole arrangement is read off a Gen 3 overworld
+sprite pixel by pixel rather than paraphrased from memory. Brendan's facts:
 
-1. **The arms live inside the skull's footprint**, in the room the jaw taper
-   frees up. Brendan's skull spans 14 of his 16 columns, his jaw narrows to
-   10, and his arms tuck into the two column gap either side of the jaw. His
-   arms appear beside the jaw, about two rows above the chin, with the hands
-   arriving at torso level.
-2. **The torso is narrower than the skull.** His torso core is about 8
-   columns under a 14 column skull. Get this backwards, torso wider than the
-   head and arms hung outside it, and the character reads as a little head on
-   a table. That was a real revision of this art.
+- His head is 13 of his 21 inked rows and **the face is its bottom third**:
+  cap and hair 8 rows, face 5, eyes on the 10th and 11th rows of 13, which
+  is 70 to 77 per cent down the head.
+- His face (8 wide) is **narrower than his cap** (12 of 16 columns), and his
+  arms hang in the difference, tucked under the hair's overhang, running
+  unbroken from beside the face to the torso hem, hands at torso level.
+- His torso is 5 rows. His legs are **3**.
 
-Scaled to our frame:
+Ours, one row shorter overall:
 
 ```
-rows  0 .. 11    head: skull 12 wide with a rounded crown, jaw 8, chin 6
-rows  9 .. 15    body: arms beside the jaw on rows 9-11, torso 10 wide
-                 from row 12
-rows 16 .. 19    legs
+rows  0 .. 11    head: hair dome 0-6, face 7-11, eyes on rows 8 and 9
+rows  7 .. 16    body: arms at the flanks, torso core 8 wide from row 12
+rows 17 .. 19    legs
 ```
 
-Three rows of overlap, 9 to 11. `compose()` draws the body first and the
-head over it; reversing that order paints the shirt across the chin.
+Five rows of overlap, 7 to 11. The arm's top rows sit **behind** the face,
+which is twelve wide there, so the visible arm begins exactly where the chin
+tapers, and the shoulders cannot end up at the ears no matter what the head
+does. `compose()` draws the body first and the head over it; reversing that
+paints the shirt across the chin.
 
-The proof row, Brendan frame 0 row 18, by real palette index:
-
-```
-     0123456789012345
-  18 .BJADDDDDDDDAJB.
-       ^^          ^^
-```
-
-`B` #7B4141 sleeve, `J` #FFC594 arm skin, `A` head outline, `D` #FFD5B4
-face: arm columns directly beside jaw columns, inside the width his skull
-occupies five rows higher.
+One deviation from the reference, on purpose: Brendan's arms are bare skin,
+a different tone from his face. In a fifteen colour budget the arm skin and
+face skin are the same entry, and a bare arm merged with the face into one
+run of skin down the side of the head. The arms are sleeved in shirt colour
+instead, with a skin hand at the wrist: the same colour break his second
+skin tone buys him.
 
 ### The column plan
 
-Shared by every head, which is what keeps four characters reading as one
-cast:
-
 ```
-columns  1 .. 2    arm, on the overlap rows only (11 .. 12 mirrored)
-column   1         skull outline on the full width rows
-column   2         hair
-columns  3 .. 10   face, eight wide: cheek, eye at 5, two of cheek,
-                   eye at 8, cheek, shade at 10
+columns  0 .. 1    arm: outline outside, sleeve inside
+column   2         head outline at the face rows
+column   3         hair beside the face
+columns  4 .. 9    face interior, eyes at 5 and 8
+column   10        skin shade
 column   11        hair
-column   12        skull outline
+column   12        head outline
 ```
 
 The boundaries are declared, never inferred. Do not try to detect them from
@@ -78,9 +69,9 @@ splits finds the gap between the boots.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-11** | **9-15** | **16-19** | **20** | **12 (60%)** | overlaps | **4 (20%)** |
+| **Picomon, current** | **0-11** | **7-16** | **17-19** | **20** | **12 (60%)** | overlaps | **3 (15%)** |
 
-Picomon's body row range overlaps its head's by three rows, which is why its
+Picomon's body row range overlaps its head's by five rows, which is why its
 columns do not add up like the others: the references' rows were read as
 disjoint bands off a ruler, and only the pixel dump showed that they are not.
 
@@ -128,30 +119,32 @@ stops doing so.
 ## 2. The face
 
 Twelve rows of head is what buys a readable face, and that is the entire
-argument for chibi proportions here. It is a legibility argument rather than a
-stylistic one: a head drawn to realistic proportion on a 20 row figure is
+argument for chibi proportions here. It is a legibility argument rather than
+a stylistic one: a head drawn to realistic proportion on a 20 row figure is
 about five rows, and five rows cannot hold two eyes that read as a face.
 
-The column plan is in section 1, because it is set by where the arms have to
-go. Within the face, the six columns read left to right as five lit pixels
-and one shade pixel, so the light always comes from the same place.
+The face sits LOW: eyes on rows 8 and 9 of a 12 row head, the reference's 70
+per cent, and the thing that makes a big head read as a child's head rather
+than an egg with a face in the middle. The column plan is in section 1.
+Within the face the light always comes from the same side: the last face
+column before the hair is the shade column.
 
 ### Eyes
 
-**One pixel wide, two rows tall, white above pupil, two pixels apart.** That
-is Brendan's eye exactly: his are a single column of #102039 at columns 6 and
-9, two rows deep, with two columns of cheek between them.
+**One pixel wide, two rows tall, solid dark, two columns of cheek between
+the pair.** That is Brendan's eye exactly: a single column of #102039, two
+rows deep, on light skin. No white catchlight, and this document previously
+required one; that rule was derived from our own failed art, where a 2 x 2
+dark blob on a cramped face read as blank, not from the reference, which
+has none. On an eight wide face with the eyes at their measured height the
+solid 1 x 2 reads perfectly.
 
-A six column face is what the overlap costs, and it will not hold the 2 x 2
-eyes the 12 wide version had. Two things still hold from that version and
-both were learned the hard way:
+What still holds, learned the hard way: two pixels of gap is the minimum,
+because under that the pair merges into one dark bar at the size the sprite
+is actually seen.
 
-- Two pixels of gap is the minimum. Under that the pair merges into **one
-  dark bar** at the size the sprite is actually seen.
-- The white matters. Without it the eye is a dark dot on skin and the face
-  reads as blank.
-
-`tools/tests/test_picomon_sprites.py` fails the build on either.
+`tools/tests/test_picomon_sprites.py` fails the build on a face whose eyes
+are missing, merged, or not the reference's 1 x 2 construction.
 
 
 ## 3. The walk
