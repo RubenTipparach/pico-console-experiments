@@ -22,6 +22,8 @@
 #include "picomon/sign.hpp"
 #include "picomon/sparklet.hpp"
 #include "picomon/tidepup.hpp"
+#include "picomon/treeleaf.hpp"
+#include "picomon/treepine.hpp"
 #include "picomon/wall.hpp"
 
 namespace pmr {
@@ -260,6 +262,28 @@ void draw_sprite(int sheet, int frame, int cx, int top, uint8_t depth,
 static_assert(int(TreeKind::Count) == k_tree_kind_count,
               "the tree species in the level data and the runs of frames in "
               "the art have to be the same list, in the same order");
+
+// An NPC's sheet is an index straight into the art's k_sheets, so the data
+// compiler's Sheet enum and the art's art_* constants are one list written
+// in two files. They drifted, and the result was not a crash or a blank
+// sprite: every villager in the game was drawn as the player and every nurse
+// as a villager, animated perfectly, from a real sheet, just not theirs.
+static_assert(sheet_hero == art_hero && sheet_villager == art_villager &&
+                  sheet_trainer == art_trainer && sheet_healer == art_healer,
+              "the sprite sheet order in tools/picomon_data.py and in "
+              "art/build_art.py have to match, because an NPC's sheet is an "
+              "index into the art's table");
+
+// The mesh a zone's trees are made of, for the ones standing inside the
+// playable area. The species is the zone's, never the tile's, so a route is
+// one forest and not a mixture, and it is the same species the border's
+// sprites are drawn from.
+const pse::MeshData& tree_mesh(uint8_t kind) {
+    switch (TreeKind(kind)) {
+        case TreeKind::Broadleaf: return treeleaf;
+        default:                  return treepine;
+    }
+}
 
 void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
     int px = 0, py = 0, depth = 0;
@@ -509,8 +533,16 @@ void draw_overworld(const World& w, uint32_t t) {
             const float far = wz - pz > 4.0f ? 1.0f : 0.0f;
             switch (tile) {
                 case tile_tree:
-                    // Sprites, not meshes: see draw_tree.
+                    // The border. Sprites, not meshes: see draw_tree.
                     draw_tree(x, y, wx, wz, far != 0.0f, z.trees);
+                    break;
+                case tile_treecore:
+                    // Inside the playable area, where the player walks round
+                    // a tree and sees more than one side of it. Twenty
+                    // triangles each and under twenty of them in a zone,
+                    // which the border could never afford.
+                    g_renderer.draw_mesh(tree_mesh(z.trees), wx, 0.0f, wz,
+                                         0.0f, 1.0f);
                     break;
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);

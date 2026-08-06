@@ -12,6 +12,19 @@ P       path2       walk                    aa 99 66
 f       floor       walk                    bb bb aa
 s       sand        walk                    dd cc 99
 T       tree        block                   33 77 33
+
+# The same tree, drawn as geometry instead of a billboard. Nobody writes this
+# character in a map: the compiler flood fills inward from the map edge and
+# rewrites every T it cannot reach, so the wall of trees that frames the map
+# stays sprites and the ones scattered through the playable area become
+# meshes. That is the split that matters, because the border is over a
+# hundred tiles and the interior is under twenty, and twenty triangles times
+# a hundred is more triangles than the rest of the frame.
+#
+# Writing it by hand does work, and means "a mesh here whatever the flood
+# fill thinks". The colour and flags are the tree's, exactly, because it is
+# the same tree.
+t       treecore    block                   33 77 33
 R       rock        block                   88 88 77
 H       house       block                   99 99 88
 F       fence       block                   99 77 55

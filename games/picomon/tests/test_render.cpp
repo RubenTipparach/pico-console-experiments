@@ -225,6 +225,88 @@ void test_the_treeline_is_drawn() {
     check(outline > 100, "and the outlines that make them read as pixel art");
 }
 
+// Two kinds of tree, and which is which is level data rather than a runtime
+// guess. tools/picomon_data.py floods inward from the map edge and rewrites
+// the trees the outside cannot reach, so the wall that frames the map stays
+// billboards and the ones the player walks around become geometry.
+//
+// This pins the split itself, not a screenshot of it. Both failure modes are
+// silent otherwise: a flood fill that reaches everything turns every tree
+// back into a sprite and nothing looks wrong, and one that reaches nothing
+// puts twenty triangles on all hundred and thirty border tiles of Hometown
+// and only shows up as a frame rate on hardware nobody is holding.
+void test_the_border_is_sprites_and_the_inside_is_geometry() {
+    int border = 0, inside = 0, inside_on_the_edge = 0;
+    for (int zi = 0; zi < pm::k_zone_count; zi++) {
+        const pm::Zone& z = pm::k_zones[zi];
+        for (int y = 0; y < z.h; y++) {
+            for (int x = 0; x < z.w; x++) {
+                const uint8_t t = z.tiles[y * z.w + x];
+                if (t == pm::tile_tree) border++;
+                if (t != pm::tile_treecore) continue;
+                inside++;
+                if (x == 0 || y == 0 || x == z.w - 1 || y == z.h - 1)
+                    inside_on_the_edge++;
+            }
+        }
+    }
+    std::printf("  trees: %d border sprites, %d interior meshes\n",
+                border, inside);
+    check(border > 100, "the map is still framed by sprite trees");
+    check(inside > 0, "and some trees inside it are geometry");
+    check(inside * 4 < border,
+          "the geometry is the small half: it costs 20 triangles a tile and "
+          "the border does not");
+    check(inside_on_the_edge == 0,
+          "nothing on the outermost ring became geometry, because the flood "
+          "fill starts there");
+}
+
+// And the mesh actually reaches the screen. The tile can be labelled
+// perfectly and still draw nothing, which is what a missing case in the prop
+// switch looks like: the tile keeps its ground colour and the tree is simply
+// absent, on a map where absent trees are unremarkable.
+void test_an_interior_tree_is_drawn() {
+    pm::World w = fresh();
+    w.zone = pm::zone_route1;
+    // Standing two tiles south of the lone tree at 4,2, which the flood fill
+    // cannot reach: the row above it and both sides are open ground.
+    w.tx = 4;
+    w.ty = 4;
+    w.facing = 0;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    Frame f;
+    render(w, f, 1000);
+
+    // Counting green would pass on the border treeline alone, which is most
+    // of this frame and is exactly what the test must not credit. So it
+    // counts green that could only have been shaded: the ground is drawn as
+    // flat tile colours and a sprite is drawn straight out of its palette, so
+    // every green on screen is one of a known handful unless a lit mesh put
+    // it there.
+    static const uint8_t k_flat[][3] = {
+        {0x55, 0x99, 0x44}, {0x44, 0x88, 0x44}, {0x33, 0x77, 0x33},  // ground
+        {0x22, 0x33, 0x22}, {0x22, 0x66, 0x33}, {0x33, 0x88, 0x44},  // sprite
+        {0x55, 0xAA, 0x55}, {0x77, 0xCC, 0x66},
+    };
+    int shaded = 0;
+    for (int y = 0; y < k_h; y++) {
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, y);
+            if (!(p[1] > p[0] && p[1] > p[2])) continue;
+            bool flat = false;
+            for (const auto& c : k_flat)
+                if (p[0] == c[0] && p[1] == c[1] && p[2] == c[2]) flat = true;
+            if (!flat) shaded++;
+        }
+    }
+    std::printf("  interior tree: %d shaded green pixels\n", shaded);
+    check(shaded > 40,
+          "the mesh tree in the middle of Route 1 is on screen, in greens no "
+          "flat tile and no sprite palette entry could have produced");
+}
+
 // The strike. Every one of these was missing: a turn resolved, a line of text
 // appeared, and nothing on screen moved, so a player could not tell a hit
 // from a miss or a strong hit from a weak one.
@@ -411,6 +493,8 @@ int main() {
     test_indoors_has_no_sky();
     test_the_shop_screen_draws();
     test_the_treeline_is_drawn();
+    test_the_border_is_sprites_and_the_inside_is_geometry();
+    test_an_interior_tree_is_drawn();
     test_a_hit_flashes_shakes_and_drains();
     test_the_near_creature_is_the_bigger_one();
     test_battle_floor_is_solid();
