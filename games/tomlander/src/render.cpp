@@ -58,9 +58,12 @@ constexpr float k_fp16 = 1.0f / 65536.0f;
 
 float to_f(int32_t fp) { return fp * k_fp16; }
 
-// Angle units to radians. The sim counts 4096 to the turn in fp8.
-float angle_f(int32_t fp8_angle) {
-    return static_cast<float>(fp8_angle) * (2.0f * k_pi / (4096.0f * 256.0f));
+// Nearest integer. A plain cast truncates toward zero, which biases a plume
+// walking up and left by half a pixel per step against one walking down and
+// right, and a flame that is symmetric in the maths is then not symmetric on
+// screen.
+int round_i(float v) {
+    return static_cast<int>(v < 0.0f ? v - 0.5f : v + 0.5f);
 }
 
 struct Rgb { uint8_t r, g, b; };
@@ -181,9 +184,101 @@ void draw_ground(const World& world) {
     }
 }
 
-// The pads. A box each, which is the engine's own primitive: rule 11 keeps
-// hand written vertex tables out of C++, and a box is exactly the trivial
-// case it exempts because draw_box already generates one.
+// One deck quad with its own four corner colours.
+void deck_quad(const float px[4], const float py, const float pz[4],
+               const Rgb c[4]) {
+    int sx[4], sy[4], sz[4];
+    for (int i = 0; i < 4; i++) {
+        if (!g_renderer.project(px[i], py, pz[i], sx[i], sy[i], sz[i])) return;
+    }
+    const int t0[3] = {0, 1, 2}, t1[3] = {0, 2, 3};
+    const int* tris[2] = {t0, t1};
+    for (int t = 0; t < 2; t++) {
+        const int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
+        const int qx[3] = {sx[i0], sx[i1], sx[i2]};
+        const int qy[3] = {sy[i0], sy[i1], sy[i2]};
+        const int qz[3] = {sz[i0], sz[i1], sz[i2]};
+        const Rgb qc[3] = {c[i0], c[i1], c[i2]};
+        ground_tri(qx, qy, qz, qc);
+    }
+}
+
+// Grey steel, and cool rather than warm on purpose: everything else out
+// there is warm, the regolith browns and the orange pulse, so a cool grey is
+// the one hue that cannot be mistaken for ground. These go straight to the
+// framebuffer, ground_tri applies no lighting, so what is written here is
+// exactly what shows and the contrast has to be built in. The first pass was
+// a near white 255,241,232 against 214,202,196, a 16 percent step, and at
+// 120x120 that is not plating, it is a white rectangle with a suggestion.
+const Rgb k_deck_lit{170, 179, 188};
+const Rgb k_deck_dark{104, 112, 121};
+// What the lit corner of the deck reaches. The engine's light is at
+// (0.40, 0.82, -0.40), so the sheen runs from the -X +Z corner up to the
+// +X -Z one.
+const Rgb k_deck_sheen{226, 233, 240};
+// The block under the deck. Its lid barely shows, but its sides are the pad's
+// silhouette, so they have to be darker than the deck and darker than the
+// ground's mid tone (95,87,79), which the old warm brown sides matched almost
+// exactly and disappeared into.
+const Rgb k_pad_lid{140, 148, 157};
+const Rgb k_pad_side{62, 69, 77};
+
+// The deck, as a 3x3 grid of vertices rather than one flat quad.
+//
+// draw_box paints its lid a single colour, and a plain white slab is the one
+// thing out there that looks untextured, because it is: the engine has no
+// texture mapping. Per vertex colour is the whole of what it does have, and
+// it is free, since ScreenTriangle already carries three colours and the
+// rasterizer already interpolates them. Nine vertices over four quads is
+// enough to read as plating, alternating light and shadow so the seams fall
+// where a real deck's panel joins would, and it costs 8 triangles.
+void draw_deck(const tl::Pad& pad, float y, bool target, int pulse256) {
+    const float half = to_f(tl::k_pad_half);
+    const float x0 = to_f(pad.x) - half, z0 = to_f(pad.z) - half;
+    const float step = half;
+
+    for (int gz = 0; gz < 2; gz++) {
+        for (int gx = 0; gx < 2; gx++) {
+            const float qx[4] = {x0 + gx * step, x0 + (gx + 1) * step,
+                                 x0 + (gx + 1) * step, x0 + gx * step};
+            const float qz[4] = {z0 + gz * step, z0 + gz * step,
+                                 z0 + (gz + 1) * step, z0 + (gz + 1) * step};
+            Rgb c[4];
+            for (int i = 0; i < 4; i++) {
+                // Corner index in the 3x3 grid, so neighbouring quads share a
+                // colour at the vertex they share and the plating reads as one
+                // surface rather than four tiles.
+                const int cx = gx + ((i == 1 || i == 2) ? 1 : 0);
+                const int cz = gz + ((i == 2 || i == 3) ? 1 : 0);
+                // Two terms. The sheen runs across the deck toward the
+                // engine's own light, which is what makes a flat horizontal
+                // slab read as metal instead of as a hole cut in the scene:
+                // lambert alone gives a horizontal surface one constant
+                // value, so without this the deck is the only unlit thing out
+                // there. The plate checker then rides on top of it.
+                const int sheen = (cx - cz + 2) * 255 / 4;    // 0..255
+                const bool bright = ((cx + cz) & 1) == 0;
+                const Rgb base = bright ? k_deck_lit : k_deck_dark;
+                int r = base.r + (k_deck_sheen.r - base.r) * sheen / 255;
+                int g = base.g + (k_deck_sheen.g - base.g) * sheen / 255;
+                int b = base.b + (k_deck_sheen.b - base.b) * sheen / 255;
+                // The target deck warms toward the orange its sides carry, so
+                // the pulse reaches the surface you are aiming at and not just
+                // its edges.
+                if (target) {
+                    g = g - (g - 190) * pulse256 / 256;
+                    b = b - b * pulse256 / 256;
+                }
+                c[i] = Rgb{static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                           static_cast<uint8_t>(b)};
+            }
+            deck_quad(qx, y, qz, c);
+        }
+    }
+}
+
+// The pads. A box each for the body, which is the engine's own primitive, and
+// a hand laid deck on top for the vertex colour draw_box cannot give.
 //
 // The deck stands proud of its apron for a reason that is not looks. Lying
 // flat it shared a depth step with the ground and they tied, and ties go to
@@ -197,7 +292,8 @@ void draw_pads(const World& world, uint32_t time_ms) {
 
         // The deck you are aiming at pulses. Nothing else out there is
         // saturated, so it reads from across the valley with no marker.
-        uint8_t sr = 95, sg = 87, sb = 79;
+        uint8_t sr = k_pad_side.r, sg = k_pad_side.g, sb = k_pad_side.b;
+        int pulse256 = 0;
         if (target) {
             const int phase = static_cast<int>((time_ms / 12) % 256);
             const int wave = tl::sin_fp(phase * 16) >> 7;      // -128..128
@@ -205,6 +301,9 @@ void draw_pads(const World& world, uint32_t time_ms) {
             sr = static_cast<uint8_t>(lit);
             sg = static_cast<uint8_t>(lit * 163 / 255);
             sb = 0;
+            pulse256 = 150 + wave / 2;
+            if (pulse256 < 0) pulse256 = 0;
+            if (pulse256 > 256) pulse256 = 256;
         }
 
         // draw_box's own vertex table puts x and z at +/- 0.5 and y at 0 to 1,
@@ -215,56 +314,101 @@ void draw_pads(const World& world, uint32_t time_ms) {
         // pad, floating above its own apron.
         const float full = to_f(tl::k_pad_half) * 2.0f;
         const float rise = to_f(tl::k_pad_rise);
+        // The block gives the silhouette and the sides. Its lid is drawn just
+        // under the real deck so nothing shows through if a deck quad is
+        // rejected at the frame edge, and the deck goes on top with its own
+        // vertex colours.
         g_renderer.draw_box(to_f(pad.x), to_f(pad.y), to_f(pad.z),
-                            full, rise, full,
-                            // A white deck, which is the one shape out there
-                            // that is obviously not terrain.
-                            255, 241, 232, sr, sg, sb);
+                            full, rise * 0.98f, full,
+                            k_pad_lid.r, k_pad_lid.g, k_pad_lid.b,
+                            sr, sg, sb);
+        draw_deck(pad, to_f(pad.y) + rise, i == world.target &&
+                  !(world.state == tl::Flight::Landed && world.landed_on == i),
+                  pulse256);
     }
 }
 
 void draw_ship(const World& world) {
+    // The attitude straight through, as the orientation it is. No angles are
+    // extracted on the way, which is the point: extracting them would put the
+    // singularity back in the one place it would be hardest to spot, the
+    // picture.
     g_renderer.draw_mesh(models::tomlander::tom,
                          to_f(world.x), to_f(world.y), to_f(world.z),
-                         0.0f, k_ship_scale,
-                         255, 255, 255,
-                         angle_f(world.pitch), 0,
-                         angle_f(world.roll));
+                         pse::quat_basis(world.q), k_ship_scale);
 }
+
+// How far below the nozzle the plume's aim is sampled, in world units. Only
+// its direction is kept, so the number just has to be far enough that the two
+// projected points are several pixels apart and the direction is not noise.
+constexpr float k_plume_probe = 3.0f;
 
 // Thruster flames, as billboards drawn after the geometry with a depth test,
 // which is how the engine expects sprites to go on.
+//
+// A plume leaves along the hull's own down axis, so it has to be aimed, not
+// just placed. The nozzle mouth was rotated with the hull from the start and
+// the flame was then drawn straight down the screen from it, which reads as
+// correct only while the ship is level: lean it over and the exhaust still
+// falls vertically out of a tilted nozzle. Both ends of the plume go through
+// the projection now, and the pixels walk the line between them.
 void draw_flames(const World& world, const pse::RenderTarget& target,
                  uint32_t time_ms) {
-    const float sp = tl::sin_fp(world.pitch >> 8) / 16384.0f;
-    const float cp = tl::cos_fp(world.pitch >> 8) / 16384.0f;
-    const float sr = tl::sin_fp(world.roll >> 8) / 16384.0f;
-    const float cr = tl::cos_fp(world.roll >> 8) / 16384.0f;
+    // One basis for the nozzle mouths and the plume direction both, the same
+    // one the hull is drawn with. When these were rebuilt out of the sim's
+    // angles instead, the flames were a second copy of the attitude
+    // convention, and a second copy is a thing to get out of step.
+    const pse::Basis b = pse::quat_basis(world.q);
+
+    // The hull's own down, in the world.
+    const float dx = -b.m[1], dy = -b.m[4], dz = -b.m[7];
 
     for (int i = 0; i < tl::kPodCount; i++) {
+        g_stats.flame_ax[i] = 0;
+        g_stats.flame_ay[i] = 0;
         const uint8_t throttle = world.throttle[i];
         if (throttle < 8) continue;
 
-        // The nozzle mouth in model space, then through the same rotation the
-        // hull got: roll, then pitch. Yaw is zero, the hull never turns.
+        // The nozzle mouth in model space, through the hull's basis.
         const float mx = tl::k_pods[i].ox * 4.0f * k_ship_scale;
         const float mz = tl::k_pods[i].oz * 4.0f * k_ship_scale;
         const float my = -3.1f * k_ship_scale;
-        const float rx = mx * cr - my * sr;
-        const float ry = mx * sr + my * cr;
-        const float fy = ry * cp + mz * sp;
-        const float fz = mz * cp - ry * sp;
 
-        int px, py, depth_i;
+        const float wx = to_f(world.x) + b.m[0]*mx + b.m[1]*my + b.m[2]*mz;
+        const float wy = to_f(world.y) + b.m[3]*mx + b.m[4]*my + b.m[5]*mz;
+        const float wz = to_f(world.z) + b.m[6]*mx + b.m[7]*my + b.m[8]*mz;
+
+        int px, py;
         float scale;
         uint8_t depth;
-        if (!g_renderer.project_billboard(to_f(world.x) + rx,
-                                          to_f(world.y) + fy,
-                                          to_f(world.z) + fz,
-                                          1.0f, px, py, scale, depth)) {
+        if (!g_renderer.project_billboard(wx, wy, wz, 1.0f, px, py, scale,
+                                          depth)) {
             continue;
         }
-        (void)depth_i;
+
+        // Down the screen is the fallback, for the one case the aim point has
+        // nothing to say: a nozzle pointing at the camera projects both ends
+        // to nearly the same pixel, and normalising that is dividing noise.
+        float ax = 0.0f, ay = 1.0f;
+        int qx, qy;
+        float qscale;
+        uint8_t qdepth;
+        if (g_renderer.project_billboard(wx + dx * k_plume_probe,
+                                         wy + dy * k_plume_probe,
+                                         wz + dz * k_plume_probe,
+                                         1.0f, qx, qy, qscale, qdepth)) {
+            const float vx = static_cast<float>(qx - px);
+            const float vy = static_cast<float>(qy - py);
+            const float mag = std::sqrt(vx * vx + vy * vy);
+            if (mag > 1.5f) {
+                ax = vx / mag;
+                ay = vy / mag;
+            }
+        }
+        // The plume's width runs across it, whichever way it is pointing.
+        const float bx = -ay, by = ax;
+        g_stats.flame_ax[i] = static_cast<int8_t>(round_i(ax * 64.0f));
+        g_stats.flame_ay[i] = static_cast<int8_t>(round_i(ay * 64.0f));
 
         const int flick = static_cast<int>((time_ms / 40 + i * 3) % 3);
         const int len = 2 + (throttle * 7) / 255 + flick;
@@ -274,8 +418,12 @@ void draw_flames(const World& world, const pse::RenderTarget& target,
             const uint8_t r = 255;
             const uint8_t g = k * 3 < len ? 255 : (k * 3 < len * 2 ? 236 : 163);
             const uint8_t b = k * 3 < len ? 232 : (k * 3 < len * 2 ? 39 : 0);
+            const float cxf = px + ax * static_cast<float>(k);
+            const float cyf = py + ay * static_cast<float>(k);
             for (int w = -half; w <= half; w++) {
-                const int x = px + w, yy = py + k;
+                const float fw = static_cast<float>(w);
+                const int x = round_i(cxf + bx * fw);
+                const int yy = round_i(cyf + by * fw);
                 if (x < 0 || yy < 0 || x >= target.width ||
                     yy >= target.height) {
                     continue;

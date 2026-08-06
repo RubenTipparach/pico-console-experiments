@@ -137,27 +137,23 @@ int32_t range_to_target(const World& world) {
 }
 
 void hull_up(const World& world, int32_t& ux, int32_t& uy, int32_t& uz) {
-    // The composed rotation is Ry(yaw) Rx(pitch) Rz(roll) with yaw fixed at
-    // zero, so the up vector is the middle column of Rx(pitch) Rz(roll):
-    //   ( -sin(roll), cos(pitch) cos(roll), sin(pitch) cos(roll) )
-    // Positive pitch is nose DOWN and tilts the lift vector toward +z;
-    // positive roll tilts it toward -x. Both of those signs are load bearing:
-    // they are what decides which way a firing pod pushes the ship, and they
-    // were inverted once, which put the thrust on the opposite corner from
-    // the flame.
-    const int32_t sp = sin_fp(world.pitch >> 8);
-    const int32_t cp = cos_fp(world.pitch >> 8);
-    const int32_t sr = sin_fp(world.roll >> 8);
-    const int32_t cr = cos_fp(world.roll >> 8);
-    ux = -sr;
-    uy = (cp * cr) >> 14;
-    uz = (sp * cr) >> 14;
+    // The hull's own +y, turned into the world. One line, and correct at
+    // every attitude, because the attitude is an orientation rather than a
+    // recipe for reaching one. The two angle version this replaced had to
+    // spell out which way each angle tipped the vector, and got the sign of
+    // one of them wrong against the renderer for as long as it existed.
+    pse::quat_rotate(world.q, 0, pse::k_quat_one, 0, ux, uy, uz);
+}
+
+void up_in_hull(const World& world, int32_t& bx, int32_t& by, int32_t& bz) {
+    pse::quat_unrotate(world.q, 0, pse::k_quat_one, 0, bx, by, bz);
 }
 
 // ------------------------------------------------------------------ world
 
 void world_init(World& world) {
     world = World{};
+    world.q = pse::quat_identity();
 
     // Left shift of a negative is undefined, so these multiply. The compiler
     // folds them either way; the warning is the only difference that matters.
@@ -190,17 +186,27 @@ namespace {
 void resolve_throttle(const World& world, const Input& input,
                       uint8_t out[kPodCount]) {
     if (input.level) {
-        // A PD controller run through the pods. To pull pitch back down you
-        // fire the FRONT pod, and to pull roll back down you fire the LEFT
-        // one: the same signs as the torque below, and they have to move
-        // together. Flipping one without the other turns this into positive
-        // feedback and drives the hull over instead of upright.
-        const int32_t cp = -((k_level_kp * world.pitch + k_level_kd * world.wp) >> 12);
-        const int32_t cr = -((k_level_kp * world.roll + k_level_kd * world.wr) >> 12);
-        out[kPodFront] = static_cast<uint8_t>(clamp_i(k_level_base - cp, 0, 255));
+        // A PD controller run through the pods, reading the world's up vector
+        // in the hull's own frame. Level and it is (0, 1, 0); tip the hull and
+        // it leans, and which way it leans names the pod that will fix it.
+        //
+        //   bz > 0  the nose is up      pull it down with the BACK pod
+        //   bx > 0  the right side is up   pull it down with the LEFT pod
+        //
+        // The rate terms carry opposite signs, and that is real rather than a
+        // slip: nose up is a NEGATIVE rotation about the hull's x, while right
+        // side up is a POSITIVE one about its z, so damping them means
+        // subtracting one rate and adding the other. test_sim checks both
+        // halves converge, because getting one wrong makes that axis run away
+        // and the hull levels itself over onto its back.
+        int32_t bx, by, bz;
+        up_in_hull(world, bx, by, bz);
+        const int32_t cp = (k_level_kp * bz - k_level_kd * world.wx) >> 12;
+        const int32_t cr = (k_level_kp * bx + k_level_kd * world.wz) >> 12;
         out[kPodBack]  = static_cast<uint8_t>(clamp_i(k_level_base + cp, 0, 255));
-        out[kPodLeft]  = static_cast<uint8_t>(clamp_i(k_level_base - cr, 0, 255));
-        out[kPodRight] = static_cast<uint8_t>(clamp_i(k_level_base + cr, 0, 255));
+        out[kPodFront] = static_cast<uint8_t>(clamp_i(k_level_base - cp, 0, 255));
+        out[kPodLeft]  = static_cast<uint8_t>(clamp_i(k_level_base + cr, 0, 255));
+        out[kPodRight] = static_cast<uint8_t>(clamp_i(k_level_base - cr, 0, 255));
         return;
     }
     for (int i = 0; i < kPodCount; i++) out[i] = input.pod[i] ? 255 : 0;
@@ -257,20 +263,35 @@ void world_tick(World& world, const Input& input) {
     world.z += world.vz;
 
     // ---- angular ----
-    // A pod lifts its OWN corner. Lifting the front (+z) corner has to
-    // DECREASE pitch, because positive pitch is nose down, and lifting the
-    // right (+x) corner has to INCREASE roll. Get either backwards and the
-    // flame appears on one corner while the opposite one rises.
-    int32_t tp = 0, tr = 0;
+    // A pod lifts its OWN corner. The torque is the plain cross product of
+    // the arm with the thrust, r x F with F along the hull's +y, which for an
+    // arm (ox, 0, oz) is (-oz, 0, ox) times the lift. Nothing here needs to
+    // know the attitude: these are the hull's own axes, which is exactly what
+    // makes them safe to integrate at any attitude at all.
+    //
+    // The y component is identically zero and is not an omission. Every pod
+    // pushes along the centre line, and a force through the centre line has
+    // no moment about it, so no pod can yaw this hull. That is the physics
+    // agreeing with the design rather than the design being imposed on it.
+    int32_t tx = 0, tz = 0;
     for (int i = 0; i < kPodCount; i++) {
         const int32_t lift = (k_pod_torque * world.throttle[i]) / 255;
-        tp -= k_pods[i].oz * lift;
-        tr += k_pods[i].ox * lift;
+        tx -= k_pods[i].oz * lift;
+        tz += k_pods[i].ox * lift;
     }
-    world.wp = damp(world.wp + tp);
-    world.wr = damp(world.wr + tr);
-    world.pitch += world.wp;
-    world.roll += world.wr;
+    world.wx = damp(world.wx + tx);
+    world.wy = damp(world.wy);
+    world.wz = damp(world.wz + tz);
+
+    // Compose this tick's turn onto the attitude, in the hull's own frame.
+    // The rates are fp8 angle units where a turn is 4096 << 8; quat_integrate
+    // wants Q14 radians, and 6434 / 65536 is 2 pi / (4096 * 256) * 16384.
+    // Rounded rather than truncated so a slow turn still turns: truncation
+    // floors anything under about a third of a degree a second to nothing.
+    world.q = pse::quat_integrate(world.q,
+                                  (world.wx * 6434 + 32768) >> 16,
+                                  (world.wy * 6434 + 32768) >> 16,
+                                  (world.wz * 6434 + 32768) >> 16);
 
     // ---- the ground ----
     // Landing well anywhere just parks the ship and it can lift off again.
@@ -285,7 +306,7 @@ void world_tick(World& world, const Input& input) {
         const int pad = pad_at(world, world.x, world.z);
 
         world.vx = world.vy = world.vz = 0;
-        world.wp = world.wr = 0;
+        world.wx = world.wy = world.wz = 0;
 
         if (fall > k_safe_descent) {
             world.state = Flight::Crashed;

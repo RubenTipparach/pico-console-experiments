@@ -4,6 +4,7 @@
 
 #include "pse/config.hpp"
 #include "pse/mesh.hpp"
+#include "pse/quat.hpp"
 #include "pse/raster.hpp"
 
 namespace pse {
@@ -107,6 +108,24 @@ public:
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
                    uint8_t tint_b = 255, float pitch = 0.0f,
                    uint8_t whiten = 0, float roll = 0.0f);
+
+    // The same draw, given the orientation as a basis instead of three angles.
+    //
+    // Three angles cannot describe an orientation that was reached by turning
+    // about the body's own axes, which is what anything driven by thrusters
+    // does. Composing them always names a frame that one of the other angles
+    // has already moved, so the axes drift apart from the body's real ones,
+    // and at a quarter turn a whole degree of freedom disappears. Pass the
+    // basis and none of that arises: it is the orientation itself rather than
+    // a recipe for reaching it. pse::quat_basis turns a quaternion into one.
+    //
+    // Cheaper per draw as well, not just more correct: the three angle form
+    // spends six trig calls building this same basis before it can start.
+    void draw_mesh(const MeshData& mesh,
+                   float x, float y, float z,
+                   const Basis& basis, float scale,
+                   uint8_t tint_r = 255, uint8_t tint_g = 255,
+                   uint8_t tint_b = 255, uint8_t whiten = 0);
 
     // Screen position and pixel size for a camera facing sprite. Returns false
     // when the point is off screen or behind the camera. The caller draws the

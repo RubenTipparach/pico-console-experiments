@@ -30,6 +30,7 @@ endif()
 add_library(pse-core STATIC
     src/raster.cpp
     src/renderer3d.cpp
+    src/quat.cpp
     src/parallel.cpp
     src/text.cpp
     # Its own translation unit on purpose: a 2D game that never asks for the

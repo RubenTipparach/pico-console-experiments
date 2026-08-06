@@ -12,6 +12,10 @@ add_executable(tomlander_sim_tests
 target_include_directories(tomlander_sim_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
+# The sim carries its attitude as a pse::Quat, so it links the engine's
+# quaternion. That is the only engine code it touches: everything else in here
+# is still pure integer game rules with no renderer behind it.
+target_link_libraries(tomlander_sim_tests pse-core)
 add_test(NAME tomlander_sim_tests COMMAND tomlander_sim_tests)
 
 # The preview harness renders real frames through the real engine and the real
