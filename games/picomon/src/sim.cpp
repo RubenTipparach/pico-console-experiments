@@ -78,9 +78,15 @@ bool npc_present(const World& w, const NpcDef& n) {
 
 void player_offset(const World& w, int16_t& ox, int16_t& oy) {
     if (w.step == 0) { ox = 0; oy = 0; return; }
-    // step counts up to k_step_ticks, so the offset walks from the tile the
-    // player left toward the one they are entering.
-    const int t = 256 - int(w.step) * 256 / k_step_ticks;
+    // step counts DOWN, from k_step_ticks to zero, so the weight on the tile
+    // the player left has to count down with it: full at the start of the
+    // step, none by the time they land. Deriving t as k_step_ticks minus the
+    // counter runs the slide backwards, and because the camera is pinned to
+    // this same offset, the whole world runs backwards with it: the player
+    // snapped a tile forward the instant a direction was pressed, drifted
+    // back to where they started over the next seven ticks, then snapped
+    // forward again. That is the rubber band, once per tile, in every zone.
+    const int t = int(w.step) * 256 / k_step_ticks;
     ox = int16_t((int(w.step_from_x) - int(w.tx)) * t);
     oy = int16_t((int(w.step_from_y) - int(w.ty)) * t);
 }

@@ -128,6 +128,74 @@ void test_walking_stays_legal() {
     check(true, "40000 ticks of walking stayed legal");
 }
 
+// Where the player is actually drawn, in 1/256ths of a tile, along each axis.
+// This is the number the renderer builds its position and its camera from, so
+// it is the one that has to move smoothly, not the tile index.
+void drawn_at(const pm::World& w, int& dx, int& dy) {
+    int16_t ox = 0, oy = 0;
+    pm::player_offset(w, ox, oy);
+    dx = int(w.tx) * 256 + ox;
+    dy = int(w.ty) * 256 + oy;
+}
+
+void test_a_step_slides_without_snapping() {
+    // A step moves one tile over k_step_ticks ticks, so no single tick may
+    // move the drawn position by more than one tile's worth of that, and it
+    // must never travel backwards. Deriving the sub tile offset the wrong way
+    // round still lands the player on the right tile, and still passes every
+    // test that only looks at tiles, while snapping a whole tile forward and
+    // then sliding all the way back: the rubber band that prompted this test.
+    const int k_max_tick = 256 / pm::k_step_ticks;
+    pm::World w = start_world(4242);
+    uint32_t r = 7;
+    int steps_seen = 0;
+    int worst = 0;
+    for (int i = 0; i < 40000; i++) {
+        r = r * 1103515245u + 12345u;
+        const pm::World before = w;
+        int bx = 0, by = 0;
+        drawn_at(before, bx, by);
+
+        pm::world_tick(w, w.mode == pm::Mode::Overworld ? hold(int((r >> 16) & 3))
+                                                        : press_a());
+
+        // Only consecutive overworld ticks in one zone are comparable. A warp
+        // or a whiteout moves the player without walking them, and is meant to
+        // jump: both are covered by their own tests.
+        if (before.mode != pm::Mode::Overworld || w.mode != pm::Mode::Overworld) continue;
+        if (before.zone != w.zone || before.fade != 0 || w.fade != 0) continue;
+
+        int ax = 0, ay = 0;
+        drawn_at(w, ax, ay);
+        const int mx = ax - bx, my = ay - by;
+        if (mx > worst) worst = mx;
+        if (-mx > worst) worst = -mx;
+        if (my > worst) worst = my;
+        if (-my > worst) worst = -my;
+        if (mx > k_max_tick || mx < -k_max_tick || my > k_max_tick || my < -k_max_tick) {
+            std::printf("  a tick moved the player %d,%d of 256 in zone %d\n",
+                        mx, my, w.zone);
+            check(false, "no tick moves the player more than one tick of a step");
+            return;
+        }
+        // Within a step the slide only ever runs toward the tile being
+        // entered, never back toward the one being left.
+        if (before.step > 1 && w.step > 0 && before.step == w.step + 1) {
+            const int tox = int(w.tx) * 256, toy = int(w.ty) * 256;
+            if ((bx < tox && ax < bx) || (bx > tox && ax > bx) ||
+                (by < toy && ay < by) || (by > toy && ay > by)) {
+                check(false, "a step never slides back toward the tile it left");
+                return;
+            }
+            steps_seen++;
+        }
+    }
+    check(steps_seen > 100, "the walk actually took some steps to measure");
+    std::printf("  largest single tick move = %d/256 of a tile (limit %d)\n",
+                worst, k_max_tick);
+    check(true, "every step slid smoothly toward the tile it was entering");
+}
+
 void test_encounters_happen_and_end() {
     // Stand in the tall grass on Route 1 and walk until something appears.
     pm::World w = start_world(777);
@@ -598,6 +666,7 @@ int main() {
     test_data_is_sane();
     test_type_ring();
     test_walking_stays_legal();
+    test_a_step_slides_without_snapping();
     test_encounters_happen_and_end();
     test_catch_formula();
     test_damage_is_bounded();
