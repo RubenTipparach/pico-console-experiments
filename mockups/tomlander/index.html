@@ -795,7 +795,7 @@ $ tools/obj2cpp.py tom.obj --out-cpp tom.cpp --out-hpp tom.hpp --name tom
         <div class="q"><span class="qn">1</span><span><span class="qt">Which scheme</span><span class="qd">Direct, Gimbal, or Direct with screen relative buttons. This is the one that changes the game rather than the code.</span></span></div>
         <div class="q"><span class="qn">2</span><span><span class="qt">Where mission one goes next</span><span class="qd">A to B is in and flyable. The obvious ladder from here is more pads, a fuel budget that makes the route matter, then cargo that changes the mass. Say which and it gets built in that order.</span></span></div>
         <div class="q"><span class="qn">3</span><span><span class="qt">Camera speed</span><span class="qd">Left and right currently rotate the camera continuously. Snapping to 45 degree detents is calmer and never leaves the buttons ambiguous.</span></span></div>
-        <div class="q"><span class="qn">4</span><span><span class="qt">Which way the front pod pushes</span><span class="qd">Firing the front pod lifts the front, so the ship drifts backward. That is correct, and it is what tom-lander's own torque does, but a player pressing the top button expects to go forward. Invert it or leave it honest.</span></span></div>
+        <div class="q"><span class="qn">4</span><span><span class="qt">Should the top button swap with the bottom one</span><span class="qd">With the torque signs fixed, a pod lifts its own corner and the ship travels away from it. That makes the sides read perfectly: Y is the left button, it fires the right pod, and you go left. But the same rule makes X, the top button, fire the front pod and carry you DOWN the screen. tom-lander has the same split, because W works the front thruster there too. Swapping which pod X and B work is one line and makes all four buttons mean the direction you travel. Say the word.</span></span></div>
         <div class="q"><span class="qn">5</span><span><span class="qt">Does tilt break a landing</span><span class="qd">tom-lander has no tilt gate. Damage is speed only until the hull passes 90 degrees. The bench adds a 20 degree gate because a lander that can land on its side is a strange lander. Say if you want the original behaviour.</span></span></div>
       </div>
     </div>
@@ -1297,9 +1297,15 @@ const TUNE = {
      Left  (-X)      D      A      lifts the left side, so the ship goes right
      Front (+Z)      W      X      lifts the nose
      Back  (-Z)      S      B      lifts the tail
-   Note the side pods read backwards on purpose and the original does the
-   same: the button on the left of the diamond takes you left, which is what
-   a player means by it, even though the pod that fires is the right one. */
+   The side pods read backwards on purpose and the original does the same:
+   the button on the left of the diamond takes you left, which is what a
+   player means by it, even though the pod that fires is the right one. A pod
+   lifts its own corner, so you always travel away from the one that is lit.
+
+   The front and back pods inherit that rule and come out the other way: X is
+   the top button, it works the front pod, the nose rises and the ship slides
+   DOWN the screen. tom-lander has the same split. Swapping the btn fields on
+   FRONT and BACK below is the whole fix if that is the call. */
 const THR = [
   {name:"RIGHT", btn:"y", key:"A", ox: 1, oz: 0, lx: 4, lz: 0},
   {name:"LEFT",  btn:"a", key:"D", ox:-1, oz: 0, lx:-4, lz: 0},
@@ -1398,11 +1404,15 @@ class Sim {
     if(level){
       const cp = -(TUNE.LEVEL_KP*this.pitch + TUNE.LEVEL_KD*this.wp);
       const cr = -(TUNE.LEVEL_KP*this.roll  + TUNE.LEVEL_KD*this.wr);
+      // Signs follow the torque above: to pull pitch back down you fire the
+      // FRONT pod, and to pull roll back down you fire the LEFT one. These
+      // were the other way round while the torque was inverted, so fixing one
+      // without the other turns the leveller into positive feedback.
       const base = scheme==="gimbal" ? 1 : 0.92;
-      t[2]=clamp01(base+cp*0.30);   // front
-      t[3]=clamp01(base-cp*0.30);   // back
-      t[1]=clamp01(base+cr*0.30);   // left
-      t[0]=clamp01(base-cr*0.30);   // right
+      t[2]=clamp01(base-cp*0.30);   // front
+      t[3]=clamp01(base+cp*0.30);   // back
+      t[1]=clamp01(base-cr*0.30);   // left
+      t[0]=clamp01(base+cr*0.30);   // right
     }
 
     if(dry) t=[0,0,0,0];
@@ -1435,14 +1445,26 @@ class Sim {
     this.vz=(this.vz+az*dt)*TUNE.LIN_DRAG;
     this.x+=this.vx*dt; this.y+=this.vy*dt; this.z+=this.vz*dt;
 
-    /* ---- torque. A pod that fires lifts its own corner. ---- */
+    /* ---- torque. A pod that fires lifts its OWN corner. ----
+
+       Both signs were inverted here, and the comment claimed otherwise, so
+       the flame and the rotation disagreed: pressing the front pod dipped the
+       nose, pressing the right pod dropped the right side. You could see the
+       thruster fire on one corner and watch the opposite corner rise.
+
+       The chain is worth writing down, because none of it is obvious from the
+       matrix. With yaw 0, rotMat gives:
+           pitch > 0  ->  nose DOWN,  up tilts toward +Z  ->  accelerate +Z
+           roll  > 0  ->              up tilts toward -X  ->  accelerate -X
+       So lifting the FRONT (+Z) corner has to DECREASE pitch, and lifting the
+       RIGHT (+X) corner has to INCREASE roll. Hence the signs below. */
     let tp=0, tr=0;
     for(let i=0;i<4;i++){
       if(t[i]<=0) continue;
       const a=this.noz[i], ca=Math.cos(a);
       const lift=t[i]*ca;
-      tp += THR[i].oz *  lift;   // front pod lifts the nose
-      tr += THR[i].ox * -lift;   // right pod lifts the right side
+      tp += THR[i].oz * -lift;   // the front pod lifts the nose, so pitch falls
+      tr += THR[i].ox *  lift;   // the right pod lifts the right side
     }
     this.wp=(this.wp + tp*TUNE.TORQUE*TUNE.ARM*dt)*TUNE.ANG_DAMP;
     this.wr=(this.wr + tr*TUNE.TORQUE*TUNE.ARM*dt)*TUNE.ANG_DAMP;
@@ -2117,6 +2139,18 @@ function setTxt(id,v){ const e=document.getElementById(id); e.textContent=v; ret
     c.fillRect(col*8,row*8,8,8);
   });
 })();
+
+/* A handle on the running sim, so the flight model can be checked rather than
+   watched. The signs in here are the kind of thing that looks fine in motion
+   and is exactly backwards: the torque was inverted on both axes for a while
+   and the give away was a thruster firing on one corner while the opposite
+   corner rose. From a console:
+       __bench.sim.vx, .vz     which way it is actually travelling
+       __bench.sim.pitch       positive is nose DOWN
+       __bench.sim.roll        positive tips the lift vector toward -X
+       __bench.THR             which pod each button works                */
+window.__bench = {get sim(){return sim;}, THR, PADS, TUNE,
+                  get cam(){return cam;}, get scheme(){return scheme;}};
 
 /* ---- go ---- */
 syncSchemes(); syncMap(); syncTex(); note();
