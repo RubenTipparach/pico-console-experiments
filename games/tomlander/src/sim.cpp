@@ -137,21 +137,23 @@ int32_t range_to_target(const World& world) {
 }
 
 void hull_up(const World& world, int32_t& ux, int32_t& uy, int32_t& uz) {
-    // The composed rotation is Ry(yaw) Rx(pitch) Rz(roll) with yaw fixed at
-    // zero, so the up vector is the middle column of Rx(pitch) Rz(roll):
-    //   ( -sin(roll), cos(pitch) cos(roll), sin(pitch) cos(roll) )
-    // Positive pitch is nose DOWN and tilts the lift vector toward +z;
-    // positive roll tilts it toward -x. Both of those signs are load bearing:
-    // they are what decides which way a firing pod pushes the ship, and they
-    // were inverted once, which put the thrust on the opposite corner from
-    // the flame.
+    // Positive pitch is nose UP and positive roll lifts the right side, which
+    // is the convention Renderer3D::draw_mesh uses for the same two angles.
+    // They have to be the same convention. They were not: the sim called
+    // positive pitch nose DOWN while draw_mesh raised the +z end for it, so
+    // the hull visibly tipped the opposite way to the pod that was firing.
+    // The net force was right the whole time, which is exactly why it survived
+    // a test suite that only ever asked the sim what it thought.
+    //
+    // Nose up tilts the lift vector toward -z, so uz carries a minus. Right
+    // side up tilts it toward -x, so ux does too.
     const int32_t sp = sin_fp(world.pitch >> 8);
     const int32_t cp = cos_fp(world.pitch >> 8);
     const int32_t sr = sin_fp(world.roll >> 8);
     const int32_t cr = cos_fp(world.roll >> 8);
     ux = -sr;
     uy = (cp * cr) >> 14;
-    uz = (sp * cr) >> 14;
+    uz = -((sp * cr) >> 14);
 }
 
 // ------------------------------------------------------------------ world
@@ -197,8 +199,14 @@ void resolve_throttle(const World& world, const Input& input,
         // feedback and drives the hull over instead of upright.
         const int32_t cp = -((k_level_kp * world.pitch + k_level_kd * world.wp) >> 12);
         const int32_t cr = -((k_level_kp * world.roll + k_level_kd * world.wr) >> 12);
-        out[kPodFront] = static_cast<uint8_t>(clamp_i(k_level_base - cp, 0, 255));
-        out[kPodBack]  = static_cast<uint8_t>(clamp_i(k_level_base + cp, 0, 255));
+        // Only the PITCH convention moved, so only the pitch half of this
+        // moved with it: nose up is positive now, so pulling it back down
+        // means firing the BACK pod. Roll is unchanged, and a raised right
+        // side is still pulled down by firing the LEFT pod. Flipping the roll
+        // half too, which is the easy mistake, turns the leveller into
+        // positive feedback on that axis and the hull rolls itself over.
+        out[kPodFront] = static_cast<uint8_t>(clamp_i(k_level_base + cp, 0, 255));
+        out[kPodBack]  = static_cast<uint8_t>(clamp_i(k_level_base - cp, 0, 255));
         out[kPodLeft]  = static_cast<uint8_t>(clamp_i(k_level_base - cr, 0, 255));
         out[kPodRight] = static_cast<uint8_t>(clamp_i(k_level_base + cr, 0, 255));
         return;
@@ -257,14 +265,16 @@ void world_tick(World& world, const Input& input) {
     world.z += world.vz;
 
     // ---- angular ----
-    // A pod lifts its OWN corner. Lifting the front (+z) corner has to
-    // DECREASE pitch, because positive pitch is nose down, and lifting the
-    // right (+x) corner has to INCREASE roll. Get either backwards and the
-    // flame appears on one corner while the opposite one rises.
+    // A pod lifts its OWN corner, and both angles now count the way the
+    // renderer draws them: positive pitch is nose up, positive roll is right
+    // side up. So lifting the front (+z) corner INCREASES pitch and lifting
+    // the right (+x) corner INCREASES roll, and the arm sign is the whole of
+    // it. Get either backwards and the flame lights on one corner while the
+    // opposite one rises.
     int32_t tp = 0, tr = 0;
     for (int i = 0; i < kPodCount; i++) {
         const int32_t lift = (k_pod_torque * world.throttle[i]) / 255;
-        tp -= k_pods[i].oz * lift;
+        tp += k_pods[i].oz * lift;
         tr += k_pods[i].ox * lift;
     }
     world.wp = damp(world.wp + tp);

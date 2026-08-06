@@ -358,6 +358,80 @@ void test_mesh_rendering_and_bounds() {
 // +Z nose of the model on screen, negative must drop it, and omitting the
 // argument must reproduce the unpitched image exactly. A sign error here shows
 // up on the device as a motorcycle wheelie tipping the bike onto its face.
+// Positive roll must lift the +X side, the mirror of what test_mesh_pitch
+// pins for the nose.
+//
+// Roll was added to draw_mesh without a test like this one, and the cost was
+// immediate: games/tomlander's sim adopted the OPPOSITE sign for pitch and
+// nothing caught it, because the net force it computed was right and only the
+// angle it drew the hull at was wrong. A convention nobody can look up is a
+// convention two pieces of code will disagree about, so both are written down
+// here in a form that fails when they drift.
+void test_mesh_roll() {
+    // A marker face out on the +X side, both windings so the check cannot
+    // pass or fail off backface culling.
+    static const pse::MeshVertex side_vertices[] = {
+        {256, 0, -80}, {256, 0, 80}, {256, 80, 0},
+    };
+    static const pse::MeshFace side_faces[] = {
+        {0, 1, 2, 255, 255, 255, 127, 0, 0},
+        {2, 1, 0, 255, 255, 255, -127, 0, 0},
+    };
+    static const pse::MeshData side{side_vertices, 3, side_faces, 2, 256};
+
+    auto centroid_row = [](const TestSurface& surface) {
+        long sum = 0, count = 0;
+        for (int y = 0; y < pse::k_render_height; y++) {
+            for (int x = 0; x < pse::k_render_width; x++) {
+                int r, g, b;
+                surface.pixel(x, y, r, g, b);
+                if (r || g || b) { sum += y; count++; }
+            }
+        }
+        return count > 0 ? static_cast<int>(sum / count) : -1;
+    };
+
+    auto render_at = [&](TestSurface& surface, float roll) {
+        pse::Rasterizer raster;
+        pse::Renderer3D renderer(raster);
+        raster.begin_frame(surface.target());
+        // Looking along +Z from behind, so +X is screen right and a roll
+        // moves the marker up or down the frame.
+        renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
+        renderer.draw_mesh(side, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                           255, 255, 255, 0.0f, 0, roll);
+    };
+
+    TestSurface level(pse::k_render_width, pse::k_render_height,
+                      pse::PixelFormat::rgb888);
+    TestSurface right_up(pse::k_render_width, pse::k_render_height,
+                         pse::PixelFormat::rgb888);
+    TestSurface right_down(pse::k_render_width, pse::k_render_height,
+                           pse::PixelFormat::rgb888);
+    render_at(level, 0.0f);
+    render_at(right_up, 0.8f);
+    render_at(right_down, -0.8f);
+
+    const int row_level = centroid_row(level);
+    const int row_up = centroid_row(right_up);
+    const int row_down = centroid_row(right_down);
+    CHECK(row_level >= 0 && row_up >= 0 && row_down >= 0);
+    CHECK(row_up < row_level);       // screen y grows downward: +X side rose
+    CHECK(row_down > row_level);
+
+    // And the default must be the identity, so no existing call changes.
+    TestSurface defaulted(pse::k_render_width, pse::k_render_height,
+                          pse::PixelFormat::rgb888);
+    {
+        pse::Rasterizer raster;
+        pse::Renderer3D renderer(raster);
+        raster.begin_frame(defaulted.target());
+        renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
+        renderer.draw_mesh(side, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+    CHECK(centroid_row(defaulted) == row_level);
+}
+
 void test_mesh_pitch() {
     // A single marker face out on the +Z nose, drawn with both windings so the
     // test cannot silently pass or fail off backface culling.
@@ -613,6 +687,7 @@ int main() {
     test_box_has_a_lid();
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
+    test_mesh_roll();
     test_rgb565_matches_the_sdk();
     test_memory_budget();
     test_split_matches_immediate();

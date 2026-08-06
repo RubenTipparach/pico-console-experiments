@@ -60,7 +60,10 @@ struct World {
 
     int32_t x, y, z;              // fp16
     int32_t vx, vy, vz;           // fp16 per tick
-    int32_t pitch, roll;          // fp8 angle units, positive pitch is nose DOWN
+    // fp8 angle units. Positive pitch is nose UP and positive roll lifts the
+    // right side, which is the same convention Renderer3D::draw_mesh uses, so
+    // the hull tilts on screen the way the sim says it tilts.
+    int32_t pitch, roll;
     int32_t wp, wr;               // fp8 angle units per tick
     int32_t fuel;                 // fp8
 

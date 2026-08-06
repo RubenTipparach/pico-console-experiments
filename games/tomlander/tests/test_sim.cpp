@@ -125,10 +125,13 @@ void test_a_pod_lifts_its_own_corner() {
         int expect_vx;
         int expect_vz;
     };
-    // positive pitch is nose DOWN, positive roll tilts lift toward -x
+    // Positive pitch is nose UP and positive roll is right side up, the same
+    // convention draw_mesh draws with. The velocity column is what did NOT
+    // change when that convention was fixed: the net force was always right,
+    // and only the sign the hull was drawn at was wrong.
     const Case cases[] = {
-        {tl::kPodFront, -1,  0,  0, -1},   // nose up, slides back
-        {tl::kPodBack,  +1,  0,  0, +1},   // nose down, slides forward
+        {tl::kPodFront, +1,  0,  0, -1},   // nose up, slides back
+        {tl::kPodBack,  -1,  0,  0, +1},   // nose down, slides forward
         {tl::kPodRight,  0, +1, -1,  0},   // right side up, slides left
         {tl::kPodLeft,   0, -1, +1,  0},   // left side up, slides right
     };
@@ -184,9 +187,9 @@ void test_up_vector_follows_the_hull() {
     tl::hull_up(world, ux, uy, uz);
     CHECK(ux == 0 && uz == 0 && uy == tl::k_trig_one);   // level
 
-    world.pitch = (tl::k_turn / 8) << 8;                 // 45 deg nose down
+    world.pitch = (tl::k_turn / 8) << 8;                 // 45 deg nose UP
     tl::hull_up(world, ux, uy, uz);
-    CHECK(uz > 0);                                       // lift leans forward
+    CHECK(uz < 0);                                       // lift leans backward
 
     world.pitch = 0;
     world.roll = (tl::k_turn / 8) << 8;

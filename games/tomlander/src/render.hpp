@@ -32,6 +32,14 @@ struct FrameStats {
     // The target deck's projected centre, and whether it landed on screen.
     int16_t pad_x, pad_y;
     bool pad_visible;
+    // Which way each pod's plume walked across the screen, in 1/64ths of a
+    // unit vector, or 0,0 for a pod that was not lit. Reported because the
+    // flames are plotted straight into the framebuffer rather than going
+    // through the triangle queue, so nothing downstream can see where they
+    // pointed, and they pointed the wrong way once already: a plume is aimed
+    // along the hull's own down axis, and it used to fall vertically out of a
+    // tilted nozzle.
+    int8_t flame_ax[tl::kPodCount], flame_ay[tl::kPodCount];
 };
 FrameStats last_frame_stats();
 

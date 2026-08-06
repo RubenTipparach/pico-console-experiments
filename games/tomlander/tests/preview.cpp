@@ -198,6 +198,71 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The flame promise. A plume leaves along the hull's own down axis, so
+    // rolling the ship has to lean every plume the same way across the
+    // screen. This is worth pinning because the flames never reach the
+    // triangle queue and never reach a test either: they are plotted straight
+    // into the framebuffer, and a plume falling vertically out of a tilted
+    // nozzle looks close enough to right in a still frame to survive.
+    {
+        tl::World tilted;
+        tl::world_init(tilted);
+        tilted.grounded = false;
+        tilted.y += 40 << 16;
+        for (int i = 0; i < tl::kPodCount; i++) tilted.throttle[i] = 255;
+
+        // The lean that separates a rolled hull from perspective convergence,
+        // in the same 1/64ths FrameStats reports. A level ship comes in under
+        // it, a 30 degree roll well over.
+        const int k_lean = 16;
+
+        struct Case { int32_t roll_deg; const char* name; };
+        const Case cases[] = {
+            {0, "level"},
+            {30, "rolled right, +X side up"},
+            {-30, "rolled left, -X side up"},
+        };
+        for (const Case& c : cases) {
+            tilted.roll = ((tl::k_turn * c.roll_deg) / 360) << 8;
+            draw(tilted, 0.0f, "");
+            const tlr::FrameStats s = tlr::last_frame_stats();
+            std::printf("flame, %s: aim", c.name);
+            for (int i = 0; i < tl::kPodCount; i++) {
+                std::printf(" (%d,%d)", s.flame_ax[i], s.flame_ay[i]);
+            }
+            std::printf("\n");
+            for (int i = 0; i < tl::kPodCount; i++) {
+                if (s.flame_ay[i] <= 0) fail("a plume must run down the hull");
+                if (c.roll_deg > 0 && s.flame_ax[i] <= k_lean) {
+                    fail("rolling right must lean the plumes right");
+                }
+                if (c.roll_deg < 0 && s.flame_ax[i] >= -k_lean) {
+                    fail("rolling left must lean the plumes left");
+                }
+            }
+            // A level ship's plumes are near vertical but not exactly: a
+            // world vertical line off the centre of the screen converges
+            // toward the vanishing point under perspective, and that is the
+            // projection being right rather than the aim being wrong. What
+            // has to hold is that the lean is small and that the two side
+            // pods converge by the same amount in opposite directions.
+            if (c.roll_deg == 0) {
+                for (int i = 0; i < tl::kPodCount; i++) {
+                    if (s.flame_ax[i] > k_lean || s.flame_ax[i] < -k_lean) {
+                        fail("a level ship's plumes must run near vertical");
+                    }
+                }
+                if (s.flame_ax[tl::kPodRight] != -s.flame_ax[tl::kPodLeft]) {
+                    fail("a level ship's side plumes must converge evenly");
+                }
+                if (s.flame_ax[tl::kPodFront] != 0 ||
+                    s.flame_ax[tl::kPodBack] != 0) {
+                    fail("a level ship's centred plumes must not lean");
+                }
+            }
+        }
+    }
+
     std::printf("worst frame: %u triangles, %u dropped\n",
                 static_cast<unsigned>(g_worst_queued),
                 static_cast<unsigned>(g_worst_dropped));
