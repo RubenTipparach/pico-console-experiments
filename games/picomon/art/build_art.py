@@ -97,9 +97,9 @@ PALETTES = {
 #
 # Ours, one row shorter overall:
 #
-#   rows  0 .. 11    head: hair dome 0-6, face 7-11, eyes on 8 and 9
-#   rows  7 .. 16    body: arms beside the face and down the flanks, torso
-#                    core 8 wide between the arm seams from row 12
+#   rows  0 .. 12    head: hair dome 0-7, face 8-12, eyes on 9 and 10
+#   rows  8 .. 16    body: arms beside the face and down the flanks, four
+#                    torso rows from 13, May's own count
 #   rows 17 .. 19    legs
 #
 # Five rows of overlap, 7 to 11: the arm columns (0-1 and 12-13) are outside
@@ -122,9 +122,9 @@ PALETTES = {
 # which has none.
 
 W, H = 14, 20
-HEAD_H = 12
-BODY_TOP = 7
-BODY_H = 10
+HEAD_H = 13
+BODY_TOP = 8
+BODY_H = 9
 LEGS_TOP = 17
 LEGS_H = 3
 
@@ -135,6 +135,7 @@ HEAD = {
         "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhsssssShhk.",
@@ -156,6 +157,7 @@ HEAD = {
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
         "...khhhhhhk...",
         "....kkkkkk....",
     ],
@@ -166,6 +168,7 @@ HEAD = {
         "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhssssSk..",
@@ -182,6 +185,7 @@ HEAD = {
         "..khhhhhhhhk..",
         ".khhhhhhhhhhk.",
         ".khHHhhhhhhhk.",
+        ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhsssssShhk.",
@@ -201,6 +205,7 @@ HEAD = {
         ".kkRRRRRRRRkk.",
         ".khsssssssShk.",
         ".khsssssssShk.",
+        ".khsssssssShk.",
         ".khssessesShk.",
         ".khssessesShk.",
         "...ksssssSk...",
@@ -217,6 +222,7 @@ HEAD = {
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
         ".khhhhhhhhhhk.",
+        ".khhhhhhhhhhk.",
         "...khhhhhhk...",
         "....kkkkkk....",
     ],
@@ -226,6 +232,7 @@ HEAD = {
         ".....kkkk.....",
         "...kkcccckk...",
         "..kccwwccck...",
+        ".kcccccccccck.",
         ".kcccccccccck.",
         ".kkhhhhhhhhkk.",
         ".khsssssssShk.",
@@ -238,15 +245,11 @@ HEAD = {
     ],
 }
 
-# Bodies run rows 7 to 16. The arm is a sleeved strip at the frame's flanks
-# with a skin hand at the wrist, and its top rows sit BEHIND the face, which
-# is twelve wide there, so the visible arm begins exactly where the chin
-# tapers. A bare skin arm was tried first, the reference's own choice, and at
-# our palette it merged with the face into one unbroken run of skin down the
-# side of the head: Brendan gets away with it because his arm skin is a
-# different tone from his face. The sleeve is the colour break that does the
-# same job in a fifteen colour budget. The connector row at the chin keeps
-# the arm attached to the head's outline.
+# Bodies run rows 8 to 16: four rows of arm behind the face, the connector
+# at the chin, then a four row torso, May's own count. The arm is a sleeved
+# strip at the flanks with a skin hand at the wrist; its top rows sit BEHIND
+# the face, so the visible arm begins exactly where the chin tapers and
+# shoulders at the ears are structurally impossible.
 BODY = {
     "hero.front": {
         "mid": [
@@ -256,8 +259,7 @@ BODY = {
             ".kc........ck.",
             ".kck......kck.",
             ".kckcccccckck.",
-            ".kckcwwwwckck.",
-            ".kskccccccksk.",
+            ".kskcwwwwcksk.",
             "..kkcccccckk..",
             "...kCCCCCCk...",
         ],
@@ -269,7 +271,6 @@ BODY = {
             ".kck......kck.",
             ".kckcccccckck.",
             ".kckcwwwwckck.",
-            ".kckcccccckck.",
             ".kskccccccksk.",
             "..kkCCCCCCkk..",
         ],
@@ -279,9 +280,8 @@ BODY = {
             ".kc........ck.",
             ".kc........ck.",
             ".kck......kck.",
-            ".kckcccccckck.",
-            ".kskcwwwwcksk.",
-            "..kkcccccckk..",
+            ".kskccccccksk.",
+            "..kkcwwwwckk..",
             "...kcccccck...",
             "...kCCCCCCk...",
         ],
@@ -294,7 +294,6 @@ BODY = {
             ".kc........ck.",
             ".kck......kck.",
             ".kckcccccckck.",
-            ".kckcccccckck.",
             ".kskccccccksk.",
             "..kkcccccckk..",
             "...kCCCCCCk...",
@@ -307,7 +306,6 @@ BODY = {
             ".kck......kck.",
             ".kckcccccckck.",
             ".kckcccccckck.",
-            ".kckcccccckck.",
             ".kskccccccksk.",
             "..kkCCCCCCkk..",
         ],
@@ -317,7 +315,6 @@ BODY = {
             ".kc........ck.",
             ".kc........ck.",
             ".kck......kck.",
-            ".kckcccccckck.",
             ".kskccccccksk.",
             "..kkcccccckk..",
             "...kcccccck...",
@@ -334,8 +331,7 @@ BODY = {
             "...........ck.",
             "..........kck.",
             "..kCcccccckck.",
-            "..kCcwwwwckck.",
-            "..kCccccccksk.",
+            "..kCcwwwwcksk.",
             "..kkcccccckk..",
             "...kCCCCCCk...",
         ],
@@ -347,7 +343,6 @@ BODY = {
             "..........kck.",
             "..kCcccccckck.",
             "..kCcwwwwckck.",
-            "..kCcccccckck.",
             "..kCccccccksk.",
             "...kCCCCCCkk..",
         ],
@@ -357,9 +352,8 @@ BODY = {
             "...........ck.",
             "...........ck.",
             "..........kck.",
-            "..kCcccccckck.",
-            "..kCcwwwwcksk.",
-            "..kkcccccckk..",
+            "..kCccccccksk.",
+            "..kCcwwwwckk..",
             "..kCcccccck...",
             "...kCCCCCCk...",
         ],
@@ -372,8 +366,7 @@ BODY = {
             ".kc........ck.",
             ".kck......kck.",
             ".kckcccccckck.",
-            ".kckcwwwwckck.",
-            ".kskccccccksk.",
+            ".kskcwwwwcksk.",
             "..kkcccccckk..",
             "...kCCCCCCk...",
         ],
@@ -385,7 +378,6 @@ BODY = {
             ".kck......kck.",
             ".kckcccccckck.",
             ".kckcwwwwckck.",
-            ".kckcccccckck.",
             ".kskccccccksk.",
             "..kkCCCCCCkk..",
         ],
@@ -395,9 +387,8 @@ BODY = {
             ".kc........ck.",
             ".kc........ck.",
             ".kck......kck.",
-            ".kckcccccckck.",
-            ".kskcwwwwcksk.",
-            "..kkcccccckk..",
+            ".kskccccccksk.",
+            "..kkcwwwwckk..",
             "...kcccccck...",
             "...kCCCCCCk...",
         ],
@@ -411,9 +402,8 @@ BODY = {
             ".kc........ck.",
             ".kck......kck.",
             ".kckccwwcckck.",
-            ".kckwwwwwwkck.",
-            ".kskccwwccksk.",
-            "..kkcccccckk..",
+            ".kskwwwwwwksk.",
+            "..kkccwwcckk..",
             "...kCCCCCCk...",
         ],
         "down": [
@@ -424,8 +414,7 @@ BODY = {
             ".kck......kck.",
             ".kckccwwcckck.",
             ".kckwwwwwwkck.",
-            ".kckccwwcckck.",
-            ".kskccccccksk.",
+            ".kskccwwccksk.",
             "..kkCCCCCCkk..",
         ],
         "up": [
@@ -434,10 +423,9 @@ BODY = {
             ".kc........ck.",
             ".kc........ck.",
             ".kck......kck.",
-            ".kckccwwcckck.",
-            ".kskwwwwwwksk.",
-            "..kkccwwcckk..",
-            "...kcccccck...",
+            ".kskccwwccksk.",
+            "..kkwwwwwwkk..",
+            "...kccwwcck...",
             "...kCCCCCCk...",
         ],
     },

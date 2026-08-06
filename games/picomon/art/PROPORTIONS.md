@@ -27,8 +27,8 @@ sprite pixel by pixel rather than paraphrased from memory. Brendan's facts:
 Ours, one row shorter overall:
 
 ```
-rows  0 .. 11    head: hair dome 0-6, face 7-11, eyes on rows 8 and 9
-rows  7 .. 16    body: arms at the flanks, torso core 8 wide from row 12
+rows  0 .. 12    head: hair dome 0-7, face 8-12, eyes on rows 9 and 10
+rows  8 .. 16    body: arms at the flanks, four torso rows from 13
 rows 17 .. 19    legs
 ```
 
@@ -76,7 +76,7 @@ splits finds the gap between the boots.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-11** | **7-16** | **17-19** | **20** | **12 (60%)** | overlaps | **3 (15%)** |
+| **Picomon, current** | **0-12** | **8-16** | **17-19** | **20** | **13 (65%)** | overlaps | **3 (15%)** |
 
 Picomon's body row range overlaps its head's by five rows, which is why its
 columns do not add up like the others: the references' rows were read as
@@ -87,13 +87,14 @@ afternoon, on a rule of thumb rather than a measurement, and it was out in the
 direction that costs the most: at this size the head is the only part of a
 character anybody reads.
 
-**`HEAD_H 12, BODY_H 4, LEGS_H 4`**, which is 60 / 20 / 20.
+**Head 13, torso 4, legs 3**, which is May's split exactly and 65% head.
 
-That is deliberately short of the 63% average. Brendan and May spend only
-three rows on legs, but they have 21 rows to spend and we have 20, and the
-fourth leg row is what lets a stepping pose read at all (see section 3).
-13 / 4 / 3 matches May exactly and would be right only if the walk went back
-to being static.
+It took three tries to get here. 10 / 5 / 5 was a rule of thumb and read as
+a small adult. 12 / 5 / 3 measured closer but left eight rows below the
+chin, 40% of the figure against the reference's 33%, and the body read too
+tall. An earlier revision of this document claimed the step needed a fourth
+leg row; the three row step in section 3 disproved that, so there was no
+reason left to be short of the reference.
 
 ### The outline belongs to the part it outlines
 
@@ -130,9 +131,9 @@ argument for chibi proportions here. It is a legibility argument rather than
 a stylistic one: a head drawn to realistic proportion on a 20 row figure is
 about five rows, and five rows cannot hold two eyes that read as a face.
 
-The face sits LOW: eyes on rows 8 and 9 of a 12 row head, the reference's 70
-per cent, and the thing that makes a big head read as a child's head rather
-than an egg with a face in the middle. The column plan is in section 1.
+The face sits LOW: eyes on rows 9 and 10 of a 13 row head, the reference's
+70 per cent, and the thing that makes a big head read as a child's head
+rather than an egg with a face in the middle. The column plan is in section 1.
 Within the face the light always comes from the same side: the last face
 column before the hair is the shade column.
 
