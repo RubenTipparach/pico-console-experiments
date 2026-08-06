@@ -1,6 +1,7 @@
 #include "32blit.hpp"
 
 #include "pse/blit_target.hpp"
+#include "pse/game.hpp"
 
 #include "render.hpp"
 #include "sim.hpp"
@@ -11,6 +12,14 @@ using namespace blit;
 // Everything else is plain C++ against the sim and a pse::RenderTarget, which
 // is why the same code compiles for the device, for desktop, for the browser,
 // and for the host preview harness.
+//
+// A game exports one symbol, a pse::Game of three function pointers, and
+// everything else it owns has internal linkage: several games are linked into
+// the console together, so a second file scope g_world is a duplicate symbol
+// rather than a warning. The SDK's own init/update/render are written by the
+// generated standalone_main.cpp, which forwards to that symbol. Defining them
+// here as well is what took main red: it links fine into the host tests,
+// which never compile this file, and collides at the device link.
 
 namespace {
 
@@ -33,9 +42,7 @@ void save_if_safe() {
     g_world.save_pending = false;
 }
 
-}  // namespace
-
-void init() {
+void game_init() {
     set_screen_mode(ScreenMode::lores);
 
     pm::SaveData data;
@@ -48,7 +55,7 @@ void init() {
     if (have_save) pm::world_load(g_world, data);
 }
 
-void update(uint32_t time) {
+void game_update(uint32_t time) {
     (void)time;
     pm::Input in;
     in.up = (buttons & Button::DPAD_UP) != 0;
@@ -68,6 +75,11 @@ void update(uint32_t time) {
     save_if_safe();
 }
 
-void render(uint32_t time) {
+void game_render(uint32_t time) {
     pmr::render_scene(g_world, pse::target_from_screen(), time);
 }
+
+}  // namespace
+
+// The one symbol this game exports.
+PSE_GAME(picomon, game_init, game_update, game_render);

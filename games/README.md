@@ -38,6 +38,36 @@ root, not in `game.yml`: list the slug under `build:` to keep it in the
 rotation, under `hold:` to take it out, or leave it out entirely and it builds
 by default.
 
+## What a game exports
+
+One symbol, and it is not `main`. A game defines its three functions with
+names of its own and exports them with the `PSE_GAME` macro:
+
+```cpp
+namespace {
+void game_init() { ... }
+void game_update(uint32_t time) { ... }
+void game_render(uint32_t time) { ... }
+}  // namespace
+
+PSE_GAME(myslug, game_init, game_update, game_render);
+```
+
+The slug in the macro must match the directory's slug with any dashes turned
+into underscores, because that is how the generated code spells the symbol.
+
+Do **not** define the SDK's own `init`, `update` and `render`.
+`add_picosystem_game()` generates a four line `standalone_main.cpp` per game
+that writes those and forwards them to the exported symbol. Defining them
+yourself is a duplicate symbol at the device link and nothing at all before
+it, since the host tests never compile a game's SDK facing file.
+
+That indirection is what makes the console possible: several games are linked
+into one binary, so only one of them can own a global called `init`, and
+everything else a game owns belongs in an anonymous namespace for the same
+reason. `tools/tests/test_game_entry.py` walks every game and checks both
+halves of this, because the last game to get it wrong took main red.
+
 ## The mini tutorial
 
 Every game that ships to the web ships a tutorial on its own page: what the
