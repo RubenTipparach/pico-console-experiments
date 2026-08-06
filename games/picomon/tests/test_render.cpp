@@ -307,6 +307,85 @@ void test_an_interior_tree_is_drawn() {
           "flat tile and no sprite palette entry could have produced");
 }
 
+
+// Tall grass grows blades. The encounter tile used to be nothing but a
+// darker ground colour, so the one tile the game is about looked like lawn.
+// The blade colours are unique to the grass, so these counts cannot be
+// satisfied by trees, ground or sprites.
+int count_blades(const Frame& f) {
+    int n = 0;
+    for (int y = 0; y < k_h; y++) {
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* p = f.at(x, y);
+            if ((p[0] == 0x22 && p[1] == 0x88 && p[2] == 0x33) ||
+                (p[0] == 0x55 && p[1] == 0xBB && p[2] == 0x55)) n++;
+        }
+    }
+    return n;
+}
+
+pm::World on_route(int tx, int ty) {
+    pm::World w = fresh();
+    w.zone = pm::zone_route1;
+    w.mode = pm::Mode::Overworld;
+    w.fade = 0;
+    w.tx = int8_t(tx);
+    w.ty = int8_t(ty);
+    return w;
+}
+
+void test_tall_grass_grows_blades() {
+    pm::World w = on_route(11, 6);       // on the path beside the west patch
+    Frame f;
+    render(w, f, 0);
+    const int n = count_blades(f);
+    std::printf("  grass: %d blade pixels\n", n);
+    check(n > 25, "the tall grass is drawn as blades, not as a flat colour");
+}
+
+void test_the_grass_sways() {
+    pm::World w = on_route(11, 6);
+    Frame a, b;
+    render(w, a, 0);
+    render(w, b, 700);
+    int moved = 0;
+    for (int y = 0; y < k_h; y++) {
+        for (int x = 0; x < k_w; x++) {
+            const uint8_t* pa = a.at(x, y);
+            const uint8_t* pb = b.at(x, y);
+            const bool ta = pa[0] == 0x55 && pa[1] == 0xBB && pa[2] == 0x55;
+            const bool tb = pb[0] == 0x55 && pb[1] == 0xBB && pb[2] == 0x55;
+            if (ta != tb) moved++;
+        }
+    }
+    std::printf("  grass: %d tip pixels moved between two moments\n", moved);
+    check(moved > 5, "the blade tips move with time, so the field sways");
+}
+
+// The parting. Standing in the grass pushes every blade within the parting
+// radius away and flattens it, so the space the player's body takes up is
+// visibly clear. The camera is locked to the player, which is what makes
+// the feet a constant screen position: measured once at (59, 58), and if
+// the camera ever moves this fails loudly rather than drifting.
+void test_the_grass_parts_around_the_player() {
+    pm::World w = on_route(5, 6);        // standing inside the west patch
+    Frame f;
+    render(w, f, 0);
+    check(count_blades(f) > 25, "the rest of the patch still has blades");
+    int inside = 0;
+    for (int y = 55; y <= 61; y++) {
+        for (int x = 56; x <= 62; x++) {
+            const uint8_t* p = f.at(x, y);
+            if ((p[0] == 0x22 && p[1] == 0x88 && p[2] == 0x33) ||
+                (p[0] == 0x55 && p[1] == 0xBB && p[2] == 0x55)) inside++;
+        }
+    }
+    std::printf("  grass: %d blade pixels at the player's feet\n", inside);
+    check(inside == 0,
+          "no blade stands inside the parting radius, so the grass opens "
+          "around the body standing in it");
+}
+
 // The strike. Every one of these was missing: a turn resolved, a line of text
 // appeared, and nothing on screen moved, so a player could not tell a hit
 // from a miss or a strong hit from a weak one.
@@ -495,6 +574,9 @@ int main() {
     test_the_treeline_is_drawn();
     test_the_border_is_sprites_and_the_inside_is_geometry();
     test_an_interior_tree_is_drawn();
+    test_tall_grass_grows_blades();
+    test_the_grass_sways();
+    test_the_grass_parts_around_the_player();
     test_a_hit_flashes_shakes_and_drains();
     test_the_near_creature_is_the_bigger_one();
     test_battle_floor_is_solid();
