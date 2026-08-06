@@ -89,7 +89,18 @@ class Model(object):
         self.name = "model"
 
 
-def read_obj(path):
+def read_obj_geometry(path):
+    """Read a model for its shape alone, uvs optional.
+
+    The winding check works on any .obj, including the repo's own models, which
+    carry no texture coordinates at all. Keeping that separate from read_obj
+    means "is this wound the way we expect" can be asked of a file that this
+    tool would otherwise refuse.
+    """
+    return read_obj(path, require_uv=False)
+
+
+def read_obj(path, require_uv=True):
     """Read geometry, uvs and faces. Materials are not read: this tool assigns
     them, and an incoming `usemtl` is exactly the thing being replaced."""
     model = Model()
@@ -116,11 +127,14 @@ def read_obj(path):
                     verts.append(_index(bits[0], len(model.vertices),
                                         path, line_no))
                     if len(bits) < 2 or not bits[1]:
-                        raise PackError(
-                            "%s:%d: face has no texture coordinate. This tool "
-                            "reads colour out of the sheet, so every face needs "
-                            "one." % (path, line_no))
-                    uvs.append(_index(bits[1], len(model.uvs), path, line_no))
+                        if require_uv:
+                            raise PackError(
+                                "%s:%d: face has no texture coordinate. This "
+                                "tool reads colour out of the sheet, so every "
+                                "face needs one." % (path, line_no))
+                    else:
+                        uvs.append(_index(bits[1], len(model.uvs),
+                                          path, line_no))
                 if len(verts) < 3:
                     raise PackError("%s:%d: face needs 3 or more vertices"
                                     % (path, line_no))

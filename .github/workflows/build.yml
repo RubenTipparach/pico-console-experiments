@@ -67,6 +67,13 @@ jobs:
       # defines the SDK's own init/update/render compiles perfectly, passes
       # every host test, and then collides with the generated shim at the
       # device link, which is the first job on main and far too late.
+      # pack_picocad_texture is here because both of its failure modes are
+      # invisible: a picoCAD model imported without flipping its winding gets
+      # normals pointing into the hull, so it renders as a flat silhouette
+      # rather than failing, and a v flip samples the sheet upside down and
+      # picks plausible wrong colours. It also guards the assumption the whole
+      # thing rests on, that every committed model is wound the other way,
+      # which is what obj2cpp.face_normal compensates for.
       - name: Test the build tooling
         run: |
           python3 tools/tests/test_game_meta.py
@@ -75,6 +82,7 @@ jobs:
           python3 tools/tests/test_gen_gallery.py
           python3 tools/tests/test_gen_shell.py
           python3 tools/tests/test_game_entry.py
+          python3 tools/tests/test_pack_picocad_texture.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,
