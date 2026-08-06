@@ -184,8 +184,13 @@ holding up and down together for a moment comes back to the menu.
 There are no slots and nothing is relocated: the games are linked together and
 the menu calls one of them, which is how the two projects that have shipped a
 multi-game PicoSystem do it. [CONSOLE.md](CONSOLE.md) has the details and the
-RAM numbers. `build_console.bat` builds it locally; CI attaches it to every
-run as the `console` artifact.
+RAM numbers. `build_console.bat` builds it locally.
+
+CI does not build it. It is a device-only artifact that nothing on the site or
+in the tests depends on, and it was paying for a full `arm-none-eabi` toolchain
+install on every push — over 3 GB unpacked, minutes of apt on a good day and
+twenty-odd on a bad one — to produce a file nobody downloads until they are
+about to flash a board. Build it when you want to flash one.
 
 ## Building locally
 
