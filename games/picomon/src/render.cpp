@@ -717,13 +717,38 @@ void draw_battle(const World& w, uint32_t t) {
                              float(i) * 1.3f, 2.4f);
     }
 
-    // Where the two of them stand. The foe is further out than it looks like
-    // it should be: it has to clear the player's own plate, which starts at
-    // y 55, and standing it nearer put it behind the plate rather than above
-    // it. The extra distance is paid back in scale so it still reads as a
-    // creature and not as a distant speck.
+    // Where the two of them stand, and how big they are drawn.
+    //
+    // The foe is further out than it looks like it should be: it has to clear
+    // the player's own plate, which starts at y 55, and standing it nearer put
+    // it behind the plate rather than above it.
+    //
+    // The scales below are measured, not guessed. At this camera the ground is
+    // 13 pixels per world unit where the player's creature stands and 10 where
+    // the foe does, so an unscaled mesh of the same species comes out only 30
+    // percent smaller at the back. That is not enough to read as distance, and
+    // an earlier pass that paid the foe back for its distance overshot badly:
+    // the same species came out 27 px at the back against 21 at the front, so
+    // the creature further away was the bigger one on screen and the depth
+    // read backwards.
+    //
+    // These put the front one at about 32 px and the back one at about 19,
+    // which is the ratio the design mockup has and which is what makes one of
+    // them look near.
     const float foe_x = 2.5f, foe_z = 6.0f;
     const float me_x = -1.8f, me_z = 0.2f;
+    const float k_me_scale = 1.72f, k_foe_scale = 1.40f;
+
+    // Each of them stands on a rock, which is the other half of the same
+    // illusion: a creature on a mound has a ground plane under it and a
+    // silhouette against the grass behind, where a creature standing on flat
+    // green has neither. The mound's peak is where the feet go.
+    // Standing a little into the mound rather than balanced on its peak: the
+    // rock is a dome, so feet placed at the exact summit hang over the sides
+    // and the creature reads as impaled on it rather than stood on it.
+    const float k_me_mound = 1.45f, k_foe_mound = 1.05f;
+    const float me_y = 0.44f * k_me_mound * 0.55f;
+    const float foe_y = 0.44f * k_foe_mound * 0.55f;
 
     // The turn, played back.
     //
@@ -784,20 +809,22 @@ void draw_battle(const World& w, uint32_t t) {
         const Species& fs = k_species[b.foe.species];
         const float scale = float(fs.scale) / 100.0f;
         if (foe_out) {
+            g_renderer.draw_mesh(rock, foe_x, 0.0f, foe_z + 0.35f, 2.1f, k_foe_mound);
             g_renderer.draw_mesh(*mesh_for(fs.mesh),
                                  foe_x - lunge_foe * ux + shake_foe,
-                                 0.02f + bob, foe_z - lunge_foe * uz,
-                                 3.14159f, scale * 2.15f,
+                                 foe_y + bob, foe_z - lunge_foe * uz,
+                                 3.14159f, scale * k_foe_scale,
                                  fs.tint_r, fs.tint_g, fs.tint_b, 0.0f,
                                  uint8_t(flash_foe));
         }
     }
     {
         const Species& ms = k_species[me.species];
+        g_renderer.draw_mesh(rock, me_x, 0.0f, me_z + 0.45f, 0.7f, k_me_mound);
         g_renderer.draw_mesh(*mesh_for(ms.mesh),
                              me_x + lunge_me * ux + shake_you,
-                             0.02f - bob, me_z + lunge_me * uz, 0.15f,
-                             float(ms.scale) / 100.0f * 1.25f,
+                             me_y - bob, me_z + lunge_me * uz, 0.15f,
+                             float(ms.scale) / 100.0f * k_me_scale,
                              ms.tint_r, ms.tint_g, ms.tint_b, 0.0f,
                              uint8_t(flash_you));
     }
@@ -807,7 +834,7 @@ void draw_battle(const World& w, uint32_t t) {
                               ? 1.0f - float(b.timer) / 20.0f : 1.0f;
         const float bx = -1.6f + (foe_x + 1.6f) * arc;
         const float bz = -0.6f + (foe_z + 0.6f) * arc;
-        const float by = 0.4f + sinf(arc * 3.14159f) * 1.4f;
+        const float by = 0.4f + sinf(arc * 3.14159f) * 1.4f + foe_y * arc;
         g_renderer.draw_mesh(ball, bx, by, bz, float(t) * 0.01f, 1.0f);
     }
 
@@ -819,8 +846,8 @@ void draw_battle(const World& w, uint32_t t) {
         const float hz = hit_side == Battle::k_foe
                              ? foe_z - lunge_foe * uz : me_z + lunge_me * uz;
         int sx = 0, sy = 0, sd = 0;
-        if (g_renderer.project(hx, hit_side == Battle::k_foe ? 0.6f : 0.8f,
-                               hz, sx, sy, sd)) {
+        const float hy = hit_side == Battle::k_foe ? foe_y + 0.6f : me_y + 0.8f;
+        if (g_renderer.project(hx, hy, hz, sx, sy, sd)) {
             impact_burst(sx, sy, hit_k, b.fx_mult[hit_side], b.fx_type[hit_side]);
         }
     }
