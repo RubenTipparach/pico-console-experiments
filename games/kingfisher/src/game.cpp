@@ -216,10 +216,26 @@ void draw_card() {
     }
 }
 
+// A legibility patch sized to one string, drawn under it.
+//
+// The tournament readout used to sit on a panel across the full 120 pixels and
+// 17 rows deep, which is over a quarter of the 60 row sky viewport. At 2pm that
+// turned a (95,155,225) daylight blue into (37,55,88) and read as dusk: the sky
+// palette was right and the HUD was lying about it. Something still has to sit
+// behind the glyphs, because a (120,200,255) clock on that same blue is nearly
+// invisible, so each string now carries its own patch a pixel proud of itself
+// and nothing at all covers the gaps between them.
+void hud_text(const char* s, int x, int y, Pen ink) {
+    const int w = screen.measure_text(s, minimal_font).w;
+    screen.pen = Pen(8, 6, 20, 150);
+    screen.rectangle(Rect(x - 1, y - 1, w + 2, k_text_h + 2));
+    screen.pen = ink;
+    screen.text(s, minimal_font, Point(x, y));
+}
+
 // The tournament readout: which day, what it wants, what is in the boat, and
-// the time. It runs along the very top of the sky viewport, above the power
-// meter that starts at row 8, so it covers no part of either scene and never
-// meets the catch card down in the water.
+// the time. It runs along the very top of the sky viewport and never meets the
+// catch card down in the water.
 //
 // The clock is here because the day ends at midnight: a quota with no time
 // against it says how far there is to go and nothing about how long there is
@@ -233,9 +249,6 @@ void draw_tour_hud() {
     // and read as a wall of digits.
     constexpr int k_line1 = 1;
     constexpr int k_line2 = k_line1 + k_text_h + 2;
-    const int bar_h = k_line2 + k_text_h + 2;
-    screen.pen = Pen(8, 6, 20, 170);
-    screen.rectangle(Rect(0, 0, k_screen_w, bar_h));
 
     // 12 hour clock, hours only. The hour is the unit the day is worth
     // reading in: 18 of them, each a few seconds of play, and a minute field
@@ -255,12 +268,10 @@ void draw_tour_hud() {
     // Line one: the day, and the clock hard against the right edge.
     snprintf(line, sizeof(line), "DAY %d/%d", g_world.tour_day,
              kf::k_tour_days);
-    screen.pen = Pen(255, 220, 90);
-    screen.text(line, minimal_font, Point(k_left, k_line1));
+    hud_text(line, k_left, k_line1, Pen(255, 220, 90));
 
     const int clock_w = screen.measure_text(clock, minimal_font).w;
-    screen.pen = Pen(120, 200, 255);
-    screen.text(clock, minimal_font, Point(k_right - clock_w, k_line1));
+    hud_text(clock, k_right - clock_w, k_line1, Pen(120, 200, 255));
 
     // Line two: the day's target and what is against it, under the day it
     // belongs to. Left justified so the leading digit sits at a fixed x and
@@ -271,8 +282,8 @@ void draw_tour_hud() {
              static_cast<unsigned>((g_world.tour_today_g % 1000) / 10),
              static_cast<unsigned>(g_world.tour_target_g / 1000),
              static_cast<unsigned>((g_world.tour_target_g % 1000) / 10));
-    screen.pen = made ? Pen(120, 255, 170) : Pen(230, 230, 240);
-    screen.text(line, minimal_font, Point(k_left, k_line2));
+    hud_text(line, k_left, k_line2,
+             made ? Pen(120, 255, 170) : Pen(230, 230, 240));
 }
 
 // The day result, and the end of a run. One panel, because all three say the

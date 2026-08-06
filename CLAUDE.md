@@ -491,6 +491,28 @@ from a stale base ships code that was never built against what main has
 become, and the preview it deploys tests yesterday's repo with today's
 change. Never force push over commits that are not already merged into main.
 
+### 15. Do not poll for what an event already delivers
+
+A session that opens a PR is subscribed to that PR's activity, and merges,
+closes, reviews and comments arrive on their own as webhook events. Do not
+also schedule a recurring wake-up to go and look. Each firing spends a whole
+turn reading state that has not changed, reports "no change" and arms the
+next one, and an afternoon of that is a wall of nothing with a real reply
+buried somewhere in it.
+
+The usual defence of a fallback poll is that webhooks deliver CI results
+unreliably. That defence does not apply here: this repo does not build pull
+requests (rule 4), so a PR has no checks to watch. Whatever a poll could see
+on a PR, the webhook was already going to deliver.
+
+What is worth watching is a run actually in flight: a dispatch, or the push
+build a merge kicks off. Watch that one until it reaches a conclusion, say
+what happened, and stop. Do not leave a heartbeat armed once the thing it was
+watching has finished. If a fallback really is wanted because something
+outside GitHub could go quiet, arm one long timer rather than a chain of
+hourly ones, and write into it the specific condition that would make waking
+up worthwhile.
+
 ## Before you open a PR
 
 - The branch is freshly synced with main (rule 14).
