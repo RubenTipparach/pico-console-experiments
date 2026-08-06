@@ -1,0 +1,344 @@
+/* Cartridge shelf.
+ *
+ * Every colour is exactly representable in the console's own ARGB4444
+ * framebuffer: each hex pair is a repeated nibble, so the page is painted in
+ * the same 4096 colours the games are.
+ *
+ * Single theme on purpose. This is an arcade cabinet, not a document, and a
+ * light mode version of a CRT is a worse thing than a CRT. */
+
+:root {
+  --ground: #110011;
+  --panel: #221133;
+  --panel-lit: #332255;
+  --ink: #ffffee;
+  --muted: #9988bb;
+  --line: #553377;
+  --accent: #ff2266;
+  --accent-dim: #991144;
+  --play: #22ffaa;
+  --device: #ffcc22;
+
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* The marquee is the one thing on the page that is not a readout, so it is
+     the one thing not set in the code face. Weight 900 picks up SF Pro Black
+     on Apple and Segoe UI Black on Windows, with Arial Black as the floor:
+     a heavy poster face everywhere, and no webfont to fetch. */
+  --display: system-ui, -apple-system, "Segoe UI", "Arial Black",
+             "Helvetica Neue", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 5rem;
+  background: var(--ground);
+  /* Faint vertical glow behind the shelf, like cabinet backlighting. */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, #33115533 0%, #11001100 70%);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: none;
+}
+
+.wrap {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---- marquee ---- */
+
+.marquee {
+  border-bottom: 4px solid var(--accent);
+  background:
+    repeating-linear-gradient(90deg, #22113300 0 6px, #33225533 6px 7px),
+    linear-gradient(180deg, #331155 0%, #220b33 100%);
+  padding: 2.25rem 1.25rem 1.75rem;
+  margin-bottom: 2.5rem;
+  text-align: center;
+}
+
+.marquee h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2.25rem, 8vw, 4.25rem);
+  font-weight: 900;
+  /* A heavy face wants to be set tight. The old 0.12em was there to stop a
+     mono face reading as a filename, which is not a problem this one has. */
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--ink);
+  /* One hard offset shadow, no blur and no colour split. The red and blue
+     ghosts either side used to read as a broken signal rather than a lit
+     sign, and at this weight the letterforms carry the sign on their own.
+     The accent still frames the marquee, along its bottom rule. */
+  text-shadow: 0 4px 0 #00000099;
+  text-wrap: balance;
+}
+
+.marquee p {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+}
+
+.marquee .stats {
+  margin-top: 0.5rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- shelf ---- */
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1.5rem;
+}
+
+.cart {
+  background: var(--panel);
+  /* Chunky stepped border, drawn rather than rounded. */
+  border: 3px solid var(--line);
+  border-bottom-width: 6px;
+  box-shadow: 0 0 0 3px var(--ground), 0 10px 0 -3px #00000066;
+  display: flex;
+  flex-direction: column;
+  transition: transform 120ms steps(3), border-color 120ms steps(3);
+}
+
+.cart:hover, .cart:focus-within {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+}
+
+/* ---- screen ---- */
+
+.screen {
+  position: relative;
+  aspect-ratio: 1;                 /* the console's real 240x240 */
+  background: #000011;
+  border-bottom: 3px solid var(--line);
+  overflow: hidden;
+}
+
+.screen img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.screen .pending {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  justify-items: center;
+  background:
+    repeating-linear-gradient(45deg, #221133 0 8px, #2a1840 8px 16px);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* ---- card body ---- */
+
+.body {
+  padding: 0.9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.cart h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.blurb {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.tag {
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.4rem;
+  border: 2px solid currentColor;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.tag.web { color: var(--play); }
+.tag.device { color: var(--device); }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.625rem;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.controls span {
+  border: 1px solid var(--line);
+  background: var(--ground);
+  padding: 0.1rem 0.35rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.45rem 0.75rem;
+  border: 2px solid var(--line);
+  background: var(--panel-lit);
+  color: var(--ink);
+  transition: background 100ms steps(2);
+}
+
+.btn:hover { background: var(--line); }
+.btn:focus-visible { outline: 3px solid var(--play); outline-offset: 2px; }
+
+.btn.play {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffee;
+  flex: 1;
+  text-align: center;
+}
+
+.btn.play:hover { background: var(--accent-dim); }
+
+/* ---- footer ---- */
+
+.shelf-footer {
+  margin-top: 3rem;
+  border-top: 3px solid var(--line);
+  padding-top: 1.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+}
+
+.shelf-footer a { color: var(--play); }
+
+kbd {
+  font-family: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0 0.3rem;
+  color: var(--ink);
+}
+
+.empty {
+  border: 3px dashed var(--line);
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.8125rem;
+}
+
+/* ---- the archive ---- */
+
+.archive-link {
+  margin: 2.5rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+/* A list, not a shelf. Held games are not choices any more, so they get a
+   line each instead of a cartridge with a picture on it. */
+.archive-list {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.archived-row {
+  background: var(--panel);
+  border: 3px solid var(--line);
+  border-bottom-width: 5px;
+  box-shadow: 0 0 0 3px var(--ground);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.archived-row h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.archived-row .actions { padding-top: 0.2rem; }
+.archived-row .btn.play { flex: 0 0 auto; }
+
+.shelf-footer code {
+  font-family: inherit;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cart, .btn { transition: none; }
+  .cart:hover, .cart:focus-within { transform: none; }
+}
