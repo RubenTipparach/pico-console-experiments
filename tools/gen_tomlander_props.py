@@ -45,8 +45,21 @@ class Mesh:
 
     def __init__(self):
         self.verts = []
-        self.faces = []          # (material, [index, ...])
+        self.faces = []          # (material, [index, ...], [uv, ...] or None)
         self._index = {}
+        self.uvs = []
+        self._uv_index = {}
+
+    def vt(self, u, v):
+        key = (round(u, 5), round(v, 5))
+        if key not in self._uv_index:
+            self.uvs.append(key)
+            self._uv_index[key] = len(self.uvs)
+        return self._uv_index[key]
+
+    @property
+    def textured(self):
+        return any(f[2] is not None for f in self.faces)
 
     def v(self, x, y, z):
         key = (round(x, 5), round(y, 5), round(z, 5))
@@ -55,13 +68,19 @@ class Mesh:
             self._index[key] = len(self.verts)
         return self._index[key]
 
-    def quad(self, material, a, b, c, d):
+    def quad(self, material, a, b, c, d, uvs=None):
         # Reversed on the way in. The corner lists below are written counter
         # clockwise seen from outside, which is the ordinary convention and the
         # readable one; this repo's models are the other way round (tom.obj and
         # pad.obj both come out at a negative signed volume), so the flip
         # happens once here rather than in twenty hand ordered tuples.
-        self.faces.append((material, [self.v(*p) for p in (d, c, b, a)]))
+        corners = [self.v(*p) for p in (d, c, b, a)]
+        tex = None
+        if uvs is not None:
+            # Reversed alongside the corners, or the picture ends up mirrored
+            # against the geometry it is stuck to.
+            tex = [self.vt(*t) for t in (uvs[3], uvs[2], uvs[1], uvs[0])]
+        self.faces.append((material, corners, tex))
 
     def box(self, material, x0, y0, z0, x1, y1, z1, skip=()):
         """An axis aligned box, every face wound outward."""
@@ -85,18 +104,24 @@ class Mesh:
         for x, y, z in self.verts:
             lines.append(f"v {x:.6f} {y:.6f} {z:.6f}")
         current = None
-        for material, idx in self.faces:
+        for u, v in self.uvs:
+            lines.append(f"vt {u:.6f} {v:.6f}")
+        for material, idx, tex in self.faces:
             if material != current:
                 lines.append(f"usemtl {material}")
                 current = material
-            lines.append("f " + " ".join(str(i) for i in idx))
+            if tex is None:
+                lines.append("f " + " ".join(str(i) for i in idx))
+            else:
+                lines.append("f " + " ".join(
+                    f"{i}/{t}" for i, t in zip(idx, tex)))
         path.write_text("\n".join(lines) + "\n")
 
     def signed_volume(self):
         """Six times the signed volume, by the divergence theorem over the
         triangle fan of every face. Negative is this repo's outward."""
         total = 0.0
-        for _, idx in self.faces:
+        for _, idx, _tex in self.faces:
             p = [self.verts[i - 1] for i in idx]
             for k in range(1, len(p) - 1):
                 a, b, c = p[0], p[k], p[k + 1]
@@ -106,7 +131,7 @@ class Mesh:
         return total
 
     def triangles(self):
-        return sum(len(idx) - 2 for _, idx in self.faces)
+        return sum(len(idx) - 2 for _, idx, _tex in self.faces)
 
 
 # ---- the crate -------------------------------------------------------------
@@ -155,55 +180,64 @@ def build_block():
     return m
 
 
-# ---- a banded tower --------------------------------------------------------
+# ---- a plain tower, with its detail in a texture --------------------------
 #
-# The "textured" one. Its facade is cut into horizontal bands and the window
-# bands are their own faces with their own colour, so the detail is real
-# geometry rather than a picture, which is the only kind of detail an engine
-# with no texture mapping can have.
+# This used to be a banded facade: five bands on four walls, 42 triangles, of
+# which 32 were slivers covering about twenty pixels each. A sliver is the
+# worst thing a scanline rasterizer can be handed. It pays the whole per
+# triangle bill (a bounding box, three edge setups, three divides for the
+# reciprocal depths) plus three software float vertex transforms, and then
+# fills almost nothing.
 #
-# Five bands, four walls, plus a roof and a parapet: 44 triangles. That is a
-# quarter of what the ship costs, so a valley can hold a few of them.
+# The same facade as a texture is one quad per wall. 42 triangles down to 10,
+# and the detail actually went UP, because a picture can have windows in
+# columns as well as rows and geometry at this budget could not.
+#
+# UVs run 0..1 across each wall, the whole picture on the whole wall.
+
+TOWER_HEIGHT = 5.0
+
+# The texture covers the WHOLE wall, once. That is a hard limit rather than a
+# choice: a ScreenTriangle carries u and v as one byte each, 0..255 across the
+# texture, so the span between two corners can express exactly one repeat.
+# Asking for four made the v bytes run 255 down to 3, which is one texel of
+# travel, and the windows came out as vertical stripes running the full height
+# of the building. So facade.png holds all four storeys and the wall maps
+# 0..1 onto it.
+TOWER_STOREYS = 1
+
 
 def build_tower():
     m = Mesh()
-    bands = [(mat, a * TOWER_HEIGHT, b * TOWER_HEIGHT) for mat, a, b in (
-        ("concrete", 0.00, 0.10),
-        ("window",   0.10, 0.36),
-        ("concrete", 0.36, 0.46),
-        ("window",   0.46, 0.72),
-        ("concrete", 0.72, 1.00),
-    )]
-    for material, y0, y1 in bands:
-        # The window bands are inset, so the concrete ones read as floor slabs
-        # standing proud of them and the building gains a silhouette.
-        #
-        # Inset in the wall's OWN normal direction only, never sideways. Doing
-        # both left a 0.07 by 0.07 notch at each of the four corners of every
-        # window band with no face in it at all, and at 120 pixels that is a
-        # thin vertical slot of sky straight through the building. Held at the
-        # full width the neighbouring walls cross inside the corner instead,
-        # which is invisible and costs nothing. Two walls overlapping is
-        # cheaper than two walls not quite meeting.
-        d = 0.0 if material == "concrete" else 0.07
-        for name, corners in {
-            "back":  ((-1.0, y0, -1.0 + d), (-1.0, y1, -1.0 + d),
-                      (1.0, y1, -1.0 + d), (1.0, y0, -1.0 + d)),
-            "front": ((1.0, y0, 1.0 - d), (1.0, y1, 1.0 - d),
-                      (-1.0, y1, 1.0 - d), (-1.0, y0, 1.0 - d)),
-            "left":  ((-1.0 + d, y0, 1.0), (-1.0 + d, y1, 1.0),
-                      (-1.0 + d, y1, -1.0), (-1.0 + d, y0, -1.0)),
-            "right": ((1.0 - d, y0, -1.0), (1.0 - d, y1, -1.0),
-                      (1.0 - d, y1, 1.0), (1.0 - d, y0, 1.0)),
-        }.items():
-            del name
-            m.quad(material, *corners)
-    m.quad("roof", (-1.0, TOWER_HEIGHT, -1.0), (-1.0, TOWER_HEIGHT, 1.0),
-           (1.0, TOWER_HEIGHT, 1.0), (1.0, TOWER_HEIGHT, -1.0))
+    h = TOWER_HEIGHT
+    t = float(TOWER_STOREYS)
+    # (name, four corners counter clockwise from outside, four uvs)
+    walls = [
+        ("back",  ((-1, 0, -1), (-1, h, -1), (1, h, -1), (1, 0, -1)),
+                  ((0, 0), (0, t), (1, t), (1, 0))),
+        ("front", ((1, 0, 1), (1, h, 1), (-1, h, 1), (-1, 0, 1)),
+                  ((0, 0), (0, t), (1, t), (1, 0))),
+        ("left",  ((-1, 0, 1), (-1, h, 1), (-1, h, -1), (-1, 0, -1)),
+                  ((0, 0), (0, t), (1, t), (1, 0))),
+        ("right", ((1, 0, -1), (1, h, -1), (1, h, 1), (1, 0, 1)),
+                  ((0, 0), (0, t), (1, t), (1, 0))),
+    ]
+    for _name, corners, uvs in walls:
+        m.quad("lit", *corners, uvs=uvs)
+    # The roof samples one flat patch of the texture rather than a window band,
+    # so it reads as a roof and not as a facade lying on its back.
+    m.quad("lit", (-1, h, -1), (-1, h, 1), (1, h, 1), (1, h, -1),
+           uvs=((0.02, 0.02), (0.02, 0.06), (0.06, 0.06), (0.06, 0.02)))
     return m
 
 
+# `lit` is white on purpose. A textured face multiplies its texel by its vertex
+# colour, and the vertex colour already carries the lambert, so a grey face
+# colour under a grey texture darkens twice and the building comes out nearly
+# black. White here means the texture is the colour and the lighting is the
+# only thing modulating it.
 MATERIALS = [
+    ("lit",       (255, 255, 255)),
     ("crate",     (194, 112, 58)),
     ("crate_top", (156, 86, 42)),
     ("strap",     (72, 62, 54)),

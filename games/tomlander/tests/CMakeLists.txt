@@ -23,8 +23,15 @@ add_test(NAME tomlander_sim_tests COMMAND tomlander_sim_tests)
 # own render.cpp, so it needs the game's own model list: keeping a second copy
 # here is what left a header ungenerated and main red once already.
 include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../textures.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/texture.cmake)
 
 set(tomlander_models "")
+foreach(picture ${tomlander_texture_files})
+    add_texture(tomlander
+        ${CMAKE_CURRENT_SOURCE_DIR}/../assets/${picture} tomlander_models)
+endforeach()
+
 foreach(model ${tomlander_model_files})
     # The SLUG, not the target: the preview compiles the same render.cpp the
     # device does, so the model has to land in the namespace that source names.

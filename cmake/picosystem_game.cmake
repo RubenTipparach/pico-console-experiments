@@ -1,4 +1,5 @@
-# add_picosystem_game(<name> SOURCES ... [MODELS ...] [ASSETS <file>] [DEFINES ...])
+# add_picosystem_game(<name> SOURCES ... [MODELS ...] [TEXTURES ...]
+#                     [ASSETS <file>] [DEFINES ...])
 #
 # Registers one game. This is the only thing a game's CMakeLists.txt needs to
 # call: adding a game must never require editing the top level build, the
@@ -19,6 +20,7 @@ include_guard(GLOBAL)
 
 include(${CMAKE_CURRENT_LIST_DIR}/python.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/obj_model.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/texture.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/game_meta.cmake)
 
 # Our Emscripten page, used instead of the SDK's, and the tool that fills in a
@@ -48,13 +50,19 @@ foreach(required ${PICO_WEB_SHELL} ${PICO_GEN_SHELL} ${PICO_STANDALONE_MAIN})
 endforeach()
 
 function(add_picosystem_game NAME)
-    cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;DEFINES" ${ARGN})
+    cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;TEXTURES;DEFINES" ${ARGN})
 
     if(NOT GAME_SOURCES)
         message(FATAL_ERROR "add_picosystem_game(${NAME}): SOURCES is required")
     endif()
 
     set(generated_sources "")
+    # Textures before models only because both append to the same list and a
+    # stable order keeps the build's file list from churning.
+    foreach(picture ${GAME_TEXTURES})
+        add_texture(${NAME} ${picture} generated_sources)
+    endforeach()
+
     foreach(model ${GAME_MODELS})
         add_obj_model(${NAME} ${model} generated_sources)
     endforeach()

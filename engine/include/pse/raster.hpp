@@ -4,6 +4,7 @@
 
 #include "pse/config.hpp"
 #include "pse/pixel.hpp"
+#include "pse/texture.hpp"
 
 namespace pse {
 
@@ -17,6 +18,29 @@ struct ScreenTriangle {
     uint8_t r0, g0, b0;
     uint8_t r1, g1, b1;
     uint8_t r2, g2, b2;
+
+    // Texturing, optional. 0 means untextured and Gouraud shaded exactly as
+    // this always was, which is what every existing caller leaves it at.
+    // Otherwise it is a 1 based index into the table the Rasterizer was given.
+    //
+    // An INDEX and not a pointer, deliberately. A pointer is 8 bytes and forces
+    // this struct to 8 byte alignment, which took a queued triangle from 28
+    // bytes to 48 and the 640 triangle queue from 17.9 KB to 30.7 KB. Every
+    // member here is one or two bytes wide, so an index keeps the alignment at
+    // 2 and the queue at 21.8 KB, and it costs one indirection per textured
+    // triangle rather than per pixel.
+    //
+    // The texel MULTIPLIES the interpolated vertex colour rather than replacing
+    // it, so a textured face is still lit by the same lambert every other face
+    // is lit by. A texture that ignored the shading would make a building the
+    // one object in the scene with no light on it.
+    //
+    // u and v are 0..255 across the texture. A byte is enough for the sizes
+    // that fit a 120 pixel screen and it keeps the queue small.
+    uint8_t tex = 0;
+    uint8_t u0 = 0, v0 = 0;
+    uint8_t u1 = 0, v1 = 0;
+    uint8_t u2 = 0, v2 = 0;
 };
 
 // A frame's worth of collected triangles, for split rasterization across two
@@ -74,6 +98,19 @@ public:
     // Point the rasterizer at this frame's surface and clear the depth buffer.
     void begin_frame(const RenderTarget& target);
 
+    // The textures a ScreenTriangle's `tex` index resolves against. Held by
+    // the Rasterizer rather than reached for globally, so the game owns its
+    // art and the engine only renders it. Read only during a frame, which is
+    // why both split workers can share it with no lock.
+    //
+    // `table` must outlive the frame. Passing nullptr, or leaving this unset,
+    // makes every triangle untextured, which is what a game with no textures
+    // gets for free.
+    void set_textures(const Texture* table, uint8_t count) {
+        textures_ = table;
+        texture_count_ = count;
+    }
+
     // Point at the surface and route draw() into the queue. The depth buffer is
     // NOT cleared here: the split workers each clear their own rows, which
     // parallelizes the clear as well.
@@ -127,6 +164,13 @@ public:
 
     const RenderTarget& target() const { return target_; }
 
+    const Texture* texture(uint8_t index) const {
+        if (index == 0 || textures_ == nullptr || index > texture_count_) {
+            return nullptr;
+        }
+        return &textures_[index - 1];
+    }
+
 private:
     template <typename Format>
     void draw_typed(const ScreenTriangle& tri, int row_begin, int row_end);
@@ -149,6 +193,8 @@ private:
     // 14,400 bytes at the default 120x120. This is the renderer's single
     // largest RAM cost and it is deliberately static.
     uint8_t depth_[k_render_width * k_render_height];
+    const Texture* textures_ = nullptr;
+    uint8_t texture_count_ = 0;
 };
 
 }  // namespace pse

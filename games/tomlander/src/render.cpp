@@ -9,6 +9,7 @@
 #include "pse/text.hpp"
 
 #include "tomlander/block.hpp"
+#include "tomlander/facade.hpp"
 #include "tomlander/cargo.hpp"
 #include "tomlander/pad.hpp"
 #include "tomlander/tom.hpp"
@@ -31,6 +32,21 @@ pse::Renderer3D g_renderer(g_raster);
 pse::FrameQueue& g_queue = pse::shared_queue();
 
 FrameStats g_stats{};
+
+// The textures a ScreenTriangle's index resolves against. One entry, so the
+// tower's facade is index 1. The table is const and lives in flash; the
+// Rasterizer only holds a pointer to it.
+//
+// The tower used to be a banded facade: five bands on four walls, 42
+// triangles, 32 of them slivers covering about twenty pixels each. A sliver is
+// the worst case for a scanline rasterizer, paying a full bounding box, three
+// edge setups and three divides to fill almost nothing. As a texture it is one
+// quad per wall, 10 triangles, and the detail went UP, because a picture can
+// have windows in columns as well as rows.
+const pse::Texture k_textures[] = {
+    models::tomlander::facade,
+};
+constexpr uint8_t k_tex_facade = 1;   // 1 based, 0 means untextured
 
 constexpr float k_pi = 3.14159265f;
 
@@ -240,7 +256,8 @@ void draw_buildings(const World& world) {
         g_renderer.draw_mesh(b.tower ? models::tomlander::tower
                                      : models::tomlander::block,
                              x, y, z, 0.0f, static_cast<float>(b.half),
-                             b.tint, b.tint, b.tint);
+                             b.tint, b.tint, b.tint, 0.0f, 0, 0.0f,
+                             b.tower ? k_tex_facade : 0);
     }
 }
 
@@ -455,6 +472,9 @@ FrameStats last_frame_stats() { return g_stats; }
 void render_scene(const World& world, const pse::RenderTarget& target,
                   float yaw, uint32_t time_ms) {
     g_queue.reset();
+    g_raster.set_textures(k_textures,
+                          static_cast<uint8_t>(sizeof(k_textures) /
+                                               sizeof(k_textures[0])));
     g_raster.begin_frame_collect(target, g_queue);
 
     g_renderer.set_fov(k_cam_fov);

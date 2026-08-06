@@ -99,6 +99,18 @@ class Mesh:
     def __init__(self):
         self.vertices = []   # list of (x, y, z) floats
         self.faces = []      # list of (i0, i1, i2, (r, g, b))
+        self.texcoords = []  # list of (u, v) floats, from `vt`
+        self.face_uvs = []   # per face ((u,v), (u,v), (u,v)), or None
+
+    @property
+    def textured(self):
+        """True when EVERY face carried texture coordinates.
+
+        All or nothing on purpose. A mesh where some faces have `vt` and some
+        do not would need a per face flag in the renderer, and the only thing
+        that produces one is a broken export, so it is better to notice.
+        """
+        return bool(self.face_uvs) and all(u is not None for u in self.face_uvs)
 
     @property
     def triangle_count(self):
@@ -130,6 +142,14 @@ class ObjReader:
                             "%s:%d: vertex needs 3 coordinates" % (path, line_no)
                         )
                     mesh.vertices.append(tuple(float(v) for v in values[:3]))
+                elif key == "vt":
+                    if len(values) < 2:
+                        raise ObjParseError(
+                            "%s:%d: texture coordinate needs 2 values"
+                            % (path, line_no)
+                        )
+                    mesh.texcoords.append(
+                        (float(values[0]), float(values[1])))
                 elif key == "mtllib" and values:
                     self._materials.load(os.path.join(mtl_dir, " ".join(values)))
                 elif key == "usemtl" and values:
@@ -146,15 +166,42 @@ class ObjReader:
     def _add_face(self, mesh, values, material, path, line_no):
         indices = [self._vertex_index(v, len(mesh.vertices), path, line_no)
                    for v in values]
+        uvs = [self._uv_index(v, len(mesh.texcoords), path, line_no)
+               for v in values]
         if len(indices) < 3:
             raise ObjParseError("%s:%d: face needs 3 or more vertices"
                                 % (path, line_no))
         # Fan triangulation. Convex n-gons are exact, concave ones are close
         # enough for models this small, and Blender exports triangles anyway.
+        # The texture coordinates are fanned the same way, so a corner keeps
+        # its own uv through the split.
         for k in range(1, len(indices) - 1):
             mesh.faces.append(
                 (indices[0], indices[k], indices[k + 1], material.rgb)
             )
+            corners = (uvs[0], uvs[k], uvs[k + 1])
+            if any(c is None for c in corners):
+                mesh.face_uvs.append(None)
+            else:
+                mesh.face_uvs.append(
+                    tuple(mesh.texcoords[c] for c in corners))
+
+    @staticmethod
+    def _uv_index(token, count, path, line_no):
+        """The second field of a v/vt/vn face token, or None when absent."""
+        parts = token.split("/")
+        if len(parts) < 2 or not parts[1]:
+            return None
+        try:
+            index = int(parts[1])
+        except ValueError:
+            raise ObjParseError("%s:%d: bad texture index %r"
+                                % (path, line_no, token))
+        index = count + index if index < 0 else index - 1
+        if index < 0 or index >= count:
+            raise ObjParseError("%s:%d: texture index %d out of range"
+                                % (path, line_no, index))
+        return index
 
     @staticmethod
     def _vertex_index(token, vertex_count, path, line_no):
@@ -266,6 +313,23 @@ class CppEmitter:
                 i0, i1, i2, rgb[0], rgb[1], rgb[2],
                 normal[0], normal[1], normal[2]))
         out.append("};\n\n")
+
+        # Only when every face carried `vt`. An untextured model emits no uv
+        # table at all and its MeshData carries a null, so it costs nothing.
+        if mesh.textured:
+            out.append("const pse::MeshUv k_uvs[] = {\n")
+            for corners in mesh.face_uvs:
+                packed = []
+                for u, v in corners:
+                    # .obj has v running up from the bottom left; a texture is
+                    # stored top row first, so v is flipped here. Getting this
+                    # wrong mirrors every texture vertically, which on a
+                    # symmetric pattern looks like nothing is wrong at all.
+                    packed.append(self._uv_byte(u))
+                    packed.append(self._uv_byte(1.0 - v))
+                out.append("    {%d, %d, %d, %d, %d, %d},\n" % tuple(packed))
+            out.append("};\n\n")
+
         out.append("}  // namespace\n\n")
 
         out.append("const pse::MeshData %s = {\n" % self.name)
@@ -274,13 +338,15 @@ class CppEmitter:
         out.append("    k_faces,\n")
         out.append("    static_cast<uint16_t>(%d),\n" % mesh.triangle_count)
         out.append("    static_cast<int16_t>(%d),\n" % self.scale)
+        out.append("    %s,\n" % ("k_uvs" if mesh.textured else "nullptr"))
         out.append("};\n\n")
         out.append("}  // namespace %s\n" % self.namespace)
         out.append("}  // namespace models\n")
         return "".join(out)
 
     def flash_bytes(self, mesh):
-        return len(mesh.vertices) * 6 + mesh.triangle_count * 12 + 12
+        uv = mesh.triangle_count * 6 if mesh.textured else 0
+        return len(mesh.vertices) * 6 + mesh.triangle_count * 12 + uv + 16
 
     def _fixed(self, value):
         fixed = int(round(value * self.scale))
@@ -289,6 +355,16 @@ class CppEmitter:
                 "coordinate %.3f overflows int16 at scale %d. Lower --scale or "
                 "use --fit." % (value, self.scale))
         return fixed
+
+    @staticmethod
+    def _uv_byte(value):
+        """A 0..1 texture coordinate as 0..255, wrapping rather than clamping.
+
+        Wrapping keeps a coordinate outside 0..1 meaningful, which is how a
+        wall tiles a texture several times across itself without needing a
+        vertex per repeat. The rasterizer masks on the same convention.
+        """
+        return int(round(value * 255.0)) & 0xFF
 
     @staticmethod
     def _signed_byte(value):
