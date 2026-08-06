@@ -53,20 +53,50 @@ def keyboard_map(shell):
     """What each console button is on a keyboard, read out of the shell.
 
     The on-screen pad already carries the mapping, one `data-btn`/`data-dir`
-    beside its `data-key`, because that is what its buttons dispatch. Reading
-    it from there rather than writing it down again means the tutorial cannot
-    drift from what the buttons actually do: change the pad and the panels
-    follow on the next build.
+    beside its keys, because that is what its buttons dispatch. Reading it from
+    there rather than writing it down again means the tutorial cannot drift
+    from what the buttons actually do: change the pad and the panels follow on
+    the next build.
+
+    A face button carries two keys and the difference matters here. `data-key`
+    is what it dispatches, which is what the SDL build reads, and `data-kbd` is
+    what a person presses to work it. The panels are read by people, so
+    `data-kbd` wins wherever it exists. The D-pad has no `data-kbd` because the
+    arrows are already the key you press.
     """
-    pairs = re.findall(r'data-(?:btn|dir)="([a-z]+)"[^>]*?data-key="(\w+)"',
-                       shell)
     mapping = {}
-    for button, code in pairs:
+    for tag in pad_buttons(shell).values():
+        code = tag.get("kbd") or tag.get("key")
+        if not code:
+            continue
         label = KEY_LABELS.get(code)
         if label is None:
             label = code[3:] if code.startswith("Key") else code
-        mapping[button] = label
+        mapping[tag["name"]] = label
     return mapping
+
+
+def pad_buttons(shell):
+    """The pad's buttons, by console button name, with the attributes each one
+    carries.
+
+    Scoped to real `<button>` tags rather than to the attribute on its own,
+    because the shell's stylesheet selects on the same attributes: a bare
+    `data-btn="x"` matches `.face button[data-btn="x"] { ... }` first, and the
+    keys read off that are simply not there. The result was a mapping that
+    happened to come out right only because the markup is parsed after the CSS
+    and empty matches were skipped.
+    """
+    found = {}
+    for tag in re.findall(r"<button\b[^>]*>", shell):
+        attributes = dict(re.findall(r'(?:data-)?(\w+)="([^"]*)"', tag))
+        name = attributes.get("btn") or attributes.get("dir")
+        if not name:
+            continue
+        found[name] = {"name": name,
+                       "key": attributes.get("key"),
+                       "kbd": attributes.get("kbd")}
+    return found
 
 
 def keyboard_hint(text, mapping):

@@ -474,11 +474,21 @@
       <button type="button" data-dir="right" data-key="ArrowRight" aria-label="Right">&#9654;</button>
       <button type="button" data-dir="down"  data-key="ArrowDown"  aria-label="Down">&#9660;</button>
     </div>
+    <!-- Two keys per face button, and they are different things.
+         `data-key` is what the button DISPATCHES, because that is what the
+         32blit SDL build reads: z x c v are A B X Y and nothing else will do.
+         `data-kbd` is what a person PRESSES, and it is WASD laid over the
+         diamond in the positions the buttons physically sit in: X is the top
+         button so it is W, Y is the left one so it is A, B is the bottom one
+         so it is S, A is the right one so it is D. Both live here, on the
+         element, so the pad is still the single place the mapping is written
+         down and tools/gen_shell.py still reads the tutorial's keys out of
+         it. -->
     <div class="face">
-      <button type="button" data-btn="x" data-key="KeyC" aria-label="X">X</button>
-      <button type="button" data-btn="y" data-key="KeyV" aria-label="Y">Y</button>
-      <button type="button" data-btn="a" data-key="KeyZ" aria-label="A">A</button>
-      <button type="button" data-btn="b" data-key="KeyX" aria-label="B">B</button>
+      <button type="button" data-btn="x" data-key="KeyC" data-kbd="KeyW" aria-label="X">X</button>
+      <button type="button" data-btn="y" data-key="KeyV" data-kbd="KeyA" aria-label="Y">Y</button>
+      <button type="button" data-btn="a" data-key="KeyZ" data-kbd="KeyD" aria-label="A">A</button>
+      <button type="button" data-btn="b" data-key="KeyX" data-kbd="KeyS" aria-label="B">B</button>
     </div>
   </div>
 </div>
@@ -617,6 +627,59 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) releaseAll();
   });
+
+  // ---- WASD on the face buttons -------------------------------------------
+  //
+  // The SDL build already reads WASD, as a second D-pad alongside the arrows
+  // (32blit-sdl/Input.cpp). That is the mapping being replaced: on a diamond
+  // of four buttons, WASD laid over their physical positions is the mapping
+  // a person guesses without being told, and a second copy of the arrow keys
+  // is not worth the four best keys on the keyboard.
+  //
+  // Reassigning them means SDL must never see the raw press, so this listens
+  // on `window` in the CAPTURE phase and stops the event dead. Capture runs
+  // window first, and the port registers on `document`, so this is always
+  // earlier; even if that changed, this script runs inline while the wasm is
+  // still downloading, so it registers first and stopImmediatePropagation
+  // still wins. Then it presses the mapped button through the same press()
+  // the touch pad uses, so the on-screen button lights up too and there is
+  // one code path for both.
+  //
+  // z x c v keep working untouched, because those go straight to SDL and are
+  // the keys it actually reads. The synthetic events this dispatches carry
+  // those codes, and none of them is in KBD, so nothing here re-enters.
+
+  var KBD = Object.create(null);
+  document.querySelectorAll('#pad button[data-kbd]').forEach(function (button) {
+    KBD[button.getAttribute('data-kbd')] = button;
+  });
+
+  function kbdTarget(event) {
+    // Never swallow a browser shortcut: ctrl+w closes the tab, and a player
+    // who meant that should get it.
+    if (event.ctrlKey || event.metaKey || event.altKey) return null;
+    var node = event.target;
+    if (node && (node.isContentEditable || node.tagName === 'INPUT' ||
+                 node.tagName === 'TEXTAREA')) return null;
+    return KBD[event.code] || null;
+  }
+
+  window.addEventListener('keydown', function (event) {
+    var button = kbdTarget(event);
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.repeat) return;       // press() ignores repeats anyway
+    press(button.getAttribute('data-key'), button);
+  }, true);
+
+  window.addEventListener('keyup', function (event) {
+    var button = kbdTarget(event);
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    release(button.getAttribute('data-key'), button);
+  }, true);
 
   var padElement = document.getElementById('pad');
   // Block the double-tap-to-zoom and long-press-select gestures that otherwise

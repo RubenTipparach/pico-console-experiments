@@ -223,7 +223,11 @@ h3{font-size:var(--step-1);text-transform:uppercase;letter-spacing:0.06em;margin
 .btn.on{background:var(--ember);color:#1d2b53;transform:translateY(1px);box-shadow:inset 0 -1px 0 rgba(0,0,0,.3);}
 .btn[data-role="pad"].on{background:var(--signal);}
 .pad-u{grid-area:1/2}.pad-l{grid-area:2/1}.pad-r{grid-area:2/3}.pad-d{grid-area:3/2}
-.f-y{grid-area:1/2}.f-x{grid-area:2/1}.f-a{grid-area:2/3}.f-b{grid-area:3/2}
+/* The PicoSystem's diamond, taken from web/shell.html, which is the one place
+   in the repo that says where these physically sit: X top, Y left, A right,
+   B bottom. Not the Xbox arrangement, which is its mirror on the X/Y axis,
+   and which this page had until the mapping was checked against the shell. */
+.f-x{grid-area:1/2}.f-y{grid-area:2/1}.f-a{grid-area:2/3}.f-b{grid-area:3/2}
 
 .stage-note{
   font-family:"DOSVGA",monospace;font-size:var(--step--1);
@@ -409,7 +413,10 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
   <div class="sec-head"><span class="sec-num">01</span><h2>The Bench</h2></div>
   <p class="sec-dek">
     Click the screen, then fly with the keyboard, or press the drawn buttons.
-    Keys match the gallery shell exactly: A is Z, B is X, X is C, Y is V.
+    WASD sits on the face buttons in the positions they physically occupy:
+    W is X at the top, A is Y on the left, S is B at the bottom, D is A on the
+    right. The gallery shell now does the same for every game, so these keys
+    are the real ones, not a convenience for this page.
   </p>
 
   <div class="bench">
@@ -425,10 +432,10 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
           <canvas id="screen" width="120" height="120" tabindex="0" aria-label="Game screen"></canvas>
         </div>
         <div class="face">
-          <button class="btn sq f-y" data-role="face" data-btn="y" type="button" aria-label="Y">Y</button>
-          <button class="btn sq f-x" data-role="face" data-btn="x" type="button" aria-label="X">X</button>
-          <button class="btn sq f-a" data-role="face" data-btn="a" type="button" aria-label="A">A</button>
-          <button class="btn sq f-b" data-role="face" data-btn="b" type="button" aria-label="B">B</button>
+          <button class="btn sq f-x" data-role="face" data-btn="x" data-kbd="KeyW" type="button" aria-label="X">X</button>
+          <button class="btn sq f-y" data-role="face" data-btn="y" data-kbd="KeyA" type="button" aria-label="Y">Y</button>
+          <button class="btn sq f-a" data-role="face" data-btn="a" data-kbd="KeyD" type="button" aria-label="A">A</button>
+          <button class="btn sq f-b" data-role="face" data-btn="b" data-kbd="KeyS" type="button" aria-label="B">B</button>
         </div>
       </div>
       <p class="stage-note" id="stagenote">Click the screen to take the controls</p>
@@ -995,15 +1002,25 @@ const TUNE = {
   SAFE_TILT: 0.35     // radians. The original has no tilt gate at all. See 05.
 };
 
-/* Thruster order is the cross_lander order, so the demake and the real
-   game name the same pod the same thing.
-     0 RIGHT (+X) -> X      1 LEFT  (-X) -> B
-     2 FRONT (+Z) -> Y      3 BACK  (-Z) -> A                           */
+/* Thruster order is the cross_lander order, so the demake and the real game
+   name the same pod the same thing. Which button works which pod comes from
+   WASD laid over the PicoSystem's diamond in the positions the buttons
+   physically sit in, which is the same mapping web/shell.html now intercepts:
+   W is the top button X, A the left one Y, S the bottom one B, D the right
+   one A.
+     cross_lander   key   button   pod
+     Right (+X)      A      Y      lifts the right side, so the ship goes left
+     Left  (-X)      D      A      lifts the left side, so the ship goes right
+     Front (+Z)      W      X      lifts the nose
+     Back  (-Z)      S      B      lifts the tail
+   Note the side pods read backwards on purpose and the original does the
+   same: the button on the left of the diamond takes you left, which is what
+   a player means by it, even though the pod that fires is the right one. */
 const THR = [
-  {name:"RIGHT", btn:"x", ox: 1, oz: 0, lx: 4, lz: 0},
-  {name:"LEFT",  btn:"b", ox:-1, oz: 0, lx:-4, lz: 0},
-  {name:"FRONT", btn:"y", ox: 0, oz: 1, lx: 0, lz: 4},
-  {name:"BACK",  btn:"a", ox: 0, oz:-1, lx: 0, lz:-4}
+  {name:"RIGHT", btn:"y", key:"A", ox: 1, oz: 0, lx: 4, lz: 0},
+  {name:"LEFT",  btn:"a", key:"D", ox:-1, oz: 0, lx:-4, lz: 0},
+  {name:"FRONT", btn:"x", key:"W", ox: 0, oz: 1, lx: 0, lz: 4},
+  {name:"BACK",  btn:"b", key:"S", ox: 0, oz:-1, lx: 0, lz:-4}
 ];
 
 const SCHEMES = [
@@ -1016,7 +1033,7 @@ const SCHEMES = [
    detail:"Down snaps every nozzle back to vertical and goes to full burn. Fuel is always draining, so every second counts.",
    read:"Reads 'rotates' literally. The nozzle turns."},
   {id:"paired", key:"Scheme C", name:"Paired",
-   blurb:"Buttons work opposite pairs. X and B roll, Y and A pitch, each firing one pod hard and easing the other.",
+   blurb:"Buttons work opposite pairs. Y and A roll, X and B pitch, each firing one pod hard and easing the other.",
    detail:"Down levels and hovers. Closest to a flight stick, and the easiest of the three to hold a hover in.",
    read:"Treats the four pods as two axes rather than four rotors."}
 ];
@@ -1063,8 +1080,12 @@ class Sim {
       }
       if(level){ for(let i=0;i<4;i++){ this.noz[i]=Math.max(0,this.noz[i]-TUNE.NOZZLE_RATE*3*dt); t[i]=1; } }
     } else if(scheme==="paired"){
-      const roll  = (held.x?1:0)-(held.b?1:0);
-      const pitch = (held.y?1:0)-(held.a?1:0);
+      // Read through THR rather than naming buttons, so this follows the
+      // mapping instead of being a second copy of it that can go stale.
+      const bR=held[THR[0].btn]?1:0, bL=held[THR[1].btn]?1:0;
+      const bF=held[THR[2].btn]?1:0, bB=held[THR[3].btn]?1:0;
+      const roll  = bR-bL;
+      const pitch = bF-bB;
       const base  = (roll||pitch)?0.55:0;
       t[0]=base + (roll>0?0.45:0) - (roll<0?0.35:0);
       t[1]=base + (roll<0?0.45:0) - (roll>0?0.35:0);
@@ -1333,7 +1354,12 @@ let hasFocus=false;
 const held={a:false,b:false,x:false,y:false,up:false,down:false,left:false,right:false};
 const edge={};
 
-const KEYMAP={KeyZ:"a",KeyX:"b",KeyC:"x",KeyV:"y",
+/* WASD on the face buttons, in the positions they sit in. z x c v are kept
+   because they are what the SDL build reads natively and what the gallery
+   shell still dispatches underneath, so a player who knows them is not
+   suddenly wrong. */
+const KEYMAP={KeyW:"x",KeyA:"y",KeyS:"b",KeyD:"a",
+  KeyC:"x",KeyV:"y",KeyX:"b",KeyZ:"a",
   ArrowUp:"up",ArrowDown:"down",ArrowLeft:"left",ArrowRight:"right"};
 
 /* When the button follows the screen rather than the hull, the four face
@@ -1347,10 +1373,14 @@ function resolveHeld(){
   // right, left, top and bottom of the frame for that quadrant.
   const q = Math.round(cam.yaw/(Math.PI/2)) & 3;
   const rot=[[0,1,2,3],[3,2,0,1],[1,0,3,2],[2,3,1,0]];
-  const btn=["x","b","y","a"];             // frame right, left, top, bottom
   const m=rot[q];
   const o={...held};
-  for(let i=0;i<4;i++) o[THR[m[i]].btn] = held[btn[i]];
+  // Whatever a button means with the camera home, it keeps meaning as the
+  // camera turns: the button that works the right hand pod at yaw 0 works
+  // whichever pod is on the right of the frame now. Reading the buttons out
+  // of THR rather than listing them again is what keeps that true after a
+  // remap, which is exactly what just went stale here once.
+  for(let i=0;i<4;i++) o[THR[m[i]].btn] = held[THR[i].btn];
   return o;
 }
 
@@ -1377,7 +1407,8 @@ cv.addEventListener("blur", ()=>{hasFocus=false; Object.keys(held).forEach(k=>se
 cv.addEventListener("pointerdown",()=>cv.focus());
 function note(){
   document.getElementById("stagenote").textContent =
-    hasFocus ? "Z=A  X=B  C=X  V=Y  arrows=pad" : "Click the screen to take the controls";
+    hasFocus ? "W=X  A=Y  S=B  D=A  arrows orbit and pause"
+             : "Click the screen to take the controls";
 }
 
 document.querySelectorAll(".btn").forEach(b=>{
@@ -1417,31 +1448,36 @@ function syncMap(){
   mh.setAttribute("aria-pressed",String(mapMode==="hull"));
   ms.setAttribute("aria-pressed",String(mapMode==="screen"));
   document.getElementById("mapnote").textContent = mapMode==="hull"
-    ? "X is always the right hand pod"
-    : "X is always the pod on the right of the frame";
+    ? "Y is always the right hand pod"
+    : "Y is always the pod on the right of the frame";
   buildMapTable();
 }
 
 function buildMapTable(){
-  const s=SCHEMES.find(x=>x.id===scheme);
-  const act = scheme==="gimbal" ? "rotates the {} nozzle outward"
-            : scheme==="paired" ? "rolls/pitches toward {}"
-            : "fires the {} pod";
-  const rows=[
-    ["X","c", scheme==="paired"?"Roll right":act.replace("{}","right"),
-      mapMode==="hull"?"Right pod, hull fixed":"Whichever pod is on the right of the frame"],
-    ["B","x", scheme==="paired"?"Roll left":act.replace("{}","left"),
-      mapMode==="hull"?"Left pod, hull fixed":"Whichever pod is on the left of the frame"],
-    ["Y","v", scheme==="paired"?"Pitch forward":act.replace("{}","front"),
-      mapMode==="hull"?"Front pod, hull fixed":"Whichever pod is at the top of the frame"],
-    ["A","z", scheme==="paired"?"Pitch back":act.replace("{}","back"),
-      mapMode==="hull"?"Back pod, hull fixed":"Whichever pod is at the bottom of the frame"],
+  // Built from THR, so the table is the mapping rather than a description of
+  // it. The pods are listed in diamond order (top, left, right, bottom) so
+  // the table reads in the shape of the thing it is describing.
+  const order=[2,0,1,3];   // front, right, left, back
+  const where={2:"the top of the frame", 0:"the right of the frame",
+               1:"the left of the frame", 3:"the bottom of the frame"};
+  const goes={2:"Front pod, hull fixed", 0:"Right pod, hull fixed",
+              1:"Left pod, hull fixed", 3:"Back pod, hull fixed"};
+  const rows=[];
+  for(const i of order){
+    const t=THR[i];
+    let does;
+    if(scheme==="gimbal")      does="Rotates the "+t.name.toLowerCase()+" nozzle out and opens it up";
+    else if(scheme==="paired") does=(i===2?"Pitch forward":i===3?"Pitch back":i===0?"Roll left":"Roll right");
+    else                       does="Fires the "+t.name.toLowerCase()+" pod";
+    rows.push([t.btn.toUpperCase(), t.key, does,
+      mapMode==="hull" ? goes[i] : "Whichever pod is at "+where[i]]);
+  }
+  rows.push(
     ["Left","&larr;","Rotate the camera anticlockwise","The hull does not turn. Only the view."],
     ["Right","&rarr;","Rotate the camera clockwise","Same, the other way."],
     ["Up","&uarr;","Pause menu","Resume, restart, or change scheme."],
     ["Down","&darr;", scheme==="gimbal"?"Snap nozzles level and burn all four":"Level the hull and fire all four",
-      "The recovery button. Costs fuel fast."]
-  ];
+      "The recovery button. Costs fuel fast."]);
   const tb=document.getElementById("mapbody");
   tb.innerHTML = rows.map(r2=>
     '<tr><td class="k">'+r2[0]+'<span class="kbd">'+r2[1]+'</span></td><td>'+r2[2]+'</td><td>'+r2[3]+'</td></tr>'

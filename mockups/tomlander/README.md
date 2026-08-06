@@ -34,13 +34,37 @@ three answers and lets you switch between them while flying:
 - **Direct.** Hold a button, that pod burns. Four rotors, four buttons.
 - **Gimbal.** Every pod idles at hover. Holding a button rotates that nozzle
   out and opens it up, vectoring the thrust.
-- **Paired.** Buttons work opposite pairs, so X and B roll and Y and A pitch.
+- **Paired.** Buttons work opposite pairs, so Y and A roll and X and B pitch.
 
 On top of that, a toggle for whether a button follows the hull or the screen,
 which matters because left and right orbit the camera.
 
 Left and right rotate the camera, up opens the pause menu, and down levels the
 hull and fires all four. The camera sits 45 degrees above the horizontal.
+
+## The keys
+
+WASD sits on the face buttons in the positions they physically occupy on the
+PicoSystem, whose diamond is **X top, Y left, A right, B bottom**. That is not
+the Xbox arrangement, which is its mirror, and the layout here is taken from
+`web/shell.html`, the one place in the repo that says where those buttons sit.
+
+| key | button | cross_lander pod |
+| --- | --- | --- |
+| W | X, top | Front, lifts the nose |
+| A | Y, left | Right, lifts the right side so the ship goes left |
+| S | B, bottom | Back, lifts the tail |
+| D | A, right | Left, lifts the left side so the ship goes right |
+
+The side pods read backwards on purpose, and tom-lander does the same: the
+button on the left of the diamond takes you left, which is what a player means
+by it, even though the pod that fires is the right hand one.
+
+`z x c v` still work, because those are what the SDL build reads natively and
+what the gallery shell dispatches underneath.
+
+This is the same mapping the gallery shell now applies to every game, so these
+are the real keys rather than a convenience for this page.
 
 ## The flight model is not invented
 
