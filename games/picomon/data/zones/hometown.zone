@@ -3,6 +3,9 @@
 zone hometown
 name HOMETOWN
 size 24 20
+# The village is in pine country, and every outdoor zone that touches it
+# grows the same tree: one species per area reads as one place.
+trees pine
 
 tiles
 TTTTTTTTTTpppTTTTTTTTTTT

@@ -16,6 +16,7 @@
 #include "mossling.hpp"
 #include "mothlet.hpp"
 #include "pebblin.hpp"
+#include "pine.hpp"
 #include "plant.hpp"
 #include "rock.hpp"
 #include "sign.hpp"
@@ -246,15 +247,24 @@ void draw_sprite(int sheet, int frame, int cx, int top, uint8_t depth,
 // It is also the better picture here. The lens is long enough that a tile is
 // ten pixels across near the player and eight at the far edge of the window,
 // so one fixed size is very nearly right everywhere, and two sizes cover the
-// rest of the falloff. The shape is picked by hashing the tile, so a forest
-// is not one tree stamped in a grid, and the hash is the same every frame,
-// which is what stops the treeline flickering as the player walks.
-void draw_tree(int tx, int ty, float wx, float wz, bool far) {
+// rest of the falloff.
+//
+// A zone says which species grows in it and the shape varies only within that
+// species, so an area is one kind of forest rather than a mixture. The
+// variation is a hash of the tile, which keeps a forest from being one tree
+// stamped in a grid, and the hash is the same every frame, which is what
+// stops the treeline crawling as the player walks.
+static_assert(int(TreeKind::Count) == k_tree_kind_count,
+              "the tree species in the level data and the runs of frames in "
+              "the art have to be the same list, in the same order");
+
+void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
     int px = 0, py = 0, depth = 0;
     if (!g_renderer.project(wx, 0.0f, wz, px, py, depth)) return;
     const int sheet = far ? art_treefar : art_treenear;
     const SpriteSheet& sh = k_sheets[sheet];
-    const int frame = (tx * 37 + ty * 11) % sh.frame_count;
+    const TreeKindFrames& k = k_tree_kinds[kind < k_tree_kind_count ? kind : 0];
+    const int frame = k.first + (tx * 37 + ty * 11) % (k.count ? k.count : 1);
     // Depth one step nearer than the ground it stands on, the same as every
     // other billboard here, so a tree wins against its own tile and loses to
     // anything genuinely in front of it.
@@ -497,7 +507,7 @@ void draw_overworld(const World& w, uint32_t t) {
             switch (tile) {
                 case tile_tree:
                     // Sprites, not meshes: see draw_tree.
-                    draw_tree(x, y, wx, wz, far != 0.0f);
+                    draw_tree(x, y, wx, wz, far != 0.0f, z.trees);
                     break;
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);
@@ -694,12 +704,14 @@ void draw_battle(const World& w, uint32_t t) {
     ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
     ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
     ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
-    // The treeline, as the same sprites the overworld uses. A tree should
-    // look like a tree in both places, and nine of them are not worth keeping
-    // a second representation of one alive for.
-    for (int i = 0; i < 9; i++) {
-        draw_tree(i * 7, i * 3, -10.0f + float(i) * 2.5f,
-                  16.0f + float(i % 3) * 2.0f, false);
+    // The treeline, as real geometry. The overworld cannot afford it, with up
+    // to 87 tree tiles on screen; the arena has five and nothing else in the
+    // shot, so they can be lit, sit properly in the depth buffer, and pick up
+    // the camera's angle the way a billboard never will.
+    for (int i = 0; i < 5; i++) {
+        g_renderer.draw_mesh(pine, -9.0f + float(i) * 4.5f, 0.0f,
+                             17.0f + float(i % 3) * 2.5f,
+                             float(i) * 1.3f, 2.4f);
     }
 
     // Where the two of them stand. The foe is further out than it looks like
@@ -1052,12 +1064,14 @@ void draw_title(uint32_t t) {
     ground_quad(-16.0f, -11.0f, 16.0f, 2.0f, 0x77, 0xAA, 0x55);
     ground_quad(-16.0f, 2.0f, 16.0f, 9.0f, 0x66, 0x99, 0x4A);
     ground_quad(-16.0f, 9.0f, 16.0f, 47.0f, 0x55, 0x88, 0x55);
-    // The treeline, as the same sprites the overworld uses. A tree should
-    // look like a tree in both places, and nine of them are not worth keeping
-    // a second representation of one alive for.
-    for (int i = 0; i < 9; i++) {
-        draw_tree(i * 7, i * 3, -10.0f + float(i) * 2.5f,
-                  16.0f + float(i % 3) * 2.0f, false);
+    // The treeline, as real geometry. The overworld cannot afford it, with up
+    // to 87 tree tiles on screen; the arena has five and nothing else in the
+    // shot, so they can be lit, sit properly in the depth buffer, and pick up
+    // the camera's angle the way a billboard never will.
+    for (int i = 0; i < 5; i++) {
+        g_renderer.draw_mesh(pine, -9.0f + float(i) * 4.5f, 0.0f,
+                             17.0f + float(i % 3) * 2.5f,
+                             float(i) * 1.3f, 2.4f);
     }
     g_renderer.draw_mesh(emberkit, -1.6f, 0.02f, 1.4f, 0.5f, 1.4f);
     g_renderer.draw_mesh(ball, 1.6f, 0.35f, 1.2f, float(t) * 0.003f, 1.2f);

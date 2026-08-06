@@ -39,6 +39,9 @@ ITEM_EFFECTS = ["ball", "heal", "cure", "revive", "key"]
 FACINGS = ["north", "east", "south", "west"]
 NPC_KINDS = ["villager", "trainer", "healer", "shop"]
 EVENT_KINDS = ["sign", "item", "trigger"]
+# Which tree grows in a zone. The order matches art/build_art.py's
+# TREE_KINDS, and render.cpp static_asserts that the two agree.
+TREE_KINDS = ["pine", "broadleaf"]
 TILE_FLAGS = {
     "walk": 0x01, "block": 0x02, "water": 0x04, "encounter": 0x08,
     "door": 0x10, "ledge_north": 0x20, "ledge_east": 0x40,
@@ -413,7 +416,7 @@ class Data:
     def load_zone(self, path):
         expect = os.path.splitext(os.path.basename(path))[0]
         z = dict(id=None, name=None, w=0, h=0, tiles=[], enc=[], npcs=[],
-                 warps=[], events=[], indoor=False, path=path)
+                 warps=[], events=[], indoor=False, trees="pine", path=path)
         lines = list(read_records(path))
         i = 0
         while i < len(lines):
@@ -446,6 +449,12 @@ class Data:
                 if rest:
                     fail(where, "indoor takes no argument")
                 z["indoor"] = True
+                i += 1
+            elif key == "trees":
+                if rest not in TREE_KINDS:
+                    fail(where, f"unknown tree {rest!r}, expected one of "
+                                f"{', '.join(TREE_KINDS)}")
+                z["trees"] = rest
                 i += 1
             elif key == "tiles":
                 i += 1
@@ -788,6 +797,8 @@ def emit(d, hpp_path, cpp_path):
       + ", Count };")
     w("enum class ItemEffect : uint8_t { "
       + ", ".join(e.capitalize() for e in ITEM_EFFECTS) + " };")
+    w("enum class TreeKind : uint8_t { "
+      + ", ".join(k.capitalize() for k in TREE_KINDS) + ", Count };")
     w("enum class NpcKind : uint8_t { "
       + ", ".join(k.capitalize() for k in NPC_KINDS) + " };")
     w("enum class EventKind : uint8_t { "
@@ -846,6 +857,7 @@ def emit(d, hpp_path, cpp_path):
     w("    const uint8_t* tiles;      // w * h tile indices into k_tiles")
     w("    uint8_t w, h;")
     w("    uint8_t indoor;            // no sky, and the border is wall")
+    w("    uint8_t trees;             // which TreeKind grows here")
     w("    const EncTable* enc;   uint8_t enc_count;")
     w("    const EncSlot* enc_slots;")
     w("    const NpcDef* npcs;    uint8_t npc_count;")
@@ -1071,7 +1083,8 @@ def emit(d, hpp_path, cpp_path):
         warps = f"k_warps_{zid}, {len(z['warps'])}" if z["warps"] else "nullptr, 0"
         evs = f"k_events_{zid}, {len(z['events'])}" if z["events"] else "nullptr, 0"
         w(f'    {{"{z["name"]}", k_tiles_{zid}, {z["w"]}, {z["h"]}, '
-          f"{1 if z['indoor'] else 0}, {enc}, {npcs}, {warps}, {evs}}},"
+          f"{1 if z['indoor'] else 0}, {TREE_KINDS.index(z['trees'])}, "
+          f"{enc}, {npcs}, {warps}, {evs}}},"
           f"   // {z['id']}")
     w("};")
     w("")

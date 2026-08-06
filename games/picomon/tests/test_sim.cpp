@@ -63,6 +63,11 @@ void test_data_is_sane() {
             check(pm::tile_walkable(zone, wp.x, wp.y),
                   "the warp tile itself is walkable");
         }
+        // The species of tree a zone grows has to be one the art has frames
+        // for. The renderer indexes a table with it and a stray value would
+        // read past the end of that table.
+        check(zone.trees < uint8_t(pm::TreeKind::Count),
+              "zone names a tree species that exists");
         // An NPC standing in a wall can never be talked to.
         for (int i = 0; i < zone.npc_count; i++) {
             check(pm::tile_walkable(zone, zone.npcs[i].x, zone.npcs[i].y),
