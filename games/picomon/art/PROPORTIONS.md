@@ -6,25 +6,74 @@ re-derivable: `python3 measure.py` prints the per-row map and the band split
 for our own sheets, and the reference numbers below carry the exact pixel rows
 they were read from.
 
-A frame is **12 x 20**, drawn at 10 pixels a tile, so a character is two tiles
-tall. That is fixed by the camera and is not up for discussion here. What this
-document decides is how those 20 rows are spent.
+A frame is **14 x 20**, drawn at 10 pixels a tile, so a character is two tiles
+tall. The height is fixed by the camera. The width is not, and it is 14
+because of section 1.
 
 
-## 1. The row budget
+## 1. The head overlaps the body
+
+This is the construction, and everything else follows from it. The parts are
+**not stacked**:
 
 ```
-rows  0 .. HEAD_H-1                head
-rows  HEAD_H .. HEAD_H+BODY_H-1    body
-rows  HEAD_H+BODY_H .. 19          legs
+rows  0 .. 11    head, ten columns wide, centred
+rows  7 .. 15    body, fourteen wide, starting behind the head
+rows 16 .. 19    legs
 ```
 
-`compose()` stacks exactly those three parts and checks their heights, so the
-boundaries are declared, never inferred. Do not try to detect them from the
-bitmap. That was attempted twice and failed twice: scoring rows by skin tone
-puts the chin wherever the hands are, and looking for the row where the
-silhouette splits finds the gap between the boots. Anatomy is not recoverable
-from a 12 pixel wide bitmap by rule.
+Rows 7 to 11 belong to both. There the head occupies the middle ten columns
+and the body's arms occupy the two columns either side of it, so a shoulder
+rises past the ear and a forearm hangs beside the jaw.
+
+Pokemon Gen 3 is built exactly this way. Brendan, frame 0, row 18, by real
+palette index rather than by classification:
+
+```
+     0123456789012345
+  18 .BJADDDDDDDDAJB.
+       ^^          ^^
+```
+
+`B` is #7B4141 sleeve, `J` is #FFC594 arm skin, `A` is the head's black
+outline, `D` is #FFD5B4 face. His arms are at columns 1 to 2 and 13 to 14 on
+**the same rows as his eyes**. His body starts at row 18 and his head runs to
+row 23: six rows of overlap.
+
+`compose()` draws the body first and the head over it. That order is the
+whole mechanism, and reversing it paints the shirt over the chin.
+
+### Why the frame is 14 wide
+
+Stacked parts do not need width. Overlapping ones do, because the arm has to
+be somewhere the head is not. The references run a face eight columns wide
+with two columns of arm either side of the head; at 12 wide the head alone
+ate the frame and the arms had to become one pixel stubs on the shoulders.
+
+14 also matches the references' inked aspect: Brendan is 14 by 21, we are 14
+by 20.
+
+The cost is 20 bytes a frame, 560 across all 28 character frames.
+
+### The column plan
+
+Every head shares it, which is what keeps four characters looking like one
+cast:
+
+```
+columns  0 .. 1    arm, and nothing else ever
+column   2         head outline
+column   3         hair
+columns  4 .. 9    face, six wide
+column   10        hair
+column   11        head outline
+columns 12 .. 13   arm
+```
+
+The boundaries are declared, never inferred. Do not try to detect them from
+the bitmap: that was attempted twice and failed twice, scoring rows by skin
+puts the chin wherever the hands are, and looking for where the silhouette
+splits finds the gap between the boots.
 
 ### What we have, and what the references have
 
@@ -33,7 +82,11 @@ from a 12 pixel wide bitmap by rule.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-11** | **12-15** | **16-19** | **20** | **12 (60%)** | **4 (20%)** | **4 (20%)** |
+| **Picomon, current** | **0-11** | **7-15** | **16-19** | **20** | **12 (60%)** | overlaps | **4 (20%)** |
+
+Picomon's body row range overlaps its head's by five rows, which is why its
+columns do not add up like the others: the references' rows were read as
+disjoint bands off a ruler, and only the pixel dump showed that they are not.
 
 The three references average **63% head**. Picomon shipped at 50% for an
 afternoon, on a rule of thumb rather than a measurement, and it was out in the
@@ -83,29 +136,24 @@ argument for chibi proportions here. It is a legibility argument rather than a
 stylistic one: a head drawn to realistic proportion on a 20 row figure is
 about five rows, and five rows cannot hold two eyes that read as a face.
 
-Every head is built on one column plan, which is what keeps four characters
-looking like one cast:
-
-```
-column  0        outline
-column  1        hair
-columns 2 .. 9   face, eight wide
-column  10       hair
-column  11       outline
-```
-
-The face reads left to right as seven lit pixels and one shade pixel, so the
-light always comes from the same place.
+The column plan is in section 1, because it is set by where the arms have to
+go. Within the face, the six columns read left to right as five lit pixels
+and one shade pixel, so the light always comes from the same place.
 
 ### Eyes
 
-A 2 x 2 pupil with a white catchlight at its top left, and **two pixels of
-skin between the pair**. Both halves are load bearing, and both were wrong on
-the first attempt:
+**One pixel wide, two rows tall, white above pupil, two pixels apart.** That
+is Brendan's eye exactly: his are a single column of #102039 at columns 6 and
+9, two rows deep, with two columns of cheek between them.
 
-- White sclera above a pupil reads as a **visor**, not as eyes.
-- Eyes with fewer than two pixels between them merge into **one dark bar** at
-  the size the sprite is actually seen.
+A six column face is what the overlap costs, and it will not hold the 2 x 2
+eyes the 12 wide version had. Two things still hold from that version and
+both were learned the hard way:
+
+- Two pixels of gap is the minimum. Under that the pair merges into **one
+  dark bar** at the size the sprite is actually seen.
+- The white matters. Without it the eye is a dark dot on skin and the face
+  reads as blank.
 
 `tools/tests/test_picomon_sprites.py` fails the build on either.
 

@@ -134,8 +134,8 @@ def bands():
     person and written down rather than computed.
     """
     return (0, art.HEAD_H - 1,
-            art.HEAD_H, art.HEAD_H + art.BODY_H - 1,
-            art.HEAD_H + art.BODY_H, art.H - 1)
+            art.BODY_TOP, art.LEGS_TOP - 1,
+            art.LEGS_TOP, art.H - 1)
 
 
 def report(name, md=False):
@@ -145,6 +145,7 @@ def report(name, md=False):
     rows = frame_map(px, fw, fw, fh)    # frame 1: the standing pose
     h0, h1, b0, b1, l0, l1 = bands()
     head, body, legs = h1 - h0 + 1, b1 - b0 + 1, l1 - l0 + 1
+    overlap = h1 - b0 + 1
     if md:
         print(f"| {name} | {h0}-{h1} | {b0}-{b1} | {l0}-{l1} | {fh}"
               f" | {head} ({head * 100 // fh}%)"
@@ -155,12 +156,15 @@ def report(name, md=False):
     print("     " + "".join(str(x % 10) for x in range(fw)))
     for y, r in enumerate(rows):
         mark = ("  <- head starts" if y == h0 else
-                "  <- body starts" if y == b0 else
+                "  <- body starts, behind the head" if y == b0 else
+                "  <- head ends" if y == h1 else
                 "  <- legs start" if y == l0 else "")
         print(f"  {y:2d} {r}{mark}")
     print(f"  head {h0}-{h1} = {head} px ({head * 100 // fh}%)   "
-          f"body {b0}-{b1} = {body} px ({body * 100 // fh}%)   "
+          f"body {b0}-{b1} = {body} px   "
           f"legs {l0}-{l1} = {legs} px ({legs * 100 // fh}%)")
+    print(f"  head and body overlap on rows {b0}-{h1}, {overlap} rows, which "
+          "is where the arms come up beside the face")
     # The one thing worth checking rather than printing: a head with no eyes
     # in it means the declared split and the drawn art have come apart.
     if "s" in "".join(rows[h0:h1 + 1]) and "#" not in rows[(h0 + h1) // 2]:

@@ -11,8 +11,10 @@ shirt.
 The rules here are the ones that go wrong quietly. Every one of them was a
 real state of this art at some point in an afternoon:
 
-  - a character composed from parts whose rows do not add to 20, which lines
-    up perfectly and stands a few pixels lower than everybody else
+  - parts that leave a gap or an overlap where they meet, which composes
+    without complaint and stands a character at the wrong height
+  - a head stacked on a body rather than drawn over it, which leaves nowhere
+    for an arm except below the chin
   - a face with no eye whites, which reads as blank at any distance
   - eyes drawn touching, which merge into a single dark bar
   - one character drawn to different proportions from the rest, which reads
@@ -44,14 +46,53 @@ def fail(msg):
 
 
 def test_the_parts_fill_the_frame():
-    total = art.HEAD_H + art.BODY_H + art.LEGS_H
-    if total != art.H:
-        fail(f"head {art.HEAD_H} + body {art.BODY_H} + legs {art.LEGS_H} = "
-             f"{total}, but a frame is {art.H} rows. Parts that do not fill "
-             "the frame compose without complaint and stand the character at "
-             "the wrong height")
-    print(f"  {art.HEAD_H} head + {art.BODY_H} body + {art.LEGS_H} legs "
-          f"= {art.H} rows")
+    """The three parts have to cover the frame, and they overlap doing it.
+
+    They are not stacked. The body starts above the bottom of the head so
+    its outer columns can be an arm beside the face, so the heights do not
+    sum to the frame and checking that they do is wrong. What has to hold is
+    that the bands are contiguous and reach the bottom.
+    """
+    if art.BODY_TOP + art.BODY_H != art.LEGS_TOP:
+        fail(f"the body covers rows {art.BODY_TOP} to "
+             f"{art.BODY_TOP + art.BODY_H - 1} and the legs start at "
+             f"{art.LEGS_TOP}, so there is a gap or an overlap between them")
+    if art.LEGS_TOP + art.LEGS_H != art.H:
+        fail(f"the legs end at row {art.LEGS_TOP + art.LEGS_H - 1}, not at "
+             f"the bottom of a {art.H} row frame")
+    print(f"  head 0-{art.HEAD_H - 1}, body {art.BODY_TOP}-"
+          f"{art.LEGS_TOP - 1}, legs {art.LEGS_TOP}-{art.H - 1}")
+
+
+def test_the_head_overlaps_the_body():
+    """The construction, and the thing that makes these read as people.
+
+    In a Pokemon overworld sprite the head is drawn over the body, not
+    stacked on it: the shoulders rise past the ears and the arms hang beside
+    the jaw. Brendan, frame 0, row 18 is `.BJADDDDDDDDAJB.`, sleeve and arm
+    skin at columns 1 to 2 and 13 to 14 on the same rows as his eyes.
+
+    Stacked instead, there is nowhere for an arm to be except below the chin,
+    and the character comes out as three blocks balanced on each other. That
+    is what this art was before, and no test could see it because every part
+    was individually a perfectly good drawing.
+    """
+    overlap = art.HEAD_H - art.BODY_TOP
+    if overlap < 2:
+        fail(f"the head ends at row {art.HEAD_H - 1} and the body starts at "
+             f"{art.BODY_TOP}, an overlap of {overlap} rows. The arms need "
+             "room to come up beside the face")
+    # And the art has to use it: something must be drawn in the overlap rows
+    # outside the head's own columns, or the overlap is only on paper.
+    for name, poses in sorted(art.BODY.items()):
+        for pose, rows in sorted(poses.items()):
+            top = rows[:overlap]
+            if not any(r.strip(".") for r in top):
+                fail(f"body {name!r} pose {pose!r} draws nothing in its top "
+                     f"{overlap} rows, the ones behind the head, so it has no "
+                     "arms beside the face and the overlap does nothing")
+    print(f"  head and body overlap on {overlap} rows, and every body draws "
+          "an arm there")
 
 
 def test_the_head_is_half_the_character():
@@ -264,6 +305,7 @@ def test_the_art_still_builds():
 
 def main():
     test_the_parts_fill_the_frame()
+    test_the_head_overlaps_the_body()
     test_the_head_is_half_the_character()
     test_every_part_is_the_height_it_claims()
     test_every_face_has_eyes_with_whites()
