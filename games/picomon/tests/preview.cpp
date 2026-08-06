@@ -77,11 +77,15 @@ void battle_shots(const pm::World& at_menu, const std::string& out) {
         pm::world_tick(w, press_a());
         for (int i = 0; i < 40 && w.battle.state != pm::BattleState::Attack; i++)
             pm::world_tick(w, pm::Input{});
-        run(w, pm::Input{}, 3);
-        capture(w, 5400, out + "/battle_2_attack.ppm");
-        // And what it said afterwards.
-        for (int i = 0; i < 40 && w.battle.state == pm::BattleState::Attack; i++)
+        capture(w, 5300, out + "/battle_2_attack.ppm");
+        // Every tick of the beat, because the whole point of it is motion and
+        // a single frame of a flash proves nothing about the flash.
+        for (int i = 0; w.battle.state == pm::BattleState::Attack && i < 20; i++) {
+            char name[64];
+            std::snprintf(name, sizeof name, "/beat_%02d.ppm", i);
+            capture(w, 5400 + uint32_t(i) * 30, out + name);
             pm::world_tick(w, pm::Input{});
+        }
         capture(w, 5800, out + "/battle_3_damage.ppm");
     }
 

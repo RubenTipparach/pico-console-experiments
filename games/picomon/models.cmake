@@ -8,9 +8,11 @@
 #
 # The six creature meshes are shared: species.txt gives sixteen species a
 # `mesh` and a tint, so a mesh is roughly 1.2 KB of flash and an evolution
-# that reuses its base mesh costs three bytes. tree_far.obj is tree.obj's
-# distance form and both are always built, because the swap is a draw time
-# choice and not a build time one.
+# that reuses its base mesh costs three bytes.
+#
+# There is no tree here. Trees are sprites, authored in art/build_art.py: a
+# screenful of Route 1 is up to 87 tree tiles, and twenty triangles each is
+# more triangles on trees than on the whole rest of the frame.
 set(picomon_model_files
     emberkit.obj
     mossling.obj
@@ -18,8 +20,6 @@ set(picomon_model_files
     sparklet.obj
     pebblin.obj
     mothlet.obj
-    tree.obj
-    tree_far.obj
     house.obj
     sign.obj
     rock.obj

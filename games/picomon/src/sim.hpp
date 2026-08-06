@@ -133,6 +133,18 @@ struct Battle {
     uint8_t trainer_next;        // index into the trainer's party list
     uint16_t reward;
 
+    // What the turn just did, so the animation beat can play it back rather
+    // than guess at it. Both moves are resolved before the beat runs, which
+    // is why the beat cannot work any of this out for itself: by then the HP
+    // has already changed and the message queue is the only record left.
+    //
+    // Index 0 is the player's creature and 1 is the foe, in both arrays, and
+    // the index is who it happened TO.
+    static constexpr int k_you = 0, k_foe = 1;
+    uint8_t fx_dmg[2];      // how much it lost, 0 if nothing landed on it
+    uint8_t fx_mult[2];     // the type multiplier in eighths: 2, 4 or 8
+    uint8_t fx_type[2];     // the attacking move's type, for the burst colour
+
     // Capture.
     uint8_t ball_item;
     uint8_t wobbles;

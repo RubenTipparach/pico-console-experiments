@@ -450,7 +450,14 @@ bool use_move(World& w, Battle& b, bool by_player, uint8_t move_slot) {
                               by_player ? b.atk_stage : b.foe_atk_stage,
                               by_player ? b.foe_def_stage : b.def_stage,
                               uint8_t(next_random(w)));
-    target.hp = uint8_t(dmg >= target.hp ? 0 : target.hp - dmg);
+    const int taken = dmg >= target.hp ? target.hp : dmg;
+    target.hp = uint8_t(target.hp - taken);
+    // Record it for the animation beat. What it lost, not what was rolled, so
+    // the bar the renderer drains matches the bar it lands on.
+    const int side = by_player ? Battle::k_foe : Battle::k_you;
+    b.fx_dmg[side] = uint8_t(taken);
+    b.fx_mult[side] = uint8_t(mult);
+    b.fx_type[side] = mv.type;
     w.sfx = mult > 4 ? Sfx::SuperHit : Sfx::Hit;
     if (mult > 4) push_msg(b, Msg::SuperEffective);
     else if (mult < 4) push_msg(b, Msg::NotVery);
@@ -481,6 +488,10 @@ void foe_turn(World& w, Battle& b) {
 }
 
 void resolve_turn(World& w, Battle& b) {
+    // A fresh turn, so nothing from the last one plays again.
+    b.fx_dmg[0] = b.fx_dmg[1] = 0;
+    b.fx_mult[0] = b.fx_mult[1] = 4;
+    b.fx_type[0] = b.fx_type[1] = 0;
     const Mon& me = w.party[b.active];
     const int my_spd = apply_stage(stat_of(k_species[me.species].spd, me.level), b.spd_stage);
     const int foe_spd = apply_stage(

@@ -295,7 +295,7 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
                            float x, float y, float z,
                            float yaw, float scale,
                            uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
-                           float pitch) {
+                           float pitch, uint8_t whiten) {
     if (mesh.vertices == nullptr || mesh.faces == nullptr) return;
     if (mesh.scale <= 0) return;
 
@@ -328,12 +328,20 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
         if (lambert < 0.0f) lambert = 0.0f;
         const float intensity = k_ambient + (1.0f - k_ambient) * lambert;
 
-        const uint8_t r = shade(static_cast<uint8_t>(face.r * tint_r / 255),
-                                intensity);
-        const uint8_t g = shade(static_cast<uint8_t>(face.g * tint_g / 255),
-                                intensity);
-        const uint8_t b = shade(static_cast<uint8_t>(face.b * tint_b / 255),
-                                intensity);
+        // Tint multiplies, then whiten lerps toward white, then the lambert
+        // shade. Whitening before the shade rather than after keeps a flashed
+        // face lit like every other face instead of going flat.
+        uint8_t r = static_cast<uint8_t>(face.r * tint_r / 255);
+        uint8_t g = static_cast<uint8_t>(face.g * tint_g / 255);
+        uint8_t b = static_cast<uint8_t>(face.b * tint_b / 255);
+        if (whiten) {
+            r = static_cast<uint8_t>(r + (255 - r) * whiten / 255);
+            g = static_cast<uint8_t>(g + (255 - g) * whiten / 255);
+            b = static_cast<uint8_t>(b + (255 - b) * whiten / 255);
+        }
+        r = shade(r, intensity);
+        g = shade(g, intensity);
+        b = shade(b, intensity);
 
         const uint16_t indices[3] = {face.i0, face.i1, face.i2};
         int px[3], py[3], pz[3];

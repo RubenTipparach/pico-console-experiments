@@ -406,10 +406,198 @@ SHEETS = {
 }
 
 
-def check(rows, name):
+
+# --- scenery --------------------------------------------------------------
+#
+# Trees are sprites, not meshes. A screenful of Route 1 is up to 87 tree tiles
+# and the mesh form cost about twenty triangles each, which is more triangles
+# on trees alone than the whole rest of the frame. A sprite is one blit, and
+# at this camera it is also the better picture: the lens is long enough that a
+# tile is 10 pixels across near the player and 8 at the far edge of the
+# window, so a fixed size sprite is very nearly the right size everywhere.
+# Two sizes cover the rest of the falloff, which is the same near and far
+# split the meshes already used.
+#
+# Three shapes per size, picked by a hash of the tile, so a forest is not one
+# tree stamped in a grid.
+
+PALETTES["tree"] = {
+    "k": (0x22, 0x33, 0x22),   # outline
+    "d": (0x22, 0x66, 0x33),   # shadow green
+    "g": (0x33, 0x88, 0x44),   # body green
+    "G": (0x55, 0xAA, 0x55),   # lit green
+    "l": (0x77, 0xCC, 0x66),   # highlight
+    "t": (0x55, 0x33, 0x22),   # trunk shadow
+    "T": (0x77, 0x55, 0x33),   # trunk
+}
+
+TREE_NEAR = [
+    # pine_tall
+    [
+        ".......k........",
+        "......kgk.......",
+        "......kgk.......",
+        ".....kGggk......",
+        ".....kGggk......",
+        "....kGGggdk.....",
+        "...kdddddddk....",
+        ".....klggk......",
+        "....klGggdk.....",
+        "....kGGggdk.....",
+        "...kGGGgggdk....",
+        "...kGGGgggdk....",
+        "..kGGGGgggddk...",
+        ".kddklGggdkddk..",
+        "...klGGgggdk....",
+        "..kGGGGgggddk...",
+        "..kGGGGgggddk...",
+        ".kGGGGGggggddk..",
+        ".kGGGGGggggddk..",
+        "kGGGGGGggggdddk.",
+        "kddddkTTtkddddk.",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        "....kTTTttk.....",
+    ],
+    # pine_squat
+    [
+        "................",
+        ".......k........",
+        "......kgk.......",
+        ".....kGggk......",
+        ".....kGggk......",
+        "....kGGggdk.....",
+        "...kGGGgggdk....",
+        "...kGGGgggdk....",
+        "..kdddddddddk...",
+        ".....klggk......",
+        "....klGggdk.....",
+        "...kGGGgggdk....",
+        "..kGGGGgggddk...",
+        "..kGGGGgggddk...",
+        ".kGGGGGggggddk..",
+        ".kGGGGGggggddk..",
+        "kGGGGGGggggdddk.",
+        "kGGGGGGggggdddk.",
+        "kddddkTTtkddddk.",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        "....kTTTttk.....",
+    ],
+    # broadleaf
+    [
+        "................",
+        "................",
+        "......kkkkk.....",
+        ".....kllllGk....",
+        ".kkkkllllGGGk...",
+        ".klllllGGGGGGk..",
+        "klllllGGGGGGGGk.",
+        "kllllGGGGGGGgggk",
+        "klllGGGGGGGggggk",
+        ".klGGGGGGGgggggk",
+        ".kGGGGGGGgggggk.",
+        ".kGGGGGGgggggk..",
+        ".kGGGGGggggggk..",
+        "..kGGGggggggk...",
+        "...kGggggggk....",
+        "....kkTTtkk.....",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        ".....kTTtk......",
+        "....kTTTttk.....",
+    ],
+]
+
+TREE_FAR = [
+    # pine_tall
+    [
+        ".....k......",
+        "....kgk.....",
+        "....kgk.....",
+        "...kGggk....",
+        "...kdddk....",
+        "....kgk.....",
+        "...klggk....",
+        "..kGGggdk...",
+        "..kklggkk...",
+        "..klGggdk...",
+        ".kGGGgggdk..",
+        ".kGGGgggdk..",
+        "kGGGGgggddk.",
+        "kdddkTkdddk.",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "...kTTtk....",
+    ],
+    # pine_squat
+    [
+        ".....k......",
+        "....kgk.....",
+        "...kGggk....",
+        "...kGggk....",
+        "..kdddddk...",
+        "....kgk.....",
+        "...klggk....",
+        "..kGGggdk...",
+        ".kGGGgggdk..",
+        "kGGGGgggddk.",
+        "kGGGGgggddk.",
+        "kdddkTkdddk.",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "...kTTtk....",
+    ],
+    # broadleaf
+    [
+        "............",
+        "............",
+        "............",
+        ".kkkkk......",
+        ".klllGkkkkk.",
+        "klllGGGGGgk.",
+        ".klGGGGGgggk",
+        ".kGGGGGgggk.",
+        ".kGGGGgggkk.",
+        "..kGGgggk...",
+        "..kkkTkkk...",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "....kTk.....",
+        "...kTTtk....",
+    ],
+]
+
+SCENERY = {
+    "treenear": {"palette": "tree", "w": 16, "h": 26, "frames": TREE_NEAR},
+    "treefar": {"palette": "tree", "w": 12, "h": 18, "frames": TREE_FAR},
+}
+
+
+def check(rows, name, w=None):
+    w = W if w is None else w
     for i, r in enumerate(rows):
-        if len(r) != W:
-            raise SystemExit(f"{name} row {i} is {len(r)} wide, expected {W}: {r!r}")
+        if len(r) != w:
+            raise SystemExit(f"{name} row {i} is {len(r)} wide, expected {w}: {r!r}")
 
 
 def compose(head, body, legs):
@@ -435,7 +623,7 @@ def compose(head, body, legs):
 # Layers, bottom to top. Splitting on what a pixel is for rather than where it
 # sits means recolouring a jacket or softening the outline is one layer's work.
 LAYERS = ["fill", "shade", "outline"]
-SHADE_CHARS = set("SCPHR")
+SHADE_CHARS = set("SCPHRdt")
 
 
 def layer_of(ch):
@@ -446,10 +634,12 @@ def layer_of(ch):
     return 0
 
 
-def rasterize(grid, pal):
-    planes = [bytearray(W * H * 4) for _ in LAYERS]
-    for y in range(H):
-        for x in range(W):
+def rasterize(grid, pal, w=None, h=None):
+    w = W if w is None else w
+    h = H if h is None else h
+    planes = [bytearray(w * h * 4) for _ in LAYERS]
+    for y in range(h):
+        for x in range(w):
             ch = grid[y][x]
             if ch == ".":
                 continue
@@ -457,13 +647,15 @@ def rasterize(grid, pal):
             if rgb is None:
                 raise SystemExit(f"no palette entry for {ch!r}")
             p = planes[layer_of(ch)]
-            i = (y * W + x) * 4
+            i = (y * w + x) * 4
             p[i], p[i + 1], p[i + 2], p[i + 3] = rgb[0], rgb[1], rgb[2], 255
     return [bytes(p) for p in planes]
 
 
-def flatten(planes):
-    out = bytearray(W * H * 4)
+def flatten(planes, w=None, h=None):
+    w = W if w is None else w
+    h = H if h is None else h
+    out = bytearray(w * h * 4)
     for p in planes:
         for i in range(0, len(p), 4):
             if p[i + 3]:
@@ -604,6 +796,46 @@ def main():
 
         manifest[name] = {
             "frame_w": W, "frame_h": H, "frames": len(flat),
+            "tags": {t[0]: [t[1], t[2]] for t in tags},
+        }
+        with open(png, "rb") as f:
+            js[name] = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+        CPP_FRAMES[name] = pack_indexed(flat, name)
+        print(f"{name:9s} {len(flat):2d} frames  {name}.aseprite {size:5d} B"
+              f"  {name}.png {pngsize:4d} B")
+
+    # Scenery: no walk cycle, no head and body and legs, just a grid at its
+    # own size. One frame per shape, and the game picks between them by
+    # hashing the tile it is standing a tree on.
+    for name, spec in SCENERY.items():
+        pal = PALETTES[spec["palette"]]
+        w, h = spec["w"], spec["h"]
+        frames, flat, tags = [], [], []
+        for i, rows in enumerate(spec["frames"]):
+            check(rows, f"{name} frame {i}", w)
+            if len(rows) != h:
+                raise SystemExit(f"{name} frame {i} is {len(rows)} tall, "
+                                 f"expected {h}")
+            grid = [list(r) for r in rows]
+            planes = rasterize(grid, pal, w, h)
+            frames.append(planes)
+            flat.append(flatten(planes, w, h))
+        tags.append(("shapes", 0, len(frames) - 1))
+
+        ase = os.path.join(HERE, f"{name}.aseprite")
+        size = aseprite.write(ase, w, h, LAYERS, frames, tags)
+
+        strip = bytearray(w * len(flat) * h * 4)
+        for fi, fr in enumerate(flat):
+            for y in range(h):
+                src = fr[y * w * 4:(y + 1) * w * 4]
+                dst = (y * w * len(flat) + fi * w) * 4
+                strip[dst:dst + w * 4] = src
+        png = os.path.join(HERE, f"{name}.png")
+        pngsize = write_png(png, w * len(flat), h, bytes(strip))
+
+        manifest[name] = {
+            "frame_w": w, "frame_h": h, "frames": len(flat),
             "tags": {t[0]: [t[1], t[2]] for t in tags},
         }
         with open(png, "rb") as f:

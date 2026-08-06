@@ -88,11 +88,16 @@ public:
     // Positive pitch lifts the +Z nose of the model. It trails the tints so
     // every existing call keeps its meaning; a caller that wants pitch with
     // default tints spells the tints out.
+    // `tint` multiplies the mesh's own face colours, so it can darken and
+    // recolour but never brighten. `whiten` lerps the result toward white
+    // afterwards, 0 for none and 255 for fully white, which is what a hit
+    // flash needs and what draw_sprite has always had.
     void draw_mesh(const MeshData& mesh,
                    float x, float y, float z,
                    float yaw, float scale,
                    uint8_t tint_r = 255, uint8_t tint_g = 255,
-                   uint8_t tint_b = 255, float pitch = 0.0f);
+                   uint8_t tint_b = 255, float pitch = 0.0f,
+                   uint8_t whiten = 0);
 
     // Screen position and pixel size for a camera facing sprite. Returns false
     // when the point is off screen or behind the camera. The caller draws the
