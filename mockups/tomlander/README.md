@@ -8,6 +8,16 @@ CLAUDE.md rule 10.
 Open `index.html` in a browser. It is a single self contained file, no build
 step and no network.
 
+## Mission one
+
+Hop from pad A to pad B. The ship starts sitting on A rather than falling out
+of the sky, so the first thing a player does is take off, which is also the
+first thing they need to learn. Landing well anywhere just parks the ship and
+it can lift off again; the run only ends on the white square that is pulsing
+orange. Each pad is a 14 unit white square on a flat apron of radius 16, since
+the ground you drift over on the way down matters more than the ground you
+finally touch.
+
 ## What it is
 
 A flyable bench, rendered live rather than drawn. The page carries a small
@@ -101,6 +111,24 @@ at all until the hull passes 90 degrees.
   through `obj2cpp.py`.
 - The frame queue holds 640 triangles. The ship spends 204 of them, so the
   terrain has to be culled to a radius rather than drawn whole.
+- **A checkerboard ground was the wrong shape for this machine.** The first
+  version drew a quad per cell, 12x12 of them: 288 triangles against the
+  ship's 204, so over half the queue went on a flat pattern whose only job was
+  to show that the ship was moving. Shading does that for free. It is 8x8
+  larger cells now, 128 triangles, each flat lit off its own normal, with the
+  two diagonals alternating so the tessellation does not line up into rows.
+  Colour comes from height and slope.
+- **A 16x16 terrain texture is affordable, and the toggle on the page proves
+  it.** `raster.cpp:234` already interpolates perspective correctly and spends
+  it on three colour channels, so texturing swaps three interpolants for two
+  plus a texel fetch. 256 texels at 4bpp is 128 bytes, and the XIP cache is
+  16 KB, so every fetch after the first is a cache hit. Lighting is the part
+  that would cost, since a texel times a per face brightness is three
+  multiplies per pixel with no FPU, so it is not done per pixel: each colour
+  and brightness pair is baked into its own shaded copy and a triangle picks
+  one before the loop. 32 copies, 16 KB of flash, zero multiplies per pixel.
+  Note this is terrain only. The ship stays flat shaded, because its sheet is
+  a palette drawn as a picture and baking it loses nothing.
 - **picoCAD winds its faces the opposite way to every model in this repo.** All
   24 existing models have negative signed volume, which is what
   `obj2cpp.face_normal` compensates for by taking `v x u`. All 17 solids in

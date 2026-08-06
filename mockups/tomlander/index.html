@@ -462,8 +462,12 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
         <h3>Frame budget</h3>
         <div class="budget-row"><span>Triangles</span><span class="v" id="b-tris">0</span></div>
         <div class="budget-row"><span>Queue cap</span><span class="v">640</span></div>
+        <div class="budget-row"><span>Ship</span><span class="v">204</span></div>
+        <div class="budget-row"><span>Terrain</span><span class="v">128</span></div>
+        <div class="budget-row"><span>Pads</span><span class="v">6</span></div>
         <div class="budget-row"><span>Raster ms</span><span class="v" id="b-ms">0.00</span></div>
         <div class="budget-row"><span>Ship mesh</span><span class="v">3.3 KB</span></div>
+        <div class="budget-row"><span>Terrain texture</span><span class="v">128 B</span></div>
       </div>
     </div>
   </div>
@@ -488,11 +492,62 @@ footer .dos{text-transform:uppercase;letter-spacing:.14em;}
     <span class="maplabel" id="mapnote">X is always the right hand pod</span>
   </div>
 
+  <div class="maprow">
+    <span class="maplabel">Terrain</span>
+    <span class="seg" role="group" aria-label="Terrain shading">
+      <button type="button" id="tex-on" aria-pressed="true">16x16 texture</button>
+      <button type="button" id="tex-off" aria-pressed="false">Flat shaded</button>
+    </span>
+    <span class="maplabel" id="texnote">Perspective correct, pre shaded, one repeat per cell</span>
+  </div>
+
   <div class="tbl-scroll">
     <table>
       <thead><tr><th>Button</th><th>Does</th><th>Why</th></tr></thead>
       <tbody id="mapbody"></tbody>
     </table>
+  </div>
+
+  <div class="callout">
+    <div class="ct">Mission one, and why the ground changed</div>
+    <p>
+      Hop from pad A to pad B. The ship starts sitting on A rather than falling
+      out of the sky, so the first thing a player does is take off, which is
+      also the first thing they need to learn. Land well anywhere and the ship
+      just parks and can lift off again; the run only ends on the white square
+      that is pulsing orange.
+    </p>
+    <p>
+      The ground was a checkerboard of small quads, and it was the wrong shape
+      for this machine: <b>288 triangles against the ship's 204</b>, so over
+      half the frame queue went on a flat pattern whose only job was to show
+      that the ship was moving. Shading does that for free. It is 8x8 larger
+      cells now, <b>128 triangles</b>, each one flat lit off its own normal,
+      with the two diagonals alternating so the tessellation does not line up
+      into rows. Colour comes from height and slope, so a cliff is a cliff.
+      Both pads sit on a flat apron well outside the square, because the ground
+      you drift over on the way down matters more than the ground you land on.
+    </p>
+  </div>
+
+  <div class="callout">
+    <div class="ct">Yes, 16x16 terrain textures are affordable</div>
+    <p>
+      Toggle it above and watch the millisecond counter. The reason it is cheap
+      is that <code>raster.cpp:234</code> already interpolates perspective
+      correctly, and spends it on three colour channels. Texturing swaps those
+      three interpolants for two, plus one texel fetch.
+    </p>
+    <p>
+      256 texels at 4 bits is <b>128 bytes</b> of flash, and the RP2040's XIP
+      cache is 16 KB, so every fetch after the first is a cache hit rather than
+      a flash read. Lighting is the part that would normally cost: a texel
+      times a per face brightness is three multiplies per pixel on a chip with
+      no FPU. So it is not done per pixel. Each colour and brightness pair is
+      baked into its own shaded copy and a triangle picks one before the loop,
+      which is 32 copies, 16 KB, and <b>zero multiplies per pixel</b>. That is
+      the same trick that makes it viable at 128x128 and pointless at 512.
+    </p>
   </div>
 
   <div class="callout">
@@ -720,13 +775,14 @@ $ tools/obj2cpp.py tom.obj --out-cpp tom.cpp --out-hpp tom.hpp --name tom
       <ul>
         <li><b>Flash</b> roughly 3.3 KB for the ship mesh, under 1 KB for the pad, plus code. Nothing measurable against 12 MB.</li>
         <li><b>RAM</b> nothing new. The rasterizer and the frame queue come from <code>pse::shared_rasterizer()</code>, so the console pays for them once.</li>
-        <li><b>Triangles</b> 204 for the ship. The queue holds 640, so the terrain gets 436 and has to be culled to a radius rather than drawn whole.</li>
+        <li><b>Triangles</b> 204 ship, 128 terrain, 6 pads. Around 340 of the queue's 640, with the terrain culled to a radius rather than drawn whole.</li>
+        <li><b>Terrain texture</b> 128 bytes for the 16x16 at 4bpp, plus 16 KB for the 32 pre shaded copies that make lighting free per pixel.</li>
         <li><b>Cores</b> <code>run_split</code> as usual, one scene, both bands.</li>
       </ul>
       <h3>Open questions</h3>
       <div class="qs">
         <div class="q"><span class="qn">1</span><span><span class="qt">Which scheme</span><span class="qd">Direct, Gimbal, or Direct with screen relative buttons. This is the one that changes the game rather than the code.</span></span></div>
-        <div class="q"><span class="qn">2</span><span><span class="qt">What is the goal</span><span class="qd">Land on a pad within a fuel budget, or a mission chain like the real campaign. The first is a complete game in a week.</span></span></div>
+        <div class="q"><span class="qn">2</span><span><span class="qt">Where mission one goes next</span><span class="qd">A to B is in and flyable. The obvious ladder from here is more pads, a fuel budget that makes the route matter, then cargo that changes the mass. Say which and it gets built in that order.</span></span></div>
         <div class="q"><span class="qn">3</span><span><span class="qt">Camera speed</span><span class="qd">Left and right currently rotate the camera continuously. Snapping to 45 degree detents is calmer and never leaves the buttons ambiguous.</span></span></div>
         <div class="q"><span class="qn">4</span><span><span class="qt">Which way the front pod pushes</span><span class="qd">Firing the front pod lifts the front, so the ship drifts backward. That is correct, and it is what tom-lander's own torque does, but a player pressing the top button expects to go forward. Invert it or leave it honest.</span></span></div>
         <div class="q"><span class="qn">5</span><span><span class="qt">Does tilt break a landing</span><span class="qd">tom-lander has no tilt gate. Damage is speed only until the hull passes 90 degrees. The bench adds a 20 degree gate because a lander that can land on its side is a strange lander. Say if you want the original behaviour.</span></span></div>
@@ -833,6 +889,54 @@ class Raster {
       }
     }
   }
+  /* Textured triangle, perspective correct.
+     Same rasterizer, same edge functions, same depth test. The only
+     difference from tri() is what goes in the colour slots: three
+     interpolants (r, g, b) become two (u/w, v/w) plus 1/w, and the per pixel
+     work becomes one divide and one texel fetch instead of three colour
+     lerps. `tex` is already shaded, so lighting costs nothing here: the face
+     picked its brightness level once, before the loop. */
+  triTex(x0,y0,z0,i0,u0,v0, x1,y1,z1,i1,u1,v1, x2,y2,z2,i2,u2,v2, tex){
+    let area = (x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    if(area===0) return;
+    if(area<0){
+      let t;
+      t=x1;x1=x2;x2=t; t=y1;y1=y2;y2=t; t=z1;z1=z2;z2=t;
+      t=i1;i1=i2;i2=t; t=u1;u1=u2;u2=t; t=v1;v1=v2;v2=t;
+      area=-area;
+    }
+    const {w,h,buf,depth}=this;
+    const minx=Math.max(0,Math.floor(Math.min(x0,x1,x2)));
+    const maxx=Math.min(w-1,Math.ceil (Math.max(x0,x1,x2)));
+    const miny=Math.max(0,Math.floor(Math.min(y0,y1,y2)));
+    const maxy=Math.min(h-1,Math.ceil (Math.max(y0,y1,y2)));
+    if(minx>maxx||miny>maxy) return;
+    this.tris++;
+    const inv=1/area;
+    for(let y=miny;y<=maxy;y++){
+      const py=y+0.5;
+      for(let x=minx;x<=maxx;x++){
+        const px=x+0.5;
+        const e0=((x1-x0)*(py-y0)-(px-x0)*(y1-y0));
+        const e1=((x2-x1)*(py-y1)-(px-x1)*(y2-y1));
+        const e2=((x0-x2)*(py-y2)-(px-x2)*(y0-y2));
+        if(e0<0||e1<0||e2<0) continue;
+        const l0=e1*inv, l1=e2*inv, l2=e0*inv;   // weights for v0, v1, v2
+        const z=(l0*z0+l1*z1+l2*z2)|0;
+        const o=y*w+x;
+        if(z>=depth[o]) continue;
+        const iw=l0*i0+l1*i1+l2*i2;
+        const ww=1/iw;
+        const u=((l0*u0+l1*u1+l2*u2)*ww)&15;
+        const v=((l0*v0+l1*v1+l2*v2)*ww)&15;
+        const t=((v<<4)|u)*3;
+        depth[o]=z;
+        const i=o*4;
+        buf[i]=tex[t]; buf[i+1]=tex[t+1]; buf[i+2]=tex[t+2]; buf[i+3]=255;
+      }
+    }
+  }
+
   /* pse::plot, no depth test. */
   plot(x,y,r,g,b){
     if(x<0||y<0||x>=this.w||y>=this.h) return;
@@ -896,10 +1000,9 @@ function xform(m,x,y,z){
 class Camera {
   constructor(){
     this.yaw=0; this.pitch=-Math.PI/4;   // the brief: 45 degrees down
-    // Close enough that the ship is about 40 of the 120 pixels tall. Any
-    // further out and a lander you are meant to read the attitude of becomes
-    // a smudge, which is the whole reason the demake gets its own framing.
-    this.dist=15; this.fov=58;
+    // Close enough to read the ship's attitude, far enough to see where the
+    // next pad is. 15 made a lovely ship and a mission you flew blind.
+    this.dist=23; this.fov=58;
     // Tight range on purpose. The depth buffer is one byte, so a 0.25 to 400
     // default spends nearly all of it in front of the near plane and the ship
     // ties with the ground it is standing on. See Renderer3D::set_depth_range.
@@ -932,26 +1035,146 @@ class Camera {
     // landing on 255 would be discarded and the horizon would vanish.
     const t=(vz-this.near)/(this.far-this.near);
     out[2]= t<0?0 : t>1?254 : (t*254)|0;
+    // 1/w, for perspective correct interpolation of anything that is not
+    // depth. raster.cpp already computes this per span (see its "Reciprocal
+    // depth" comment), which is why texturing is cheaper here than it looks.
+    out[3]= 1/vz;
     return true;
   }
 }
 
 /* ==================================================================
-   Scene geometry that is not the ship: a ground grid and a landing pad.
-   Culled to a radius, because the frame queue holds 640 triangles and
-   the ship has already spent 204 of them.
+   The ground.
+
+   This was a checkerboard of small quads, and it was the wrong shape for
+   this machine. 12x12 cells is 288 triangles against the ship's 204, so
+   well over half the frame queue went on a flat pattern whose only job was
+   to show that the ship was moving. Shading does that job for free.
+
+   So: fewer, larger cells, and every triangle flat shaded off its own
+   normal, which is what makes a low poly heightfield read as terrain rather
+   than as a grid. 8x8 cells is 128 triangles, and the two diagonals
+   alternate so the tessellation does not line up into obvious rows. Colour
+   comes from height and slope, so a cliff is a cliff without a texture.
+
+   Still culled to a radius around the ship. The terrain function is
+   infinite, the drawn part is not.
    ================================================================== */
-const GROUND_R = 6;      // tiles either side of the ship: 144 quads, 288 tris
-const TILE = 9;
-function groundHeight(gx,gz){
-  return Math.sin(gx*0.7)*Math.cos(gz*0.55)*1.6 + Math.sin((gx+gz)*0.31)*1.1;
+const TCELL = 20;        // world units per cell
+const GROUND_R = 4;      // cells either side of the ship: 64 quads, 128 tris
+                         // covering 160 units, against 288 tris for 108 before
+
+// Model units to world units. The ship's bounding box is 9.5 across, so it
+// flies about 5.9 world units wide. Named once because the resting height,
+// the flames and the draw all have to agree with it.
+const SHIP_SCALE = 0.62;
+
+function terrainBase(x, z) {
+  return Math.sin(x * 0.031) * 5.0
+       + Math.cos(z * 0.027) * 4.0
+       + Math.sin((x + z) * 0.019) * 3.0
+       + Math.cos((x - z) * 0.043) * 2.0;
 }
-/* The pad is one tile, not a radius. Nine units square against a ship that is
-   just under six wide, so it reads as a place to put the thing down rather
-   than as a differently coloured region of the map. */
-const PAD = {gx:0, gz:0};
-function onPadTile(gx,gz){ return gx===PAD.gx && gz===PAD.gz; }
-function onPadWorld(x,z){ return onPadTile(Math.floor(x/TILE), Math.floor(z/TILE)); }
+
+/* Two pads, and the first mission is the hop between them. Each one flattens
+   the ground under itself so a landing is about flying well rather than about
+   which way the hill happened to tilt. */
+/* A big white square, and a flat apron well outside it. The apron is the part
+   that matters for flying: the pad is where you are aiming, but the ground
+   around it is what you drift over on the way down, and a hillside there
+   turns a good approach into a rolled hull for no reason you could have seen. */
+const PAD_HALF = 7;      // 14 units across, about two and a half ship widths
+const PAD_FLAT = 16;     // flat ground out to here, then a skirt back to hills
+const PADS = [
+  {id: "A", x: -34, z: -8, y: 0},
+  {id: "B", x:  32, z: 22, y: 0}
+];
+for (const pad of PADS) pad.y = terrainBase(pad.x, pad.z);
+
+function terrainHeight(x, z) {
+  let h = terrainBase(x, z);
+  for (const pad of PADS) {
+    const d = Math.hypot(x - pad.x, z - pad.z);
+    // Dead flat out to PAD_FLAT, then a smoothstep back to the hills over the
+    // same distance again, so the plateau has a skirt and not a cliff.
+    let k = (d - PAD_FLAT) / PAD_FLAT;
+    k = k < 0 ? 0 : k > 1 ? 1 : k;
+    const s = k * k * (3 - 2 * k);
+    h = h * s + pad.y * (1 - s);
+  }
+  return h;
+}
+
+// Landing counts on the white square itself, not on the apron around it.
+function padAt(x, z) {
+  for (const pad of PADS) {
+    if (Math.abs(x - pad.x) <= PAD_HALF && Math.abs(z - pad.z) <= PAD_HALF) return pad;
+  }
+  return null;
+}
+
+/* Height and slope decide the colour, which is the whole point of dropping
+   the checkerboard: the shading carries the shape. */
+function terrainPal(h, ny) {
+  if (ny < 0.80) return 21;        // anything steep reads as exposed rock
+  if (h >  6) return 6;            // ridge tops catch the light
+  if (h > -2) return 5;            // the general regolith
+  return 19;                       // basins sit in shadow
+}
+
+/* ------------------------------------------------------------------
+   A 16x16 terrain texture, and the trick that makes it affordable.
+
+   16x16 is 256 texels. At 4 bits per texel that is 128 bytes of flash for
+   the pattern, and the RP2040's XIP cache is 16 KB, so every fetch after
+   the first few is a cache hit rather than a flash read. That is the whole
+   reason this size works and a 128x128 one would not.
+
+   Lighting is the part that would normally cost real time: a texel times a
+   per face brightness is three multiplies per pixel on a chip with no FPU.
+   So it is not done per pixel. Each (palette, brightness) pair is baked once
+   into its own shaded copy, and a triangle picks its copy before the loop.
+   Per pixel the cost is then a divide and a fetch, and NOT a single multiply.
+   Eight levels across four terrain colours is 32 copies, 512 bytes each at
+   RGB565: 16 KB of flash, against 12 MB available.
+   ------------------------------------------------------------------ */
+const TEX_N = 16;
+const TEX_MASK = TEX_N - 1;
+
+// Brightness per texel, 0..255. Coarse blotches with a little grain, which is
+// what regolith looks like and what survives being drawn 20 pixels wide.
+const TEX = (function(){
+  const t = new Uint8Array(TEX_N*TEX_N);
+  let seed = 0x9E3779B9;
+  const rnd = () => ((seed = (seed*1664525 + 1013904223) >>> 0) / 4294967296);
+  for(let y=0;y<TEX_N;y++){
+    for(let x=0;x<TEX_N;x++){
+      const blotch = Math.sin(x*0.9)*Math.cos(y*1.1) + Math.sin((x+y)*0.55);
+      let b = 200 + blotch*22 + (rnd()-0.5)*26;
+      t[y*TEX_N+x] = Math.max(150, Math.min(255, b))|0;
+    }
+  }
+  return t;
+})();
+
+const TEX_LEVELS = 8;
+const texCache = new Map();
+function shadedTex(pal, level){
+  const key = (pal<<3)|level;
+  let t = texCache.get(key);
+  if(t) return t;
+  const base = PALRGB[pal];
+  const lit = 0.42 + 0.58*(level/(TEX_LEVELS-1));
+  t = new Uint8Array(TEX_N*TEX_N*3);
+  for(let i=0;i<TEX_N*TEX_N;i++){
+    const b = (TEX[i]/255)*lit;
+    t[i*3]   = Math.min(255, base[0]*b)|0;
+    t[i*3+1] = Math.min(255, base[1]*b)|0;
+    t[i*3+2] = Math.min(255, base[2]*b)|0;
+  }
+  texCache.set(key,t);
+  return t;
+}
 
 /* ==================================================================
    Flight model. One fixed 60 Hz step, Euler, exactly what the device
@@ -1038,20 +1261,34 @@ const SCHEMES = [
    read:"Treats the four pods as two axes rather than four rotors."}
 ];
 
+/* How high the hull's origin sits when the footpads are down. The model's
+   nozzles reach to y = -3 at scale 0.62, so this is that, measured rather
+   than picked, which is what keeps the ship resting ON the pad instead of
+   floating over it or sunk into it. */
+const REST_Y = 3.0 * SHIP_SCALE;
+
 class Sim {
   constructor(){ this.reset(); }
   reset(){
-    this.x=0; this.y=58; this.z=0;
     this.vx=0; this.vy=0; this.vz=0;
     this.pitch=0; this.roll=0; this.yaw=0;
     this.wp=0; this.wr=0;
     this.fuel=100;
     this.thr=[0,0,0,0];
     this.noz=[0,0,0,0];
-    this.state="fly";       // fly | landed | crashed | tumble
+    this.state="fly";       // fly | won | crashed | tumble
     this.msg="";
     this.msgT=0;
     this.paused=false;
+
+    /* Mission one: hop from A to B. The ship starts sitting on A rather than
+       falling out of the sky, so the first thing a player does is take off,
+       which is also the first thing they need to learn. */
+    const start=PADS[0];
+    this.x=start.x; this.z=start.z; this.y=start.y+REST_Y;
+    this.grounded=true;
+    this.landedOn=start.id;
+    this.target=PADS[1].id;
   }
   step(dt, held, scheme){
     if(this.paused) return;
@@ -1151,26 +1388,38 @@ class Sim {
     this.pitch+=this.wp*dt;
     this.roll +=this.wr*dt;
 
-    /* ---- ground ---- */
-    const gy = groundHeight(this.x/TILE, this.z/TILE) + 2.4;
+    /* ---- ground ----
+       Touching down is not the end of the run any more. Landing well anywhere
+       just parks the ship, so it can lift off again, and the mission is only
+       over when the pad it parks on is the target. That is what makes the
+       first mission a hop rather than a single descent. */
+    const gy = terrainHeight(this.x, this.z) + REST_Y;
     if(this.y<=gy){
       this.y=gy;
       const tilt=Math.hypot(this.pitch,this.roll);
-      const onPad = onPadWorld(this.x,this.z);
+      const pad=padAt(this.x,this.z);
       if(-this.vy>TUNE.SAFE_VS || tilt>TUNE.SAFE_TILT){
         this.state="crashed";
         this.msg = (-this.vy>TUNE.SAFE_VS) ? "TOO FAST" : "TOO STEEP";
+        this.msgT=0;
+      } else if(pad && pad.id===this.target){
+        this.state="won";
+        this.msg="PAD "+pad.id;
+        this.msgT=0;
+        this.landedOn=pad.id;
       } else {
-        this.state="landed";
-        this.msg = onPad ? "ON THE PAD" : "DOWN SAFE";
+        this.grounded=true;
+        this.landedOn=pad?pad.id:null;
       }
-      this.vx=this.vy=this.vz=0; this.wp=this.wr=0; this.msgT=0;
+      this.vx=0; this.vy=0; this.vz=0; this.wp=0; this.wr=0;
+    } else {
+      this.grounded=false;
+      this.landedOn=null;
     }
     if(this.y>140){ this.y=140; this.vy=Math.min(0,this.vy); }
     if(Math.hypot(this.pitch,this.roll)>TUNE.MAX_TILT && this.state==="fly"){
       this.state="tumble"; this.msg="TUMBLED"; this.msgT=0;
     }
-    if(this.fuel<=0 && this.state==="fly" && this.y>gy+1) { /* falls, no message yet */ }
   }
 }
 function clamp01(v){ return v<0?0:v>1?1:v; }
@@ -1227,34 +1476,104 @@ function drawShip(r,cam,sim,scale){
   }
 }
 
+/* One triangle of terrain: project, cull against its own normal, shade from
+   height and slope. Split out because the two halves of a cell no longer
+   share a normal, which is exactly what makes the surface read as faceted
+   instead of as a lit grid. */
+// One texture repeat per cell, so the UVs come straight off world position
+// and there is nothing per vertex to store.
+const TEX_U = TEX_N / TCELL;
+
+function terrainTri(r, cam, a, b, c, out, s0, s1, s2){
+  if(!cam.project(a[0],a[1],a[2],out)) return; s0[0]=out[0]; s0[1]=out[1]; s0[2]=out[2]; s0[3]=out[3];
+  if(!cam.project(b[0],b[1],b[2],out)) return; s1[0]=out[0]; s1[1]=out[1]; s1[2]=out[2]; s1[3]=out[3];
+  if(!cam.project(c[0],c[1],c[2],out)) return; s2[0]=out[0]; s2[1]=out[1]; s2[2]=out[2]; s2[3]=out[3];
+  const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+  const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+  let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+  const L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
+  if(ny<0){ nx=-nx; ny=-ny; nz=-nz; }      // terrain always faces up
+  const mx=(a[0]+b[0]+c[0])/3, my=(a[1]+b[1]+c[1])/3, mz=(a[2]+b[2]+c[2])/3;
+  if(!facing(cam,mx,my,mz,nx,ny,nz)) return;
+  const pal=terrainPal(my,ny);
+
+  if(!texOn){
+    const col=shadeFlat(nx,ny,nz,pal);
+    r.tri(s0[0],s0[1],s0[2], s1[0],s1[1],s1[2], s2[0],s2[1],s2[2], col[0],col[1],col[2]);
+    return;
+  }
+
+  // Same fixed light as shadeFlat, quantised to the levels that were baked.
+  let d=nx*0.42+ny*0.82+nz*-0.39;
+  d=0.42+0.58*(d>0?d:0);
+  let lvl=((d-0.42)/0.58*(TEX_LEVELS-1)+0.5)|0;
+  lvl=lvl<0?0:lvl>TEX_LEVELS-1?TEX_LEVELS-1:lvl;
+  const tex=shadedTex(pal,lvl);
+
+  r.triTex(
+    s0[0],s0[1],s0[2],s0[3], a[0]*TEX_U*s0[3], a[2]*TEX_U*s0[3],
+    s1[0],s1[1],s1[2],s1[3], b[0]*TEX_U*s1[3], b[2]*TEX_U*s1[3],
+    s2[0],s2[1],s2[2],s2[3], c[0]*TEX_U*s2[3], c[2]*TEX_U*s2[3],
+    tex);
+}
+
 function drawGround(r,cam,sim){
-  const out=[0,0,0], p=[[0,0,0],[0,0,0],[0,0,0],[0,0,0]];
-  const cgx=Math.round(sim.x/TILE), cgz=Math.round(sim.z/TILE);
+  const out=[0,0,0,0], s0=[0,0,0,0], s1=[0,0,0,0], s2=[0,0,0,0];
+  const cgx=Math.round(sim.x/TCELL), cgz=Math.round(sim.z/TCELL);
   for(let gz=cgz-GROUND_R; gz<cgz+GROUND_R; gz++){
     for(let gx=cgx-GROUND_R; gx<cgx+GROUND_R; gx++){
-      const h00=groundHeight(gx,gz), h10=groundHeight(gx+1,gz);
-      const h01=groundHeight(gx,gz+1), h11=groundHeight(gx+1,gz+1);
-      const x0=gx*TILE, x1=(gx+1)*TILE, z0=gz*TILE, z1=(gz+1)*TILE;
-      const q=[[x0,h00,z0],[x1,h10,z0],[x1,h11,z1],[x0,h01,z1]];
-      let ok=true;
-      for(let i=0;i<4;i++){ if(!cam.project(q[i][0],q[i][1],q[i][2],out)){ ok=false; break; } p[i]=[out[0],out[1],out[2]]; }
-      if(!ok) continue;
-      const mx=(x0+x1)*0.5, mz=(z0+z1)*0.5;
-      const checker = ((gx+gz)&1);
-      // Regolith is two close greys so the ground reads as ground. The one
-      // orange tile is the pad, and it is the only saturated thing out there.
-      let pal = onPadTile(gx,gz) ? 9 : (checker ? 5 : 21);
-      const ux=q[1][0]-q[0][0], uy=q[1][1]-q[0][1], uz=q[1][2]-q[0][2];
-      const vx=q[3][0]-q[0][0], vy=q[3][1]-q[0][1], vz=q[3][2]-q[0][2];
-      // this quad runs +X then +Z, so the cross product points down. Negate.
-      let nx=-(uy*vz-uz*vy), ny=-(uz*vx-ux*vz), nz=-(ux*vy-uy*vx);
-      const L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
-      const my=(q[0][1]+q[1][1]+q[2][1]+q[3][1])*0.25;
-      if(!facing(cam,mx,my,mz,nx,ny,nz)) continue;
-      const col=shadeFlat(nx,ny,nz,pal);
-      r.tri(p[0][0],p[0][1],p[0][2], p[1][0],p[1][1],p[1][2], p[2][0],p[2][1],p[2][2], col[0],col[1],col[2]);
-      r.tri(p[0][0],p[0][1],p[0][2], p[2][0],p[2][1],p[2][2], p[3][0],p[3][1],p[3][2], col[0],col[1],col[2]);
+      const x0=gx*TCELL, x1=x0+TCELL, z0=gz*TCELL, z1=z0+TCELL;
+      const c00=[x0,terrainHeight(x0,z0),z0];
+      const c10=[x1,terrainHeight(x1,z0),z0];
+      const c11=[x1,terrainHeight(x1,z1),z1];
+      const c01=[x0,terrainHeight(x0,z1),z1];
+      // Alternate which way the cell splits. With every cell cut the same way
+      // the shading lines up into stripes and the surface reads as a grid
+      // again, which is the thing being got rid of.
+      if(((gx+gz)&1)===0){
+        terrainTri(r,cam,c00,c10,c11,out,s0,s1,s2);
+        terrainTri(r,cam,c00,c11,c01,out,s0,s1,s2);
+      } else {
+        terrainTri(r,cam,c10,c11,c01,out,s0,s1,s2);
+        terrainTri(r,cam,c10,c01,c00,out,s0,s1,s2);
+      }
     }
+  }
+}
+
+/* One flat square, two triangles. */
+function flatQuad(r,cam,cx,cz,y,half,col){
+  const out=[0,0,0], s=[[0,0,0],[0,0,0],[0,0,0],[0,0,0]];
+  const q=[[cx-half,y,cz-half],[cx+half,y,cz-half],
+           [cx+half,y,cz+half],[cx-half,y,cz+half]];
+  for(let i=0;i<4;i++){
+    if(!cam.project(q[i][0],q[i][1],q[i][2],out)) return;
+    s[i][0]=out[0]; s[i][1]=out[1]; s[i][2]=out[2];
+  }
+  r.tri(s[0][0],s[0][1],s[0][2], s[1][0],s[1][1],s[1][2], s[2][0],s[2][1],s[2][2], col[0],col[1],col[2]);
+  r.tri(s[0][0],s[0][1],s[0][2], s[2][0],s[2][1],s[2][2], s[3][0],s[3][1],s[3][2], col[0],col[1],col[2]);
+}
+
+/* The pads: a big white square each, which is the one shape on the map that
+   is obviously not terrain. Six triangles for the pair, against sixteen for
+   the octagons they replaced.
+
+   The pad you are aiming at gets an orange surround under the white, so the
+   target reads from across the valley without a marker, an arrow, or a line
+   of text telling the player where to go. */
+function drawPads(r,cam,sim){
+  for(const pad of PADS){
+    const done = sim.landedOn===pad.id && sim.state==="won";
+    const target = pad.id===sim.target && !done;
+    const y = pad.y + 0.12;      // just proud of the plateau it sits on
+    if(target){
+      const pulse=0.70+0.30*Math.sin(tick*0.55);
+      const o=PALRGB[9];
+      flatQuad(r,cam,pad.x,pad.z,y-0.04,PAD_HALF+2.5,
+        [(o[0]*pulse)|0,(o[1]*pulse)|0,(o[2]*pulse)|0]);
+    }
+    const w=PALRGB[7];
+    flatQuad(r,cam,pad.x,pad.z,y,PAD_HALF,[w[0],w[1],w[2]]);
   }
 }
 
@@ -1292,7 +1611,7 @@ function drawFlames(r,cam,sim,scale,tick){
    button prompts, measured not eyeballed.
    ================================================================== */
 function drawHud(r,sim,scheme){
-  const alt=Math.max(0,sim.y-2.4);
+  const alt=Math.max(0,sim.y-(terrainHeight(sim.x,sim.z)+REST_Y));
   const fuelW=40;
   // fuel bar, top left
   r.rect(3,3,fuelW+2,6, 20,24,40);
@@ -1311,11 +1630,24 @@ function drawHud(r,sim,scheme){
   const at=String(Math.round(alt));
   r.text(at, 3, H-10, 200,200,214);
 
+  // How far to the pad, bottom right. Two characters most of the time, and
+  // the only thing on screen that says what the mission is. The pad itself
+  // pulses, so this is a number rather than an arrow.
+  if(sim.state==="fly"){
+    const pad=PADS.find(p=>p.id===sim.target);
+    if(pad){
+      const d=Math.round(Math.hypot(sim.x-pad.x, sim.z-pad.z));
+      const s=pad.id+" "+d;
+      const c=PALRGB[9];        // the same orange the target pad is drawn in
+      r.text(s, W-3-r.textW(s), H-10, c[0],c[1],c[2]);
+    }
+  }
+
   if(sim.state!=="fly"){
     const m=sim.msg;
     const w=r.textW(m)+10;
     r.rect((W-w)>>1, 50, w, 15, 12,14,28);
-    const c = sim.state==="landed"?PALRGB[11]:PALRGB[8];
+    const c = sim.state==="won"?PALRGB[11]:PALRGB[8];
     r.textC(m, W>>1, 54, c[0],c[1],c[2]);
     if(sim.msgT>0.9) r.textC("ANY BUTTON", W>>1, 68, 120,124,150);
   }
@@ -1348,6 +1680,7 @@ const sim = new Sim();
 
 let scheme="direct";
 let mapMode="hull";
+let texOn=true;
 let paused=false, pauseSel=0, tick=0;
 let hasFocus=false;
 
@@ -1439,6 +1772,17 @@ function syncSchemes(){
   document.querySelectorAll(".scheme").forEach(b=>
     b.setAttribute("aria-pressed", String(b.dataset.id===scheme)));
   buildMapTable();
+}
+
+const tOn=document.getElementById("tex-on"), tOff=document.getElementById("tex-off");
+tOn .addEventListener("click",()=>{texOn=true;  syncTex(); cv.focus();});
+tOff.addEventListener("click",()=>{texOn=false; syncTex(); cv.focus();});
+function syncTex(){
+  tOn .setAttribute("aria-pressed",String(texOn));
+  tOff.setAttribute("aria-pressed",String(!texOn));
+  document.getElementById("texnote").textContent = texOn
+    ? "Perspective correct, pre shaded, one repeat per cell"
+    : "One flat colour per triangle, off its own normal";
 }
 
 const mh=document.getElementById("map-hull"), ms=document.getElementById("map-screen");
@@ -1546,8 +1890,9 @@ function frame(now){
   R.clearGradient(SKY_TOP[0],SKY_TOP[1],SKY_TOP[2],SKY_BOT[0],SKY_BOT[1],SKY_BOT[2]);
   drawGround(R,cam,sim);
   const shipTris=R.tris;
-  drawShip(R,cam,sim,0.62);
-  drawFlames(R,cam,sim,0.62,tick);
+  drawPads(R,cam,sim);
+  drawShip(R,cam,sim,SHIP_SCALE);
+  drawFlames(R,cam,sim,SHIP_SCALE,tick);
   drawHud(R,sim,scheme);
   if(paused) drawPause(R,pauseSel);
   R.squeeze565();
@@ -1555,7 +1900,7 @@ function frame(now){
   rasterMs = rasterMs*0.9 + (performance.now()-t0)*0.1;
 
   /* ---- telemetry ---- */
-  const alt=Math.max(0,sim.y-2.4);
+  const alt=Math.max(0,sim.y-(terrainHeight(sim.x,sim.z)+REST_Y));
   setTxt("t-alt", alt.toFixed(1));
   const vs=-sim.vy;
   const vsEl=setTxt("t-vs", vs.toFixed(1));
@@ -1693,7 +2038,7 @@ function setTxt(id,v){ const e=document.getElementById(id); e.textContent=v; ret
 })();
 
 /* ---- go ---- */
-syncSchemes(); syncMap(); note();
+syncSchemes(); syncMap(); syncTex(); note();
 requestAnimationFrame(frame);
 </script>
 </body></html>
