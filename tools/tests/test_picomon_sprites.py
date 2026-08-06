@@ -17,6 +17,9 @@ real state of this art at some point in an afternoon:
   - eyes drawn touching, which merge into a single dark bar
   - one character drawn to different proportions from the rest, which reads
     as a different game rather than a different person
+  - every leg pose left to right symmetric, so the walk cycle has four frames
+    and no step in any of them
+  - a head that ends on skin, so the chin has no edge and runs into the shirt
 
 build_art.py raises on a row of the wrong width, so that is not retested
 here. What it cannot see is style, and style is the thing four separate dicts
@@ -158,6 +161,75 @@ def test_the_cast_shares_one_face():
     print(f"  {len(fronts)} front facing characters share one eye shape")
 
 
+def silhouette(rows):
+    return ["".join("X" if c != "." else "." for c in r) for r in rows]
+
+
+def test_the_legs_actually_step():
+    """A walk needs one leg in front of the other, at least once.
+
+    Every leg pose used to be left to right symmetric: `apart`, `stand` and
+    `together` all mirrored onto themselves, so no frame ever put one leg
+    ahead. The feet spread and closed on the spot and the character sprang up
+    and down while sliding forward, which is the exact tell that a sprite is
+    being moved by code rather than walking. It shipped that way and nothing
+    caught it, because a symmetric pose is a perfectly valid drawing.
+    """
+    for name, poses in sorted(art.LEGS.items()):
+        asym = [p for p, rows in poses.items()
+                if silhouette(rows) != [r[::-1] for r in silhouette(rows)]]
+        if not asym:
+            fail(f"every pose of legs {name!r} is left to right symmetric, so "
+                 "nothing ever steps. A walk needs a pose with one leg in "
+                 "front of the other")
+    print(f"  {len(art.LEGS)} sets of legs each have a stepping pose")
+
+
+def test_the_two_steps_are_mirrors():
+    """And the step has to happen on both sides.
+
+    Pokemon Gen 3 does exactly this: its two walking frames for a facing are
+    exact mirrors of each other, checked on the sheet, frames 3 and 4 and
+    again 5 and 6. One stepping pose used twice is a limp.
+    """
+    for name, poses in sorted(art.LEGS.items()):
+        if "step_l" not in poses or "step_r" not in poses:
+            fail(f"legs {name!r} has no step_l and step_r pair")
+        left = silhouette(poses["step_l"])
+        right = silhouette(poses["step_r"])
+        if left != [r[::-1] for r in right]:
+            fail(f"legs {name!r}: step_l and step_r are not mirror "
+                 "silhouettes, so the walk leads with the same leg twice")
+    print(f"  every step_l mirrors its step_r")
+
+
+def test_the_cycle_uses_both_steps():
+    used = {leg for leg, _arm in art.CYCLE}
+    for want in ("step_l", "step_r"):
+        if want not in used:
+            fail(f"the walk cycle never plays {want!r}, so half the art is "
+                 "drawn and never seen")
+    print(f"  the cycle plays {', '.join(sorted(used))}")
+
+
+def test_every_head_closes_with_an_outline():
+    """The chin needs an edge.
+
+    The references all close the head with a dark row under the face, and it
+    is part of the head rather than the top of the shirt. Without it the head
+    bleeds into the torso: this art went out with row 9 skin and row 10
+    shirt, and the head read a row shorter than it measured.
+    """
+    for name, rows in sorted(art.HEAD.items()):
+        last = rows[-1]
+        if "s" in last:
+            fail(f"head {name!r} ends on skin, so the chin has no outline "
+                 "under it and the head runs straight into the shirt")
+        if "k" not in last:
+            fail(f"head {name!r} does not close with any outline at all")
+    print(f"  all {len(art.HEAD)} heads close with a chin outline")
+
+
 def test_the_art_still_builds():
     """The palettes have room for the eye whites.
 
@@ -197,6 +269,10 @@ def main():
     test_every_face_has_eyes_with_whites()
     test_the_eyes_do_not_touch()
     test_the_cast_shares_one_face()
+    test_every_head_closes_with_an_outline()
+    test_the_legs_actually_step()
+    test_the_two_steps_are_mirrors()
+    test_the_cycle_uses_both_steps()
     test_the_art_still_builds()
     print("picomon sprite style tests passed")
 

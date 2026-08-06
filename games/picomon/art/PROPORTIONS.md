@@ -33,19 +33,20 @@ from a 12 pixel wide bitmap by rule.
 | Pokemon Gen 3, Brendan | 10-23 | 24-27 | 28-30 | 21 | 14 (67%) | 4 (19%) | 3 (14%) |
 | Pokemon Gen 3, May | 11-23 | 24-27 | 28-30 | 20 | 13 (65%) | 4 (20%) | 3 (15%) |
 | RPG Maker style, boy1 | 12-22 | 23-26 | 27-30 | 19 | 11 (58%) | 4 (21%) | 4 (21%) |
-| **Picomon, current** | **0-9** | **10-14** | **15-19** | **20** | **10 (50%)** | **5 (25%)** | **5 (25%)** |
+| **Picomon, current** | **0-11** | **12-15** | **16-19** | **20** | **12 (60%)** | **4 (20%)** | **4 (20%)** |
 
-The three references average **63% head**. Picomon is at 50%, under all of
-them, and it is the wrong direction to be out in: the head is where the
-expression lives, and at this size the head is the only part of a character
-anyone actually reads.
+The three references average **63% head**. Picomon shipped at 50% for an
+afternoon, on a rule of thumb rather than a measurement, and it was out in the
+direction that costs the most: at this size the head is the only part of a
+character anybody reads.
 
-**Target: `HEAD_H 12, BODY_H 4, LEGS_H 4`**, which is 60 / 20 / 20.
+**`HEAD_H 12, BODY_H 4, LEGS_H 4`**, which is 60 / 20 / 20.
 
-That is short of the 63% average on purpose. Brendan and May spend only three
-rows on legs, but they have 21 rows to spend and we have 20, and the fourth
-leg row is what lets a stepping pose read at all (see section 3). 13 / 4 / 3
-matches May exactly and is the right call only if the walk stays static.
+That is deliberately short of the 63% average. Brendan and May spend only
+three rows on legs, but they have 21 rows to spend and we have 20, and the
+fourth leg row is what lets a stepping pose read at all (see section 3).
+13 / 4 / 3 matches May exactly and would be right only if the walk went back
+to being static.
 
 ### The outline belongs to the part it outlines
 
@@ -69,18 +70,18 @@ head.
 Counted without that row Brendan is 62% head; with it he is 67%. The same
 correction applies to May.
 
-**Picomon has no chin outline at all.** Row 9 is skin and row 10 is shirt, so
-the head bleeds into the torso with no edge between them. Adding that row is
-part of why the references read bigger than their raw row count suggests, and
-it should come in with the new budget.
+Picomon had no chin outline at all: row 9 was skin and row 10 was shirt, so
+the head bled into the torso with no edge between them. Every head now closes
+with one, and `test_every_head_closes_with_an_outline` fails the build if one
+stops doing so.
 
 
 ## 2. The face
 
-Ten rows of head was chosen so that two eyes could fit in it and read. That is
-the entire argument for chibi proportions here, and it is a legibility
-argument rather than a stylistic one: a head drawn to realistic proportion on
-a 20 row figure is about five rows, and five rows cannot hold a face.
+Twelve rows of head is what buys a readable face, and that is the entire
+argument for chibi proportions here. It is a legibility argument rather than a
+stylistic one: a head drawn to realistic proportion on a 20 row figure is
+about five rows, and five rows cannot hold two eyes that read as a face.
 
 Every head is built on one column plan, which is what keeps four characters
 looking like one cast:
@@ -111,34 +112,47 @@ the first attempt:
 
 ## 3. The walk
 
-**Currently broken, and it is the most visible thing in this document.**
-
-Four frames a direction, in the shape a walk should take: step, pass, step,
-pass.
+Four frames a direction: stance, step, stance, the other step.
 
 ```
-frame 0   legs apart      arms down
-frame 1   legs stand      arms mid
-frame 2   legs together   arms up
-frame 3   legs stand      arms mid
+frame 0   legs stand    arms mid
+frame 1   legs step_l   arms down
+frame 2   legs stand    arms mid
+frame 3   legs step_r   arms up
 ```
 
-All three leg poses (`apart`, `stand`, `together`) are **left to right
-symmetric**. Compare each against its own reverse and they match. So no frame
-puts one leg in front of the other: the feet spread and close on the spot, and
-the character springs up and down while sliding forward. That is the exact
-tell that a sprite is being moved by code rather than walking.
+`step_l` and `step_r` are **mirror silhouettes of each other**, and that is
+the whole thing. The planted foot reaches the bottom row and the trailing
+foot stops one row short, so the silhouette is uneven, and an uneven
+silhouette alternating left and right is a walk. At four rows there are no
+hips to swing, so the step has to read through the feet.
 
-Brendan does it in three poses: stand, left lead, right lead, where the two
-stepping poses are mirrors of each other.
+Pair each step with the opposite arm, because a person swings the arm
+opposite the leading leg.
 
-**The fix costs nothing.** No new frames, no new flash: one stepping pose plus
-its mirror replaces the symmetric pair, and `draw_sprite` already takes a flip
-argument because the side view uses it.
+### What this replaced
 
-The passing pose is stored twice on purpose, so the Aseprite tag plays the
-cycle correctly when the file is opened rather than only looking right inside
-the game. Keep that.
+The first version of this art had three leg poses, `apart`, `stand` and
+`together`, and **every one of them was left to right symmetric**. No frame
+ever put one leg in front of the other: the feet spread and closed on the
+spot and the character sprang up and down while sliding forward, which is the
+exact tell that a sprite is being moved by code rather than walking. It
+shipped that way, because a symmetric pose is a perfectly valid drawing and
+nothing was looking for the asymmetry.
+
+Pokemon Gen 3 does it the same way this file now does. Its 144 x 32 sheet is
+nine frames: three stills (down, up, side) at 0 to 2, then the walking pairs,
+and the two walking frames for a facing are **exact mirrors of each other**.
+Checked on the sheet: frames 3 and 4 mirror, and so do 5 and 6. Frames 7 and 8
+do not, because a side view cannot be mirrored without turning the character
+round.
+
+Three tests hold this: `test_the_legs_actually_step`,
+`test_the_two_steps_are_mirrors` and `test_the_cycle_uses_both_steps`.
+
+The stance appears twice in the cycle on purpose, so the Aseprite tag plays it
+correctly when the file is opened rather than only looking right inside the
+game. Keep that.
 
 
 ## 4. Poses
@@ -183,8 +197,9 @@ python3 ../../../tools/tests/test_picomon_sprites.py
 
 The test enforces what this document asserts: the parts sum to the frame, the
 head is between a half and two thirds of it, every face turned toward the
-player has pupils and whites, no character's eyes touch, and the four front
-facing characters share one eye shape. If you change the row budget here,
+player has pupils and whites, no character's eyes touch, the four front facing
+characters share one eye shape, every head closes with a chin outline, and the
+legs have a stepping pose whose mirror the cycle also plays. If you change the row budget here,
 change it in `build_art.py` and the test follows automatically, because it
 reads `HEAD_H`, `BODY_H` and `LEGS_H` rather than hard coding them.
 
