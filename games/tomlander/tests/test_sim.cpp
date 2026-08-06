@@ -56,6 +56,11 @@ void init_airborne(tl::World& world) {
 
 int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
 
+// Attitudes here are built with pse::quat_from_axis_angle, which takes
+// radians. The sim itself never sees one: it integrates body rates and has no
+// angle in it anywhere.
+constexpr float k_pi = 3.14159265f;
+
 // ---- trigonometry ----
 
 void test_trig_is_a_circle() {
@@ -120,20 +125,25 @@ void test_terminal_fall_matches_the_tuning() {
 void test_a_pod_lifts_its_own_corner() {
     struct Case {
         int pod;
-        int expect_pitch;   // sign, 0 for none
-        int expect_roll;
+        int expect_ux;      // sign of the hull's up vector, 0 for none
+        int expect_uz;
         int expect_vx;
         int expect_vz;
     };
-    // Positive pitch is nose UP and positive roll is right side up, the same
-    // convention draw_mesh draws with. The velocity column is what did NOT
-    // change when that convention was fixed: the net force was always right,
-    // and only the sign the hull was drawn at was wrong.
+    // Stated as the hull's UP VECTOR rather than as a pair of angles, because
+    // the sim no longer holds angles and because the up vector is the thing
+    // that stays meaningful at every attitude. Lift a corner and the up vector
+    // leans AWAY from it, which is also why the hull travels away from a
+    // firing pod.
+    //
+    // The velocity column has never changed through any of this, including the
+    // move off Euler angles: the net force was always right, and what was
+    // wrong was only ever the attitude it was drawn at.
     const Case cases[] = {
-        {tl::kPodFront, +1,  0,  0, -1},   // nose up, slides back
-        {tl::kPodBack,  -1,  0,  0, +1},   // nose down, slides forward
-        {tl::kPodRight,  0, +1, -1,  0},   // right side up, slides left
-        {tl::kPodLeft,   0, -1, +1,  0},   // left side up, slides right
+        {tl::kPodFront,  0, -1,  0, -1},   // nose up, slides back
+        {tl::kPodBack,   0, +1,  0, +1},   // nose down, slides forward
+        {tl::kPodRight, -1,  0, -1,  0},   // right side up, slides left
+        {tl::kPodLeft,  +1,  0, +1,  0},   // left side up, slides right
     };
 
     for (const Case& c : cases) {
@@ -141,12 +151,14 @@ void test_a_pod_lifts_its_own_corner() {
         init_airborne(world);
         run(world, fire(c.pod), 150);
 
-        if (c.expect_pitch > 0) CHECK(world.pitch > 0);
-        if (c.expect_pitch < 0) CHECK(world.pitch < 0);
-        if (c.expect_pitch == 0) CHECK(world.pitch == 0);
-        if (c.expect_roll > 0) CHECK(world.roll > 0);
-        if (c.expect_roll < 0) CHECK(world.roll < 0);
-        if (c.expect_roll == 0) CHECK(world.roll == 0);
+        int32_t ux, uy, uz;
+        tl::hull_up(world, ux, uy, uz);
+        if (c.expect_ux > 0) CHECK(ux > 0);
+        if (c.expect_ux < 0) CHECK(ux < 0);
+        if (c.expect_ux == 0) CHECK(ux == 0);
+        if (c.expect_uz > 0) CHECK(uz > 0);
+        if (c.expect_uz < 0) CHECK(uz < 0);
+        if (c.expect_uz == 0) CHECK(uz == 0);
 
         if (c.expect_vx > 0) CHECK(world.vx > 0);
         if (c.expect_vx < 0) CHECK(world.vx < 0);
@@ -154,6 +166,23 @@ void test_a_pod_lifts_its_own_corner() {
         if (c.expect_vz > 0) CHECK(world.vz > 0);
         if (c.expect_vz < 0) CHECK(world.vz < 0);
         if (c.expect_vz == 0) CHECK(world.vz == 0);
+    }
+}
+
+// No pod can yaw the hull, at any attitude, ever. Every pod thrusts along the
+// hull's own centre line, and a force through the centre line has no moment
+// about it. Worth pinning rather than assuming: it is the reason this game
+// needs no yaw control, and if a future arm ever gained a y component the
+// silence would be the only warning.
+void test_no_pod_can_yaw_the_hull() {
+    for (int pod = 0; pod < tl::kPodCount; pod++) {
+        tl::World world;
+        init_airborne(world);
+        // Start well off level, so the claim is about the hull's own axes and
+        // not about the one attitude where every frame agrees.
+        world.q = pse::quat_from_axis_angle(0.4f, 0.0f, 1.0f, 1.1f);
+        run(world, fire(pod), 200);
+        CHECK(world.wy == 0);
     }
 }
 
@@ -166,18 +195,20 @@ void test_opposite_pods_cancel() {
     tl::Input sides{};
     sides.pod[tl::kPodLeft] = sides.pod[tl::kPodRight] = true;
     run(world, sides, 200);
-    CHECK(world.roll == 0);
+    CHECK(world.wz == 0);
+    CHECK(tl::tilt(world) == 0);
     CHECK(world.vx == 0);
 
     init_airborne(world);
     tl::Input ends{};
     ends.pod[tl::kPodFront] = ends.pod[tl::kPodBack] = true;
     run(world, ends, 200);
-    CHECK(world.pitch == 0);
+    CHECK(world.wx == 0);
+    CHECK(tl::tilt(world) == 0);
     CHECK(world.vz == 0);
 }
 
-// The hull's up vector has to agree with the angles, because that is the one
+// The hull's up vector has to agree with the attitude, because that is the one
 // place the renderer and the sim have to mean the same thing.
 void test_up_vector_follows_the_hull() {
     tl::World world;
@@ -185,16 +216,71 @@ void test_up_vector_follows_the_hull() {
     int32_t ux, uy, uz;
 
     tl::hull_up(world, ux, uy, uz);
-    CHECK(ux == 0 && uz == 0 && uy == tl::k_trig_one);   // level
+    CHECK(ux == 0 && uz == 0 && uy == pse::k_quat_one);  // level
 
-    world.pitch = (tl::k_turn / 8) << 8;                 // 45 deg nose UP
+    // Nose up is a NEGATIVE turn about the hull's own x: a positive one takes
+    // its up toward +z, which is the nose going down.
+    world.q = pse::quat_from_axis_angle(1.0f, 0.0f, 0.0f, -k_pi / 4);
     tl::hull_up(world, ux, uy, uz);
     CHECK(uz < 0);                                       // lift leans backward
 
-    world.pitch = 0;
-    world.roll = (tl::k_turn / 8) << 8;
+    // Right side up is a POSITIVE turn about the hull's own z.
+    world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, k_pi / 4);
     tl::hull_up(world, ux, uy, uz);
     CHECK(ux < 0);                                       // lift leans left
+}
+
+// The world's up, read in the hull's own frame, is the levelling error, and
+// it has to lean the opposite way to the hull's up. Both are needed and they
+// are not the same vector: one says where thrust goes, the other says which
+// pod will fix the tilt.
+void test_up_in_hull_is_the_mirror_of_hull_up() {
+    tl::World world;
+    tl::world_init(world);
+    int32_t bx, by, bz;
+
+    world.q = pse::quat_from_axis_angle(1.0f, 0.0f, 0.0f, -k_pi / 4);
+    tl::up_in_hull(world, bx, by, bz);
+    CHECK(bz > 0);                     // nose up: world up leans toward +z
+
+    world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, k_pi / 4);
+    tl::up_in_hull(world, bx, by, bz);
+    CHECK(bx > 0);                     // right side up: it leans toward +x
+}
+
+// The claim the whole quaternion change exists to make.
+//
+// A pod turns the hull about the HULL's axes, at every attitude. The Euler
+// pair this replaced could not do that: measured on it, firing the front pod
+// at 30 degrees of roll turned the hull about an axis 30 degrees off the
+// right one, and the error tracked the roll angle degree for degree out to 90,
+// where a pod that should have yawed the hull pitched it instead.
+//
+// Rolling the hull and then firing the front pod must move the nose along the
+// hull's own x axis. Checked by the invariant that names it without any
+// trigonometry: a pure turn about the hull's x cannot change where the hull's
+// x axis points, at any roll at all.
+void test_a_pod_turns_the_hull_about_its_own_axis() {
+    const float rolls[] = {0.0f, 0.26f, 0.52f, 1.05f, 1.57f};   // 0 to 90 deg
+    for (float roll : rolls) {
+        tl::World world;
+        init_airborne(world);
+        world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, roll);
+
+        int32_t ax, ay, az;
+        pse::quat_rotate(world.q, pse::k_quat_one, 0, 0, ax, ay, az);
+
+        run(world, fire(tl::kPodFront), 120);
+
+        int32_t bx, by, bz;
+        pse::quat_rotate(world.q, pse::k_quat_one, 0, 0, bx, by, bz);
+
+        // Within a degree, in the fp14 the vector is carried in.
+        const int32_t tol = 300;
+        CHECK(iabs(bx - ax) < tol);
+        CHECK(iabs(by - ay) < tol);
+        CHECK(iabs(bz - az) < tol);
+    }
 }
 
 // ---- the leveller ----
@@ -204,9 +290,16 @@ void test_up_vector_follows_the_hull() {
 // moving too, it becomes positive feedback and drives the hull over. That is
 // a real failure mode this project has already produced once.
 void test_level_converges_from_every_attitude() {
-    const int32_t big = (tl::k_turn * 50 / 360) << 8;    // 50 degrees
-    const struct { int32_t pitch, roll; } starts[] = {
-        {big, 0}, {-big, 0}, {0, big}, {0, -big}, {big, big}, {-big, -big},
+    // Axis and angle, so a start can be a tilt about anything rather than
+    // about one of two named axes. The last two are attitudes the Euler pair
+    // could not have been tested at honestly: a tilt about a diagonal, and
+    // one at 80 degrees, where the old model put a pod's torque on an axis
+    // most of a quarter turn away from the right one.
+    const struct { float ax, ay, az, angle; } starts[] = {
+        {1, 0, 0,  0.87f}, {1, 0, 0, -0.87f},        // 50 degrees, nose
+        {0, 0, 1,  0.87f}, {0, 0, 1, -0.87f},        // 50 degrees, side
+        {1, 0, 1,  0.87f}, {1, 0, -1, -0.87f},       // 50 degrees, diagonal
+        {0.5f, 0, 1, 1.40f},                         // 80 degrees, nearly over
     };
     tl::Input level{};
     level.level = true;
@@ -214,11 +307,14 @@ void test_level_converges_from_every_attitude() {
     for (const auto& s : starts) {
         tl::World world;
         init_airborne(world);
-        world.pitch = s.pitch;
-        world.roll = s.roll;
+        world.q = pse::quat_from_axis_angle(s.ax, s.ay, s.az, s.angle);
         const int32_t before = tl::tilt(world);
         run(world, level, 300);
-        CHECK(tl::tilt(world) < before / 4);
+        // tilt is 1 - cos, which is quadratic in the angle near level, so a
+        // sixteenth of it is a quarter of the angle. Stated in the measure the
+        // gates use rather than converted, so the number here is the number
+        // the sim compares.
+        CHECK(tl::tilt(world) < before / 16);
         CHECK(world.state == tl::Flight::Flying);        // never tumbles
     }
 }
@@ -318,7 +414,8 @@ void test_arriving_too_steep_is_a_crash() {
     world.x = world.pads[1].x;
     world.z = world.pads[1].z;
     world.y = tl::ground_at(world, world.x, world.z) + (1 << 16);
-    world.roll = tl::k_safe_tilt * 2;
+    // Well past the 20 degree gate, as an attitude rather than an angle.
+    world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 0.7f);
     world.grounded = false;
     tl::Input none{};
     run(world, none, 200);
@@ -377,7 +474,8 @@ void test_a_flight_is_deterministic() {
         tl::world_tick(b, in);
     }
     CHECK(a.x == b.x && a.y == b.y && a.z == b.z);
-    CHECK(a.pitch == b.pitch && a.roll == b.roll);
+    CHECK(a.q.w == b.q.w && a.q.x == b.q.x);
+    CHECK(a.q.y == b.q.y && a.q.z == b.q.z);
     CHECK(a.fuel == b.fuel);
 }
 
@@ -394,8 +492,11 @@ int main() {
     test_one_pod_cannot_hover_and_four_can();
     test_terminal_fall_matches_the_tuning();
     test_a_pod_lifts_its_own_corner();
+    test_no_pod_can_yaw_the_hull();
     test_opposite_pods_cancel();
     test_up_vector_follows_the_hull();
+    test_up_in_hull_is_the_mirror_of_hull_up();
+    test_a_pod_turns_the_hull_about_its_own_axis();
     test_level_converges_from_every_attitude();
     test_the_ship_starts_parked_on_pad_a();
     test_the_apron_is_flat_and_the_hills_are_not();

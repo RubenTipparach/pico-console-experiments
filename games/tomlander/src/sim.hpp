@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+#include "pse/quat.hpp"
+
 #include "tuning.hpp"
 
 namespace tl {
@@ -60,11 +62,31 @@ struct World {
 
     int32_t x, y, z;              // fp16
     int32_t vx, vy, vz;           // fp16 per tick
-    // fp8 angle units. Positive pitch is nose UP and positive roll lifts the
-    // right side, which is the same convention Renderer3D::draw_mesh uses, so
-    // the hull tilts on screen the way the sim says it tilts.
-    int32_t pitch, roll;
-    int32_t wp, wr;               // fp8 angle units per tick
+
+    // Attitude, as a unit quaternion rather than a pair of angles.
+    //
+    // The pods rotate the hull about the hull's OWN axes, and Euler angles
+    // cannot carry that: each angle turns about a frame the others have
+    // already moved, so feeding body rates into them puts the rotation on the
+    // wrong axis by an amount that grows with the other angle. Measured on
+    // this exact sim before the change: firing the front pod at 30 degrees of
+    // roll turned the hull about an axis 30 degrees away from the one it
+    // should have, and at 90 degrees it pitched the hull where the physics
+    // says it should have yawed it. A quaternion has no privileged axis, so
+    // the same body rate is correct at every attitude and no attitude loses a
+    // degree of freedom.
+    pse::Quat q;
+
+    // Angular velocity about the hull's own x, y and z, fp8 angle units per
+    // tick. Body frame, which is the frame the pods actually push in, so this
+    // is the natural place for it and no conversion happens before the torque
+    // is applied.
+    //
+    // wy exists and is always driven to zero by the pods, because every pod
+    // thrusts along the hull's +y and a force through the centre line has no
+    // moment about it. It is kept because a rate is a vector and dropping a
+    // component of one to save four bytes is how a sim starts lying.
+    int32_t wx, wy, wz;
     int32_t fuel;                 // fp8
 
     uint8_t throttle[kPodCount];  // 0..255, what each pod did this tick
@@ -110,21 +132,28 @@ inline int32_t altitude(const World& world) {
     return world.y > g ? world.y - g : 0;
 }
 
-// How far off level, fp8 angle units. The Chebyshev sum rather than the
-// hypotenuse: no square root, and for a gate it is the same decision.
-inline int32_t tilt(const World& world) {
-    const int32_t p = world.pitch < 0 ? -world.pitch : world.pitch;
-    const int32_t r = world.roll < 0 ? -world.roll : world.roll;
-    return p > r ? p : r;
-}
-
 // Descent rate, fp16 per tick. Positive is falling.
 inline int32_t descent(const World& world) { return -world.vy; }
 
 // Distance to the target pad in whole world units.
 int32_t range_to_target(const World& world);
 
-// The hull's own up vector, fp14. What thrust acts along.
+// The hull's own up vector, fp14. What thrust acts along, and the whole of
+// the flight model: tilt the hull and you go sideways.
 void hull_up(const World& world, int32_t& ux, int32_t& uy, int32_t& uz);
+
+// Where the WORLD's up sits in the hull's own frame, fp14. The levelling
+// error, and a better one than a pair of angles: it stays meaningful at every
+// attitude, and its x and z components name the two pods that will fix it.
+void up_in_hull(const World& world, int32_t& bx, int32_t& by, int32_t& bz);
+
+// How far off level, fp14, as 1 - cos of the angle. See k_safe_tilt for why
+// it is not an angle. Zero when level, k_tumble_tilt at a quarter turn.
+inline int32_t tilt(const World& world) {
+    int32_t ux, uy, uz;
+    hull_up(world, ux, uy, uz);
+    const int32_t off = pse::k_quat_one - uy;
+    return off < 0 ? 0 : off;
+}
 
 }  // namespace tl

@@ -61,8 +61,20 @@ constexpr int32_t k_drag_mul = 31;             // v_terminal = a * this
 // about 57 deg/s, which is still quick and is actually flyable.
 constexpr int32_t k_pod_torque = 53;
 
-// Past this the hull is not flying any more, it is tumbling. A quarter turn.
-constexpr int32_t k_tumble_tilt = k_quarter << 8;
+// ---- how far off level, and the two gates on it ----
+//
+// Measured as 1 - cos(angle) in fp14, not as an angle. There is no angle in
+// the state any anywhere now, only the hull's up vector, and that vector's y
+// component IS cos(tilt): comparing on it costs a subtraction, where
+// recovering the angle would cost an arc cosine every tick to answer a
+// question that only ever needed an ordering. Monotonic from level to upside
+// down, so it sorts exactly as the angle did.
+//
+//   0     level
+//   988   20 degrees
+//   16384 90 degrees, on its side
+//   32768 fully inverted
+constexpr int32_t k_tumble_tilt = 16384;
 
 // ---- landing ----
 
@@ -70,10 +82,11 @@ constexpr int32_t k_tumble_tilt = k_quarter << 8;
 // is 0.05 per 60 Hz tick, which is 3.0 u/s there and 9.5 u/s at this scale.
 constexpr int32_t k_safe_descent = 6225;
 
-// And how far off level. tom-lander has NO tilt gate at all: damage is speed
-// only until the hull passes 90 degrees. A lander that can land on its side
-// is a strange lander, so the demake adds one, at 20 degrees.
-constexpr int32_t k_safe_tilt = (k_turn * 20 / 360) << 8;
+// And how far off level, in the fp14 measure above. tom-lander has NO tilt
+// gate at all: damage is speed only until the hull passes 90 degrees. A lander
+// that can land on its side is a strange lander, so the demake adds one, at
+// 20 degrees.
+constexpr int32_t k_safe_tilt = 988;
 
 // Horizontal speed a touchdown survives, fp16 per tick. Sliding onto a deck
 // sideways is a scrape, and the original charges for it separately.
@@ -91,8 +104,13 @@ constexpr int32_t k_fuel_burn = 33;
 // original's auto_level is rotation only and fires nothing, so holding it and
 // the all-thrusters button together is two bindings; the demake has four face
 // buttons and no room for that, so down does both at once.
-constexpr int32_t k_level_kp = 40;     // per fp8 angle unit, >> 8
-constexpr int32_t k_level_kd = 700;    // per fp8 angle unit per tick, >> 8
+// The P term reads the world's up vector in the hull's OWN frame, so its
+// error is an fp14 sine rather than an fp8 angle. Same controller, same
+// response: 415 against sin(20 degrees) reproduces what 40 gave against 20
+// degrees written as an angle, to the throttle count. Rescaled rather than
+// retuned, so the levelling feel did not move when the attitude did.
+constexpr int32_t k_level_kp = 415;    // per fp14 of sine, >> 12
+constexpr int32_t k_level_kd = 700;    // per fp8 angle unit per tick, >> 12
 constexpr int32_t k_level_base = 236;  // baseline throttle, 0..255
 
 // ---- the world ----

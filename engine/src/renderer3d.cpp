@@ -304,15 +304,37 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
                            float yaw, float scale,
                            uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
                            float pitch, uint8_t whiten, float roll) {
+    // The three angle form composes Ry(yaw) Rx(pitch) Rz(roll) into the basis
+    // and hands over. One implementation, so the two forms cannot disagree
+    // about what an orientation means, and the angles keep the exact meaning
+    // they had when this did its own per vertex trig.
+    const float sy = sinf(yaw), cy = cosf(yaw);
+    const float sp = sinf(pitch), cp = cosf(pitch);
+    const float sr = sinf(roll), cr = cosf(roll);
+
+    Basis basis;
+    basis.m[0] = cr * cy - sr * sp * sy;
+    basis.m[1] = -sr * cy - cr * sp * sy;
+    basis.m[2] = cp * sy;
+    basis.m[3] = sr * cp;
+    basis.m[4] = cr * cp;
+    basis.m[5] = sp;
+    basis.m[6] = -cr * sy - sr * sp * cy;
+    basis.m[7] = sr * sy - cr * sp * cy;
+    basis.m[8] = cp * cy;
+
+    draw_mesh(mesh, x, y, z, basis, scale, tint_r, tint_g, tint_b, whiten);
+}
+
+void Renderer3D::draw_mesh(const MeshData& mesh,
+                           float x, float y, float z,
+                           const Basis& basis, float scale,
+                           uint8_t tint_r, uint8_t tint_g, uint8_t tint_b,
+                           uint8_t whiten) {
     if (mesh.vertices == nullptr || mesh.faces == nullptr) return;
     if (mesh.scale <= 0) return;
 
-    const float sin_yaw = sinf(yaw);
-    const float cos_yaw = cosf(yaw);
-    const float sin_pitch = sinf(pitch);
-    const float cos_pitch = cosf(pitch);
-    const float sin_roll = sinf(roll);
-    const float cos_roll = cosf(roll);
+    const float* m = basis.m;
     const float unit = scale / static_cast<float>(mesh.scale);
 
     for (uint16_t f = 0; f < mesh.face_count; f++) {
@@ -323,17 +345,16 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
             continue;
         }
 
-        // Rotate the baked normal with the model so lighting follows it,
-        // pitch about local X first, then yaw, same order as the vertices.
+        // The baked normal turns with the model, through the same basis, so
+        // lighting follows the hull. A rotation preserves lengths and angles,
+        // so the vertex basis is the correct normal basis too, with no inverse
+        // transpose needed.
         const float base_nx = face.nx / 127.0f;
         const float base_ny = face.ny / 127.0f;
-        const float raw_nz = face.nz / 127.0f;
-        const float nx = base_nx * cos_roll - base_ny * sin_roll;
-        const float raw_ny = base_nx * sin_roll + base_ny * cos_roll;
-        const float ny = raw_ny * cos_pitch + raw_nz * sin_pitch;
-        const float pitched_nz = raw_nz * cos_pitch - raw_ny * sin_pitch;
-        const float world_nx = nx * cos_yaw + pitched_nz * sin_yaw;
-        const float world_nz = -nx * sin_yaw + pitched_nz * cos_yaw;
+        const float base_nz = face.nz / 127.0f;
+        const float world_nx = m[0] * base_nx + m[1] * base_ny + m[2] * base_nz;
+        const float ny = m[3] * base_nx + m[4] * base_ny + m[5] * base_nz;
+        const float world_nz = m[6] * base_nx + m[7] * base_ny + m[8] * base_nz;
 
         float lambert = world_nx * k_light_x + ny * k_light_y +
                         world_nz * k_light_z;
@@ -362,16 +383,12 @@ void Renderer3D::draw_mesh(const MeshData& mesh,
 
         for (int corner = 0; corner < 3; corner++) {
             const MeshVertex& v = mesh.vertices[indices[corner]];
-            const float base_lx = v.x * unit;
-            const float base_ly = v.y * unit;
-            const float raw_lz = v.z * unit;
-            const float lx = base_lx * cos_roll - base_ly * sin_roll;
-            const float raw_ly = base_lx * sin_roll + base_ly * cos_roll;
-            const float ly = raw_ly * cos_pitch + raw_lz * sin_pitch;
-            const float lz = raw_lz * cos_pitch - raw_ly * sin_pitch;
-            const float wx = x + lx * cos_yaw + lz * sin_yaw;
-            const float wz = z - lx * sin_yaw + lz * cos_yaw;
-            wy[corner] = y + ly;
+            const float lx = v.x * unit;
+            const float ly = v.y * unit;
+            const float lz = v.z * unit;
+            const float wx = x + m[0] * lx + m[1] * ly + m[2] * lz;
+            const float wz = z + m[6] * lx + m[7] * ly + m[8] * lz;
+            wy[corner] = y + m[3] * lx + m[4] * ly + m[5] * lz;
             if (!project(wx, wy[corner], wz,
                          px[corner], py[corner], pz[corner])) {
                 all_visible = false;

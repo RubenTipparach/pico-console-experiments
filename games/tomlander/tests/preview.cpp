@@ -223,7 +223,11 @@ int main(int argc, char** argv) {
             {-30, "rolled left, -X side up"},
         };
         for (const Case& c : cases) {
-            tilted.roll = ((tl::k_turn * c.roll_deg) / 360) << 8;
+            // Roll is a turn about the hull's own z. Positive raises the +x
+            // side, which is what the engine's test_mesh_roll pins.
+            tilted.q = pse::quat_from_axis_angle(
+                0.0f, 0.0f, 1.0f,
+                static_cast<float>(c.roll_deg) * 3.14159265f / 180.0f);
             draw(tilted, 0.0f, "");
             const tlr::FrameStats s = tlr::last_frame_stats();
             std::printf("flame, %s: aim", c.name);

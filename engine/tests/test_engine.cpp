@@ -16,6 +16,7 @@
 #include "pse/mesh.hpp"
 #include "pse/pixel.hpp"
 #include "pse/parallel.hpp"
+#include "pse/quat.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
 
@@ -676,6 +677,133 @@ void test_memory_budget() {
 
 }  // namespace
 
+
+// ---- quaternions ----
+
+namespace {
+
+float qdot_axis(const pse::Quat& q, int vx, int vy, int vz, int axis) {
+    int32_t o[3];
+    pse::quat_rotate(q, vx, vy, vz, o[0], o[1], o[2]);
+    return static_cast<float>(o[axis]) / pse::k_quat_one;
+}
+
+}  // namespace
+
+// A quaternion has to turn a vector the way the right hand rule says, because
+// everything downstream (which pod lifts which corner, which way a plume
+// leans) is stated against that and nothing else pins it.
+void test_quat_rotates_by_the_right_hand_rule() {
+    const float pi = 3.14159265f;
+
+    // A quarter turn about y takes +z to +x.
+    pse::Quat qy = pse::quat_from_axis_angle(0, 1, 0, pi / 2);
+    CHECK(qdot_axis(qy, 0, 0, pse::k_quat_one, 0) > 0.99f);
+
+    // About z it takes +x to +y, which is the sense "positive roll lifts the
+    // right side" is stated in.
+    pse::Quat qz = pse::quat_from_axis_angle(0, 0, 1, pi / 2);
+    CHECK(qdot_axis(qz, pse::k_quat_one, 0, 0, 1) > 0.99f);
+
+    // About x it takes +y to +z, so a POSITIVE turn about x drops a nose that
+    // points along +z. The sim relies on that sign.
+    pse::Quat qx = pse::quat_from_axis_angle(1, 0, 0, pi / 2);
+    CHECK(qdot_axis(qx, 0, pse::k_quat_one, 0, 2) > 0.99f);
+}
+
+// Unrotate has to be the exact inverse, because the levelling controller reads
+// the world's up through it and a controller fed a wrong frame diverges.
+void test_quat_unrotate_is_the_inverse() {
+    pse::Quat q = pse::quat_from_axis_angle(0.3f, 1.0f, -0.5f, 1.2f);
+    const int32_t v[3] = {5000, -9000, 3000};
+    int32_t a[3], b[3];
+    pse::quat_rotate(q, v[0], v[1], v[2], a[0], a[1], a[2]);
+    pse::quat_unrotate(q, a[0], a[1], a[2], b[0], b[1], b[2]);
+    for (int i = 0; i < 3; i++) {
+        const int32_t d = b[i] - v[i] < 0 ? v[i] - b[i] : b[i] - v[i];
+        CHECK(d < 40);          // 40/16384, a quarter of one percent
+    }
+}
+
+// Integration has to stay on the unit sphere over a long run. This is the
+// promise that lets the per tick step be a cheap first order one: without the
+// normalise inside it the quaternion would grow and the model would slowly
+// scale as well as turn.
+void test_quat_integration_stays_unit_and_lands_where_it_should() {
+    // Turn a full circle about z in 1000 equal steps.
+    const float pi = 3.14159265f;
+    const int steps = 1000;
+    const int32_t per_step =
+        static_cast<int32_t>(2.0f * pi / steps * pse::k_quat_one);
+
+    pse::Quat q = pse::quat_identity();
+    for (int i = 0; i < steps; i++) {
+        q = pse::quat_integrate(q, 0, 0, per_step);
+        const int64_t sq = static_cast<int64_t>(q.w) * q.w +
+                           static_cast<int64_t>(q.x) * q.x +
+                           static_cast<int64_t>(q.y) * q.y +
+                           static_cast<int64_t>(q.z) * q.z;
+        const int64_t one = static_cast<int64_t>(pse::k_quat_one) *
+                            pse::k_quat_one;
+        const int64_t off = sq > one ? sq - one : one - sq;
+        CHECK(off < one / 100);
+    }
+    // A full turn is back where it started, up to the fixed point grid.
+    int32_t ox, oy, oz;
+    pse::quat_rotate(q, pse::k_quat_one, 0, 0, ox, oy, oz);
+    CHECK(ox > static_cast<int32_t>(pse::k_quat_one * 0.99f));
+}
+
+// The reason this type exists at all. Composing a body frame turn must act on
+// the body's own axis at EVERY attitude, which three angles cannot do: an
+// Euler angle turns about a frame the other angles have already moved, so its
+// axis drifts away from the body's by an amount that grows with them.
+//
+// Turning about the body's own x cannot move where the body's x points. That
+// is true at any attitude, needs no trigonometry to state, and is exactly what
+// the Euler pair this replaced could not manage.
+void test_quat_body_turn_keeps_its_own_axis() {
+    const float angles[] = {0.0f, 0.4f, 0.9f, 1.57f, 2.4f};
+    for (float a : angles) {
+        // Start rolled by `a`, then turn about the body's own x.
+        pse::Quat q = pse::quat_from_axis_angle(0, 0, 1, a);
+        int32_t bx0, by0, bz0;
+        pse::quat_rotate(q, pse::k_quat_one, 0, 0, bx0, by0, bz0);
+
+        for (int i = 0; i < 200; i++) q = pse::quat_integrate(q, 160, 0, 0);
+
+        int32_t bx1, by1, bz1;
+        pse::quat_rotate(q, pse::k_quat_one, 0, 0, bx1, by1, bz1);
+        CHECK((bx1 - bx0 < 200) && (bx0 - bx1 < 200));
+        CHECK((by1 - by0 < 200) && (by0 - by1 < 200));
+        CHECK((bz1 - bz0 < 200) && (bz0 - bz1 < 200));
+    }
+}
+
+// The basis a quaternion produces has to be the same rotation the quaternion
+// is, because draw_mesh takes the basis and the sim reasons about the
+// quaternion. If these two ever disagreed the hull would fly one way and be
+// drawn another, which is the exact bug the whole change is about.
+void test_quat_basis_agrees_with_quat_rotate() {
+    pse::Quat q = pse::quat_from_axis_angle(0.2f, -0.7f, 0.4f, 2.0f);
+    const pse::Basis b = pse::quat_basis(q);
+    const int32_t axes[3][3] = {{pse::k_quat_one, 0, 0},
+                                {0, pse::k_quat_one, 0},
+                                {0, 0, pse::k_quat_one}};
+    for (int a = 0; a < 3; a++) {
+        int32_t o[3];
+        pse::quat_rotate(q, axes[a][0], axes[a][1], axes[a][2],
+                         o[0], o[1], o[2]);
+        for (int r = 0; r < 3; r++) {
+            const float from_basis = b.m[r * 3 + a];
+            const float from_rotate =
+                static_cast<float>(o[r]) / pse::k_quat_one;
+            const float d = from_basis - from_rotate;
+            CHECK(d < 0.01f && d > -0.01f);
+        }
+    }
+}
+
 int main() {
     test_winding_and_fill();
     test_depth_ordering();
@@ -688,6 +816,11 @@ int main() {
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
     test_mesh_roll();
+    test_quat_rotates_by_the_right_hand_rule();
+    test_quat_unrotate_is_the_inverse();
+    test_quat_integration_stays_unit_and_lands_where_it_should();
+    test_quat_body_turn_keeps_its_own_axis();
+    test_quat_basis_agrees_with_quat_rotate();
     test_rgb565_matches_the_sdk();
     test_memory_budget();
     test_split_matches_immediate();
