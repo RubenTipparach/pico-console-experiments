@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T04:20:45Z",
-      "commit": "820f536",
+      "built_at": "2026-08-06T11:47:52Z",
+      "commit": "fe78e9c",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T04:20:45Z",
-      "commit": "820f536",
+      "built_at": "2026-08-06T11:47:52Z",
+      "commit": "fe78e9c",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T04:20:45Z",
-      "commit": "820f536",
+      "built_at": "2026-08-06T11:47:52Z",
+      "commit": "fe78e9c",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T04:20:45Z",
-      "commit": "820f536",
+      "built_at": "2026-08-06T11:47:52Z",
+      "commit": "fe78e9c",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,6 +67,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-06T04:20:45Z",
+  "generated_at": "2026-08-06T11:47:52Z",
   "schema": 2
 }
