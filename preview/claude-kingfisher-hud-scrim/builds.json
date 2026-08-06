@@ -1,0 +1,17 @@
+{
+  "games": [
+    {
+      "built_at": "2026-08-06T04:59:39Z",
+      "commit": "f671af8",
+      "dir": "games/kingfisher",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "kingfisher",
+      "target": "kingfisher",
+      "title": "Kingfisher",
+      "web": true
+    }
+  ],
+  "generated_at": "2026-08-06T04:59:39Z",
+  "schema": 2
+}
