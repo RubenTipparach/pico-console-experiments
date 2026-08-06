@@ -88,13 +88,13 @@ const SHEETS = {
  "grass": {
   "frame_w": 11,
   "frame_h": 8,
-  "frames": 2,
+  "frames": 1,
   "tags": {
    "shapes": [
     0,
-    1
+    0
    ]
   },
-  "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAICAYAAAD9aA/QAAAAYklEQVR42mNggAKlNOP/DGgAmxhJAGSAcYfLf0JiFBsM48PEyHI5NkNg/NBVof/Jdj1ME8gQEEY3GFmMGAtg6nAaDONjMxiX4TA5uMHIGvDx0eVwGYoSJzABZEEMRXjE0cUAurKaVYqL34wAAAAASUVORK5CYII="
+  "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAAICAYAAAAvOAWIAAAASElEQVR42mNggAKlNOP/DGgAmxhY0LjD5T8hMawSMD5MDG4DNgkYP3RVKIoYnAGSAGF0xchiOBXD+BiKkU3Dx0fxJAyji8H4AIB0cbEHgOSyAAAAAElFTkSuQmCC"
  }
 };

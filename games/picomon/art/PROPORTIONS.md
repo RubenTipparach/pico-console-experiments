@@ -279,25 +279,36 @@ procedural blades a tile instead, which was a worse clump and, more to the
 point, a second design for something the mockup had already settled. **When
 the mockup has drawn a thing, use its drawing.**
 
-Two frames, because the game asks something of the grass the mockup never
-did:
+### You wade through it
 
-- `standing`, the mockup's tuft, swayed by shifting the whole clump on a
-  phase keyed to the tile so a field ripples instead of pulsing as one.
-- `parted`, the same clump pressed flat with the blades splayed outward.
+Grass on the player's row **and nearer draws over them**, so somebody
+standing in a patch is buried to the waist and only their top half shows.
+That is the reference's behaviour and it is the whole point of the tile:
+things in long grass cannot be seen.
 
-The renderer swaps to `parted` and slides the tuft radially away inside
-about a tile of any occupant, and draws nothing at all underfoot. The
-occupants are the player at their **interpolated** position, so the grass
-opens mid-step, and every NPC in the zone.
+The depth rule that does it. A tuft on the player's row or nearer takes
+**three** steps in front of its ground; the player takes **two**; a tuft
+farther away takes **one**. So near grass beats the player and draws over
+their legs, and grass behind them loses, which stops somebody at the back
+of a patch being scribbled over by grass that is behind them.
+
+An earlier revision cleared a ring instead, pushing tufts aside and culling
+the one underfoot. It reads as a bald patch following the player around,
+which is the opposite of hiding in long grass. That version also needed a
+second, pressed down frame; this one does not, and the tuft always stands.
+
+### It moves as you push through
+
+The sway is the mockup's, the whole clump leaning on a phase keyed to the
+tile so a field ripples rather than pulsing as one. Tufts within about a
+tile of an occupant sway roughly three times as far and three times as fast
+**while that occupant is walking**, which is the only animation that says
+the player is in the grass rather than on it.
+
+Occupants are the player at their **interpolated** position, so the grass
+reacts mid-step, and every NPC in the zone.
+
+### Cost
 
 One projection a tile, never one a blade: a Route 1 screenful is up to
-seventy grass tiles. Frame cost 0.425 to 0.430 ms on the host harness.
-
-Depth: the tuft takes **one** step nearer than its ground, like every other
-billboard. Two was a bug, and an instructive one: a tuft a tile north sits
-about three depth steps farther than the player, so at minus two it could
-tie the player's minus one, and a tie goes to whoever drew first, which is
-the tuft. Grass behind the player rendered on the player's legs. The player
-correspondingly takes two steps, because the player is the one thing that
-shares a tile with grass.
+seventy grass tiles. 0.429 ms a frame on the host harness.

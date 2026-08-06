@@ -731,10 +731,10 @@ TREE_KINDS = [
 # of them carries a space where a gap was meant. Padding and space are both
 # transparent there, so they are dots here.
 #
-# Two frames, because the grass has to do something the mockup never asked
-# of it: part around whoever is standing in it. `parted` is the same tuft
-# pressed down, the blades splayed outward and the crown gone, and the
-# renderer swaps to it inside the parting radius.
+# One frame. A pressed down second frame existed for a while, for a parting
+# that cleared a ring around the player; the reference does the opposite,
+# the player wades and the grass draws over them, so the tuft always
+# stands.
 PALETTES["grass"] = {
     "d": (0x22, 0x66, 0x33),   # shadow green
     "m": (0x33, 0x88, 0x44),   # body green
@@ -742,7 +742,6 @@ PALETTES["grass"] = {
 }
 
 GRASS_TUFT = [
-    # standing
     [
         "..d....d...",
         ".dm...dm...",
@@ -752,17 +751,6 @@ GRASS_TUFT = [
         "dmlldmllldm",
         "ddmmddmmddm",
         "..ddd..dd..",
-    ],
-    # parted: the same clump trodden flat and pushed out to the sides
-    [
-        "...........",
-        "...........",
-        "...........",
-        "...........",
-        "dm.......md",
-        "dmm.....mmd",
-        "ddmm...mmdd",
-        "..dd...dd..",
     ],
 ]
 

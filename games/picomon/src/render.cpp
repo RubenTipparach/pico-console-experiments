@@ -306,62 +306,55 @@ void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
 // to a slightly darker lawn.
 //
 // The art is mockups/picomon/index.html's TUFT, character for character on
-// its PAL_GRASS, carried into art/build_art.py. An earlier version of this
-// function invented five procedural blades a tile instead, which was a
-// worse clump and, more to the point, a second design for something the
-// mockup had already settled. The mockup is the design; when it has drawn
-// a thing, use its drawing.
+// its PAL_GRASS, carried into art/build_art.py.
 //
-// Two things the mockup never asked of it. It sways, which it does there
-// too, by shifting the whole tuft rather than bending a tip. And it parts
-// around whoever is standing in it: inside about a tile the tuft swaps to
-// the pressed down frame and slides radially outward, and underfoot it is
-// not drawn at all. The parting is the point of the whole feature, because
-// an empty patch where a body is says "something takes up room here"
-// without a line of text.
+// The behaviour is the reference's: you WADE through it. Grass on the
+// player's own row and nearer draws OVER them, so a character standing in
+// a patch is buried to the waist and only their top half shows, and the
+// tufts around them rustle harder while they walk.
+//
+// An earlier version of this cleared a ring instead, pushing tufts aside
+// and culling the one underfoot. That reads as a bald patch following the
+// player around, which is the opposite of hiding in long grass: the whole
+// point of the tile is that things in it cannot be seen.
 //
 // One projection a tile, never one a blade: a screenful of Route 1 can be
 // seventy grass tiles.
 struct GrassOccupant { float x, z; };
 
 void draw_grass(int tx, int ty, float wx, float wz, uint32_t t,
-                const GrassOccupant* occ, int occ_count) {
-    // Nearest occupant, measured in the world. Screen nearness is not world
-    // nearness at this pitch, which is a mistake this function has already
-    // made once.
-    float best = 1e9f, ddx = 0.0f, ddz = 0.0f;
+                const GrassOccupant* occ, int occ_count, float pz,
+                bool walking) {
+    // How close the nearest occupant is, measured in the world. Screen
+    // nearness is not world nearness at this pitch.
+    float best = 1e9f;
     for (int o = 0; o < occ_count; o++) {
         const float dx = wx - occ[o].x, dz = wz - occ[o].z;
         const float d2 = dx * dx + dz * dz;
-        if (d2 < best) { best = d2; ddx = dx; ddz = dz; }
+        if (d2 < best) best = d2;
     }
-    if (best < 0.16f) return;              // trodden flat underfoot
 
-    float gx = wx, gz = wz;
-    int frame = 0;
-    if (best < 1.1f) {
-        const float d = sqrtf(best);
-        const float push = (1.05f - d) * 0.55f;
-        gx += ddx / d * push;
-        gz += ddz / d * push;
-        frame = 1;
-    } else {
-        // The sway is the mockup's: the whole tuft leans, and the phase is
-        // keyed off the tile so a field ripples instead of pulsing as one.
-        gx += 0.06f * sinf(float(t) * 0.0021f + float(tx) * 0.7f
-                           + float(ty) * 0.4f);
-    }
+    // The sway is the mockup's: the whole tuft leans, on a phase keyed off
+    // the tile so a field ripples instead of pulsing as one. Grass a body is
+    // pushing through moves further and faster, which is the only animation
+    // that says the player is IN it rather than standing on it.
+    const bool disturbed = best < 1.4f;
+    const float amp = disturbed && walking ? 0.17f : 0.06f;
+    const float rate = disturbed && walking ? 0.0075f : 0.0021f;
+    const float gx = wx + amp * sinf(float(t) * rate + float(tx) * 0.7f
+                                     + float(ty) * 0.4f);
 
     int sx = 0, sy = 0, sd = 0;
-    if (!g_renderer.project(gx, 0.0f, gz, sx, sy, sd)) return;
+    if (!g_renderer.project(gx, 0.0f, wz, sx, sy, sd)) return;
     const SpriteSheet& sh = k_sheets[art_grass];
-    // One step nearer than the ground it stands on, the same as every other
-    // billboard here. Two was a bug: a tuft a tile north sits about three
-    // depth steps farther than the player, so at minus two it could tie the
-    // player's minus one, and a tie goes to whoever drew first, which is the
-    // tuft. Grass behind the player rendered on the player's legs.
-    const uint8_t d8 = uint8_t(sd * 255 / pse::k_fixed_one - 1);
-    draw_sprite(art_grass, frame, sx, sy - sh.h + 2, d8, false, 0);
+    // Depth, and this is the whole overlap. A tuft on the player's row or
+    // nearer takes three steps in front of its ground, which beats the two
+    // the player takes, so it draws over their legs. Farther tufts take the
+    // usual one and lose to the player, so somebody at the back of a patch
+    // is not scribbled over by grass that is behind them.
+    const int step = (wz >= pz - 0.5f) ? 3 : 1;
+    const uint8_t d8 = uint8_t(sd * 255 / pse::k_fixed_one - step);
+    draw_sprite(art_grass, 0, sx, sy - sh.h + 2, d8, false, 0);
 }
 
 // The colour a hit throws off, by the attacking move's type. One rule and no
@@ -622,7 +615,7 @@ void draw_overworld(const World& w, uint32_t t) {
                                          0.0f, 1.0f);
                     break;
                 case tile_tallgrass:
-                    draw_grass(x, y, wx, wz, t, occ, occ_count);
+                    draw_grass(x, y, wx, wz, t, occ, occ_count, pz, w.step != 0);
                     break;
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);

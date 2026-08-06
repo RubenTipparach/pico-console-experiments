@@ -316,13 +316,16 @@ void test_an_interior_tree_is_drawn() {
 // frame. 338844 is deliberately excluded even though the tuft uses it,
 // because the tree sprites use it too, and a count that trees can satisfy
 // is a count that proves nothing about grass.
+bool is_grass(const uint8_t* p) {
+    return (p[0] == 0x22 && p[1] == 0x66 && p[2] == 0x33) ||
+           (p[0] == 0x55 && p[1] == 0xAA && p[2] == 0x55);
+}
+
 int count_grass(const Frame& f) {
     int n = 0;
     for (int y = 0; y < k_h; y++) {
         for (int x = 0; x < k_w; x++) {
-            const uint8_t* p = f.at(x, y);
-            if ((p[0] == 0x22 && p[1] == 0x66 && p[2] == 0x33) ||
-                (p[0] == 0x55 && p[1] == 0xAA && p[2] == 0x55)) n++;
+            if (is_grass(f.at(x, y))) n++;
         }
     }
     return n;
@@ -366,28 +369,37 @@ void test_the_grass_sways() {
     check(moved > 5, "the tufts move with time, so the field sways");
 }
 
-// The parting. Standing in the grass pushes every blade within the parting
-// radius away and flattens it, so the space the player's body takes up is
-// visibly clear. The camera is locked to the player, which is what makes
-// the feet a constant screen position: measured once at (59, 58), and if
-// the camera ever moves this fails loudly rather than drifting.
-void test_the_grass_parts_around_the_player() {
+// Wading. The reference behaviour is that grass on the player's row and
+// nearer draws OVER them, so somebody standing in a patch is buried to the
+// waist. An earlier version cleared a ring around the player instead, which
+// reads as a bald patch following them about, the opposite of hiding in
+// long grass.
+//
+// The camera is locked to the player, so the sprite lands at a constant
+// screen position: measured once, and if the camera ever moves this fails
+// loudly rather than drifting.
+void test_the_grass_overlaps_the_player() {
     pm::World w = on_route(5, 6);        // standing inside the west patch
     Frame f;
     render(w, f, 0);
-    check(count_grass(f) > 25, "the rest of the patch still has its tufts");
-    int inside = 0;
-    for (int y = 55; y <= 61; y++) {
-        for (int x = 56; x <= 62; x++) {
-            const uint8_t* p = f.at(x, y);
-            if ((p[0] == 0x22 && p[1] == 0x66 && p[2] == 0x33) ||
-                (p[0] == 0x55 && p[1] == 0xAA && p[2] == 0x55)) inside++;
-        }
-    }
-    std::printf("  grass: %d tuft pixels at the player's feet\n", inside);
-    check(inside == 0,
-          "no tuft stands inside the parting radius, so the grass opens "
-          "around the body standing in it");
+    check(count_grass(f) > 25, "the patch still has its tufts");
+
+    // The player's sprite box, and the band of it the grass should cover:
+    // the legs, not the head. The hero is 20 rows tall anchored at the
+    // feet, so the bottom six rows are what an eight pixel tuft reaches.
+    // The head band is the hair columns only, 55 to 62. A wider box catches
+    // background grass standing BESIDE the head, which is correct rendering
+    // and not a bug, and the first version of this test failed on it.
+    int legs = 0, head = 0;
+    for (int y = 52; y <= 58; y++)
+        for (int x = 52; x <= 66; x++) if (is_grass(f.at(x, y))) legs++;
+    for (int y = 40; y <= 48; y++)
+        for (int x = 55; x <= 62; x++) if (is_grass(f.at(x, y))) head++;
+    std::printf("  grass: %d tuft pixels over the legs, %d over the head\n",
+                legs, head);
+    check(legs > 6, "grass draws over the player's lower half, so they are "
+                    "wading through the patch rather than standing on it");
+    check(head == 0, "and not over their head, which would bury them");
 }
 
 // The strike. Every one of these was missing: a turn resolved, a line of text
@@ -580,7 +592,7 @@ int main() {
     test_an_interior_tree_is_drawn();
     test_tall_grass_grows_tufts();
     test_the_grass_sways();
-    test_the_grass_parts_around_the_player();
+    test_the_grass_overlaps_the_player();
     test_a_hit_flashes_shakes_and_drains();
     test_the_near_creature_is_the_bigger_one();
     test_battle_floor_is_solid();
