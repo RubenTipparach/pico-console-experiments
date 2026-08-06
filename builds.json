@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T00:32:04Z",
-      "commit": "0c7fc09",
+      "built_at": "2026-08-06T01:10:44Z",
+      "commit": "d4c2508",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T00:32:04Z",
-      "commit": "0c7fc09",
+      "built_at": "2026-08-06T01:10:44Z",
+      "commit": "d4c2508",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-06T00:32:04Z",
-      "commit": "0c7fc09",
+      "built_at": "2026-08-06T01:10:44Z",
+      "commit": "d4c2508",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,6 +56,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-06T00:32:04Z",
+  "generated_at": "2026-08-06T01:10:44Z",
   "schema": 2
 }
