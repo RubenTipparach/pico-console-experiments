@@ -41,7 +41,31 @@ enum class Flight : uint8_t {
     Tumbled,
 };
 
-enum class Fault : uint8_t { None, TooFast, TooSteep, Scraped, Ditched };
+enum class Fault : uint8_t {
+    None,
+    TooFast,     // came down faster than a hull survives at all
+    TooSteep,
+    Scraped,
+    Ditched,
+    Broke,       // survivable landings, but one too many of them
+    Dry,         // out of fuel with the mission still open
+};
+
+// How a touchdown at this descent rate goes. The sim judges by it and the HUD
+// colours by it, from the one function, so the number a player is watching
+// cannot promise something the landing does not honour. See k_soft_descent for
+// where the two lines sit and why they sit on exact readout values.
+enum class Touchdown : uint8_t {
+    Clean,       // green: set down, nothing bent
+    Hard,        // amber: it holds, and it costs a point of hull
+    Fatal,       // red: a wreck
+};
+
+inline Touchdown descent_band(int32_t fall) {
+    if (fall > k_safe_descent) return Touchdown::Fatal;
+    if (fall > k_soft_descent) return Touchdown::Hard;
+    return Touchdown::Clean;
+}
 
 struct Pad {
     int32_t x, z;     // fp16 centre
@@ -165,6 +189,11 @@ struct World {
     // Waterline, fp16, or k_no_sea when this mission has no ocean.
     int32_t sea;
 
+    // Hull damage, one point per hard landing, k_damage_max ends the flight.
+    // Not a health bar: nothing in the air can hurt the ship, so this only
+    // ever moves at a touchdown and it only ever counts up.
+    uint8_t damage;
+
     Flight state;
     Fault fault;
     uint32_t ticks_in_state;
@@ -177,6 +206,13 @@ void world_tick(World& world, const Input& input);
 // Is the ship carrying the crate right now? The one question the flight model
 // asks about cargo, so it is the one the renderer and the HUD ask too.
 inline bool carrying(const World& world) { return world.cargo == kCargoHeld; }
+
+// Is there still a mission to finish? False once the flight is over, however
+// it ended. Running the tank dry is only a fail while this is true, which is
+// the whole of the "goals not complete" half of the rule.
+inline bool mission_open(const World& world) {
+    return world.state == Flight::Flying;
+}
 
 // ---- the fixed point trigonometry the sim runs on ----
 //

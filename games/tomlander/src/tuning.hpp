@@ -103,7 +103,37 @@ constexpr int32_t k_tumble_tilt = 16384;
 
 // Vertical speed a touchdown survives, fp16 per tick. tom-lander's threshold
 // is 0.05 per 60 Hz tick, which is 3.0 u/s there and 9.5 u/s at this scale.
-constexpr int32_t k_safe_descent = 11225;
+//
+// Landed on an exact HUD number rather than left where the conversion put it.
+// The readout prints (descent * 100) >> 16, which IS whole units per second at
+// a 100 Hz tick, and it truncates. The old 11225 sat at 17.13 u/s, so a
+// printed 17 was sometimes a landing and sometimes a wreck depending on the
+// two decimal places the player could not see, and no amount of care at the
+// stick could tell them apart. 11141 is the largest descent that still prints
+// 16, so the number on screen is now the whole of the rule: 16 or under lands,
+// 17 or over does not. The gate itself moved by 0.7 percent.
+constexpr int32_t k_safe_descent = 11141;
+
+// And where a landing stops being clean. Under this the ship is set down and
+// nothing is bent; between here and k_safe_descent it arrives hard, which
+// costs a point of hull. Same trick: 7208 is the largest descent that prints
+// 10, so the bands are exactly what the readout says they are.
+//
+//   0 to 10 u/s   green, set down clean
+//   11 to 16 u/s  amber, it holds together but something gives
+//   17 and up     red, that is a wreck
+//
+// A controlled arrest touches down at 0 to 1 u/s, measured, so green is where
+// a flown approach lands rather than a band nobody can reach. Terminal fall is
+// 17.7 u/s, which is just the wrong side of the red line: a hull left to drop
+// is always a wreck, and only just, which is the right amount of nearly.
+constexpr int32_t k_soft_descent = 7208;
+
+// How many hard landings the hull has in it. Two, so the first is a warning
+// you fly on from and the second ends the flight. A mission is two touchdowns,
+// which makes that exactly the interesting number: arrive hard on the pickup
+// and the delivery has to be clean.
+constexpr uint8_t k_damage_max = 2;
 
 // And how far off level, in the fp14 measure above. tom-lander has NO tilt
 // gate at all: damage is speed only until the hull passes 90 degrees. A lander
@@ -120,6 +150,12 @@ constexpr int32_t k_safe_slide = 5200;
 constexpr int32_t k_fuel_full = 100 << 8;
 // Per tick with all four pods at full: 13 per second at 100 Hz, fp8.
 constexpr int32_t k_fuel_burn = 33;
+
+// One tank is 8.5 seconds of holding level, because k_level_base is 236 of
+// 255 and the leveller fires all four pods at it. Flown properly, pulsing the
+// leveller rather than leaning on it, a leg costs 57 to 65 percent of a tank.
+// Two legs therefore do not fit in one, which is why a deck that continues a
+// mission refuels: see the touchdown in sim.cpp.
 
 // ---- auto level, the down button ----
 

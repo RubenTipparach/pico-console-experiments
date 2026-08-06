@@ -214,7 +214,9 @@ void panel_lines(int top, const char* const* lines, const Pen* pens, int count,
 
 // The in flight HUD. Rule 9: the minimum, and no button prompts.
 //   fuel  a bar, because a number you have to read is a number you do not
-//   fall  descent rate, red once it would break the ship
+//   fall  descent rate, in the colour of what a touchdown at it would do
+//   dent  one red mark per hard landing already taken, and nothing at all
+//         while the hull is clean, so a tidy flight costs the HUD nothing
 //   alt   how far above whatever is underneath
 //   B nn  which deck, and how far, in the colour of the arrow that points at
 //         it. The decks no longer mark themselves, so this and the arrow are
@@ -233,12 +235,28 @@ void draw_hud() {
         screen.rectangle(Rect(4, 4, fill, 4));
     }
 
+    // One mark per point of hull already spent, just past the end of the fuel
+    // bar and on its row, so nothing else on screen has to move to make room.
+    // Nothing is drawn while the hull is clean: damage announces itself by
+    // appearing, which is louder than a gauge that is usually full.
+    for (int i = 0; i < g_world.damage; i++) {
+        screen.pen = Pen(255, 0, 77);
+        screen.rectangle(Rect(3 + bar_w + 5 + i * 5, 4, 3, 4));
+    }
+
     char line[16];
     const int32_t fall_cm = (tl::descent(g_world) * 100) >> 16;
     std::snprintf(line, sizeof(line), "%d", fall_cm > 0 ? fall_cm : 0);
     Size size = screen.measure_text(line, minimal_font);
-    screen.pen = tl::descent(g_world) > tl::k_safe_descent ? Pen(255, 0, 77)
-                                                           : Pen(255, 241, 232);
+    // Green, amber, red, straight off the same function the touchdown is
+    // judged by. The readout is whole units per second and both band edges sit
+    // on exact printed values, so the colour and the number always agree: at
+    // 16 it is amber and it lands, at 17 it is red and it does not.
+    switch (tl::descent_band(tl::descent(g_world))) {
+        case tl::Touchdown::Fatal: screen.pen = Pen(255, 0, 77); break;
+        case tl::Touchdown::Hard:  screen.pen = Pen(255, 163, 0); break;
+        default:                   screen.pen = Pen(0, 228, 54); break;
+    }
     screen.text(line, minimal_font, Point(w - size.w - 3, 3));
 
     std::snprintf(line, sizeof(line), "%d", tl::altitude(g_world) >> 16);
@@ -276,6 +294,8 @@ const char* fault_word(tl::Fault fault) {
         case tl::Fault::TooSteep: return "TOO STEEP";
         case tl::Fault::Scraped: return "SCRAPED";
         case tl::Fault::Ditched: return "DITCHED";
+        case tl::Fault::Broke: return "BROKE UP";
+        case tl::Fault::Dry: return "NO FUEL";
         default: return "TUMBLED";
     }
 }
