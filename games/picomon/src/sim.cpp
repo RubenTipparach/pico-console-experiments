@@ -626,7 +626,17 @@ void battle_tick(World& w, const Input& in) {
             if (!in.a_pressed) return;
             w.sfx = Sfx::Select;
             if (b.cursor == 0) { b.state = BattleState::Moves; return; }
-            if (b.cursor == 1) { w.mode = Mode::Bag; w.menu_cursor = 0; return; }
+            // Open on BALLS, exactly as the overworld does. Carrying the last
+            // pocket over is what made a battle unwinnable to a player who had
+            // once looked at MEDICINE: BAG then A landed on an empty list and
+            // did nothing at all, so the ball could not be thrown and nothing
+            // on screen said why.
+            if (b.cursor == 1) {
+                w.mode = Mode::Bag;
+                w.menu_cursor = 0;
+                w.menu_pocket = 0;
+                return;
+            }
             if (b.cursor == 2) { w.mode = Mode::Party; w.menu_cursor = 0; return; }
             if (!b.wild) {
                 push_msg(b, Msg::NoRunning);
@@ -1014,7 +1024,11 @@ void bag_tick(World& w, const Input& in) {
         w.sfx = Sfx::Cancel;
         return;
     }
-    if (!in.a_pressed || count == 0) return;
+    if (!in.a_pressed) return;
+    // An empty pocket answers, rather than swallowing the press. Silence here
+    // reads as a broken button, which is how the sticky pocket above stayed
+    // hidden: the game looked dead instead of looking empty.
+    if (count == 0) { w.sfx = Sfx::Cancel; return; }
     const uint8_t slot = slots[w.menu_cursor % count];
     const Item& it = k_items[w.bag[slot].item];
 

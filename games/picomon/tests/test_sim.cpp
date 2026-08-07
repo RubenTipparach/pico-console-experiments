@@ -652,6 +652,71 @@ void test_the_badge_opens_the_cave() {
     check(through.zone == pm::zone_hollowcave, "with the badge, the cave opens");
 }
 
+// Walk in the grass until something jumps out, then clear the message so the
+// battle menu is up and the cursor is on FIGHT.
+pm::World wild_battle(uint32_t seed) {
+    pm::World w = start_world(seed);
+    w.zone = pm::zone_route1;
+    w.tx = 4;
+    w.ty = 6;
+    w.mode = pm::Mode::Overworld;
+    for (int i = 0; i < 60000 && w.mode != pm::Mode::Battle; i++) {
+        pm::world_tick(w, hold((i / 9) % 2 == 0 ? 1 : 3));
+    }
+    for (int i = 0; i < 200 && w.battle.state != pm::BattleState::Menu; i++) {
+        pm::world_tick(w, press_a());
+    }
+    return w;
+}
+
+pm::Input press_right() { return hold(1); }
+
+// The whole point of a wild battle, driven the way a player drives it: put the
+// cursor on BAG, press A, press A again on the first ball.
+//
+// This is a regression. The bag remembered its pocket between openings, but
+// only the overworld reset it, so a player who had once looked at MEDICINE
+// found that BAG then A in every later battle did nothing whatsoever. Nothing
+// was on fire: the throw code was correct and the list was simply empty, which
+// is indistinguishable from a dead button. Catching is the one thing the game
+// is named after, so it is tested through the buttons, not through the sim.
+void test_a_ball_can_always_be_thrown() {
+    for (uint32_t seed = 1; seed <= 8; seed++) {
+        pm::World w = wild_battle(seed);
+        if (w.mode != pm::Mode::Battle) continue;
+        pm::world_tick(w, press_right());          // FIGHT -> BAG
+        pm::world_tick(w, press_a());              // open the bag
+        pm::world_tick(w, press_a());              // throw what is under it
+        check(w.battle.state == pm::BattleState::Throw,
+              "BAG then A throws a ball in a wild battle");
+    }
+
+    // The same, after the player has been reading a different pocket.
+    for (uint8_t pocket = 0; pocket < 3; pocket++) {
+        pm::World w = wild_battle(777);
+        if (w.mode != pm::Mode::Battle) continue;
+        w.menu_pocket = pocket;
+        pm::world_tick(w, press_right());
+        pm::world_tick(w, press_a());
+        check(w.menu_pocket == 0, "a battle opens the bag on the balls");
+        pm::world_tick(w, press_a());
+        check(w.battle.state == pm::BattleState::Throw,
+              "the last pocket read does not block the next throw");
+    }
+
+    // And it resolves: a throw never parks the battle in an animation.
+    pm::World w = wild_battle(777);
+    pm::world_tick(w, press_right());
+    pm::world_tick(w, press_a());
+    pm::world_tick(w, press_a());
+    int t = 0;
+    for (; t < 5000 && (w.battle.state == pm::BattleState::Throw ||
+                        w.battle.state == pm::BattleState::Wobble); t++) {
+        pm::world_tick(w, none());
+    }
+    check(t < 5000, "a thrown ball always resolves");
+}
+
 void test_state_fits_its_budget() {
     // The device numbers, checked here so they cannot drift unnoticed.
     std::printf("  sizeof(World)    = %zu bytes\n", sizeof(pm::World));
@@ -669,6 +734,7 @@ int main() {
     test_a_step_slides_without_snapping();
     test_encounters_happen_and_end();
     test_catch_formula();
+    test_a_ball_can_always_be_thrown();
     test_damage_is_bounded();
     test_levelling_never_overflows();
     test_save_round_trips();
