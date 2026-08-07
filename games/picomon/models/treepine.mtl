@@ -1,0 +1,16 @@
+# Colours for treepine.obj.
+#
+# Every channel is a multiple of 0x11, because the panel is four bits per
+# channel and a colour that is not shifts on the device and nowhere else.
+# Each Kd is a sixteenth, so obj2cpp's round(v * 255) lands back exactly on
+# the byte it was written for.
+#
+# The same greens pine.obj and the tree sprites use. A tree in the middle of
+# a route, a tree on its border and a tree behind a battle are all one
+# forest, and that only holds if the colours are literally the same numbers.
+
+newmtl pine_needles
+Kd 0.333333 0.666667 0.333333   # #55AA55
+
+newmtl pine_bark
+Kd 0.466667 0.333333 0.200000   # #775533

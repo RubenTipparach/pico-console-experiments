@@ -22,6 +22,8 @@
 #include "picomon/sign.hpp"
 #include "picomon/sparklet.hpp"
 #include "picomon/tidepup.hpp"
+#include "picomon/treeleaf.hpp"
+#include "picomon/treepine.hpp"
 #include "picomon/wall.hpp"
 
 namespace pmr {
@@ -261,6 +263,28 @@ static_assert(int(TreeKind::Count) == k_tree_kind_count,
               "the tree species in the level data and the runs of frames in "
               "the art have to be the same list, in the same order");
 
+// An NPC's sheet is an index straight into the art's k_sheets, so the data
+// compiler's Sheet enum and the art's art_* constants are one list written
+// in two files. They drifted, and the result was not a crash or a blank
+// sprite: every villager in the game was drawn as the player and every nurse
+// as a villager, animated perfectly, from a real sheet, just not theirs.
+static_assert(sheet_hero == art_hero && sheet_villager == art_villager &&
+                  sheet_trainer == art_trainer && sheet_healer == art_healer,
+              "the sprite sheet order in tools/picomon_data.py and in "
+              "art/build_art.py have to match, because an NPC's sheet is an "
+              "index into the art's table");
+
+// The mesh a zone's trees are made of, for the ones standing inside the
+// playable area. The species is the zone's, never the tile's, so a route is
+// one forest and not a mixture, and it is the same species the border's
+// sprites are drawn from.
+const pse::MeshData& tree_mesh(uint8_t kind) {
+    switch (TreeKind(kind)) {
+        case TreeKind::Broadleaf: return treeleaf;
+        default:                  return treepine;
+    }
+}
+
 void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
     int px = 0, py = 0, depth = 0;
     if (!g_renderer.project(wx, 0.0f, wz, px, py, depth)) return;
@@ -273,6 +297,64 @@ void draw_tree(int tx, int ty, float wx, float wz, bool far, uint8_t kind) {
     // anything genuinely in front of it.
     const uint8_t d = uint8_t(depth * 255 / pse::k_fixed_one - 1);
     draw_sprite(sheet, frame, px, py - sh.h, d, false, 0);
+}
+
+// Tall grass, as the design mockup's own tuft.
+//
+// The tile used to be nothing but its ground colour, so the one tile type
+// the game is ABOUT, the one that hides creatures, was visually identical
+// to a slightly darker lawn.
+//
+// The art is mockups/picomon/index.html's TUFT, character for character on
+// its PAL_GRASS, carried into art/build_art.py.
+//
+// The behaviour is the reference's: you WADE through it. Grass on the
+// player's own row and nearer draws OVER them, so a character standing in
+// a patch is buried to the waist and only their top half shows, and the
+// tufts around them rustle harder while they walk.
+//
+// An earlier version of this cleared a ring instead, pushing tufts aside
+// and culling the one underfoot. That reads as a bald patch following the
+// player around, which is the opposite of hiding in long grass: the whole
+// point of the tile is that things in it cannot be seen.
+//
+// One projection a tile, never one a blade: a screenful of Route 1 can be
+// seventy grass tiles.
+struct GrassOccupant { float x, z; };
+
+void draw_grass(int tx, int ty, float wx, float wz, uint32_t t,
+                const GrassOccupant* occ, int occ_count, float pz,
+                bool walking) {
+    // How close the nearest occupant is, measured in the world. Screen
+    // nearness is not world nearness at this pitch.
+    float best = 1e9f;
+    for (int o = 0; o < occ_count; o++) {
+        const float dx = wx - occ[o].x, dz = wz - occ[o].z;
+        const float d2 = dx * dx + dz * dz;
+        if (d2 < best) best = d2;
+    }
+
+    // The sway is the mockup's: the whole tuft leans, on a phase keyed off
+    // the tile so a field ripples instead of pulsing as one. Grass a body is
+    // pushing through moves further and faster, which is the only animation
+    // that says the player is IN it rather than standing on it.
+    const bool disturbed = best < 1.4f;
+    const float amp = disturbed && walking ? 0.17f : 0.06f;
+    const float rate = disturbed && walking ? 0.0075f : 0.0021f;
+    const float gx = wx + amp * sinf(float(t) * rate + float(tx) * 0.7f
+                                     + float(ty) * 0.4f);
+
+    int sx = 0, sy = 0, sd = 0;
+    if (!g_renderer.project(gx, 0.0f, wz, sx, sy, sd)) return;
+    const SpriteSheet& sh = k_sheets[art_grass];
+    // Depth, and this is the whole overlap. A tuft on the player's row or
+    // nearer takes three steps in front of its ground, which beats the two
+    // the player takes, so it draws over their legs. Farther tufts take the
+    // usual one and lose to the player, so somebody at the back of a patch
+    // is not scribbled over by grass that is behind them.
+    const int step = (wz >= pz - 0.5f) ? 3 : 1;
+    const uint8_t d8 = uint8_t(sd * 255 / pse::k_fixed_one - step);
+    draw_sprite(art_grass, 0, sx, sy - sh.h + 2, d8, false, 0);
 }
 
 // The colour a hit throws off, by the attacking move's type. One rule and no
@@ -493,6 +575,18 @@ void draw_overworld(const World& w, uint32_t t) {
         }
     }
 
+    // Everyone the tall grass has to part around: the player at their
+    // interpolated position, so the blades open continuously mid step, and
+    // every NPC standing in the zone.
+    GrassOccupant occ[1 + 16];
+    int occ_count = 0;
+    occ[occ_count++] = {px, pz};
+    for (int i = 0; i < z.npc_count && occ_count < 17; i++) {
+        const NpcDef& n = z.npcs[i];
+        if (!npc_present(w, n)) continue;
+        occ[occ_count++] = {float(n.x) + 0.5f, wz_of(z, float(n.y) + 0.5f)};
+    }
+
     // Props, far to near so the sprites layered on top stay sane. These read
     // the real map, not the clamped one: scenery outside it is the flat border
     // colour and nothing stands on it.
@@ -509,8 +603,19 @@ void draw_overworld(const World& w, uint32_t t) {
             const float far = wz - pz > 4.0f ? 1.0f : 0.0f;
             switch (tile) {
                 case tile_tree:
-                    // Sprites, not meshes: see draw_tree.
+                    // The border. Sprites, not meshes: see draw_tree.
                     draw_tree(x, y, wx, wz, far != 0.0f, z.trees);
+                    break;
+                case tile_treecore:
+                    // Inside the playable area, where the player walks round
+                    // a tree and sees more than one side of it. Twenty
+                    // triangles each and under twenty of them in a zone,
+                    // which the border could never afford.
+                    g_renderer.draw_mesh(tree_mesh(z.trees), wx, 0.0f, wz,
+                                         0.0f, 1.0f);
+                    break;
+                case tile_tallgrass:
+                    draw_grass(x, y, wx, wz, t, occ, occ_count, pz, w.step != 0);
                     break;
                 case tile_rock:
                     g_renderer.draw_mesh(rock, wx, 0.0f, wz, 0.0f, 1.0f);
@@ -592,8 +697,16 @@ void draw_overworld(const World& w, uint32_t t) {
             const int dir = w.facing;
             const int tag = dir == 0 ? 4 : dir == 2 ? 0 : 8;
             const int phase = w.step ? (w.anim_phase & 3) : 1;
+            // Two steps nearer than the ground, where every other billboard
+            // takes one. The player is the one thing that shares a tile
+            // with the grass blades, and a depth tie goes to whoever drew
+            // first, which is always the blade: at minus one, a blade the
+            // parting had pushed behind the player still rendered on their
+            // legs. At minus two the player beats same-tile and north-tile
+            // blades outright and still loses to the next row south, which
+            // is over three steps nearer.
             draw_sprite(art_hero, tag + phase, sx, sy - k_sheets[art_hero].h,
-                        uint8_t(sd * 255 / pse::k_fixed_one - 1), dir == 3, 0);
+                        uint8_t(sd * 255 / pse::k_fixed_one - 2), dir == 3, 0);
         }
     }
 

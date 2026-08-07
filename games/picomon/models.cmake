@@ -10,12 +10,22 @@
 # `mesh` and a tint, so a mesh is roughly 1.2 KB of flash and an evolution
 # that reuses its base mesh costs three bytes.
 #
-# pine.obj is the battle backdrop's tree and only that. The overworld's trees
-# are sprites, authored in art/build_art.py: a screenful of Route 1 is up to
-# 87 tree tiles, and geometry there costs more triangles than the whole rest
-# of the frame. The arena has five, they are the only scenery in the shot,
-# and geometry catches the light and sits in the depth buffer in a way a
-# billboard cannot.
+# There are three tree meshes and a pair of tree sprite sheets, and which one
+# draws is decided by where the tree stands, not by taste:
+#
+#   pine.obj                 the battle backdrop. Five trees are the only
+#                            scenery in the shot, so it can afford 26
+#                            triangles and a third cone.
+#   treepine.obj             a tree inside the playable area. 20 triangles,
+#   treeleaf.obj             the same silhouette as the backdrop's, one
+#                            species per zone.
+#   art/build_art.py sprites the wall of trees that frames the map. Over a
+#                            hundred tiles of it, so geometry is out of the
+#                            question: 120 x 20 triangles is more than
+#                            everything else in the frame put together.
+#
+# tools/picomon_data.py draws that line by flooding inward from the map edge,
+# which is why it is 19 mesh trees on Route 1 and 117 sprites.
 set(picomon_model_files
     emberkit.obj
     mossling.obj
@@ -33,4 +43,6 @@ set(picomon_model_files
     machine.obj
     plant.obj
     pine.obj
+    treepine.obj
+    treeleaf.obj
 )

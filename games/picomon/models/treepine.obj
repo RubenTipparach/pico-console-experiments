@@ -1,0 +1,80 @@
+# The overworld's conifer, standing on a tree tile inside the playable area.
+#
+# Y is up, +Z is north, one world unit is one map tile. The lowest vertex sits
+# on y = 0 and the model is centred on x = 0 and z = 0, so the game places it
+# by its feet.
+#
+# Faces are wound so that (c - a) x (b - a) points out of the solid, which is
+# what tools/obj2cpp.py bakes as the face normal. Get it backwards and the
+# model still draws, it just goes flat ambient dark. The ring convention is
+# pine.obj's: (r cos t, y, r sin t) with the angle increasing, cones wound
+# apex then ring[i] then ring[i+1], and the trunk's quads wound top[i],
+# bottom[i], bottom[i+1], top[i+1].
+#
+# Two overlapping six sided cones and a four sided trunk: exactly 20
+# triangles, 2.45 units tall. That budget is the whole reason this file
+# exists rather than the overworld reusing pine.obj, which is 26.
+#
+# The two are drawn in different places on purpose. pine.obj is the battle
+# backdrop, where five trees are the only scenery in the shot and can afford
+# a third cone. Here a screenful of Route 1 can hold nineteen of these, so
+# the third cone would cost 114 triangles to add detail that is eight pixels
+# tall. The silhouette is deliberately the same: a player walking a route and
+# then fighting on it should be looking at one forest.
+#
+# The trees that frame the map are not these. Those are still the sprites in
+# art/build_art.py, because the border is over a hundred tiles of tree and
+# geometry there would cost more than everything else in the frame put
+# together. tools/picomon_data.py decides which is which by flooding inward
+# from the map edge, so the split is level data and not a guess made per
+# frame.
+
+mtllib treepine.mtl
+
+# upper cone: apex, then its ring
+v 0.000 2.450 0.000
+v 0.420 1.350 0.000
+v 0.210 1.350 0.364
+v -0.210 1.350 0.364
+v -0.420 1.350 0.000
+v -0.210 1.350 -0.364
+v 0.210 1.350 -0.364
+
+# lower cone: apex sits inside the upper cone so the two read as one tree
+v 0.000 1.700 0.000
+v 0.600 0.580 0.000
+v 0.300 0.580 0.520
+v -0.300 0.580 0.520
+v -0.600 0.580 0.000
+v -0.300 0.580 -0.520
+v 0.300 0.580 -0.520
+
+# the trunk, top ring then bottom ring
+v 0.110 0.660 0.000
+v 0.000 0.660 0.110
+v -0.110 0.660 0.000
+v -0.000 0.660 -0.110
+v 0.130 0.000 0.000
+v 0.000 0.000 0.130
+v -0.130 0.000 0.000
+v -0.000 0.000 -0.130
+
+usemtl pine_needles
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 6
+f 1 6 7
+f 1 7 2
+f 8 9 10
+f 8 10 11
+f 8 11 12
+f 8 12 13
+f 8 13 14
+f 8 14 9
+
+usemtl pine_bark
+f 15 19 20 16
+f 16 20 21 17
+f 17 21 22 18
+f 18 22 19 15

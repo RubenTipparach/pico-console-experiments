@@ -87,6 +87,8 @@ jobs:
           python3 tools/tests/test_gen_shell.py
           python3 tools/tests/test_game_entry.py
           python3 tools/tests/test_pack_picocad_texture.py
+          python3 tools/tests/test_picomon_sprites.py
+          python3 tools/tests/test_picomon_trees.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,

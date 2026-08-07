@@ -38,6 +38,11 @@ POCKETS = ["balls", "medicine", "key"]
 ITEM_EFFECTS = ["ball", "heal", "cure", "revive", "key"]
 FACINGS = ["north", "east", "south", "west"]
 NPC_KINDS = ["villager", "trainer", "healer", "shop"]
+# The character sprite sheets, in the order games/picomon/art/build_art.py
+# emits them. An NPC's sheet is an index straight into the art's k_sheets, so
+# these two lists are one list kept in two files, and render.cpp
+# static_asserts them against each other.
+SHEETS = ["hero", "villager", "trainer", "healer"]
 EVENT_KINDS = ["sign", "item", "trigger"]
 # Which tree grows in a zone. The order matches art/build_art.py's
 # TREE_KINDS, and render.cpp static_asserts that the two agree.
@@ -104,7 +109,8 @@ class Data:
         self.species, self.species_ix = [], {}
         self.items, self.item_ix = [], {}
         self.zones, self.zone_ix = [], {}
-        self.sheets, self.sheet_ix = [], {}
+        self.sheets = list(SHEETS)
+        self.sheet_ix = {n: i for i, n in enumerate(self.sheets)}
         self.flag_set, self.flag_read = {}, {}
         self.text = []           # the page pool
         self.text_sealed = False
@@ -112,9 +118,28 @@ class Data:
 
     # ---- shared helpers
     def sheet(self, name, where):
+        """Turn a sheet name into the index the renderer will look up.
+
+        That index is an index into the ART's k_sheets, so this list has to
+        be the art's list, in the art's order. It used to be built in the
+        order the zone files happened to mention names, which put villager at
+        0, healer at 1 and trainer at 2 against an art table of hero 0,
+        villager 1, trainer 2, healer 3. Every villager in the game was drawn
+        as the player and every nurse as a villager, and it looked like a
+        deliberate cast of identical twins rather than like a bug, because
+        the sprites drawn were real sprites, correctly animated, just not the
+        ones asked for. Trainer worked, which is the sort of coincidence that
+        keeps a thing like this alive.
+
+        Writing the list down means a name that is not in it fails here
+        rather than drawing somebody else, and render.cpp static_asserts the
+        two orders against each other so a rename cannot quietly re-shuffle
+        them.
+        """
         if name not in self.sheet_ix:
-            self.sheet_ix[name] = len(self.sheets)
-            self.sheets.append(name)
+            fail(where, f"unknown sprite sheet {name!r}, expected one of "
+                        f"{', '.join(SHEETS)}. The order of that list is the "
+                        "art's own, in games/picomon/art/build_art.py")
         return self.sheet_ix[name]
 
     def add_text(self, pages, where):
@@ -810,6 +835,112 @@ class Data:
         if not (0 <= st["x"] < z["w"] and 0 <= st["y"] < z["h"]) or \
                 not walkable(z["tiles"][st["y"]][st["x"]]):
             fail(self.start[0], "the player starts on a tile they cannot stand on")
+
+        self.split_trees()
+
+    def split_trees(self):
+        """Turn the trees the map's border does not reach into mesh trees.
+
+        A tree the player can see past is scenery and is worth geometry. A
+        tree in the wall that frames the map is one of a hundred and twenty,
+        is never seen from more than one side, and has to stay a billboard.
+
+        Telling them apart takes two rules, and the second one was added
+        after looking at a screenshot.
+
+        First, a flood fill inward from the edge across tree tiles: whatever
+        the outside cannot reach is an island, and an island is geometry.
+
+        Second, and this is the one that is easy to miss: a tree the flood
+        fill DID reach is still geometry if the player can WALK PAST IT ON
+        BOTH SIDES, meaning open ground on opposite sides in either axis.
+        That is a tree standing in the field, seen from three sides as the
+        player goes by, and it has no business being a billboard. Under the
+        flood fill alone, `TT` at the start of Route 1's row 7 stayed a
+        sprite because it touched the edge ring, and it sat in open field
+        beside a grass patch looking exactly like what it was.
+
+        Deep treelines are unaffected, which is the point of counting open
+        sides rather than measuring distance. A tile inside Hometown's six
+        row northern treeline has no open sides at all, and the innermost
+        row has one. A rule of "within N tiles of the edge" would either
+        turn most of that treeline into meshes or swallow the interior trees
+        standing two tiles in from it.
+
+        Doing this here rather than in the renderer is the point: it is a
+        property of the map, it never changes while the game runs, and per
+        frame it would be a flood fill of the whole zone.
+        """
+        tree = next((i for i, t in enumerate(self.tiles)
+                     if t["name"] == "tree"), None)
+        core = next((i for i, t in enumerate(self.tiles)
+                     if t["name"] == "treecore"), None)
+        if tree is None or core is None:
+            return
+        for z in self.zones:
+            w, h, rows = z["w"], z["h"], z["tiles"]
+            seen = [[False] * w for _ in range(h)]
+            stack = []
+            for x in range(w):
+                for y in (0, h - 1):
+                    if rows[y][x] == tree and not seen[y][x]:
+                        seen[y][x] = True
+                        stack.append((x, y))
+            for y in range(h):
+                for x in (0, w - 1):
+                    if rows[y][x] == tree and not seen[y][x]:
+                        seen[y][x] = True
+                        stack.append((x, y))
+            while stack:
+                cx, cy = stack.pop()
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if not (0 <= nx < w and 0 <= ny < h):
+                        continue
+                    if seen[ny][nx] or rows[ny][nx] != tree:
+                        continue
+                    seen[ny][nx] = True
+                    stack.append((nx, ny))
+            def opens(x, y):
+                """Can the player stand on the tile at x, y?
+
+                Outside the map is never open: the window runs past the edge
+                and reads the border tile, so the outermost ring has walls
+                beyond it, not field.
+                """
+                if not (0 <= x < w and 0 <= y < h):
+                    return False
+                return not (self.tiles[rows[y][x]]["flags"]
+                            & TILE_FLAGS["block"])
+
+            def thin(x, y):
+                """Open ground on both opposite sides, in either axis.
+
+                That is exactly "the player can walk past on both sides", so
+                they see round it, so it needs to be geometry. Counting three
+                open sides instead only catches the TIP of a one wide spur:
+                the tiles behind the tip have their neighbours above and
+                below, so they score two and stayed billboards standing in
+                open grass.
+                """
+                return ((opens(x - 1, y) and opens(x + 1, y)) or
+                        (opens(x, y - 1) and opens(x, y + 1)))
+
+            # Anything the outside could not reach, plus anything it could
+            # reach that the player can walk around.
+            n = 0
+            for y in range(h):
+                for x in range(w):
+                    if rows[y][x] != tree:
+                        continue
+                    if not seen[y][x]:
+                        rows[y][x] = core
+                        n += 1
+                        continue
+                    if thin(x, y):
+                        rows[y][x] = core
+                        n += 1
+            z["mesh_trees"] = n
 
 
 # --------------------------------------------------------------------------

@@ -14,7 +14,7 @@ struct SpriteSheet {
 };
 
 extern const SpriteSheet k_sheets[];
-constexpr int k_sheet_art_count = 6;
+constexpr int k_sheet_art_count = 7;
 
 constexpr int art_hero = 0;
 constexpr int art_villager = 1;
@@ -22,5 +22,16 @@ constexpr int art_trainer = 2;
 constexpr int art_healer = 3;
 constexpr int art_treenear = 4;
 constexpr int art_treefar = 5;
+constexpr int art_grass = 6;
+
+// A species of tree is a run of frames in the tree sheets. The
+// order matches the data compiler's TreeKind, and render.cpp
+// static_asserts that the two agree.
+struct TreeKindFrames { uint8_t first, count; };
+constexpr int k_tree_kind_count = 2;
+constexpr TreeKindFrames k_tree_kinds[k_tree_kind_count] = {
+    {0, 2},   // pine
+    {2, 1},   // broadleaf
+};
 
 }  // namespace pm

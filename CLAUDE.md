@@ -417,6 +417,8 @@ web/               gallery templates and the emscripten page shell
 .github/workflows/ the build and publish pipeline
 console/           the multi game console: menu, dispatch, its own tests
 console.yaml       which games are on the console, and in what order
+games/picomon/art/PROPORTIONS.md  the character art blueprint: row budget,
+                   what the references measure, what is wrong today
 STORAGE.md         the 16 MB flash: persistence, game library, larger games
 CONSOLE.md         the console: one binary, every game in it, a menu
 ```
