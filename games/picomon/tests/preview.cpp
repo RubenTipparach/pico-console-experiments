@@ -114,6 +114,12 @@ void battle_shots(const pm::World& at_menu, const std::string& out) {
         if (w.battle.state == pm::BattleState::Caught) {
             run(w, pm::Input{}, 4);
             capture(w, 7200, out + "/battle_7_caught.ppm");
+            // And the beat after it, which is the one that mattered: the
+            // creature used to be standing back on its mound here, under a
+            // line of text saying it had just been caught.
+            for (int i = 0; i < 60 && w.battle.state == pm::BattleState::Caught; i++)
+                pm::world_tick(w, pm::Input{});
+            capture(w, 7600, out + "/battle_8_gotcha.ppm");
         } else {
             std::printf("the ball never stuck, skipping the caught shot\n");
         }
@@ -175,6 +181,15 @@ void town_shots(const std::string& out) {
     // which the shots below do, so leave it in a state a player could be in.
     w.battle = pm::Battle{};
     w.battle.trainer_npc = 0xFF;
+
+    // Standing on the GREAT BALL lying on Route 1 and picking it up. This
+    // used to be a sound effect and nothing else, so a find could be walked
+    // over without ever knowing what had been found.
+    go(w, pm::zone_route1, 5, 6, 2);
+    run(w, pm::Input{}, 2);
+    pm::world_tick(w, press_a());
+    capture(w, 7900, out + "/town_15_found_item.ppm");
+    run(w, press_a(), 2);
 
     // The gate on Route 1 that the badge opens.
     go(w, pm::zone_route1, 11, 4, 0);

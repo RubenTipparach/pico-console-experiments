@@ -185,6 +185,13 @@ struct World {
     uint8_t text_count, text_page;
     uint8_t talking_npc;         // 0xFF when the text is not an NPC's
 
+    // What was just picked up off the ground, so the dialogue panel can name
+    // it. 0xFF when the text on screen is a baked page rather than a find.
+    // The sim still builds no strings: this is the same code-and-argument
+    // trick the battle messages use, and the renderer does the wording.
+    uint8_t found_item;
+    uint8_t found_count;
+
     // Menus.
     uint8_t menu_cursor;
     uint8_t menu_pocket;
