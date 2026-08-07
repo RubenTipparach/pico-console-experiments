@@ -210,30 +210,65 @@ static_assert(10 * k_stress_per_strength + k_tow_stress_base <
 
 // ---- the reel: how fast line comes in ----
 //
-// An empty hook winds home at 4 m/s. With a fish on it the rate falls twice
-// over: once for the fish's mass, which it cannot help, and again for the
-// effort it is putting in, which it can. A beaten minnow comes in at about
-// 1.9 m/s and a beaten legend at 0.8, and anything fighting flat out crawls
-// at 0.1 whatever it weighs. A hooked fish is never as quick as no fish.
+// An empty hook winds home at 4 m/s. With a fish on it the rate falls for
+// three separate reasons, and it is worth keeping them apart because they are
+// three different things the player is being told:
 //
-// Both are fp<<8 per tick, so a tenth of a metre a second survives integer
-// maths (fp8 units, one tick is 10 ms: 1 m/s = 655). The empty hook's rate
-// is k_retrieve_max_fp256, in the retrieve section below, because it is the
-// same reel doing the same job with nothing fighting it.
-// Running a fish out of stamina has to pay, and it only pays if the reel
-// actually bites while the fish is spent. A beaten fish that still crawled in
-// would make the exhaustion window a formality; at these rates the window is
-// where the line genuinely comes home, which is what the player is working
-// the whole cycle for.
-constexpr int k_fight_reel_max_fp256 = 1450;  // 2.2 m/s, a spent minnow
-constexpr int k_fight_reel_min_fp256 = 66;    // 0.1 m/s, a fish fighting
+//   size      how heavy it is. It cannot help this and neither can you.
+//   strength  how well built it is. Also fixed, also not negotiable.
+//   fight     effort against what stamina it has left. This one moves, and
+//             it is the only one the player can do anything about.
+//
+// Size and strength set the ceiling: the fastest this particular fish will
+// ever come in, which is what it weighs in at when it has stopped arguing.
+// The fight then drags it down from there toward the floor.
+//
+// All rates are fp<<8 per tick (fp8 units, one tick is 10 ms: 1 m/s = 655).
+// The empty hook's rate is k_retrieve_max_fp256, in the retrieve section
+// below, because it is the same reel doing the same job with nothing fighting
+// it, and a hooked fish is never as quick as no fish.
+constexpr int k_fight_reel_max_fp256 = 1450;  // 2.2 m/s, before size and build
+
+// The floor, and it is a floor rather than a crawl on purpose. Whatever is on
+// the end of the line and however hard it is working, holding the reel down
+// brings line in at half a metre a second. It used to be 0.1, which against a
+// big fish reads as a jammed reel: the player is holding the button, the
+// ratchet is silent, the meter is climbing, and nothing is happening. Half a
+// metre a second is slow enough to be losing and fast enough to be playing.
+//
+// This is not a way to win by leaning on the button. A fish that is actually
+// swimming away still takes more line than this brings in (k_fish_pull_max
+// is 2.5 m/s at full effort and full strength), so cranking through a run
+// still loses ground, and still loads the rod while it does. The floor only
+// promises progress against a fish that is holding, not against one running.
+constexpr int k_fight_reel_min_fp256 = 328;   // 0.5 m/s, always
 
 // Mass costs speed even when the fish has given up: dead weight still has to
 // be dragged. This is what makes a big fish a long fight rather than just a
-// dangerous one. THE OLD ONE at 200 cm gives up 600 of the 1450, so a beaten
-// legend still comes in at about 1.3 m/s: well short of a spent minnow, but
-// no longer the crawl that made an exhaustion window a formality.
+// dangerous one.
 constexpr int k_reel_mass_drag = 3;           // fp<<8 per tick, per cm
+
+// And so does build. Two fish of the same length do not fight the same, and
+// until this existed the reel could not tell them apart: strength drove the
+// stress on the line and the fish's own pull, but not what it cost to move
+// it. A sturgeon and a carp of equal size came in at equal speed once they
+// were spent, which is the wrong answer to the only question the fish's build
+// is there to ask.
+//
+// 20 per point against 3 per cm keeps mass the bigger term for anything large
+// (THE OLD ONE gives up 600 to size and 200 to strength), so a fish's size is
+// still the first thing the reel reports, with its build as the second.
+constexpr int k_reel_strength_drag = 20;      // fp<<8 per tick, per point
+
+// The ceiling has to stay clear of the floor for the worst case in the lake,
+// THE OLD ONE at 200 cm and strength 10, or the biggest fish in the game
+// comes in at exactly the same rate spent as it does fighting and running it
+// out of stamina buys nothing at all.
+static_assert(k_fight_reel_max_fp256 - 200 * k_reel_mass_drag -
+                  10 * k_reel_strength_drag > k_fight_reel_min_fp256 * 3 / 2,
+              "a spent fish must be meaningfully quicker than a fighting one, "
+              "for the largest and strongest fish in the lake and not just "
+              "for the easy ones");
 
 // What the fish takes when it swims away, at full effort and full strength.
 // A strong fish outruns the reel; a small one cannot.

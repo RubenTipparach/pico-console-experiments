@@ -653,46 +653,131 @@ void test_second_wind_opens_and_closes() {
 // The reel is opposed by the fish, scaled by its stamina: a fresh strong
 // fish gives up almost no line to the crank, a spent one comes in at full
 // speed. This is what makes a fight a fight instead of a countdown.
-void test_fresh_fish_resists_the_reel() {
-    // A fish working flat out barely moves, a spent one comes in at the
-    // fight's full rate, and neither ever matches an empty hook.
-    auto reel_rate = [](int effort, int8_t dir) {
-        kf::World world;
-        kf::world_init(world, 71);
-        kf::world_test_hook(world, kf::k_species_count - 1, 200);
-        kf::Input hook{};
-        hook.a_pressed = true;
-        kf::world_tick(world, hook);
-        world.fight_phase = kf::FightPhase::Tire;
-        world.phase_timer = 5000;
-        world.dir_timer = 5000;
-        world.fish_dir = dir;
+// One second of holding the reel against a fish pinned in a known state, in
+// fp8 world units of line gained. Everything the reel promises is measured
+// through this, because the reel's rate is not readable any other way: the
+// player only ever sees it as how fast the lure is coming home.
+int32_t reel_rate(int species, int size_cm, int effort, int stamina_num,
+                  int stamina_den, int8_t dir, bool second_wind) {
+    kf::World world;
+    kf::world_init(world, 71);
+    kf::world_test_hook(world, species, size_cm);
+    kf::Input hook{};
+    hook.a_pressed = true;
+    kf::world_tick(world, hook);
+    world.fight_phase = kf::FightPhase::Tire;
+    world.phase_timer = 5000;
+    world.dir_timer = 5000;
+    world.fish_dir = dir;
+
+    kf::Input reel{};
+    reel.a = true;
+    const int32_t before = world.line_len;
+    for (int t = 0; t < 100 && world.mode == kf::Mode::Fight; t++) {
+        // Pin the fish's state every tick: this measures the rate the reel
+        // offers in a given situation, not the fish's own decisions about
+        // where to take it, and not the stamina drain the reeling causes.
         world.fish_effort = static_cast<uint8_t>(effort);
-        world.stamina = effort == 0 ? 0 : world.stamina_max;
+        world.stamina = static_cast<uint16_t>(
+            (world.stamina_max * stamina_num) / stamina_den);
+        world.spent_timer = second_wind ? 200 : 0;
+        kf::world_tick(world, reel);
+    }
+    return before - world.line_len;
+}
 
-        kf::Input reel{};
-        reel.a = true;
-        const int32_t before = world.line_len;
-        for (int t = 0; t < 100 && world.mode == kf::Mode::Fight; t++) {
-            // Pin the effort: this measures the rate at a given effort, not
-            // the fish's own decisions about where to take it.
-            world.fish_effort = static_cast<uint8_t>(effort);
-            kf::world_tick(world, reel);
-        }
-        return before - world.line_len;   // fp gained in one second
-    };
+// The floor, and the empty hook's rate, in the same units reel_rate reports.
+constexpr int32_t k_floor_rate = kf::k_fight_reel_min_fp256 * 100 / 256;
+constexpr int32_t k_tow_rate = kf::k_retrieve_max_fp256 * 100 / 256;
 
-    const int32_t spent = reel_rate(0, 0);
-    const int32_t fighting = reel_rate(255, 0);
-    const int32_t tow = kf::k_retrieve_max_fp256 * 100 / 256;
+void test_fresh_fish_resists_the_reel() {
+    // A fish with a full tank working flat out is held to the floor, a spent
+    // one comes in at what its size and build allow, and neither ever matches
+    // an empty hook.
+    const int last = kf::k_species_count - 1;
+    const int32_t spent = reel_rate(last, 200, 0, 0, 1, 0, false);
+    const int32_t fighting = reel_rate(last, 200, 255, 1, 1, 0, false);
 
     CHECK(spent > fighting);
-    CHECK(fighting * 4 < spent);
-    CHECK(spent < tow);            // a fish is never as quick as no fish
-    CHECK(fighting > 0);           // but something always comes in
+    // Running it out has to pay. It cannot pay four times over any more:
+    // against the biggest fish in the lake the ceiling is what 200 cm and
+    // strength 10 leave of the reel, and the floor is a real 0.5 m/s, so half
+    // again is the honest number and the tuning static_assert holds it there.
+    CHECK(spent * 2 > fighting * 3);
+    CHECK(spent < k_tow_rate);     // a fish is never as quick as no fish
 
-    // Against a fish swimming away flat out, the reel loses ground outright.
-    CHECK(reel_rate(255, 1) < 0);
+    // The floor is a promise, not a crawl: whatever is on the line and however
+    // hard it is working, holding the reel brings line in at 0.5 m/s. One fp
+    // of slack for the sub unit carry.
+    CHECK(fighting >= k_floor_rate - 1);
+
+    // Against a fish swimming away flat out, the reel still loses ground.
+    // The floor buys progress against a fish that is holding, never against
+    // one that is running, or leaning on the button would be a strategy.
+    CHECK(reel_rate(last, 200, 255, 1, 1, 1, false) < 0);
+}
+
+void test_size_and_build_both_cost_the_reel() {
+    // Two fish the same length and nothing alike. Strength drove the stress on
+    // the line and the fish's own pull, but not what it cost to move one, so
+    // a sturgeon and a carp of equal size used to come in at identical speed
+    // once they were spent: the reel could not tell a heavyweight from a
+    // pushover, which is the one question a fish's build is there to answer.
+    const int weak = 0;                        // MINNOW, strength 1
+    const int strong = kf::k_species_count - 1;  // THE OLD ONE, strength 10
+    CHECK(kf::k_species[weak].strength < kf::k_species[strong].strength);
+
+    const int32_t light = reel_rate(weak, 60, 0, 0, 1, 0, false);
+    const int32_t built = reel_rate(strong, 60, 0, 0, 1, 0, false);
+    std::printf("  spent at 60 cm: strength %d = %d, strength %d = %d\n",
+                kf::k_species[weak].strength, static_cast<int>(light),
+                kf::k_species[strong].strength, static_cast<int>(built));
+    CHECK(built < light);
+
+    // And size still costs, at equal build, which is the older half of the
+    // rule and must not have been traded away for the new one.
+    const int32_t small = reel_rate(strong, 60, 0, 0, 1, 0, false);
+    const int32_t large = reel_rate(strong, 200, 0, 0, 1, 0, false);
+    CHECK(large < small);
+}
+
+void test_stamina_decides_what_effort_is_worth() {
+    // Effort is the surge the fish is putting in; stamina is whether it has
+    // anything to put in. Thrashing on an empty tank is going through the
+    // motions and the reel is entitled to say so, or the player has no reason
+    // to work a fish down at all.
+    const int last = kf::k_species_count - 1;
+    const int32_t full = reel_rate(last, 200, 255, 1, 1, 0, false);
+    const int32_t quarter = reel_rate(last, 200, 255, 1, 4, 0, false);
+    const int32_t empty = reel_rate(last, 200, 255, 0, 1, 0, false);
+
+    std::printf("  flat out on 4/4, 1/4, 0/4 of a tank: %d, %d, %d\n",
+                static_cast<int>(full), static_cast<int>(quarter),
+                static_cast<int>(empty));
+    CHECK(full < quarter);
+    CHECK(quarter < empty);
+    CHECK(full >= k_floor_rate - 1);
+}
+
+void test_a_second_wind_hands_the_reel_over() {
+    // The window the whole cycle is played for. A fish on its second wind is
+    // face up getting its breath back, so the reel runs at that fish's
+    // ceiling whatever its effort still reads: waiting out the effort decay
+    // spent the best part of the window on a fish that had already given up.
+    const int last = kf::k_species_count - 1;
+    const int32_t winded = reel_rate(last, 200, 255, 1, 1, 0, true);
+    const int32_t fighting = reel_rate(last, 200, 255, 1, 1, 0, false);
+    const int32_t spent = reel_rate(last, 200, 0, 0, 1, 0, false);
+
+    std::printf("  second wind %d, fighting %d, spent %d\n",
+                static_cast<int>(winded), static_cast<int>(fighting),
+                static_cast<int>(spent));
+    // Flat out and full of stamina, and it still comes in at the spent rate,
+    // because the second wind says none of that counts.
+    CHECK(winded > fighting);
+    CHECK(winded == spent);
+    // It is still that fish's ceiling and not the empty hook's.
+    CHECK(winded < k_tow_rate);
 }
 
 // Cranking against a fish that is swimming away is the hardest thing the
@@ -1294,6 +1379,9 @@ int main() {
     test_a_spent_fish_builds_no_strain();
     test_wiggle_relieves_and_tires();
     test_fresh_fish_resists_the_reel();
+    test_size_and_build_both_cost_the_reel();
+    test_stamina_decides_what_effort_is_worth();
+    test_a_second_wind_hands_the_reel_over();
     test_tension_climbs_hard_against_a_run();
     test_reeling_into_a_run_costs_more_than_riding_it();
     test_the_reel_never_beats_the_tow();

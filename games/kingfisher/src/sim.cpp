@@ -757,8 +757,9 @@ void update_fight(World& world, const Input& input) {
     // ---- line movement ----
     //
     // Both sides move the line every tick and the net is what happens. The
-    // reel slows down the harder the fish works, from 2 m/s against a spent
-    // fish to a tenth of that against one fighting flat out, and it is never
+    // reel slows for what the fish weighs, for how it is built, and for the
+    // fight it still has in it, from about 2 m/s against a spent minnow down
+    // to the 0.5 m/s floor against anything working flat out, and it is never
     // as quick as the 4 m/s an empty hook tows at.
     int delta = 0;   // fp<<8, positive pays line out
     if (world.fish_dir != 0) {
@@ -769,12 +770,32 @@ void update_fight(World& world, const Input& input) {
         delta += world.fish_dir > 0 ? pull : -(pull / k_toward_div);
     }
     if (reeling) {
-        // Mass first: a heavy fish is slow to move even limp. Then effort,
-        // which is the fish actively refusing.
-        int top = k_fight_reel_max_fp256 - fish.size_cm * k_reel_mass_drag;
+        // What this fish comes in at once it has stopped arguing: the reel's
+        // rate less what it weighs and less how it is built. Both are fixed
+        // for the fish on the line, so this is a ceiling the player cannot
+        // move, only reach.
+        int top = k_fight_reel_max_fp256 - fish.size_cm * k_reel_mass_drag -
+                  s.strength * k_reel_strength_drag;
         if (top < k_fight_reel_min_fp256) top = k_fight_reel_min_fp256;
+
+        // And what it is doing about it. Effort is the surge it is putting in
+        // right now; stamina is whether it has anything to put in. A fish
+        // thrashing on an empty tank is going through the motions, and the
+        // reel is entitled to say so, which is the whole reason the player
+        // works it down in the first place.
+        int resist = 0;
+        if (world.spent_timer == 0 && world.stamina_max > 0) {
+            const int reserve = (world.stamina * 255) / world.stamina_max;
+            resist = (world.fish_effort * reserve) / 255;
+        }
+        // spent_timer is the second wind: the fish is face up getting its
+        // breath back and has nothing left to give, so the ceiling is simply
+        // handed over. That window is what the whole cycle is played for, and
+        // before this the player still had to wait out the effort decaying
+        // through it, which spent the best part of the window on a fish that
+        // had already given up.
         const int span = top - k_fight_reel_min_fp256;
-        const int reel = top - (span * world.fish_effort) / 255;
+        const int reel = top - (span * resist) / 255;
         delta -= reel;
     }
 
