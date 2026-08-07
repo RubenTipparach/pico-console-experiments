@@ -79,6 +79,30 @@ struct Pad {
 
 constexpr int k_pad_count = 3;
 
+// A fuel crate: a green cube hanging in the air that refills half a tank when
+// the ship flies into it.
+//
+// Three states rather than one `active` flag, because a crate can be absent
+// for two different reasons and the mission needs to tell them apart. The
+// delivery's teaching crate is placed from the start and does not appear until
+// the player has picked the cargo up, and "not out yet" has to survive being
+// distinguished from "already taken" or the pickup would keep re-arming it.
+enum class Crate : uint8_t {
+    Waiting,     // placed, not shown, not collectable
+    Out,         // on the map
+    Taken,       // gone
+};
+
+struct FuelCrate {
+    int32_t x, z;      // fp16 centre
+    int32_t y;         // fp16, filled in by world_init from what is underneath
+    Crate state;
+};
+
+// Four is the most any mission places. The delivery uses three (one on each
+// leg and the teaching one beside deck B) and the salvage two.
+constexpr int k_crate_max = 4;
+
 // Which flight this is. Mission one is the hop the game opens on; mission two
 // is the delivery, and it is the same world with a crate on it.
 enum class Mission : uint8_t { Hop = 1, Delivery = 2, Salvage = 3 };
@@ -188,6 +212,14 @@ struct World {
     uint8_t deliver_to;
     // Waterline, fp16, or k_no_sea when this mission has no ocean.
     int32_t sea;
+
+    FuelCrate crates[k_crate_max];
+    uint8_t crate_count;          // how many of the array this mission placed
+    // Counts up as crates are collected, and never resets inside a flight. A
+    // counter rather than a one tick flag: the SDK layer edge detects it for
+    // the chime the same way it edge detects the cargo, so nothing has to
+    // remember to clear it and a missed frame cannot swallow the sound.
+    uint8_t crates_taken;
 
     // Hull damage, one point per hard landing, k_damage_max ends the flight.
     // Not a health bar: nothing in the air can hurt the ship, so this only
