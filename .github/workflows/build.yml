@@ -89,6 +89,7 @@ jobs:
           python3 tools/tests/test_pack_picocad_texture.py
           python3 tools/tests/test_picomon_sprites.py
           python3 tools/tests/test_picomon_trees.py
+          python3 tools/tests/test_trackshape.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,

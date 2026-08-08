@@ -89,6 +89,16 @@ class Mesh:
             tex = [self.vt(*t) for t in (uvs[3], uvs[2], uvs[1], uvs[0])]
         self.faces.append((material, corners, tex))
 
+    def tri(self, material, a, b, c):
+        """One triangle, wound the ordinary way round and reversed on the way
+        in exactly as quad() does.
+
+        A cone is a fan of triangles and there is no honest way to write one as
+        quads: collapsing two corners onto each other makes a degenerate face,
+        which obj2cpp gives a +Y normal to and the flat shader then lights as
+        though it faced the sky."""
+        self.faces.append((material, [self.v(*p) for p in (c, b, a)], None))
+
     def box(self, material, x0, y0, z0, x1, y1, z1, skip=()):
         """An axis aligned box, every face wound outward."""
         sides = {

@@ -1,0 +1,10 @@
+title: Twin Flare
+description: Two engines, one pod, and a hover field that will not let go.
+author: rubentipparach
+splash:
+  file: ../pico-santa/assets/no-image.png
+icon:
+  file: ../pico-santa/assets/no-icon.png
+version: v0.1.0
+category: game
+url: https://github.com/rubentipparach/pico-console-experiments
