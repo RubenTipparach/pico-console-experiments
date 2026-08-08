@@ -719,6 +719,25 @@ void draw_dialogue(const World& w, uint32_t t) {
     if (w.text_count == 0) return;
     panel(0, 84, 120, 36);
     char lines[3][32];
+    // A find has no baked page: the item and the number are only known when
+    // the player stands on it, so the wording happens here.
+    if (w.found_item != 0xFF) {
+        char found[40] = "FOUND ";
+        append(found, k_items[w.found_item].name);
+        if (w.found_count > 1) {
+            char num[8];
+            number(num, w.found_count);
+            append(found, " x");
+            append(found, num);
+        }
+        append(found, "!");
+        const int fn = wrap_into(found, lines);
+        for (int i = 0; i < fn && i < 3; i++) {
+            text(lines[i], 5, 89 + i * 9, 0xEE, 0xEE, 0xEE);
+        }
+        if ((t / 350) & 1) text(">", 112, 111, 0xFF, 0xBB, 0x33);
+        return;
+    }
     const int n = wrap_into(k_text[w.text_first + w.text_page], lines);
     for (int i = 0; i < n && i < 3; i++) {
         text(lines[i], 5, 89 + i * 9, 0xEE, 0xEE, 0xEE);
@@ -910,19 +929,28 @@ void draw_battle(const World& w, uint32_t t) {
 
     // Both shadows before either creature: they are ground level and the
     // meshes have to win the depth test against them, not the other way round.
-    const bool foe_out = b.state != BattleState::Wobble &&
-                         b.state != BattleState::Caught;
-    if (foe_out && b.foe.hp > 0) {
+    // A caught creature is in the ball and stays in it for the rest of the
+    // battle. Hiding it only for Wobble and Caught put it back on its mound
+    // the moment the state moved on to the GOTCHA message, so it appeared to
+    // burst straight back out at the exact moment the text said it had been
+    // caught, which reads as the catch having failed.
+    const bool in_ball = b.caught || b.state == BattleState::Wobble ||
+                         b.state == BattleState::Caught;
+    const bool foe_here = b.foe.hp > 0 || b.state == BattleState::Throw ||
+                          b.state == BattleState::Wobble;
+    if (foe_here) {
         ground_shadow(foe_x - lunge_foe * ux, foe_z - lunge_foe * uz, 0.5f);
     }
     ground_shadow(me_x + lunge_me * ux, me_z + lunge_me * uz, 0.8f);
 
-    if (b.foe.hp > 0 || b.state == BattleState::Throw ||
-        b.state == BattleState::Wobble) {
+    if (foe_here) {
         const Species& fs = k_species[b.foe.species];
         const float scale = float(fs.scale) / 100.0f;
-        if (foe_out) {
-            g_renderer.draw_mesh(rock, foe_x, 0.0f, foe_z + 0.35f, 2.1f, k_foe_mound);
+        // The mound stays under the ball. It used to vanish with the
+        // creature, which was invisible across two short animations and
+        // would not be now that the ball sits there for the whole message.
+        g_renderer.draw_mesh(rock, foe_x, 0.0f, foe_z + 0.35f, 2.1f, k_foe_mound);
+        if (!in_ball) {
             g_renderer.draw_mesh(*mesh_for(fs.mesh),
                                  foe_x - lunge_foe * ux + shake_foe,
                                  foe_y + bob, foe_z - lunge_foe * uz,
@@ -941,8 +969,7 @@ void draw_battle(const World& w, uint32_t t) {
                              ms.tint_r, ms.tint_g, ms.tint_b, 0.0f,
                              uint8_t(flash_you));
     }
-    if (b.state == BattleState::Throw || b.state == BattleState::Wobble ||
-        b.state == BattleState::Caught) {
+    if (b.state == BattleState::Throw || in_ball) {
         const float arc = b.state == BattleState::Throw
                               ? 1.0f - float(b.timer) / 20.0f : 1.0f;
         const float bx = -1.6f + (foe_x + 1.6f) * arc;
