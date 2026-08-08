@@ -15,16 +15,19 @@
 #       name: TEXT       optional, defaults to the title in its game.yml
 #
 # Names are drawn with engine/font/console5x7.txt, which carries A-Z, 0-9,
-# space and a little punctuation. A name outside that, or one too wide for a
-# row, fails the build with a message saying so.
+# space and a little punctuation. A name outside that fails the build with a
+# message saying so. A name wider than a row does not: the menu slides it
+# along while its row is selected, and the build log says which ones will.
 
 title: PICO CONSOLE
 
 menu:
   - heading: ARCADE
+  - game: dustrider
   - game: kingfisher
+  - game: stardancer
   - heading: RPG
   - game: picomon
   - heading: SIM
   - game: tomlander
-  - game: dustrider
+  - game: picospace

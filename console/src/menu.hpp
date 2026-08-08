@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "battery.hpp"
 #include "library.hpp"
 #include "pse/pixel.hpp"
 
@@ -34,9 +35,20 @@ public:
     void reset(const char* start_slug = nullptr);
 
     // One frame of menu. Returns the index of the chosen entry, or -1.
-    int update(const Input& input);
+    //
+    // `time_ms` is the SDK's clock, and the menu uses it for one thing: a name
+    // too wide for its row starts sliding from its left edge when the cursor
+    // arrives, rather than partway through wherever a free running animation
+    // happened to be. A caller with no clock passes nothing.
+    int update(const Input& input, uint32_t time_ms = 0);
 
-    void draw(const pse::RenderTarget& target) const;
+    void draw(const pse::RenderTarget& target, uint32_t time_ms = 0) const;
+
+    // The cell, drawn in the header. Handed in rather than read here: the menu
+    // draws on a host too, where there is no ADC to read, and the preview
+    // harness wants to ask for a level rather than have one. A percent of -1
+    // draws no icon at all.
+    void set_battery(Battery battery) { battery_ = battery; }
 
     int cursor() const { return cursor_; }
     int scroll() const { return scroll_; }
@@ -49,6 +61,20 @@ public:
     // way to catch a name that prints through the edge of its own row.
     static constexpr int k_rows_visible = 7;
 
+    // Pixels a name has on a row before it reaches the last played dot. A
+    // wider name is not a mistake: it slides back and forth while its row is
+    // selected, and is clipped to this window at every offset, so nothing has
+    // to be renamed to fit. menu.cpp static_asserts this against the layout it
+    // draws, and the tests and tools/gen_library.py read it here rather than
+    // keeping a copy of the number.
+    static constexpr int k_name_room = 177;
+
+    // Pixels the console's own title has in the header before it reaches the
+    // battery icon. The title does not scroll (it is one string, set once, and
+    // a header that never sits still is a header nobody stops reading), so
+    // this one is still a refusal in tools/gen_library.py.
+    static constexpr int k_title_room = 202;
+
 private:
     // Next selectable row in `step` direction, wrapping, skipping headings.
     int step_cursor(int from, int step) const;
@@ -59,6 +85,10 @@ private:
     int cursor_ = 0;
     int scroll_ = 0;
     int last_played_ = -1;
+    // When the cursor last moved, so a long name on the row it landed on
+    // starts its slide from the beginning.
+    uint32_t marquee_since_ = 0;
+    Battery battery_;
 };
 
 }  // namespace console

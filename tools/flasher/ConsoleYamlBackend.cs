@@ -13,19 +13,24 @@ namespace PicoFlasher;
 /// puts the build in one place instead of two that drift.
 ///
 /// The refusals are duplicated from tools/gen_library.py on purpose, and
-/// only the ones that depend on nothing but the recipe: a name too wide for
-/// a menu row, a character the console's font cannot draw, a game listed
+/// only the ones that depend on nothing but the recipe: a character the
+/// console's font cannot draw, a title too wide for the header, a game listed
 /// twice, an empty menu. That generator stays the authority (it runs in CI,
 /// where this tool does not), but a build that takes minutes is a bad place
-/// to learn that a name is one letter too long.
+/// to learn that a title is one letter too long.
+///
+/// A name too wide for a menu row is a note here rather than a refusal: the
+/// menu scrolls one while its row is selected, so the only thing left to say
+/// about it is that it will.
 /// </summary>
 public sealed class ConsoleYamlBackend : IConsoleBackend
 {
-    // Must match tools/gen_library.py, which must match console/src/menu.cpp.
-    private const int NameRoomPx = 189;
+    // Must match tools/gen_library.py, which must match console/src/menu.hpp.
+    private const int NameRoomPx = 177;
     private const int NameScale = 2;
     private const int GlyphAdvance = 6;
-    private const int TitleRoomPx = 240 - 16;
+    // What the header has left of the battery icon at its right end.
+    private const int TitleRoomPx = 202;
 
     private readonly string _repositoryRoot;
     private HashSet<char>? _charset;
@@ -293,8 +298,10 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
                     {
                         problems.Add(new Problem(i,
                             $"\"{name}\" is {Width(name)} pixels wide and a menu " +
-                            $"row has room for {NameRoomPx}. Rename it to about " +
-                            $"{(NameRoomPx / NameScale + 1) / GlyphAdvance} characters."));
+                            $"row has room for {NameRoomPx}, so the menu will " +
+                            "scroll it while it is selected. About " +
+                            $"{(NameRoomPx / NameScale + 1) / GlyphAdvance} characters " +
+                            "fit without that.", Blocking: false));
                     }
                     break;
                 }
@@ -367,10 +374,12 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
     {
         if (!CanBuild(out var why)) return new BuildOutcome(false, why, null);
 
-        var problems = Validate(recipe);
-        if (problems.Count > 0)
+        // Notes do not stop a build, only faults do: a name the menu will
+        // scroll is a decision, not a mistake.
+        var fault = Validate(recipe).FirstOrDefault(problem => problem.Blocking);
+        if (fault is not null)
         {
-            return new BuildOutcome(false, problems[0].Message, null);
+            return new BuildOutcome(false, fault.Message, null);
         }
 
         try

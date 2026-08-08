@@ -3,8 +3,10 @@
 // The menu is the one screen with no gameplay to cover a mistake in it, and
 // on a device the only way to find a mistake is to flash and look. So the
 // parts that can be wrong quietly are asserted here: the cursor stepping over
-// headings, wrapping, the list following the cursor, and every name in the
-// real generated library fitting the row it is drawn in.
+// headings, wrapping, the list following the cursor, every name in the real
+// generated library being drawable at all, and the two things that are pixel
+// facts rather than arithmetic, a long name sliding inside its row and the
+// battery sitting inside its header.
 
 #include <cstdio>
 #include <cstring>
@@ -47,6 +49,33 @@ console::Menu::Input up() {
     input.up = true;
     return input;
 }
+
+// A frame of the real 240x240 layout. The sliding name and the battery are
+// drawn rather than computed, so the only honest test of either is what came
+// out of the drawing.
+struct Frame {
+    static constexpr int k_w = 240;
+    static constexpr int k_h = 240;
+
+    std::vector<uint8_t> rgb =
+        std::vector<uint8_t>(static_cast<size_t>(k_w) * k_h * 3, 0);
+
+    pse::RenderTarget target() {
+        return pse::RenderTarget{rgb.data(), k_w, k_h, k_w * 3,
+                                 pse::PixelFormat::rgb888};
+    }
+
+    bool white(int x, int y) const {
+        const size_t at = (static_cast<size_t>(y) * k_w + x) * 3;
+        return rgb[at] == 255 && rgb[at + 1] == 255 && rgb[at + 2] == 255;
+    }
+
+    bool differs(const Frame& other, int x, int y) const {
+        const size_t at = (static_cast<size_t>(y) * k_w + x) * 3;
+        return rgb[at] != other.rgb[at] || rgb[at + 1] != other.rgb[at + 1] ||
+               rgb[at + 2] != other.rgb[at + 2];
+    }
+};
 
 // The cursor never lands on a heading, in either direction, however many
 // headings are stacked together.
@@ -147,27 +176,130 @@ void test_resume() {
     check(menu.cursor() == 0, "no memory starts at the top");
 }
 
-// Every name in the library console.yaml actually produced fits the row it is
-// drawn in, and is drawable at all. tools/gen_library.py refuses both at build
-// time; this is what proves its numbers are the menu's numbers, since a name
-// that overflows still compiles and still runs.
-void test_real_library_fits() {
-    // Mirrors menu.cpp: k_scrollbar_x - 6 - k_name_x, name drawn at scale 2.
-    constexpr int k_name_room = 233 - 6 - 38;
-
+// Every name in the library console.yaml actually produced can be drawn at
+// all, and the title fits the header it does not scroll in.
+// tools/gen_library.py refuses both at build time; this is what proves its
+// numbers are the menu's numbers, since a title that overflows still compiles
+// and still runs.
+void test_real_library_draws() {
     check(console::k_library_count > 0, "the generated library has rows in it");
     for (int i = 0; i < console::k_library_count; i++) {
         const console::Entry& e = console::k_library[i];
         check(pse::text_is_drawable(e.name), e.name);
-        const int scale = e.game == nullptr ? 1 : 2;
-        if (pse::text_width(e.name, scale) > k_name_room) {
-            std::printf("FAIL %s is %d pixels wide, the row has %d\n", e.name,
-                        pse::text_width(e.name, scale), k_name_room);
-            g_failures++;
-        }
     }
     check(pse::text_is_drawable(console::k_console_title),
           "the console title is drawable");
+    if (pse::text_width(console::k_console_title, 2) >
+        console::Menu::k_title_room) {
+        std::printf("FAIL the title %s is %d pixels wide, the header has %d\n",
+                    console::k_console_title,
+                    pse::text_width(console::k_console_title, 2),
+                    console::Menu::k_title_room);
+        g_failures++;
+    }
+}
+
+// A name wider than its row slides, and never outside the row.
+//
+// This is what replaced refusing to build such a name, so it is the check
+// that has to hold: white is the selected row's text colour and nothing else
+// in the menu draws pure white, so a white pixel outside the name's own
+// columns is a name printing over the icon or through the scrollbar.
+void test_a_long_name_slides_inside_its_row() {
+    // Mirrors menu.cpp's k_name_x. The width it has from there is published
+    // by the menu itself.
+    constexpr int k_name_x = 38;
+    static const char* k_long = "A VERY LONG GAME NAME THAT KEEPS ON GOING";
+
+    check(pse::text_width(k_long, 2) > console::Menu::k_name_room,
+          "the fixture is wider than a row, or this test proves nothing");
+
+    std::vector<console::Entry> rows{entry(k_long, &k_dummy)};
+    console::Menu menu(rows.data(), 1);
+    menu.reset();
+
+    Frame first;
+    Frame later;
+    menu.draw(first.target(), 0);
+    menu.draw(later.target(), 2500);
+    check(first.rgb != later.rgb, "a name too wide for its row moves with time");
+
+    const uint32_t times[] = {0, 800, 1500, 2500, 4000, 7000, 30000};
+    for (uint32_t time_ms : times) {
+        Frame frame;
+        menu.draw(frame.target(), time_ms);
+        int inside = 0;
+        int outside = 0;
+        for (int y = 0; y < Frame::k_h; y++) {
+            for (int x = 0; x < Frame::k_w; x++) {
+                if (!frame.white(x, y)) continue;
+                if (x >= k_name_x && x < k_name_x + console::Menu::k_name_room) {
+                    inside++;
+                } else {
+                    outside++;
+                }
+            }
+        }
+        if (outside != 0) {
+            std::printf("FAIL at %u ms the name put %d pixels outside its row\n",
+                        time_ms, outside);
+            g_failures++;
+        }
+        check(inside > 0, "the name is drawn at all");
+    }
+
+    // A name that fits stays put, so a short menu is a still one.
+    std::vector<console::Entry> shorts{entry("GAME", &k_dummy)};
+    console::Menu still(shorts.data(), 1);
+    still.reset();
+    Frame a;
+    Frame b;
+    still.draw(a.target(), 0);
+    still.draw(b.target(), 5000);
+    check(a.rgb == b.rgb, "a name that fits does not slide");
+}
+
+// The battery draws only when there is a level to draw, and stays in the
+// header. A percent of -1 is the desktop build, where there is no cell.
+void test_the_battery_stays_in_the_header() {
+    // Mirrors menu.cpp: 20 wide, right edge on the scrollbar's, in the 22px
+    // header band.
+    constexpr int k_batt_x = 216;
+    constexpr int k_batt_right = 236;
+    constexpr int k_header_h = 22;
+
+    std::vector<console::Entry> rows{entry("GAME", &k_dummy)};
+    console::Menu menu(rows.data(), 1);
+    menu.reset();
+
+    Frame unknown;
+    menu.draw(unknown.target(), 0);
+
+    console::Battery charging;
+    charging.percent = 64;
+    charging.charging = true;
+    menu.set_battery(charging);
+    Frame shown;
+    menu.draw(shown.target(), 0);
+
+    int changed = 0;
+    int stray = 0;
+    for (int y = 0; y < Frame::k_h; y++) {
+        for (int x = 0; x < Frame::k_w; x++) {
+            if (!shown.differs(unknown, x, y)) continue;
+            changed++;
+            if (y >= k_header_h || x < k_batt_x || x >= k_batt_right) stray++;
+        }
+    }
+    check(changed > 0, "a known level draws an icon where -1 drew nothing");
+    check(stray == 0, "the battery stays inside the header, right of the title");
+
+    console::Battery flat;
+    flat.percent = 5;
+    menu.set_battery(flat);
+    Frame low;
+    menu.draw(low.target(), 0);
+    check(low.rgb != shown.rgb, "the fill and its colour follow the level");
 }
 
 // Drawing must stay inside the buffer it was given, at any size. The device
@@ -183,7 +315,13 @@ void test_draw_clips() {
 
     console::Menu menu(console::k_library, console::k_library_count);
     menu.reset();
-    menu.draw(target);
+    // With a battery to draw, since the icon is laid out from the right edge
+    // of a 240 wide screen and this target has no such edge.
+    console::Battery battery;
+    battery.percent = 50;
+    battery.charging = true;
+    menu.set_battery(battery);
+    menu.draw(target, 3000);
 
     bool intact = true;
     for (size_t i = buffer.size() - k_guard; i < buffer.size(); i++) {
@@ -200,7 +338,9 @@ int main() {
     test_select();
     test_scrolling();
     test_resume();
-    test_real_library_fits();
+    test_real_library_draws();
+    test_a_long_name_slides_inside_its_row();
+    test_the_battery_stays_in_the_header();
     test_draw_clips();
 
     if (g_failures == 0) {

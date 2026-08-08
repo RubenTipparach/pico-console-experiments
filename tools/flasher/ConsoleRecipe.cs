@@ -34,11 +34,16 @@ public sealed record AvailableGame(string Slug, string Title, string Blurb,
 }
 
 /// <summary>
-/// Something that would stop this recipe becoming a console.
+/// Something worth saying about this recipe.
 /// <paramref name="EntryIndex"/> is the row it belongs to, or -1 for the
 /// recipe as a whole, so the UI can point at the offending row instead of
 /// printing a wall of text.
+///
+/// <paramref name="Blocking"/> false is a note rather than a fault: the thing
+/// it describes is fine, it is just worth knowing. A name too wide for a menu
+/// row is the case that made this necessary, since the menu scrolls one now
+/// and the tool used to refuse to build at all.
 /// </summary>
-public sealed record Problem(int EntryIndex, string Message);
+public sealed record Problem(int EntryIndex, string Message, bool Blocking = true);
 
 public sealed record BuildOutcome(bool Success, string Message, string? Uf2Path);

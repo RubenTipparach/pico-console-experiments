@@ -179,7 +179,9 @@ README for why.
 
 `console.uf2` is one file holding the menu and every game `console.yaml`
 lists. Flash it the same way. Up and down move, any button starts a game, and
-holding up and down together for a moment comes back to the menu.
+the power switch comes back to the menu, on the row you were last in. The
+header shows what is left in the battery, and a game whose name is too long
+for its row slides it along rather than being renamed to fit.
 
 There are no slots and nothing is relocated: the games are linked together and
 the menu calls one of them, which is how the two projects that have shipped a

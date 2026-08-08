@@ -9,9 +9,15 @@ build compiles exactly the games the menu will show and no others.
 
 Modelled on PicoCrystal-GBC's tools/gen_rom_data.py, including the part that
 matters most: it refuses. A slug with no game, a name the font cannot draw, a
-name too wide for its row, a game listed twice, a game that is not a 32blit
-game, a menu with nothing in it. Every one of those is a console that boots
-into something wrong, and none of them is visible by looking at the device.
+title too wide for the header, a game listed twice, a game that is not a
+32blit game, a menu with nothing in it. Every one of those is a console that
+boots into something wrong, and none of them is visible by looking at the
+device.
+
+A row's name is the one thing that used to be refused and is not: the menu
+slides a name too wide for its row while that row is selected, so a long name
+is a thing to look at rather than a thing to rename. The width is still
+measured here, only to say in the build log which names will do it.
 
     gen_library.py --config console.yaml --games games --out <build dir>
 """
@@ -28,10 +34,13 @@ import gen_font  # noqa: E402
 # Must match console/src/library.hpp.
 ICON_PX = 24
 
-# Must match console/src/menu.cpp: k_scrollbar_x - 6 - k_name_x, and the
-# name is drawn at scale 2. console/tests/test_menu.cpp asserts these agree,
-# so this number cannot drift without a test going red.
-NAME_ROOM_PX = 189
+# Must match console/src/menu.hpp, which publishes both numbers and
+# static_asserts them against the layout menu.cpp draws. A name wider than
+# NAME_ROOM_PX is fine: the menu scrolls it. A title wider than TITLE_ROOM_PX
+# is not, because the header does not scroll and the battery icon is sitting
+# in the space it would want.
+NAME_ROOM_PX = 177
+TITLE_ROOM_PX = 202
 NAME_SCALE = 2
 GLYPH_ADVANCE = 6
 
@@ -171,10 +180,10 @@ def build_catalog(config_path, games_dir):
                 "or rename the entry." % (where, ", ".join(repr(c) for c in missing)))
 
     check_drawable(title, "console.yaml title")
-    if name_width(title) > 240 - 16:
+    if name_width(title) > TITLE_ROOM_PX:
         raise LibraryError("console.yaml title %r is %d pixels wide and the "
-                           "header has room for %d"
-                           % (title, name_width(title), 240 - 16))
+                           "header has room for %d, the rest being the battery"
+                           % (title, name_width(title), TITLE_ROOM_PX))
 
     entries = []
     seen = set()
@@ -218,12 +227,6 @@ def build_catalog(config_path, games_dir):
 
         name = display_name(item.get("name") or fields.get("title") or slug)
         check_drawable(name, where)
-        if name_width(name) > NAME_ROOM_PX:
-            raise LibraryError(
-                "%s: %r is %d pixels wide and a menu row has room for %d "
-                "(about %d characters). Give it a shorter 'name:' in "
-                "console.yaml." % (where, name, name_width(name), NAME_ROOM_PX,
-                                   (NAME_ROOM_PX // NAME_SCALE + 1) // GLYPH_ADVANCE))
 
         icon_rows, icon_source = game_meta.icon_for(game_dir, slug, ICON_PX)
         entries.append({"name": name, "slug": slug, "game": slug,
@@ -323,8 +326,17 @@ def main(argv=None):
     gen_font.write_if_changed(os.path.join(args.out, "console_game_stubs.cpp"),
                               emit_stubs(slugs))
 
+    # Which names the menu will slide, named rather than counted: it is not an
+    # error, but it is worth knowing before flashing that a row does not sit
+    # still.
+    scrolling = [e["name"] for e in entries
+                 if e["game"] and name_width(e["name"]) > NAME_ROOM_PX]
     sys.stderr.write("gen_library: %d games, %d rows\n"
                      % (len(slugs), len(entries)))
+    for name in scrolling:
+        sys.stderr.write("gen_library: %r is %d pixels wide of the %d a row "
+                         "has, so the menu scrolls it\n"
+                         % (name, name_width(name), NAME_ROOM_PX))
     return 0
 
 

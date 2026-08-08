@@ -16,6 +16,7 @@
 
 #include "32blit.hpp"
 
+#include "battery.hpp"
 #include "library.hpp"
 #include "menu.hpp"
 #include "pse/blit_target.hpp"
@@ -38,12 +39,6 @@ struct ConsoleSave {
     uint32_t magic;
     char slug[24];
 };
-
-// How long up and down have to be held together to leave a game. Long enough
-// that no game's own controls can trigger it by accident, short enough to
-// find by fiddling. At 50 Hz this is three quarters of a second.
-constexpr uint32_t k_exit_ticks = 38;
-uint32_t g_exit_held = 0;
 
 // Menu key repeat: first repeat after this many frames, then every few.
 constexpr uint32_t k_repeat_delay = 22;
@@ -70,23 +65,6 @@ const char* last_played() {
     if (save.magic != k_save_magic) return nullptr;
     save.slug[sizeof(save.slug) - 1] = '\0';
     return save.slug[0] == '\0' ? nullptr : save.slug;
-}
-
-// Set when the menu opens with buttons still held, cleared when they are all
-// let go. Leaving a game means holding up and down, and the hand does not come
-// off the moment the menu appears: without this the tail of the exit gesture
-// walks the cursor down the list, which is how a player ends up in a game they
-// did not pick.
-bool g_awaiting_release = false;
-
-void open_menu() {
-    // The menu is always hires. A game that left the screen in lores would
-    // otherwise hand the menu a 120x120 surface it is not laid out for.
-    set_screen_mode(ScreenMode::hires);
-    g_running = -1;
-    g_exit_held = 0;
-    g_held_ticks = 0;
-    g_awaiting_release = true;
 }
 
 void enter(int index) {
@@ -120,10 +98,10 @@ void init() {
 
 void update(uint32_t time) {
     if (g_running < 0) {
-        if (g_awaiting_release) {
-            if (buttons.state != 0) return;
-            g_awaiting_release = false;
-        }
+        // Read every frame while the menu is up: the ADC is only actually
+        // touched once a second, and the charge pins have to be watched at
+        // frame rate to catch a charger that pulses them (see battery.hpp).
+        g_menu.set_battery(console::battery_sample(time));
 
         console::Menu::Input input;
         input.select = just_pressed(k_any_button);
@@ -142,29 +120,22 @@ void update(uint32_t time) {
         input.up = just_pressed(Button::DPAD_UP) || (up && repeat);
         input.down = just_pressed(Button::DPAD_DOWN) || (down && repeat);
 
-        const int chosen = g_menu.update(input);
+        const int chosen = g_menu.update(input, time);
         if (chosen >= 0) enter(chosen);
         return;
     }
 
-    // Up and down together is a gesture no game asks for, so it is the way
-    // back without taking a button off any of them.
-    if (held(Button::DPAD_UP) && held(Button::DPAD_DOWN)) {
-        if (++g_exit_held >= k_exit_ticks) {
-            open_menu();
-            return;
-        }
-    } else {
-        g_exit_held = 0;
-    }
-
+    // A game runs until the console is restarted. There is no gesture out of
+    // one: the power switch is the way back to the menu, it is a control the
+    // device already has, and every combination that could have meant "leave"
+    // is a combination some game gets to use.
     console::k_library[g_running].game->update(time);
 }
 
 void render(uint32_t time) {
     if (g_running < 0) {
         const pse::RenderTarget target = pse::target_from_screen();
-        g_menu.draw(target);
+        g_menu.draw(target, time);
         return;
     }
     console::k_library[g_running].game->render(time);

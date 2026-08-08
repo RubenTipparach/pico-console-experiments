@@ -35,12 +35,20 @@ void write_ppm(const std::string& path, const uint8_t* rgb) {
     std::printf("wrote %s\n", path.c_str());
 }
 
-void capture(const console::Menu& menu, const std::string& path) {
+void capture(const console::Menu& menu, const std::string& path,
+             uint32_t time_ms = 0) {
     static std::vector<uint8_t> buffer(static_cast<size_t>(k_w) * k_h * 3);
     pse::RenderTarget target{buffer.data(), k_w, k_h, k_w * 3,
                              pse::PixelFormat::rgb888};
-    menu.draw(target);
+    menu.draw(target, time_ms);
     write_ppm(path, buffer.data());
+}
+
+console::Battery battery(int percent, bool charging = false) {
+    console::Battery state;
+    state.percent = percent;
+    state.charging = charging;
+    return state;
 }
 
 // A library longer than the screen, to prove the scrolling and the scrollbar.
@@ -61,25 +69,28 @@ console::Entry make_entry(const char* name, const char* slug,
 int main(int argc, char** argv) {
     const std::string out = argc > 1 ? argv[1] : ".";
 
-    // 1: the console as it opens, on the real library from console.yaml.
+    // 1: the console as it opens, on the real library from console.yaml,
+    // about two thirds charged.
     {
         console::Menu menu(console::k_library, console::k_library_count);
         menu.reset();
+        menu.set_battery(battery(68));
         capture(menu, out + "/menu_1_open.ppm");
     }
 
-    // 2: opened again after playing Pico Santa. The cursor is where it was
-    // left and the dot says so.
+    // 2: opened again after playing Picomon. The cursor is where it was left
+    // and the dot says so, and this one is on the charger.
     {
         console::Menu menu(console::k_library, console::k_library_count);
-        menu.reset("pico-santa");
+        menu.reset("picomon");
+        menu.set_battery(battery(23, true));
         capture(menu, out + "/menu_2_resumed.ppm");
     }
 
     // 3: the cursor stepping over a heading onto the game below it.
     {
         console::Menu menu(console::k_library, console::k_library_count);
-        menu.reset("pico-santa");
+        menu.reset("picomon");
         console::Menu::Input down;
         down.down = true;
         menu.update(down);
@@ -107,10 +118,33 @@ int main(int argc, char** argv) {
 
         console::Menu menu(many.data(), static_cast<int>(many.size()));
         menu.reset();
+        menu.set_battery(battery(100));
         console::Menu::Input down;
         down.down = true;
         for (int i = 0; i < 9; i++) menu.update(down);
         capture(menu, out + "/menu_4_scrolled.ppm");
+    }
+
+    // 5 and 6: a name too wide for its row, at the start of its slide and part
+    // way along it. Nothing is renamed to fit any more, so this is the pair of
+    // pictures that says what a long name actually looks like: the row under
+    // the cursor slides, the rows either side of it sit at their start.
+    {
+        static const pse::Game dummy{nullptr, nullptr, nullptr};
+        static console::Entry rows[] = {
+            make_entry("SHORT ONE", "short", &dummy),
+            make_entry("PICO SPACE PROGRAM DELUXE", "long", &dummy),
+            make_entry("ANOTHER RATHER LONG NAME HERE", "long2", &dummy),
+        };
+
+        console::Menu menu(rows, 3);
+        menu.reset();
+        menu.set_battery(battery(41));
+        console::Menu::Input down;
+        down.down = true;
+        menu.update(down, 0);
+        capture(menu, out + "/menu_5_long_name.ppm", 0);
+        capture(menu, out + "/menu_6_long_name_sliding.ppm", 2600);
     }
 
     return 0;

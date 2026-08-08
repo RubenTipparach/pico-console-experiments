@@ -4,10 +4,14 @@
 Every check here stands for a console that boots into something wrong and
 cannot be diagnosed by looking at the device: a menu row that runs a game
 which is not in the binary, a name drawn as holes because the font has no
-picture for it, a name printed through the edge of its own row, one game on
-two rows fighting over one save. PicoCrystal's ROM generator refuses the same
+picture for it, a title printed through the battery icon, one game on two
+rows fighting over one save. PicoCrystal's ROM generator refuses the same
 class of thing for the same reason, and that refusal is the part worth
 copying.
+
+A long row name is deliberately not in that list. The menu scrolls one, so it
+is a name to look at rather than a build to fail, and the test below holds the
+generator to letting it through.
 
 The last test walks the repository's own console.yaml, so the console this
 repo actually ships is held to the same rules as the fixtures.
@@ -109,10 +113,20 @@ def test_it_refuses_a_name_the_font_cannot_draw():
             "uses a character the font has no picture for")
 
 
-def test_it_refuses_a_name_too_wide_for_its_row():
-    refuses("title: T\n\nmenu:\n  - game: alpha\n"
-            "    name: A VERY LONG GAME NAME INDEED\n",
-            "would print through the edge of its own row")
+def test_a_name_too_wide_for_its_row_is_kept():
+    """The menu slides one, so refusing it would be refusing the feature."""
+    long_name = "A VERY LONG GAME NAME INDEED"
+    _, entries, _ = build("title: T\n\nmenu:\n  - game: alpha\n"
+                          "    name: %s\n" % long_name)
+    check(gen_library.name_width(long_name) > gen_library.NAME_ROOM_PX,
+          "the fixture is wider than a row, or this test proves nothing")
+    check(entries[0]["name"] == long_name,
+          "a name wider than its row reaches the menu whole")
+
+
+def test_it_refuses_a_title_too_wide_for_the_header():
+    refuses("title: A CONSOLE WITH A VERY LONG NAME\n\nmenu:\n  - game: alpha\n",
+            "would print its title through the battery icon")
 
 
 def test_it_refuses_an_empty_menu():
@@ -167,13 +181,10 @@ def test_the_repositorys_own_console_builds():
         os.path.join(REPO_ROOT, "console.yaml"),
         os.path.join(REPO_ROOT, "games"))
     check(len(slugs) > 0, "console.yaml lists at least one game")
-    check(gen_library.name_width(title) <= 240 - 16,
+    check(gen_library.name_width(title) <= gen_library.TITLE_ROOM_PX,
           "the console title fits the header")
     for entry in entries:
-        scale = 1 if entry["game"] is None else gen_library.NAME_SCALE
-        check(gen_library.name_width(entry["name"], scale)
-              <= gen_library.NAME_ROOM_PX,
-              "%r fits its row" % entry["name"])
+        check(entry["name"] != "", "every row has a name to draw")
     for slug in slugs:
         check(os.path.isdir(os.path.join(REPO_ROOT, "games", slug)),
               "%s is a real game directory" % slug)
@@ -186,7 +197,8 @@ def main():
     test_it_refuses_a_game_that_is_not_there()
     test_it_refuses_the_same_game_twice()
     test_it_refuses_a_name_the_font_cannot_draw()
-    test_it_refuses_a_name_too_wide_for_its_row()
+    test_a_name_too_wide_for_its_row_is_kept()
+    test_it_refuses_a_title_too_wide_for_the_header()
     test_it_refuses_an_empty_menu()
     test_it_refuses_another_sdk()
     test_the_generated_code_declares_what_it_uses()

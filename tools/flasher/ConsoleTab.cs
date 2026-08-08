@@ -292,9 +292,15 @@ public sealed class ConsoleTab : UserControl
     }
 
     /// <summary>
-    /// Re-checks the whole recipe and marks the rows that are wrong. Runs on
-    /// every edit rather than at build time: a name one letter too wide for a
-    /// menu row should be red here, not a failure after a compile.
+    /// Re-checks the whole recipe and marks the rows worth looking at. Runs on
+    /// every edit rather than at build time: a title one letter too wide for
+    /// the header should be red here, not a failure after a compile.
+    ///
+    /// Two kinds of mark, because they mean different things. Red is a fault
+    /// and the build is off until it is fixed. Amber is a note: the row is
+    /// fine and something about it is worth knowing, which today means a name
+    /// long enough that the menu will scroll it. A note that turned the build
+    /// off would be this tool refusing a thing the console does on purpose.
     /// </summary>
     private void Revalidate()
     {
@@ -311,22 +317,35 @@ public sealed class ConsoleTab : UserControl
         {
             if (problem.EntryIndex >= _menu.Items.Count) continue;
             var item = _menu.Items[problem.EntryIndex];
-            item.BackColor = Color.FromArgb(255, 226, 226);
+            // A row with a fault stays red even if it also has a note.
+            if (problem.Blocking || item.BackColor == Color.White)
+            {
+                item.BackColor = problem.Blocking
+                    ? Color.FromArgb(255, 226, 226)
+                    : Color.FromArgb(255, 243, 214);
+            }
             item.ToolTipText = string.IsNullOrEmpty(item.ToolTipText)
                 ? problem.Message
                 : item.ToolTipText + "\n" + problem.Message;
         }
 
         var games = _rows.OfType<GameEntry>().Count();
-        if (problems.Count == 0)
+        var fault = problems.FirstOrDefault(p => p.Blocking);
+        var note = problems.FirstOrDefault(p => !p.Blocking);
+        if (fault is not null)
         {
-            _status.ForeColor = SystemColors.ControlText;
-            _status.Text = $"{games} game(s), {_rows.Count} row(s). Ready to build.";
+            _status.ForeColor = Color.FromArgb(168, 32, 32);
+            _status.Text = fault.Message;
+        }
+        else if (note is not null)
+        {
+            _status.ForeColor = Color.FromArgb(150, 96, 0);
+            _status.Text = note.Message;
         }
         else
         {
-            _status.ForeColor = Color.FromArgb(168, 32, 32);
-            _status.Text = problems[0].Message;
+            _status.ForeColor = SystemColors.ControlText;
+            _status.Text = $"{games} game(s), {_rows.Count} row(s). Ready to build.";
         }
 
         UpdateButtons();
@@ -335,7 +354,7 @@ public sealed class ConsoleTab : UserControl
     private void UpdateButtons()
     {
         var hasSelection = _menu.SelectedIndices.Count > 0;
-        var ready = !_building && _problems.Count == 0;
+        var ready = !_building && !_problems.Any(p => p.Blocking);
 
         _add.Enabled = !_building;
         _heading.Enabled = !_building;
@@ -349,14 +368,41 @@ public sealed class ConsoleTab : UserControl
 
     // ---- editing ----
 
+    /// <summary>
+    /// Adds the games picked on the left, directly under the row selected on
+    /// the right (at the end when nothing is selected). The menu is an order
+    /// being arranged, and a game that lands at the bottom of a long list has
+    /// to be walked back up to where it was wanted, one Move up at a time.
+    /// Same rule as Heading..., which already inserted where you were looking.
+    /// </summary>
     private void AddSelected()
     {
+        var at = _menu.SelectedIndices.Count > 0
+            ? _menu.SelectedIndices[^1] + 1
+            : _rows.Count;
+        at = Math.Clamp(at, 0, _rows.Count);
+
+        var added = new List<int>();
         foreach (ListViewItem item in _available.SelectedItems)
         {
             if (item.Tag is not AvailableGame game) continue;
-            _rows.Add(new GameEntry(game.Slug, null));
+            _rows.Insert(at, new GameEntry(game.Slug, null));
+            added.Add(at);
+            at++;
         }
+        if (added.Count == 0) return;
+
         RefreshMenu();
+
+        // The new rows end up selected, so a second add goes under them: a
+        // group can be built downward without reaching for the mouse between
+        // one game and the next.
+        _menu.SelectedIndices.Clear();
+        foreach (var index in added)
+        {
+            if (index < _menu.Items.Count) _menu.Items[index].Selected = true;
+        }
+        _menu.Items[added[^1]].EnsureVisible();
     }
 
     private void RemoveSelected()

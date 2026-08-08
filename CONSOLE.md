@@ -81,10 +81,25 @@ Controls, in full:
 - **up/down** move, with key repeat when held.
 - **any button** starts the game under the cursor. Nothing on screen names a
   button, so no press can be the wrong guess (rule 9).
-- **up and down held together for three quarters of a second** leaves a game.
-  No game asks for that combination, so it costs none of them a button. It is
-  the one instruction the console prints, on the menu, because a gesture with
-  nothing on screen to suggest it does not exist for anyone who was not told.
+- **the power switch** is the way back. A game runs until the console is
+  restarted, and it restarts into this menu with the dot on the game you were
+  in. There used to be a gesture, up and down held together, and the one line
+  of instruction the console printed was there to explain it; the switch is a
+  control the device already has and nothing has to say out loud.
+
+The header carries the console's title and, at its right end, the battery: a
+20x13 icon whose interior fills proportionally in a red to amber to mint ramp,
+with a charging bolt knocked out of the fill while the cable is in. Both the
+icon and the charge sense are PicoCrystal-GBC's, including the part that is
+not obvious (charging is STAT **and** VBUS, because an unplugged charger's
+STAT line still reads low). `console/src/battery_pico.cpp` reads the cell:
+ADC0 through the board's 3:1 divider, empty at 2.8V and full at 4.1V, sampled
+once a second. That file is the one place the console goes around the 32blit
+SDK, which has no battery API on any board, and it goes to the pico-sdk the
+device build already links rather than to a second board SDK (rule 6). The
+menu itself never reads a pin: `Menu::set_battery` is handed a level, so the
+preview harness can draw any of them and the desktop build honestly reports
+that it has no cell (`percent` of -1 draws no icon at all).
 
 The last game played is remembered in the console's own save (`blit::write_save`,
 keyed by slug), so the menu reopens where you left it with a dot on the row.
@@ -139,9 +154,19 @@ menu:
 - a slug with no `games/<slug>/game.yml`, listing what does exist
 - the same game on two rows, which would share one save between them
 - a name with a character the font has no picture for
-- a name too wide for its row (about 15 characters at the menu's size)
+- a title too wide for the header, which has the battery icon at its right end
 - a game built against another SDK, which cannot be linked in at all (rule 6)
 - a menu with no games in it
+
+A name too wide for its row is not on that list. The menu slides one back and
+forth while its row is selected, holding still at each end, so a long name is
+something to read rather than something to rename; an unselected row shows the
+start of its name and stops at the row's edge. Only the selected row moves,
+because seven names sliding at once is a menu nobody can read. The build log
+still names every entry that will do it, so it is never a surprise on the
+device. The console's own title is the exception and is still refused: the
+header does not scroll, and a title that ran on would print through the
+battery.
 
 This is a different question from `build.yaml`, which says what CI builds for
 the web gallery. A game held out of the web rotation can still be on the
