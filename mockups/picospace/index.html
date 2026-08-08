@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pico Space Program // screen mockup</title>
+<style>
+  :root{
+    --ink:#e8ecf5; --dim:#8d93a6; --line:#252a3a; --bg:#0b0d15; --panel:#12151f;
+    --accent:#ffa300;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:28px 20px 60px}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:.04em}
+  h1 span{color:var(--accent)}
+  p.lede{color:var(--dim);margin:0 0 28px;max-width:64ch}
+  .grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);
+         border-radius:8px;padding:12px 12px 10px;width:288px}
+  canvas{width:264px;height:264px;image-rendering:pixelated;display:block;
+         border:1px solid #000;background:#000}
+  figcaption{margin-top:9px;font-size:12px;color:var(--dim)}
+  figcaption b{color:var(--ink);display:block;font-size:13px;margin-bottom:3px}
+  h2{font-size:14px;margin:34px 0 10px;letter-spacing:.06em;color:var(--accent)}
+  table{border-collapse:collapse;font-size:12.5px}
+  td{padding:3px 16px 3px 0;vertical-align:top;color:var(--dim)}
+  td:first-child{color:var(--ink);white-space:nowrap}
+  ul{color:var(--dim);font-size:12.5px;max-width:74ch;padding-left:18px}
+  li{margin:4px 0}
+  li b{color:var(--ink);font-weight:400}
+</style>
+</head>
+<body>
+
+<h1>Pico <span>Space Program</span> // screen mockup</h1>
+<p class="lede">Six screens at the console's native 120x120, drawn at 2.2x.
+One continuous flight: off the pad, into orbit, across to a moon, down on it.
+Two views share the flight, a 3D one out of the window and a 2D map.</p>
+
+<div class="grid" id="grid"></div>
+
+<h2>CONTROLS</h2>
+<table>
+  <tr><td>up / down</td><td>throttle up, throttle down</td></tr>
+  <tr><td>left / right</td><td>turn the nose</td></tr>
+  <tr><td>A</td><td>stage: drop the spent booster, light the next engine</td></tr>
+  <tr><td>B</td><td>time warp, x1 / x10 / x50 / x200, throttle has to be shut</td></tr>
+  <tr><td>X</td><td>map view</td></tr>
+  <tr><td>Y</td><td>attitude hold: off / prograde / retrograde</td></tr>
+</table>
+
+<h2>WHAT IS ON SCREEN, AND WHY</h2>
+<ul>
+  <li><b>Fuel bar, top left.</b> The tank of the stage that is burning, not the
+      whole rocket. Empty is the cue to press A.</li>
+  <li><b>Altitude, top right.</b> Metres under 10 km, kilometres over.</li>
+  <li><b>Speed, bottom left.</b> Metres per second, and it is the number that
+      turns green when the ship is slow enough to touch down.</li>
+  <li><b>AP, bottom right.</b> The top of the arc the ship is on. This is how
+      orbit is read: raise AP clear of the air, then burn at AP until PE
+      follows it up. It appears once the ship is above the air and nowhere
+      else, because on the pad it means nothing.</li>
+  <li><b>The ring around the ship.</b> A dot for where the ship is going
+      (prograde) and a hollow one for the other way. Turning the nose onto the
+      dot is the whole of flying this, so it sits on the ship rather than in a
+      corner.</li>
+  <li><b>Nothing names a button.</b> Rule 9. The card in the gallery lists
+      them, the screen does not.</li>
+</ul>
+
+<script>
+const S = 120;
+
+function mk(caption, sub, draw){
+  const fig = document.createElement('figure');
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  fig.appendChild(c);
+  const cap = document.createElement('figcaption');
+  cap.innerHTML = '<b>' + caption + '</b>' + sub;
+  fig.appendChild(cap);
+  document.getElementById('grid').appendChild(fig);
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  draw(g);
+}
+
+// ---- the 5x7 console font, near enough for a mockup ----
+const FONT = {
+  '0':['111','101','101','101','111'],'1':['010','110','010','010','111'],
+  '2':['111','001','111','100','111'],'3':['111','001','111','001','111'],
+  '4':['101','101','111','001','001'],'5':['111','100','111','001','111'],
+  '6':['111','100','111','101','111'],'7':['111','001','001','001','001'],
+  '8':['111','101','111','101','111'],'9':['111','101','111','001','111'],
+  'A':['111','101','111','101','101'],'B':['110','101','110','101','110'],
+  'C':['111','100','100','100','111'],'D':['110','101','101','101','110'],
+  'E':['111','100','111','100','111'],'F':['111','100','111','100','100'],
+  'G':['111','100','101','101','111'],'H':['101','101','111','101','101'],
+  'I':['111','010','010','010','111'],'K':['101','101','110','101','101'],
+  'L':['100','100','100','100','111'],'M':['101','111','111','101','101'],
+  'N':['101','111','111','111','101'],'O':['111','101','101','101','111'],
+  'P':['111','101','111','100','100'],'R':['111','101','110','101','101'],
+  'S':['111','100','111','001','111'],'T':['111','010','010','010','010'],
+  'U':['101','101','101','101','111'],'V':['101','101','101','101','010'],
+  'W':['101','101','111','111','101'],'X':['101','101','010','101','101'],
+  'Y':['101','101','010','010','010'],'Z':['111','001','010','100','111'],
+  ' ':['000','000','000','000','000'],'.':['000','000','000','000','010'],
+  '/':['001','001','010','100','100'],'-':['000','000','111','000','000'],
+  'x':['000','101','010','101','000'],'m':['000','111','111','101','101'],
+  'k':['100','101','110','101','101'],'s':['000','011','010','010','110'],
+};
+function textW(str){ return str.length*4-1; }
+function text(g,str,x,y,col){
+  g.fillStyle=col;
+  let cx=x;
+  for(let i=0;i<str.length;i++){
+    let ch=str[i];
+    let rows=FONT[ch]||FONT[ch.toUpperCase()]||FONT[' '];
+    for(let r=0;r<5;r++) for(let cbit=0;cbit<3;cbit++)
+      if(rows[r][cbit]==='1') g.fillRect(cx+cbit,y+r,1,1);
+    cx+=4;
+  }
+}
+function textR(g,str,rx,y,col){ text(g,str,rx-textW(str),y,col); }
+function textC(g,str,cx,y,col){ text(g,str,Math.round(cx-textW(str)/2),y,col); }
+
+function vgrad(g,c0,c1){
+  for(let y=0;y<S;y++){
+    const t=y/(S-1);
+    g.fillStyle='rgb('+Math.round(c0[0]+(c1[0]-c0[0])*t)+','+
+      Math.round(c0[1]+(c1[1]-c0[1])*t)+','+Math.round(c0[2]+(c1[2]-c0[2])*t)+')';
+    g.fillRect(0,y,S,1);
+  }
+}
+function stars(g,n,seed){
+  let s=seed;
+  const rnd=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff;};
+  for(let i=0;i<n;i++){
+    const x=Math.floor(rnd()*S), y=Math.floor(rnd()*S), v=140+Math.floor(rnd()*115);
+    g.fillStyle='rgb('+v+','+v+','+Math.min(255,v+16)+')';
+    g.fillRect(x,y,1,1);
+  }
+}
+function disc(g,cx,cy,r,fill,edge){
+  for(let y=Math.floor(cy-r);y<=Math.ceil(cy+r);y++){
+    const dy=y-cy, k=r*r-dy*dy; if(k<0) continue;
+    const hw=Math.sqrt(k);
+    g.fillStyle=fill(dy/r);
+    g.fillRect(Math.round(cx-hw),y,Math.max(1,Math.round(hw*2)),1);
+  }
+  if(edge){ ring(g,cx,cy,r,edge); }
+}
+function ring(g,cx,cy,r,col,dash){
+  g.fillStyle=col;
+  const n=Math.max(24,Math.round(r*6.5));
+  for(let i=0;i<n;i++){
+    if(dash && (i%dash)>=dash/2) continue;
+    const a=i/n*Math.PI*2;
+    g.fillRect(Math.round(cx+Math.cos(a)*r),Math.round(cy+Math.sin(a)*r),1,1);
+  }
+}
+function line(g,x0,y0,x1,y1,col){
+  g.fillStyle=col;
+  const dx=Math.abs(x1-x0),dy=Math.abs(y1-y0);
+  const sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx-dy, x=x0,y=y0;
+  for(let i=0;i<400;i++){
+    g.fillRect(x,y,1,1);
+    if(x===x1&&y===y1) break;
+    const e2=2*err;
+    if(e2>-dy){err-=dy;x+=sx;} if(e2<dx){err+=dx;y+=sy;}
+  }
+}
+
+// A two stage rocket, drawn as the mesh would come out: body, fins, nose.
+function rocket(g,cx,cy,ang,scale,stage2only,plume){
+  const c=Math.cos(ang), s=Math.sin(ang);
+  const P=(u,v)=>[cx+(u*c-v*s)*scale, cy+(u*s+v*c)*scale];
+  const poly=(pts,col)=>{
+    g.fillStyle=col; g.beginPath();
+    const q=pts.map(p=>P(p[0],p[1]));
+    g.moveTo(q[0][0],q[0][1]); for(let i=1;i<q.length;i++) g.lineTo(q[i][0],q[i][1]);
+    g.closePath(); g.fill();
+  };
+  if(plume>0){
+    const base = stage2only ? 0.2 : -1.55;
+    for(let i=0;i<10;i++){
+      const t=i/9, w=0.30*(1-t*0.55)*plume;
+      const l=base-t*1.7*plume;
+      const col = t<0.3?'#fff4d0':(t<0.62?'#ffb63c':'#ff5a2b');
+      poly([[-w,l],[w,l],[w*0.7,l-0.19],[-w*0.7,l-0.19]],col);
+    }
+  }
+  if(!stage2only){
+    poly([[-0.34,-1.55],[0.34,-1.55],[0.34,0.2],[-0.34,0.2]],'#c9ced9'); // booster
+    poly([[0.34,-1.55],[0.34,0.2],[0.20,0.2],[0.20,-1.55]],'#8b90a0');   // shade
+    poly([[-0.34,-1.5],[-0.86,-1.75],[-0.86,-1.2],[-0.34,-1.05]],'#5c6272');
+    poly([[0.34,-1.5],[0.86,-1.75],[0.86,-1.2],[0.34,-1.05]],'#4a4f5e');
+    poly([[-0.34,-0.05],[0.34,-0.05],[0.34,0.2],[-0.34,0.2]],'#ff8b2b'); // interstage
+  }
+  poly([[-0.28,0.2],[0.28,0.2],[0.28,1.35],[-0.28,1.35]],'#eef2f8');     // upper
+  poly([[0.28,0.2],[0.28,1.35],[0.16,1.35],[0.16,0.2]],'#a8adba');
+  poly([[-0.28,0.55],[0.28,0.55],[0.28,0.72],[-0.28,0.72]],'#2f6bd8');   // band
+  poly([[-0.28,1.35],[0.28,1.35],[0,2.0]],'#ff4d5e');                    // nose
+}
+
+function progradeRing(g,cx,cy,r,proAng,noseAng){
+  ring(g,cx,cy,r,'#3d4a68',2);
+  // prograde: filled dot
+  const px=cx+Math.cos(proAng)*r, py=cy+Math.sin(proAng)*r;
+  g.fillStyle='#3ce27a'; g.fillRect(Math.round(px)-1,Math.round(py)-1,3,3);
+  // retrograde: hollow
+  const rx=cx-Math.cos(proAng)*r, ry=cy-Math.sin(proAng)*r;
+  g.fillStyle='#3ce27a';
+  g.fillRect(Math.round(rx)-1,Math.round(ry)-1,3,1);
+  g.fillRect(Math.round(rx)-1,Math.round(ry)+1,3,1);
+  g.fillRect(Math.round(rx)-1,Math.round(ry),1,1);
+  g.fillRect(Math.round(rx)+1,Math.round(ry),1,1);
+  // nose tick
+  const nx=cx+Math.cos(noseAng)*(r+3), ny=cy+Math.sin(noseAng)*(r+3);
+  g.fillStyle='#ffd24a'; g.fillRect(Math.round(nx),Math.round(ny),1,1);
+}
+
+function hud(g,o){
+  // fuel bar top left
+  const bw=34;
+  g.fillStyle='rgba(14,17,30,0.85)'; g.fillRect(3,3,bw+2,6);
+  const fill=Math.round(bw*o.fuel);
+  if(fill>0){
+    g.fillStyle=o.fuel<0.25?'#ff004d':(o.fuel<0.5?'#ffa300':'#00e436');
+    g.fillRect(4,4,fill,4);
+  }
+  // stage pips, right of the bar
+  for(let i=0;i<o.stages;i++){
+    g.fillStyle = i<o.stage ? '#555b70' : '#e8ecf5';
+    g.fillRect(3+bw+5+i*4,4,2,4);
+  }
+  if(o.warp>1) textC(g,'x'+o.warp,S/2,3,'#7fd2ff');
+  textR(g,o.alt,S-3,3,'#dfe4f0');
+  text(g,o.spd,3,S-8,o.spdCol||'#dfe4f0');
+  if(o.ap) textR(g,o.ap,S-3,S-8,'#ffa300');
+  // throttle, far left column
+  g.fillStyle='rgba(14,17,30,0.8)'; g.fillRect(0,16,3,60);
+  const th=Math.round(58*o.thr);
+  if(th>0){ g.fillStyle='#00e436'; g.fillRect(1,16+59-th,2,th); }
+  if(o.hold) text(g,o.hold,3,12,'#3ce27a');
+}
+
+// ---------------- 1. title ----------------
+mk('TITLE','A rocket on the pad under the name. START flies the furthest '+
+   'mission reached.', g=>{
+  vgrad(g,[16,24,58],[96,126,178]);
+  g.fillStyle='#1d3350'; g.fillRect(0,96,S,24);
+  g.fillStyle='#27435f'; g.fillRect(30,92,60,5);
+  rocket(g,60,78,-Math.PI/2,7.5,false,0);
+  g.fillStyle='#4a5568'; g.fillRect(78,54,4,42);
+  for(let y=58;y<96;y+=6){ g.fillStyle='#5c6b82'; g.fillRect(74,y,8,1); }
+  g.fillStyle='rgba(12,14,28,0.80)'; g.fillRect(16,26,88,44);
+  textC(g,'PICO SPACE',60,31,'#ffa300');
+  textC(g,'PROGRAM',60,39,'#ffa300');
+  textC(g,'START',60,51,'#ffa300');
+  textC(g,'SOUND ON',60,60,'#969ab0');
+});
+
+// ---------------- 2. ascent ----------------
+mk('ASCENT','Off the pad and pitching over. Ground is real geometry, the '+
+   'tower and pad are meshes, the sky drains toward black with altitude.', g=>{
+  vgrad(g,[22,44,96],[126,164,214]);
+  // curved ground
+  const R=520, cx=60, cy=104+R;
+  disc(g,cx,cy,R,t=>{ const v=1-Math.abs(t); return 'rgb('+Math.round(58+70*v)+','+
+    Math.round(96+64*v)+','+Math.round(72+40*v)+')'; },null);
+  // pad + tower at the launch site, now below and behind
+  g.fillStyle='#3a4152'; g.fillRect(38,101,18,4);
+  g.fillStyle='#4a5568'; g.fillRect(56,86,3,19);
+  g.fillStyle='#20242f'; g.fillRect(40,105,14,3);
+  // smoke at the pad
+  for(let i=0;i<26;i++){
+    const a=i*2.399, r=3+i*0.55;
+    const x=Math.round(47+Math.cos(a)*r*1.5), y=Math.round(101+Math.sin(a)*r*0.5);
+    g.fillStyle=i%3?'#9aa2ad':'#c3c9d2'; g.fillRect(x,y,1,1);
+  }
+  rocket(g,62,54,-Math.PI/2+0.44,5.6,false,1.0);
+  progradeRing(g,62,54,17,-Math.PI/2+0.40,-Math.PI/2+0.44);
+  hud(g,{fuel:0.62,stage:0,stages:2,alt:'4820m',spd:'318ms',thr:1.0,warp:1});
+});
+
+// ---------------- 3. space / coast ----------------
+mk('COAST TO AP','Above the air. The planet is a lit disc with its own haze '+
+   'ring, the spent booster tumbles away, warp is running.', g=>{
+  g.fillStyle='#04050b'; g.fillRect(0,0,S,S); stars(g,54,7);
+  // planet limb, bottom
+  const R=132, cx=52, cy=68+R;
+  ring(g,cx,cy,R+4,'rgba(90,150,220,0.55)');
+  ring(g,cx,cy,R+2,'rgba(120,175,235,0.75)');
+  disc(g,cx,cy,R,t=>{
+    const v=Math.max(0,1-Math.abs(t*1.15));
+    return 'rgb('+Math.round(18+62*v)+','+Math.round(46+92*v)+','+Math.round(72+96*v)+')';
+  },null);
+  // cloud smears
+  g.fillStyle='rgba(226,238,252,0.55)';
+  g.fillRect(14,86,15,2); g.fillRect(38,94,22,2); g.fillRect(72,88,12,2);
+  g.fillRect(88,99,18,2);
+  // tumbling booster
+  rocket(g,26,44,2.1,3.0,false,0);
+  rocket(g,66,48,-Math.PI/2+0.12,5.6,true,0);
+  progradeRing(g,66,48,17,-Math.PI/2+0.10,-Math.PI/2+0.12);
+  hud(g,{fuel:0.83,stage:1,stages:2,alt:'38.6km',spd:'602ms',thr:0.0,warp:50,
+         ap:'AP 96',hold:'PRO'});
+});
+
+// ---------------- 4. map ----------------
+mk('MAP','X opens it. The ship\'s conic, its AP and PE, the target moon\'s '+
+   'orbit and its capture ring. BURN lights when the window is open.', g=>{
+  g.fillStyle='#04050b'; g.fillRect(0,0,S,S); stars(g,40,3);
+  const cx=54, cy=62;
+  // moon orbit
+  ring(g,cx,cy,44,'#2b3550');
+  // planet
+  disc(g,cx,cy,9,()=>'#2f6bd8',null);
+  ring(g,cx,cy,10,'rgba(120,175,235,0.5)');
+  // ship transfer ellipse: periapsis near planet, apoapsis at moon orbit
+  const a=27, b=21, ox=cx-17;
+  g.fillStyle='#ffa300';
+  for(let i=0;i<150;i++){
+    const t=i/150*Math.PI*2;
+    g.fillRect(Math.round(ox+Math.cos(t)*a),Math.round(cy+Math.sin(t)*b),1,1);
+  }
+  // AP / PE marks
+  g.fillStyle='#ffd24a'; g.fillRect(ox+a-1,cy-1,3,3);
+  text(g,'AP',ox+a+3,cy-9,'#ffd24a');
+  g.fillStyle='#7fd2ff'; g.fillRect(ox-a-1,cy-1,3,3);
+  // moon + soi
+  const ma=-0.72, mx=Math.round(cx+Math.cos(ma)*44), my=Math.round(cy+Math.sin(ma)*44);
+  ring(g,mx,my,10,'#3c6a52',2);
+  disc(g,mx,my,4,()=>'#9aa79c',null);
+  // ship dot
+  const sa=2.5, sx=Math.round(ox+Math.cos(sa)*a), sy=Math.round(cy+Math.sin(sa)*b);
+  g.fillStyle='#00e436'; g.fillRect(sx-1,sy-1,3,3);
+  g.fillStyle='#04050b'; g.fillRect(sx,sy,1,1);
+  textC(g,'BURN',60,4,'#00e436');
+  text(g,'PE 14',3,S-8,'#7fd2ff');
+  textR(g,'AP 296',S-3,S-8,'#ffa300');
+});
+
+// ---------------- 5. moon landing ----------------
+mk('TOUCHDOWN','Airless, so it is all retro burn. Speed turns green under '+
+   'the touchdown limit, and the pad has a marker you can see from up here.', g=>{
+  g.fillStyle='#04050b'; g.fillRect(0,0,S,S); stars(g,30,11);
+  const R=300, cx=54, cy=98+R;
+  disc(g,cx,cy,R,t=>{ const v=1-Math.abs(t);
+    return 'rgb('+Math.round(96+58*v)+','+Math.round(94+56*v)+','+Math.round(102+54*v)+')';},null);
+  // craters
+  g.fillStyle='#7d7f8a'; g.fillRect(18,104,13,2); g.fillRect(76,108,16,2);
+  g.fillStyle='#b9bcc6'; g.fillRect(18,103,13,1); g.fillRect(76,107,16,1);
+  // landing marker
+  g.fillStyle='#00e436'; g.fillRect(48,97,14,1);
+  g.fillRect(48,95,1,3); g.fillRect(61,95,1,3);
+  rocket(g,55,76,-Math.PI/2+Math.PI,4.6,true,0.55);
+  progradeRing(g,55,76,15,Math.PI/2+0.08,Math.PI/2);
+  hud(g,{fuel:0.21,stage:1,stages:2,alt:'214m',spd:'6ms',spdCol:'#00e436',
+         thr:0.42,warp:1,hold:'RET'});
+});
+
+// ---------------- 6. outcome ----------------
+mk('DOWN SAFE','The card that closes a flight. No prompt telling you which '+
+   'button flies again, because every button does.', g=>{
+  g.fillStyle='#04050b'; g.fillRect(0,0,S,S); stars(g,30,11);
+  const R=300, cx=54, cy=98+R;
+  disc(g,cx,cy,R,t=>{ const v=1-Math.abs(t);
+    return 'rgb('+Math.round(96+58*v)+','+Math.round(94+56*v)+','+Math.round(102+54*v)+')';},null);
+  g.fillStyle='#00e436'; g.fillRect(48,97,14,1);
+  rocket(g,55,90,-Math.PI/2,4.6,true,0);
+  g.fillStyle='rgba(12,14,28,0.84)'; g.fillRect(21,44,78,34);
+  textC(g,'DOWN SAFE',60,49,'#00e436');
+  textC(g,'PIP',60,58,'#eef2f8');
+  textC(g,'FUEL 18',60,67,'#969ab0');
+});
+</script>
+</body>
+</html>
