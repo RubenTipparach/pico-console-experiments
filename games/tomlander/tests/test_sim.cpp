@@ -962,18 +962,18 @@ void test_what_a_dead_stick_glide_lands_on_is_what_decides_it() {
     CHECK(smashed.fault == tl::Fault::TooFast);
 }
 
-// A deck that continues a mission fills the tank; the one that ends it does
-// not. Without the first half the delivery and the salvage cannot be flown at
-// all: a leg costs 57 to 65 percent of a tank, so two of them do not fit in
-// one. Without the second half the fuel left at the finish would always be a
-// full tank and the debrief's score would mean nothing.
-void test_a_leg_refuels_and_an_ending_does_not() {
+// No deck refuels any more. Landing used to fill the tank, which made every
+// deck free: arrive on fumes every time and fuel stopped being a decision. The
+// fuel is out on the map in crates now, so a touchdown is worth exactly the
+// deck it is on and nothing else.
+void test_a_deck_no_longer_refuels() {
     tl::World w;
     tl::world_init(w, tl::Mission::Delivery);
-    w.fuel = tl::k_fuel_full / 5;
+    const int32_t low = tl::k_fuel_full / 5;
+    w.fuel = low;
     CHECK(w.target == 1);
 
-    // Set down on deck B, where the crate is: a leg, not an ending.
+    // Set down on deck B, where the cargo is: a leg, not an ending.
     w.x = w.pads[1].x;
     w.z = w.pads[1].z;
     w.y = tl::ground_at(w, w.x, w.z);
@@ -984,9 +984,10 @@ void test_a_leg_refuels_and_an_ending_does_not() {
     CHECK(w.state == tl::Flight::Flying);   // the flight carries on
     CHECK(tl::carrying(w));
     CHECK(w.target == 2);
-    CHECK(w.fuel == tl::k_fuel_full);       // and it carries on with a tank
+    CHECK(w.fuel == low);                   // and it carries on with what it had
 
-    // Now deck C, which ends it. The tank is left where the flying left it.
+    // Deck C ends it, and leaves the tank where the flying left it, which is
+    // what keeps the fuel at the finish worth flying for.
     w.fuel = tl::k_fuel_full / 3;
     w.x = w.pads[2].x;
     w.z = w.pads[2].z;
@@ -997,37 +998,145 @@ void test_a_leg_refuels_and_an_ending_does_not() {
     CHECK(w.state == tl::Flight::Landed);
     CHECK(w.cargo == tl::kCargoDone);
     CHECK(w.fuel == tl::k_fuel_full / 3);
+}
 
-    // The salvage works the same way, and it is the mission that needs it
-    // most: 99 units each way.
+// Flying through a green cube is half a tank. The one piece of fuel the player
+// can go and get, so everything about reaching it is checked here: that it is
+// only collected in the box the reach describes, that it is collected once,
+// that it cannot overfill, and that it takes the dry countdown off the hull.
+void test_a_fuel_crate_is_half_a_tank_and_is_taken_once() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    CHECK(w.crate_count > 0);
+    CHECK(w.crates_taken == 0);
+
+    // The first crate that is actually out on the map.
+    int idx = -1;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Out) { idx = i; break; }
+    }
+    CHECK(idx >= 0);
+    const tl::FuelCrate at = w.crates[idx];
+
+    // Just outside the reach on one axis is not a pickup. Checked on all
+    // three, because a box test that forgot an axis would be a crate you
+    // collected by flying over it at any altitude.
+    for (int axis = 0; axis < 3; axis++) {
+        tl::World miss;
+        tl::world_init(miss, tl::Mission::Delivery);
+        miss.x = at.x; miss.y = at.y; miss.z = at.z;
+        const int32_t off = tl::k_crate_reach + (1 << 16);
+        if (axis == 0) miss.x += off;
+        if (axis == 1) miss.y += off;
+        if (axis == 2) miss.z += off;
+        miss.grounded = false;
+        miss.landed_on = 0xFF;
+        const int32_t before = miss.fuel;
+        tl::Input none{};
+        tl::world_tick(miss, none);
+        CHECK(miss.crates_taken == 0);
+        CHECK(miss.fuel <= before);
+    }
+
+    // Straight through the middle of it is.
+    w.fuel = tl::k_fuel_full / 4;
+    w.x = at.x; w.y = at.y; w.z = at.z;
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    w.dry_ticks = 200;
+    tl::Input none{};
+    tl::world_tick(w, none);
+    CHECK(w.crates_taken == 1);
+    CHECK(w.crates[idx].state == tl::Crate::Taken);
+    // A quarter tank plus half a tank, minus whatever the tick's own drift
+    // cost, which is nothing with no pod firing.
+    CHECK(w.fuel == tl::k_fuel_full / 4 + tl::k_crate_fuel);
+    // Fuel back in the tank is control back, so the countdown starts again.
+    CHECK(w.dry_ticks == 0);
+
+    // Sitting in the same place does not collect it twice.
+    tl::world_tick(w, none);
+    CHECK(w.crates_taken == 1);
+
+    // And a tank does not overfill, which is what makes the order they are
+    // taken in worth thinking about.
+    tl::World full;
+    tl::world_init(full, tl::Mission::Delivery);
+    int out = -1;
+    for (int i = 0; i < full.crate_count; i++) {
+        if (full.crates[i].state == tl::Crate::Out) { out = i; break; }
+    }
+    full.x = full.crates[out].x;
+    full.y = full.crates[out].y;
+    full.z = full.crates[out].z;
+    full.grounded = false;
+    full.landed_on = 0xFF;
+    tl::world_tick(full, none);
+    CHECK(full.fuel == tl::k_fuel_full);
+}
+
+// Where the crates are, per mission, and the one that teaches what they are.
+void test_the_delivery_teaches_crates_and_the_hop_has_none() {
+    // The hop is one leg on one tank with room to spare. Meeting a crate there
+    // would spend the lesson on a flight that did not need it.
+    tl::World hop;
+    tl::world_init(hop, tl::Mission::Hop);
+    CHECK(hop.crate_count == 0);
+
+    // The delivery places three, and exactly one of them waits: it appears
+    // when the cargo comes aboard, eleven units off the deck the player is
+    // standing on, so the first crate they ever meet is the next thing they
+    // fly through.
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    int waiting = 0, out = 0;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Waiting) waiting++;
+        if (w.crates[i].state == tl::Crate::Out) out++;
+    }
+    CHECK(w.crate_count == 3);
+    CHECK(waiting == 1);
+    CHECK(out == 2);
+
+    // Find it, and check it really is beside deck B rather than somewhere the
+    // player would have to go looking.
+    int idx = -1;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Waiting) { idx = i; break; }
+    }
+    const int32_t dx = w.crates[idx].x - w.pads[1].x;
+    const int32_t dz = w.crates[idx].z - w.pads[1].z;
+    const int32_t reach = (iabs(dx) > iabs(dz) ? iabs(dx) : iabs(dz)) >> 16;
+    CHECK(reach > (tl::k_pad_half >> 16));   // off the deck, not on it
+    CHECK(reach < 16);                       // and in sight of it
+
+    // Picking the cargo up is what puts it out.
+    w.x = w.pads[1].x;
+    w.z = w.pads[1].z;
+    w.y = tl::ground_at(w, w.x, w.z);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    tl::Input none{};
+    tl::world_tick(w, none);
+    CHECK(tl::carrying(w));
+    CHECK(w.crates[idx].state == tl::Crate::Out);
+
+    // The salvage places two, both out from the start: by then the player has
+    // met one and there is nothing left to teach.
     tl::World sea;
     tl::world_init(sea, tl::Mission::Salvage);
-    sea.fuel = 1;
-    sea.x = sea.pads[1].x;
-    sea.z = sea.pads[1].z;
-    sea.y = tl::ground_at(sea, sea.x, sea.z);
-    sea.grounded = false;
-    sea.landed_on = 0xFF;
-    tl::world_tick(sea, none);
-    CHECK(sea.state == tl::Flight::Flying);
-    CHECK(sea.fuel == tl::k_fuel_full);
+    CHECK(sea.crate_count == 2);
+    for (int i = 0; i < sea.crate_count; i++) {
+        CHECK(sea.crates[i].state == tl::Crate::Out);
+    }
 
-    // Reaching the pickup on the last drop of fuel is a save, not a loss:
-    // the refuel is resolved in the same tick, ahead of the dry check.
-    CHECK(sea.fault == tl::Fault::None);
-
-    // A deck that is not the target refuels nothing, whatever it is.
-    tl::World stray;
-    tl::world_init(stray, tl::Mission::Delivery);
-    stray.fuel = tl::k_fuel_full / 4;
-    stray.x = stray.pads[2].x;              // deck C, not the current target
-    stray.z = stray.pads[2].z;
-    stray.y = tl::ground_at(stray, stray.x, stray.z);
-    stray.grounded = false;
-    stray.landed_on = 0xFF;
-    tl::world_tick(stray, none);
-    CHECK(stray.state == tl::Flight::Flying);
-    CHECK(stray.fuel < tl::k_fuel_full);
+    // And they hang over the WATER, not over the sea floor forty units down.
+    // ground_at clamps to the waterline, so this is really a check that the
+    // crates were placed through it rather than through terrain_height.
+    for (int i = 0; i < sea.crate_count; i++) {
+        CHECK(sea.crates[i].y > sea.sea);
+        CHECK(sea.crates[i].y < sea.sea + (30 << 16));
+    }
 }
 
 // Touching the sea is lost however gently, because a lander is not a boat and
@@ -1104,7 +1213,9 @@ int main() {
     test_a_hard_landing_costs_hull_and_two_of_them_end_it();
     test_running_dry_is_a_glide_before_it_is_a_fail();
     test_what_a_dead_stick_glide_lands_on_is_what_decides_it();
-    test_a_leg_refuels_and_an_ending_does_not();
+    test_a_deck_no_longer_refuels();
+    test_a_fuel_crate_is_half_a_tank_and_is_taken_once();
+    test_the_delivery_teaches_crates_and_the_hop_has_none();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

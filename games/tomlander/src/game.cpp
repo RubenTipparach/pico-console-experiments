@@ -25,6 +25,8 @@ uint32_t g_best_fuel = 0;      // fp8 fuel left on the best landing
 bool g_new_record = false;
 bool g_save_pending = false;
 bool g_sound_on = true;
+// Frames left before the fuel chime's second note. See where it is fired.
+uint8_t g_chime_ticks = 0;
 // The furthest mission reached, and the one START flies. Saved, so the game
 // comes back where it was left rather than making the delivery earned again.
 uint8_t g_progress = 1;
@@ -422,6 +424,7 @@ void step_sim() {
 
     const tl::Flight before = g_world.state;
     const bool had_cargo = tl::carrying(g_world);
+    const uint8_t crates_before = g_world.crates_taken;
     tl::world_tick(g_world, input);
 
     int total = 0;
@@ -431,6 +434,18 @@ void step_sim() {
     // The crate coming aboard, which is the one event in the flight with no
     // panel and no state change to announce it.
     if (!had_cargo && tl::carrying(g_world)) sound_cue(900, 160, 5000);
+
+    // A fuel crate. Two notes rather than one, a fifth apart and rising, which
+    // is what makes it read as a chime instead of the blip the cargo gets.
+    // sound_cue retriggers ONE channel, so the second note cannot be asked for
+    // in the same frame: it is queued and fired a few frames later, and the
+    // first note's own decay carries the gap.
+    if (g_world.crates_taken != crates_before) {
+        sound_cue(1046, 130, 5200);        // C
+        g_chime_ticks = 7;
+    } else if (g_chime_ticks > 0 && --g_chime_ticks == 0) {
+        sound_cue(1568, 300, 4800);        // the G above it
+    }
 
     if (before == tl::Flight::Flying && g_world.state != tl::Flight::Flying) {
         sound_stop();
