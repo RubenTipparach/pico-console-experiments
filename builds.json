@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,8 +67,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:44:53Z",
-      "commit": "6657289",
+      "built_at": "2026-08-08T17:49:48Z",
+      "commit": "aeba216",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -89,6 +89,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-08T17:44:53Z",
+  "generated_at": "2026-08-08T17:49:48Z",
   "schema": 2
 }
