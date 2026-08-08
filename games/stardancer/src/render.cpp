@@ -1,5 +1,7 @@
 #include "render.hpp"
 
+#include <cmath>
+
 #include "pse/parallel.hpp"
 #include "pse/quat.hpp"
 #include "pse/raster.hpp"
@@ -7,16 +9,16 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
-#include "starlance/bomber.hpp"
-#include "starlance/fighter.hpp"
-#include "starlance/frigate.hpp"
-#include "starlance/gunship.hpp"
-#include "starlance/interceptor.hpp"
+#include "stardancer/bomber.hpp"
+#include "stardancer/fighter.hpp"
+#include "stardancer/frigate.hpp"
+#include "stardancer/gunship.hpp"
+#include "stardancer/interceptor.hpp"
 
-namespace slr {
+namespace sdr {
 namespace {
 
-using sl::World;
+using sd::World;
 
 // The Rasterizer and the FrameQueue come from the engine rather than being
 // declared here: on the console every game is linked into one binary, and a
@@ -63,6 +65,20 @@ constexpr float k_cam_back = 6.2f;
 // frigate dead ahead at sixty units disappeared behind your own tail, with
 // the target box round the place it should have been.
 constexpr float k_cam_lift = 2.15f;
+
+// How fast the camera catches up with the ship, per 60th of a second, which
+// is the rate the pico-8 prototype this game descends from used. Bolted
+// rigidly to the hull, a turn moves the whole sky at once and reads as the
+// universe rotating rather than as the ship turning; letting the camera trail
+// and settle is what puts the motion in the ship.
+constexpr float k_cam_lerp = 0.1f;
+constexpr float k_cam_frame_ms = 16.667f;
+
+// Further than this from where it should be and the camera jumps rather than
+// flies. A sortie restarting, or a wave arriving somewhere else, would
+// otherwise be a long swoop across the arena from wherever the camera used to
+// be, which looks like a bug in the level rather than a smooth camera.
+constexpr float k_cam_snap = 40.0f;
 
 // ---- the one byte depth buffer ----
 //
@@ -119,7 +135,7 @@ inline uint8_t clamp8(int v) {
 }
 
 inline float fp_to_f(int32_t v) {
-    return static_cast<float>(v) / static_cast<float>(sl::k_one);
+    return static_cast<float>(v) / static_cast<float>(sd::k_one);
 }
 
 int isqrt_int(int value) {
@@ -148,9 +164,71 @@ struct Camera {
     float forward[3];
 };
 Camera g_cam{};
+bool g_cam_seeded = false;
+uint32_t g_cam_last_ms = 0;
 
 inline float dot_cam(const float axis[3], float x, float y, float z) {
     return axis[0] * x + axis[1] * y + axis[2] * z;
+}
+
+inline float dot3(const float a[3], const float b[3]) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+void cross3(const float a[3], const float b[3], float out[3]) {
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+bool normalize3(float v[3]) {
+    const float len2 = dot3(v, v);
+    if (len2 < 1e-9f) return false;
+    const float inv = 1.0f / sqrtf(len2);
+    v[0] *= inv; v[1] *= inv; v[2] *= inv;
+    return true;
+}
+
+// Make a lerped frame into a rotation again.
+//
+// The three axes are eased independently, and independent easing does not
+// preserve a basis: two unit vectors lerped halfway give something shorter
+// than either, and a frame that is no longer orthonormal skews and scales
+// everything drawn through it. The pico-8 game this camera is modelled on
+// simply lives with that, because its projection is a hand written dot
+// product per vertex and a slightly short axis only nudges the scale. Here the
+// basis goes straight into a view matrix, so it has to be a real one.
+//
+// Gram-Schmidt off the forward axis: forward is the direction that matters,
+// right is whatever is left of the eased right once forward is taken out of
+// it, and up follows from the other two.
+void orthonormalize(Camera& cam) {
+    if (!normalize3(cam.forward)) {
+        cam.forward[0] = 0.0f; cam.forward[1] = 0.0f; cam.forward[2] = 1.0f;
+    }
+
+    const float along_fwd = dot3(cam.right, cam.forward);
+    cam.right[0] -= cam.forward[0] * along_fwd;
+    cam.right[1] -= cam.forward[1] * along_fwd;
+    cam.right[2] -= cam.forward[2] * along_fwd;
+
+    if (!normalize3(cam.right)) {
+        // The eased right has collapsed onto forward, which takes a half turn
+        // of roll inside one frame to manage. Any perpendicular will do, so
+        // seed from the world axis forward leans on LEAST: crossing with the
+        // one it leans on most is crossing with something nearly parallel,
+        // which gives back another near zero vector and fixes nothing.
+        const float ax = cam.forward[0] < 0.0f ? -cam.forward[0] : cam.forward[0];
+        const float ay = cam.forward[1] < 0.0f ? -cam.forward[1] : cam.forward[1];
+        float seed[3] = {0.0f, 1.0f, 0.0f};
+        if (ax <= ay) { seed[0] = 1.0f; seed[1] = 0.0f; }
+        cross3(seed, cam.forward, cam.right);
+        normalize3(cam.right);
+    }
+
+    // up = forward x right, which is the handedness Renderer3D builds its view
+    // rows with. Crossing the other way round mirrors the picture.
+    cross3(cam.forward, cam.right, cam.up);
 }
 
 // ---- drawing primitives ----
@@ -392,12 +470,12 @@ void draw_backdrop(const pse::RenderTarget& target) {
 
 // ---- the battle ----
 
-const pse::MeshData& mesh_for(sl::Hull cls) {
+const pse::MeshData& mesh_for(sd::Hull cls) {
     switch (cls) {
-        case sl::Hull::Bomber:  return models::starlance::bomber;
-        case sl::Hull::Gunship: return models::starlance::gunship;
-        case sl::Hull::Frigate: return models::starlance::frigate;
-        default:                return models::starlance::fighter;
+        case sd::Hull::Bomber:  return models::stardancer::bomber;
+        case sd::Hull::Gunship: return models::stardancer::gunship;
+        case sd::Hull::Frigate: return models::stardancer::frigate;
+        default:                return models::stardancer::fighter;
     }
 }
 
@@ -411,23 +489,108 @@ float camera_distance(int32_t x, int32_t y, int32_t z) {
     return static_cast<float>(isqrt_int(static_cast<int>(d2)));
 }
 
-void set_up_camera(const World& world) {
+// Where the camera would sit if it kept up perfectly, and which way it would
+// be looking. The easing below chases this, it does not replace it.
+void ideal_camera(const World& world, const Chrome& chrome, Camera& out) {
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
 
-    g_cam.right[0] = basis.m[0]; g_cam.right[1] = basis.m[3];
-    g_cam.right[2] = basis.m[6];
-    g_cam.up[0] = basis.m[1]; g_cam.up[1] = basis.m[4];
-    g_cam.up[2] = basis.m[7];
-    g_cam.forward[0] = basis.m[2]; g_cam.forward[1] = basis.m[5];
-    g_cam.forward[2] = basis.m[8];
+    const float ship_right[3] = {basis.m[0], basis.m[3], basis.m[6]};
+    const float ship_up[3] = {basis.m[1], basis.m[4], basis.m[7]};
+    const float ship_fwd[3] = {basis.m[2], basis.m[5], basis.m[8]};
 
-    g_cam.x = fp_to_f(world.x) - g_cam.forward[0] * k_cam_back +
-              g_cam.up[0] * k_cam_lift;
-    g_cam.y = fp_to_f(world.y) - g_cam.forward[1] * k_cam_back +
-              g_cam.up[1] * k_cam_lift;
-    g_cam.z = fp_to_f(world.z) - g_cam.forward[2] * k_cam_back +
-              g_cam.up[2] * k_cam_lift;
+    // The seat is always behind and above the hull, whichever way the camera
+    // ends up looking. Padlock turns the head, it does not move the chair.
+    out.x = fp_to_f(world.x) - ship_fwd[0] * k_cam_back + ship_up[0] * k_cam_lift;
+    out.y = fp_to_f(world.y) - ship_fwd[1] * k_cam_back + ship_up[1] * k_cam_lift;
+    out.z = fp_to_f(world.z) - ship_fwd[2] * k_cam_back + ship_up[2] * k_cam_lift;
+
+    const sd::Ship* target = sd::target_ship(world);
+    if (chrome.look_at_target && target != nullptr) {
+        int32_t tx = target->x, ty = target->y, tz = target->z;
+        const sd::Subsystem* sub = sd::target_subsystem(world);
+        if (sub != nullptr) sd::sub_position(*target, *sub, tx, ty, tz);
+
+        float look[3] = {fp_to_f(tx) - out.x, fp_to_f(ty) - out.y,
+                         fp_to_f(tz) - out.z};
+        if (normalize3(look)) {
+            out.forward[0] = look[0];
+            out.forward[1] = look[1];
+            out.forward[2] = look[2];
+
+            // Rolled with the ship rather than levelled to the world: this is
+            // a pilot turning their head, and their head is attached to a hull
+            // that may well be inverted.
+            //
+            // The ship's UP is the reference, not its right, and that is not
+            // interchangeable. Taking right as the reference and squaring it
+            // against the look direction collapses when the two are parallel,
+            // which is to say whenever the target is directly abeam, which is
+            // exactly the case padlock exists for: the roll would flip to a
+            // world axis as the contact crossed the wingtip. Up only collapses
+            // when the target is straight overhead or underneath, and the
+            // ship's nose covers that.
+            float hint[3] = {ship_up[0], ship_up[1], ship_up[2]};
+            cross3(hint, out.forward, out.right);
+            if (!normalize3(out.right)) {
+                hint[0] = ship_fwd[0]; hint[1] = ship_fwd[1];
+                hint[2] = ship_fwd[2];
+                cross3(hint, out.forward, out.right);
+                normalize3(out.right);
+            }
+            cross3(out.forward, out.right, out.up);
+            return;
+        }
+    }
+
+    for (int i = 0; i < 3; i++) {
+        out.right[i] = ship_right[i];
+        out.up[i] = ship_up[i];
+        out.forward[i] = ship_fwd[i];
+    }
+}
+
+void set_up_camera(const World& world, const Chrome& chrome, uint32_t time_ms) {
+    Camera want{};
+    ideal_camera(world, chrome, want);
+
+    // Per frame in the pico-8 original, which ran at a fixed 60. This one does
+    // not, so the rate is scaled by how long the frame actually took. A fixed
+    // per frame factor would make the camera lag depend on the frame rate,
+    // which is the sort of thing that feels fine on a laptop and sluggish on
+    // the device.
+    const uint32_t dt_ms = time_ms > g_cam_last_ms ? time_ms - g_cam_last_ms : 0;
+    g_cam_last_ms = time_ms;
+    float f = k_cam_lerp * (static_cast<float>(dt_ms) / k_cam_frame_ms);
+    if (f > 1.0f) f = 1.0f;
+    if (f < 0.0f) f = 0.0f;
+
+    const float dx = want.x - g_cam.x, dy = want.y - g_cam.y;
+    const float dz = want.z - g_cam.z;
+    const bool jumped = dx * dx + dy * dy + dz * dz > k_cam_snap * k_cam_snap;
+
+    if (!g_cam_seeded || jumped) {
+        g_cam = want;
+        g_cam_seeded = true;
+    } else {
+        g_cam.x += dx * f;
+        g_cam.y += dy * f;
+        g_cam.z += dz * f;
+        for (int i = 0; i < 3; i++) {
+            g_cam.right[i] += (want.right[i] - g_cam.right[i]) * f;
+            g_cam.up[i] += (want.up[i] - g_cam.up[i]) * f;
+            g_cam.forward[i] += (want.forward[i] - g_cam.forward[i]) * f;
+        }
+        orthonormalize(g_cam);
+    }
+
+    pse::Basis basis;
+    basis.m[0] = g_cam.right[0]; basis.m[1] = g_cam.up[0];
+    basis.m[2] = g_cam.forward[0];
+    basis.m[3] = g_cam.right[1]; basis.m[4] = g_cam.up[1];
+    basis.m[5] = g_cam.forward[1];
+    basis.m[6] = g_cam.right[2]; basis.m[7] = g_cam.up[2];
+    basis.m[8] = g_cam.forward[2];
 
     g_renderer.set_fov(k_fov);
     g_renderer.set_camera_basis(g_cam.x, g_cam.y, g_cam.z, basis);
@@ -448,17 +611,17 @@ void bracket_depth(const World& world) {
         any = true;
     };
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
-        consider(ship.x, ship.y, ship.z, fp_to_f(sl::hull_length(ship.cls)));
+        consider(ship.x, ship.y, ship.z, fp_to_f(sd::hull_length(ship.cls)));
     }
-    for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
         if (world.shots[i].active) {
             consider(world.shots[i].x, world.shots[i].y, world.shots[i].z, 1.0f);
         }
     }
-    for (uint8_t i = 0; i < sl::k_max_blasts; i++) {
+    for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
         if (world.blasts[i].active) {
             consider(world.blasts[i].x, world.blasts[i].y, world.blasts[i].z,
                      2.0f);
@@ -501,23 +664,23 @@ constexpr float k_lod_pixels = 4.0f;
 // What a contact is drawn as when it is too small to be a shape. Colour per
 // class, so a dot at two hundred units still says whether it is a fighter or
 // something that needs a wing.
-void contact_colour(sl::Hull cls, uint8_t& r, uint8_t& g, uint8_t& b) {
+void contact_colour(sd::Hull cls, uint8_t& r, uint8_t& g, uint8_t& b) {
     switch (cls) {
-        case sl::Hull::Bomber:  r = 232; g = 176; b = 96; break;
-        case sl::Hull::Gunship: r = 168; g = 206; b = 150; break;
-        case sl::Hull::Frigate: r = 176; g = 196; b = 226; break;
+        case sd::Hull::Bomber:  r = 232; g = 176; b = 96; break;
+        case sd::Hull::Gunship: r = 168; g = 206; b = 150; break;
+        case sd::Hull::Frigate: r = 176; g = 196; b = 226; break;
         default:                r = 234; g = 110; b = 92; break;
     }
 }
 
-bool too_small_to_draw(const World& world, const sl::Ship& ship,
+bool too_small_to_draw(const World& world, const sd::Ship& ship,
                        float& out_scale) {
     int x = 0, y = 0;
     uint8_t depth = 0;
     out_scale = 0.0f;
     if (!g_renderer.project_billboard(fp_to_f(ship.x), fp_to_f(ship.y),
                                       fp_to_f(ship.z),
-                                      fp_to_f(sl::hull_length(ship.cls)), x, y,
+                                      fp_to_f(sd::hull_length(ship.cls)), x, y,
                                       out_scale, depth)) {
         // Off screen or behind: nothing to draw either way, and the mesh path
         // would reach the same conclusion more slowly.
@@ -530,12 +693,12 @@ void draw_hulls(const World& world) {
     g_stats.hulls_drawn = 0;
     g_stats.hulls_live = 0;
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
         g_stats.hulls_live++;
 
-        if (sl::range_to(world, ship) > sl::k_draw_range) continue;
+        if (sd::range_to(world, ship) > sd::k_draw_range) continue;
 
         float scale = 0.0f;
         if (too_small_to_draw(world, ship, scale)) continue;
@@ -549,13 +712,13 @@ void draw_hulls(const World& world) {
 
         // A derelict is a dead grey. Nothing else says "that one has stopped
         // fighting" on a hull twelve pixels across.
-        const bool dead_crew = ship.task == sl::Task::Derelict;
+        const bool dead_crew = ship.task == sd::Task::Derelict;
         const uint8_t tint = dead_crew ? 130 : 255;
 
         g_renderer.draw_mesh(mesh_for(ship.cls), fp_to_f(ship.x),
                              fp_to_f(ship.y), fp_to_f(ship.z),
                              pse::quat_basis(ship.q),
-                             fp_to_f(sl::hull_length(ship.cls)), tint, tint,
+                             fp_to_f(sd::hull_length(ship.cls)), tint, tint,
                              tint, flash);
     }
 }
@@ -563,10 +726,10 @@ void draw_hulls(const World& world) {
 // Hulls too small to be shapes, drawn as depth tested blobs after the
 // geometry. See k_lod_pixels for why this exists at all.
 void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
-        if (sl::range_to(world, ship) > sl::k_draw_range) continue;
+        if (sd::range_to(world, ship) > sd::k_draw_range) continue;
 
         float scale = 0.0f;
         if (!too_small_to_draw(world, ship, scale)) continue;
@@ -576,7 +739,7 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
         uint8_t depth = 0;
         if (!g_renderer.project_billboard(fp_to_f(ship.x), fp_to_f(ship.y),
                                           fp_to_f(ship.z),
-                                          fp_to_f(sl::hull_length(ship.cls)), x,
+                                          fp_to_f(sd::hull_length(ship.cls)), x,
                                           y, scale, depth)) {
             continue;
         }
@@ -585,7 +748,7 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
 
         uint8_t r, g, b;
         contact_colour(ship.cls, r, g, b);
-        if (ship.task == sl::Task::Derelict) { r = 120; g = 120; b = 126; }
+        if (ship.task == sd::Task::Derelict) { r = 120; g = 120; b = 126; }
 
         // One pixel at the limit of sight, growing to the size the mesh takes
         // over at, so a contact closing on you does not pop from a dot to a
@@ -599,8 +762,8 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
 // second is two pixels of dot per frame, which reads as noise. Drawn after the
 // geometry so it can be depth tested against the ships it is flying past.
 void draw_bolts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
-        const sl::Shot& shot = world.shots[i];
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
+        const sd::Shot& shot = world.shots[i];
         if (!shot.active) continue;
 
         const float hx = fp_to_f(shot.x), hy = fp_to_f(shot.y);
@@ -617,8 +780,8 @@ void draw_bolts(const World& world, const pse::RenderTarget& target) {
             static_cast<uint8_t>(clamp_int(d0 * 255 / pse::k_fixed_one, 0, 255));
 
         uint8_t r = 130, g = 245, b = 170;          // player: green
-        if (shot.kind == sl::Bolt::EnemyGun) { r = 255; g = 120; b = 90; }
-        if (shot.kind == sl::Bolt::TurretShell) { r = 255; g = 200; b = 80; }
+        if (shot.kind == sd::Bolt::EnemyGun) { r = 255; g = 120; b = 90; }
+        if (shot.kind == sd::Bolt::TurretShell) { r = 255; g = 200; b = 80; }
 
         line_depth(target, x0, y0, x1, y1, depth, r, g, b);
         plot_depth(target, x0, y0, depth, 255, 255, 255);
@@ -626,8 +789,8 @@ void draw_bolts(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_missiles(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_missiles; i++) {
-        const sl::Missile& m = world.missiles_live[i];
+    for (uint8_t i = 0; i < sd::k_max_missiles; i++) {
+        const sd::Missile& m = world.missiles_live[i];
         if (!m.active) continue;
         int x = 0, y = 0, depth = 0;
         if (!g_renderer.project(fp_to_f(m.x), fp_to_f(m.y), fp_to_f(m.z), x, y,
@@ -645,13 +808,13 @@ void draw_missiles(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_blasts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_blasts; i++) {
-        const sl::Blast& blast = world.blasts[i];
+    for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
+        const sd::Blast& blast = world.blasts[i];
         if (!blast.active) continue;
 
         const float world_size =
             static_cast<float>(blast.size) / 100.0f *
-            (1.0f - static_cast<float>(blast.life) / sl::k_blast_life * 0.55f);
+            (1.0f - static_cast<float>(blast.life) / sd::k_blast_life * 0.55f);
 
         int x = 0, y = 0;
         float scale = 0.0f;
@@ -665,7 +828,7 @@ void draw_blasts(const World& world, const pse::RenderTarget& target) {
         const int radius = clamp_int(static_cast<int>(scale), 1, 34);
         // Cools from white through amber to a dull red as it ages, which is
         // the whole of the animation: three colours and a growing radius.
-        const int age = 255 - (blast.life * 255) / sl::k_blast_life;
+        const int age = 255 - (blast.life * 255) / sd::k_blast_life;
         const uint8_t r = 255;
         const uint8_t g = clamp8(240 - age);
         const uint8_t b = clamp8(200 - age * 2);
@@ -680,12 +843,12 @@ void draw_blasts(const World& world, const pse::RenderTarget& target) {
 void draw_own_hull(const World& world) {
     g_renderer.set_depth_range(k_hull_near, k_hull_far);
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     const uint8_t flash =
         world.hit_flash > 0 ? static_cast<uint8_t>(world.hit_flash * 22) : 0;
-    g_renderer.draw_mesh(models::starlance::interceptor, fp_to_f(world.x),
+    g_renderer.draw_mesh(models::stardancer::interceptor, fp_to_f(world.x),
                          fp_to_f(world.y), fp_to_f(world.z), basis,
-                         fp_to_f(sl::hull_length(sl::Hull::Fighter)), 255, 255,
+                         fp_to_f(sd::hull_length(sd::Hull::Fighter)), 255, 255,
                          255, flash);
 }
 
@@ -731,9 +894,9 @@ void print_uint(char* out, uint32_t value, int width) {
 // a crosshair that lies.
 void draw_reticle(const World& world, const pse::RenderTarget& target) {
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     const float fx = basis.m[2], fy = basis.m[5], fz = basis.m[8];
-    const float reach = fp_to_f(sl::k_gun_convergence);
+    const float reach = fp_to_f(sd::k_gun_convergence);
 
     int x = 0, y = 0, depth = 0;
     if (!g_renderer.project(fp_to_f(world.x) + fx * reach,
@@ -756,10 +919,10 @@ void draw_reticle(const World& world, const pse::RenderTarget& target) {
 // Where to aim to hit what is targeted: the target's position plus its own
 // velocity over the time a bolt takes to arrive. Without this, hitting
 // anything crossing is guesswork, and with it the game is about flying.
-void draw_lead(const World& world, const sl::Ship& ship, int box_x, int box_y,
+void draw_lead(const World& world, const sd::Ship& ship, int box_x, int box_y,
                const pse::RenderTarget& target) {
-    const int32_t range = sl::range_to(world, ship);
-    const int32_t flight = range / sl::k_gun_speed;
+    const int32_t range = sd::range_to(world, ship);
+    const int32_t flight = range / sd::k_gun_speed;
     if (flight > 400) return;
 
     int32_t fwd[3];
@@ -795,7 +958,7 @@ void draw_lead(const World& world, const sl::Ship& ship, int box_x, int box_y,
 void draw_off_screen_arrow(const World& world, int32_t tx, int32_t ty,
                            int32_t tz, const pse::RenderTarget& target) {
     int32_t bx, by, bz;
-    sl::bearing(world, tx, ty, tz, bx, by, bz);
+    sd::bearing(world, tx, ty, tz, bx, by, bz);
 
     // The bearing is in the player's frame, so its x and y ARE screen right
     // and screen up, with y flipped for the raster. A target dead astern has
@@ -824,19 +987,19 @@ void draw_off_screen_arrow(const World& world, int32_t tx, int32_t ty,
 }
 
 void draw_target_hud(const World& world, const pse::RenderTarget& target) {
-    const sl::Ship* ship = sl::target_ship(world);
+    const sd::Ship* ship = sd::target_ship(world);
     if (ship == nullptr) return;
 
-    const sl::Subsystem* sub = sl::target_subsystem(world);
+    const sd::Subsystem* sub = sd::target_subsystem(world);
     int32_t mark_x = ship->x, mark_y = ship->y, mark_z = ship->z;
-    if (sub != nullptr) sl::sub_position(*ship, *sub, mark_x, mark_y, mark_z);
+    if (sub != nullptr) sd::sub_position(*ship, *sub, mark_x, mark_y, mark_z);
 
     int x = 0, y = 0;
     float scale = 0.0f;
     uint8_t depth = 0;
     const float size = sub != nullptr
-                           ? fp_to_f(sl::sub_radius(*ship, *sub))
-                           : fp_to_f(sl::hull_radius(ship->cls));
+                           ? fp_to_f(sd::sub_radius(*ship, *sub))
+                           : fp_to_f(sd::hull_radius(ship->cls));
 
     const bool on_screen = g_renderer.project_billboard(
         fp_to_f(mark_x), fp_to_f(mark_y), fp_to_f(mark_z), size, x, y, scale,
@@ -859,11 +1022,11 @@ void draw_target_hud(const World& world, const pse::RenderTarget& target) {
 
     // The panel: what it is, how far, and how much is left of it.
     char line[24];
-    const char* name = sub != nullptr ? sl::sub_name(sub->kind)
-                                      : sl::hull_name(ship->cls);
+    const char* name = sub != nullptr ? sd::sub_name(sub->kind)
+                                      : sd::hull_name(ship->cls);
     pse::draw_text(target, name, 2, 2, 150, 220, 250);
 
-    const int32_t range = sl::range_to(world, *ship) / sl::k_one;
+    const int32_t range = sd::range_to(world, *ship) / sd::k_one;
     print_uint(line, static_cast<uint32_t>(clamp_int(range, 0, 999)), 3);
     pse::draw_text(target, line, target.width - 2 - pse::text_width(line, 1), 2,
                    150, 220, 250);
@@ -879,16 +1042,32 @@ void draw_target_hud(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_status(const World& world, const pse::RenderTarget& target) {
-    const int base = target.height - 12;
-    bar(target, 2, base, 40, world.hull, sl::k_player_hull_max, 240, 90, 80);
-    bar(target, 2, base + 5, 40, world.shield, sl::k_player_shield_max, 90, 170,
+    // Three bars, no labels: hull red, shields blue, throttle green. A label
+    // on a 120 pixel screen costs more room than the bar it names, and colour
+    // is enough when the same three sit in the same order every frame.
+    const int base = target.height - 17;
+    bar(target, 2, base, 40, world.hull, sd::k_player_hull_max, 240, 90, 80);
+    bar(target, 2, base + 5, 40, world.shield, sd::k_player_shield_max, 90, 170,
         250);
+    bar(target, 2, base + 10, 40, world.throttle, sd::k_throttle_one, 120, 220,
+        130);
+
+    // The speed actually being made, drawn as a notch on the throttle bar.
+    // The lever and the ship disagree for about a fifth of a second after a
+    // change, and that gap IS the feel of the throttle: without it the bar
+    // says the ship has already done what it has only been asked to do.
+    if (sd::k_player_speed_max > 0) {
+        const int notch = clamp_int(
+            static_cast<int>((static_cast<int64_t>(world.speed) * 40) /
+                             sd::k_player_speed_max), 0, 39);
+        pse::fill_rect(target, 2 + notch, base + 9, 1, 5, 230, 255, 210);
+    }
 
     // Missiles as pips rather than a number. A count needs a label to say what
     // it counts; six squares next to a launcher bar do not.
-    for (int i = 0; i < sl::k_missiles_max; i++) {
+    for (int i = 0; i < sd::k_missiles_max; i++) {
         const bool have = i < world.missiles;
-        pse::fill_rect(target, 46 + i * 3, base + 1, 2, 6,
+        pse::fill_rect(target, 46 + i * 3, base + 4, 2, 6,
                        have ? 250 : 46, have ? 220 : 50, have ? 110 : 62);
     }
 }
@@ -907,7 +1086,7 @@ void draw_mission(const World& world, const pse::RenderTarget& target,
     // clear, and it is still the only thing in the game that can be lost by
     // being ignored.
     const int clock_y = target.height - 22;
-    const uint32_t left = sl::jump_ticks_left(world);
+    const uint32_t left = sd::jump_ticks_left(world);
     if (left > 0) {
         const uint32_t seconds = left / 100;
         print_uint(line, seconds, 2);
@@ -921,7 +1100,7 @@ void draw_mission(const World& world, const pse::RenderTarget& target,
                                120, 240, 150);
     }
 
-    if (world.phase == sl::Phase::Briefing) {
+    if (world.phase == sd::Phase::Briefing) {
         print_uint(line, world.wave, 1);
         char banner[16] = {'W', 'A', 'V', 'E', ' ', line[0], '\0'};
         pse::draw_text_centred(target, banner, target.width / 2,
@@ -970,16 +1149,23 @@ const char* pitch_word(bool invert) {
 }
 
 void draw_title(const Chrome& chrome, const pse::RenderTarget& target) {
-    pse::draw_text_centred(target, "STARLANCE", target.width / 2, 24, 190, 225,
+    // Two lines, because the name does not fit on one at this size and a
+    // title is the one string worth having big. Eleven characters at scale 2
+    // is 130 pixels on a screen 120 wide, so a single line would print off
+    // both edges at once. Split rather than shrunk: a title set in the same
+    // size as the menu under it stops reading as a title.
+    pse::draw_text_centred(target, "STAR", target.width / 2, 16, 190, 225, 255,
+                           2);
+    pse::draw_text_centred(target, "DANCER", target.width / 2, 32, 190, 225,
                            255, 2);
-    pse::draw_text_centred(target, "5TH WING", target.width / 2, 40, 90, 130,
+    pse::draw_text_centred(target, "5TH WING", target.width / 2, 50, 90, 130,
                            170);
 
     const char* lines[kTitleItemCount] = {"LAUNCH", sound_word(chrome.sound_on),
                                           pitch_word(chrome.invert_pitch)};
     uint8_t lit[kTitleItemCount] = {0, 0, 0};
     lit[chrome.item % kTitleItemCount] = 1;
-    panel(target, lines, lit, kTitleItemCount, 62, 1);
+    panel(target, lines, lit, kTitleItemCount, 68, 1);
 
     if (chrome.best_score > 0) {
         char line[16];
@@ -1001,9 +1187,9 @@ void draw_pause(const Chrome& chrome, const pse::RenderTarget& target) {
 void draw_debrief(const World& world, const Chrome& chrome,
                   const pse::RenderTarget& target) {
     const char* verdict = "WING LOST";
-    if (world.phase == sl::Phase::Won) {
+    if (world.phase == sd::Phase::Won) {
         verdict = "FRIGATE DOWN";
-    } else if (world.loss == sl::Loss::Jumped) {
+    } else if (world.loss == sd::Loss::Jumped) {
         verdict = "SHE JUMPED";
     }
 
@@ -1031,7 +1217,7 @@ void draw_debrief(const World& world, const Chrome& chrome,
 
 void render_scene(const World& world, const Chrome& chrome,
                   const pse::RenderTarget& target, uint32_t time_ms) {
-    set_up_camera(world);
+    set_up_camera(world, chrome, time_ms);
 
     // ---- the world, collected and split across both cores ----
     g_raster.begin_frame_collect(target, g_queue);
@@ -1077,4 +1263,15 @@ void render_scene(const World& world, const Chrome& chrome,
 
 FrameStats last_frame_stats() { return g_stats; }
 
-}  // namespace slr
+CameraState last_camera() {
+    CameraState out{};
+    out.x = g_cam.x; out.y = g_cam.y; out.z = g_cam.z;
+    for (int i = 0; i < 3; i++) {
+        out.right[i] = g_cam.right[i];
+        out.up[i] = g_cam.up[i];
+        out.forward[i] = g_cam.forward[i];
+    }
+    return out;
+}
+
+}  // namespace sdr

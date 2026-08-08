@@ -1,6 +1,6 @@
 #pragma once
 
-// Starlance: the flight model, the guns, the enemy ships and the mission.
+// Star Dancer: the flight model, the guns, the enemy ships and the mission.
 //
 // Pure integer C++ with no SDK, no floats and no allocation, which is what
 // lets the host tests prove the things a comment can only claim: that a rolled
@@ -24,7 +24,7 @@
 
 #include "tuning.hpp"
 
-namespace sl {
+namespace sd {
 
 // ---- ships ----
 
@@ -196,9 +196,13 @@ struct Input {
     int8_t pitch;        // -1 nose down, +1 nose up
     int8_t yaw;          // -1 left, +1 right
     int8_t roll;         // -1 left, +1 right
+    int8_t throttle;     // -1 back, +1 forward, held
     bool fire;           // guns, held
     bool launch;         // missile, held (the reload is what limits it)
-    bool cycle_target;   // edge: one press, one step
+    // One step, on the tick it is set. The shell raises it when the target
+    // button is RELEASED rather than when it goes down, because holding that
+    // button means something else: see sdr::Chrome::look_at_target.
+    bool cycle_target;
 };
 
 struct World {
@@ -212,6 +216,12 @@ struct World {
     // Body frame, which is the frame the stick commands in, so nothing is
     // converted before it is integrated.
     int32_t wx, wy, wz;
+
+    // The lever, 0 to k_throttle_one, and the speed actually being made,
+    // fp16 per tick. Two numbers rather than one because the ship has mass:
+    // the lever moves as fast as the thumb does and the speed follows it.
+    int32_t throttle;
+    int32_t speed;
 
     int16_t hull, shield;
     uint16_t shield_idle;        // ticks since the last hit on the player
@@ -330,4 +340,4 @@ inline bool in_flight(const World& world) {
 // field or its navigation is already gone.
 uint32_t jump_ticks_left(const World& world);
 
-}  // namespace sl
+}  // namespace sd

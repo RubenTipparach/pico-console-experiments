@@ -1,4 +1,4 @@
-# Starlance's ships
+# Star Dancer's ships
 
 Five hulls, all authored the same way, all facing **+Z** with **+Y** up and the
 origin at the middle of the hull. Each is exactly **1.0 long in Z**, from

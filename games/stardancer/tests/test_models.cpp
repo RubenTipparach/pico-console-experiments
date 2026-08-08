@@ -22,11 +22,11 @@
 
 #include "sim.hpp"
 
-#include "starlance/bomber.hpp"
-#include "starlance/fighter.hpp"
-#include "starlance/frigate.hpp"
-#include "starlance/gunship.hpp"
-#include "starlance/interceptor.hpp"
+#include "stardancer/bomber.hpp"
+#include "stardancer/fighter.hpp"
+#include "stardancer/frigate.hpp"
+#include "stardancer/gunship.hpp"
+#include "stardancer/interceptor.hpp"
 
 namespace {
 
@@ -110,17 +110,17 @@ void check_unit_length(const char* name, const pse::MeshData& mesh) {
 }
 
 void test_every_hull_is_wound_outward() {
-    report("interceptor", models::starlance::interceptor);
-    report("fighter", models::starlance::fighter);
-    report("bomber", models::starlance::bomber);
-    report("gunship", models::starlance::gunship);
-    report("frigate", models::starlance::frigate);
+    report("interceptor", models::stardancer::interceptor);
+    report("fighter", models::stardancer::fighter);
+    report("bomber", models::stardancer::bomber);
+    report("gunship", models::stardancer::gunship);
+    report("frigate", models::stardancer::frigate);
 
-    check_unit_length("interceptor", models::starlance::interceptor);
-    check_unit_length("fighter", models::starlance::fighter);
-    check_unit_length("bomber", models::starlance::bomber);
-    check_unit_length("gunship", models::starlance::gunship);
-    check_unit_length("frigate", models::starlance::frigate);
+    check_unit_length("interceptor", models::stardancer::interceptor);
+    check_unit_length("fighter", models::stardancer::fighter);
+    check_unit_length("bomber", models::stardancer::bomber);
+    check_unit_length("gunship", models::stardancer::gunship);
+    check_unit_length("frigate", models::stardancer::frigate);
 }
 
 // The whole frame's worth of geometry, at the heaviest the game can make it,
@@ -128,9 +128,9 @@ void test_every_hull_is_wound_outward() {
 // silently, so the frame this would break is the one with the capital ship in
 // it, which is the frame nobody is looking at when they call the budget fine.
 void test_the_heaviest_wave_fits_the_queue() {
-    const int worst = models::starlance::frigate.face_count +
-                      models::starlance::gunship.face_count +
-                      2 * models::starlance::fighter.face_count;
+    const int worst = models::stardancer::frigate.face_count +
+                      models::stardancer::gunship.face_count +
+                      2 * models::stardancer::fighter.face_count;
     std::printf("heaviest wave: %d triangles into a %d triangle queue\n", worst,
                 pse::FrameQueue::k_capacity);
     // Half the budget, not all of it: the queue also has to hold whatever a
@@ -142,22 +142,22 @@ void test_the_heaviest_wave_fits_the_queue() {
 // The seats in sim.cpp against the hulls in models/. Both are in the model's
 // own coordinates, so the comparison is direct: a seat of 388 is 0.388 along a
 // hull that runs from -0.5 to +0.5.
-void check_seats(const char* name, sl::Hull cls, const pse::MeshData& mesh) {
-    sl::World world;
-    sl::world_init(world);
+void check_seats(const char* name, sd::Hull cls, const pse::MeshData& mesh) {
+    sd::World world;
+    sd::world_init(world);
 
     // Reach a ship of this class the only way there is: put the wave that
     // carries it on the field. Building a Ship by hand here would be testing
     // a layout this file wrote rather than the one the game spawns.
-    const uint8_t wave = cls == sl::Hull::Frigate ? 5 : 4;
+    const uint8_t wave = cls == sd::Hull::Frigate ? 5 : 4;
     world.wave = wave;
-    world.phase = sl::Phase::Briefing;
+    world.phase = sd::Phase::Briefing;
     world.wave_timer = 0;
-    sl::Input none{};
-    sl::world_tick(world, none);
+    sd::Input none{};
+    sd::world_tick(world, none);
 
-    const sl::Ship* found = nullptr;
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+    const sd::Ship* found = nullptr;
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (world.ships[i].active && world.ships[i].cls == cls) {
             found = &world.ships[i];
             break;
@@ -170,7 +170,7 @@ void check_seats(const char* name, sl::Hull cls, const pse::MeshData& mesh) {
     const Bounds b = bounds_of(mesh);
 
     for (uint8_t s = 0; s < found->sub_count; s++) {
-        const sl::Subsystem& sub = found->subs[s];
+        const sd::Subsystem& sub = found->subs[s];
         // Seats are in thousandths of the model, which is what the .obj is
         // authored in, so this is a direct comparison with no scale in it.
         const double seat[3] = {sub.ox / 1000.0, sub.oy / 1000.0,
@@ -180,7 +180,7 @@ void check_seats(const char* name, sl::Hull cls, const pse::MeshData& mesh) {
                             seat[2] >= b.lo[2] && seat[2] <= b.hi[2];
         if (!inside) {
             std::printf("FAIL %s %s seat (%.3f %.3f %.3f) is outside the hull\n",
-                        name, sl::sub_name(sub.kind), seat[0], seat[1], seat[2]);
+                        name, sd::sub_name(sub.kind), seat[0], seat[1], seat[2]);
             g_failures++;
         }
         g_checks++;
@@ -190,8 +190,8 @@ void check_seats(const char* name, sl::Hull cls, const pse::MeshData& mesh) {
 }
 
 void test_hardpoints_sit_on_the_hull() {
-    check_seats("gunship", sl::Hull::Gunship, models::starlance::gunship);
-    check_seats("frigate", sl::Hull::Frigate, models::starlance::frigate);
+    check_seats("gunship", sd::Hull::Gunship, models::stardancer::gunship);
+    check_seats("frigate", sd::Hull::Frigate, models::stardancer::frigate);
 }
 
 }  // namespace

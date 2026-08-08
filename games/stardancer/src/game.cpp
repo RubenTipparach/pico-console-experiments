@@ -12,15 +12,15 @@ namespace {
 
 // This file is thin on purpose.
 //
-// Everything Starlance draws, including the menus and the HUD, is drawn in
+// Everything Star Dancer draws, including the menus and the HUD, is drawn in
 // render.cpp through pse::draw_text into a RenderTarget. What is left here is
 // only the things that genuinely need the SDK: reading buttons, making noise,
 // writing a save, and handing the frame's surface over. The consequence is
 // that the preview harness renders every screen this game has, so a layout
 // mistake is a picture on a laptop rather than a report from a device.
 
-sl::World g_world;
-slr::Chrome g_chrome{};
+sd::World g_world;
+sdr::Chrome g_chrome{};
 
 // The sim runs on ticks, not on wall clock, so a slow frame costs frames and
 // never changes the physics.
@@ -38,21 +38,36 @@ struct SaveData {
     uint8_t invert_pitch;
     uint8_t reserved[6];
 };
-constexpr uint32_t k_save_magic = 0x314C5453u;   // 'S','T','L','1'
+// A cookie, not a name. It still spells S T L 1 from before the game was
+// renamed, and it stays that way on purpose: the record's layout has not
+// changed, so keeping the value means anyone who already has a best score
+// keeps it, and changing it would throw those away to make a comment tidier.
+constexpr uint32_t k_save_magic = 0x314C5453u;
 
 static_assert(sizeof(SaveData) <= 16, "save record grew");
 
 // ---- the control scheme ----
 //
-// The d-pad flies the ship and X is a modifier on it: held, left and right
-// roll instead of yawing. That is what puts three rotational axes on a four
-// way pad without spending a face button on each, and it is why X does nothing
-// on its own.
+// The d-pad flies the ship and X is a modifier on the whole of it: held, left
+// and right roll instead of yawing, and up and down work the throttle instead
+// of the nose. That is five axes of control on a four way pad and one shoulder
+// of a button, without spending a face button on any of them, and it is why X
+// does nothing at all on its own.
 //
-// X and Y together open the pause menu. The combination is checked before the
-// roll and before the target cycle, so the press that opens the menu is not
-// also a press that changes target.
+// Y is a press and a hold and they do different things. HELD, the camera
+// swings onto whatever is targeted and stays there. RELEASED, the target steps
+// to the next contact. Acting on the release rather than the press is what
+// makes both possible on one button: a press cannot know yet whether it is
+// going to be a hold.
+//
+// X and Y together open the pause menu. That press is marked as spent, so
+// letting go of Y afterwards does not also change target on the way into the
+// menu.
 constexpr uint32_t k_any_face = Button::A | Button::B | Button::X | Button::Y;
+
+// Y's state across frames, for the press/hold/release split above.
+bool g_target_down = false;
+bool g_target_spent = false;
 
 // `tapped`, not `pressed`, and the name is load bearing.
 //
@@ -70,34 +85,44 @@ constexpr uint32_t k_any_face = Button::A | Button::B | Button::X | Button::Y;
 bool held(uint32_t button) { return (buttons & button) != 0; }
 bool tapped(uint32_t button) { return (buttons.pressed & button) != 0; }
 
-sl::Input read_flight() {
-    sl::Input in{};
+sd::Input read_flight() {
+    sd::Input in{};
 
     const bool modifier = held(Button::X);
     const int8_t across = static_cast<int8_t>(
         (held(Button::DPAD_RIGHT) ? 1 : 0) - (held(Button::DPAD_LEFT) ? 1 : 0));
 
+    const int8_t vertical = static_cast<int8_t>((held(Button::DPAD_UP) ? 1 : 0) -
+                                                (held(Button::DPAD_DOWN) ? 1 : 0));
+
     if (modifier) {
         in.roll = across;
+        in.throttle = vertical;
     } else {
         in.yaw = across;
+        // Up is nose up unless the pilot says otherwise. Both readings are
+        // defensible and neither is wrong, which is exactly why it is a
+        // setting rather than a decision: a stick pushed forward pitches down
+        // in every simulator, and a d-pad pressed up moves the crosshair up in
+        // every arcade game, and this is both at once.
+        //
+        // The throttle is deliberately NOT inverted with it. Pulling back on a
+        // stick to climb is a convention about a nose; no throttle anywhere
+        // goes backwards for more power.
+        in.pitch = g_chrome.invert_pitch ? static_cast<int8_t>(-vertical)
+                                         : vertical;
     }
-
-    int8_t pitch = static_cast<int8_t>((held(Button::DPAD_UP) ? 1 : 0) -
-                                       (held(Button::DPAD_DOWN) ? 1 : 0));
-    // Up is nose up unless the pilot says otherwise. Both readings are
-    // defensible and neither is wrong, which is exactly why it is a setting
-    // rather than a decision: a stick pushed forward pitches down in every
-    // simulator, and a d-pad pressed up moves the crosshair up in every
-    // arcade game, and this is both at once.
-    if (g_chrome.invert_pitch) pitch = static_cast<int8_t>(-pitch);
-    in.pitch = pitch;
 
     in.fire = held(Button::A);
     in.launch = held(Button::B);
-    // Y alone cycles. With X down it is the pause chord, handled by the
-    // caller, and must not also step the target.
-    in.cycle_target = !modifier && tapped(Button::Y);
+
+    // The target button, on release. See k_any_face above for why.
+    const bool target_now = held(Button::Y);
+    in.cycle_target = g_target_down && !target_now && !g_target_spent;
+    g_chrome.look_at_target = target_now && !g_target_spent;
+    if (!target_now) g_target_spent = false;
+    g_target_down = target_now;
+
     return in;
 }
 
@@ -194,8 +219,8 @@ void load_save() {
 // ---- the shell ----
 
 void launch() {
-    sl::world_init(g_world, 0x5A1CE001u ^ (now() * 2654435761u));
-    g_chrome.screen = slr::Screen::Play;
+    sd::world_init(g_world, 0x5A1CE001u ^ (now() * 2654435761u));
+    g_chrome.screen = sdr::Screen::Play;
     g_tick_accumulator = 0;
     sound_stop();
 }
@@ -206,7 +231,7 @@ void finish_sortie() {
         g_chrome.best_score = g_best_score;
         g_save_pending = true;
     }
-    g_chrome.screen = slr::Screen::Debrief;
+    g_chrome.screen = sdr::Screen::Debrief;
     sound_stop();
 }
 
@@ -235,30 +260,30 @@ void toggle_pitch() {
 }
 
 void update_title() {
-    menu_move(g_chrome.item, slr::kTitleItemCount);
+    menu_move(g_chrome.item, sdr::kTitleItemCount);
     if (!tapped(k_any_face)) return;
     switch (g_chrome.item) {
-        case slr::kLaunch:      launch(); break;
-        case slr::kTitleSound:  toggle_sound(); break;
-        case slr::kTitleInvert: toggle_pitch(); break;
+        case sdr::kLaunch:      launch(); break;
+        case sdr::kTitleSound:  toggle_sound(); break;
+        case sdr::kTitleInvert: toggle_pitch(); break;
         default: break;
     }
 }
 
 void update_paused() {
-    menu_move(g_chrome.item, slr::kPauseItemCount);
+    menu_move(g_chrome.item, sdr::kPauseItemCount);
     if (!tapped(k_any_face)) return;
     switch (g_chrome.item) {
-        case slr::kResume:
-            g_chrome.screen = slr::Screen::Play;
+        case sdr::kResume:
+            g_chrome.screen = sdr::Screen::Play;
             break;
-        case slr::kPauseSound:
+        case sdr::kPauseSound:
             toggle_sound();
             break;
-        case slr::kPauseInvert:
+        case sdr::kPauseInvert:
             toggle_pitch();
             break;
-        case slr::kAbort:
+        case sdr::kAbort:
             finish_sortie();
             break;
         default:
@@ -293,16 +318,25 @@ void voice_the_frame() {
 }
 
 void update_play(uint32_t elapsed) {
-    // X and Y together pauses, and it is checked before anything reads either
-    // of them for flying, so the chord cannot also roll or change target.
-    if (held(Button::X) && tapped(Button::Y)) {
-        g_chrome.screen = slr::Screen::Paused;
-        g_chrome.item = slr::kResume;
+    // X and Y together pauses. The press is marked spent BEFORE the flight
+    // controls are read, so the same press cannot also padlock the camera, and
+    // letting go of Y on the way into the menu cannot step the target.
+    const bool chord = held(Button::X) && tapped(Button::Y);
+    if (chord) g_target_spent = true;
+
+    // Read regardless of the chord, so the target button's press and release
+    // stay in step across the frame that opens the menu. Skipping it here left
+    // the button looking held, and the first release after resuming stepped
+    // the target for no reason the player could see.
+    const sd::Input in = read_flight();
+
+    if (chord) {
+        g_chrome.screen = sdr::Screen::Paused;
+        g_chrome.item = sdr::kResume;
+        g_chrome.look_at_target = false;
         sound_stop();
         return;
     }
-
-    const sl::Input in = read_flight();
 
     g_tick_accumulator += elapsed;
     // A cap, so a long stall (a flash write, a first frame) does not run the
@@ -311,19 +345,19 @@ void update_play(uint32_t elapsed) {
 
     while (g_tick_accumulator >= k_tick_ms) {
         g_tick_accumulator -= k_tick_ms;
-        sl::world_tick(g_world, in);
+        sd::world_tick(g_world, in);
     }
 
     voice_the_frame();
     engine_sound(true);
 
-    if (!sl::in_flight(g_world)) finish_sortie();
+    if (!sd::in_flight(g_world)) finish_sortie();
 }
 
 void update_debrief() {
     if (tapped(k_any_face)) {
-        g_chrome.screen = slr::Screen::Title;
-        g_chrome.item = slr::kLaunch;
+        g_chrome.screen = sdr::Screen::Title;
+        g_chrome.item = sdr::kLaunch;
     }
 }
 
@@ -332,13 +366,13 @@ void update_debrief() {
 void game_init() {
     set_screen_mode(ScreenMode::lores);
 
-    g_chrome = slr::Chrome{};
-    g_chrome.screen = slr::Screen::Title;
-    g_chrome.item = slr::kLaunch;
+    g_chrome = sdr::Chrome{};
+    g_chrome.screen = sdr::Screen::Title;
+    g_chrome.item = sdr::kLaunch;
     load_save();
 
     sound_init();
-    sl::world_init(g_world);
+    sd::world_init(g_world);
     g_tick_accumulator = 0;
     g_last_time = 0;
 }
@@ -348,21 +382,21 @@ void game_update(uint32_t time) {
     g_last_time = time;
 
     switch (g_chrome.screen) {
-        case slr::Screen::Title:   update_title(); break;
-        case slr::Screen::Play:    update_play(elapsed); break;
-        case slr::Screen::Paused:  update_paused(); break;
-        case slr::Screen::Debrief: update_debrief(); break;
+        case sdr::Screen::Title:   update_title(); break;
+        case sdr::Screen::Play:    update_play(elapsed); break;
+        case sdr::Screen::Paused:  update_paused(); break;
+        case sdr::Screen::Debrief: update_debrief(); break;
     }
 
-    if (g_chrome.screen != slr::Screen::Play) engine_sound(false);
+    if (g_chrome.screen != sdr::Screen::Play) engine_sound(false);
 
     save_if_needed();
 }
 
 void game_render(uint32_t time) {
-    slr::render_scene(g_world, g_chrome, pse::target_from_screen(), time);
+    sdr::render_scene(g_world, g_chrome, pse::target_from_screen(), time);
 }
 
 }  // namespace
 
-PSE_GAME(starlance, game_init, game_update, game_render);
+PSE_GAME(stardancer, game_init, game_update, game_render);

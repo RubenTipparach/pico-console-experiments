@@ -1,6 +1,6 @@
 #include "sim.hpp"
 
-namespace sl {
+namespace sd {
 namespace {
 
 constexpr int32_t k_q14 = pse::k_quat_one;   // 16384
@@ -687,12 +687,23 @@ void tick_player(World& world, const Input& input) {
 
     world.q = pse::quat_integrate(world.q, world.wx, world.wy, world.wz);
 
+    // The lever moves at the speed of a thumb, and the ship follows it at the
+    // speed of a ship. Easing the speed rather than the lever is what makes a
+    // hard deceleration read as mass instead of as a brake.
+    world.throttle += static_cast<int32_t>(input.throttle) * k_throttle_step;
+    world.throttle = clamp32(world.throttle, 0, k_throttle_one);
+
+    const int32_t commanded =
+        static_cast<int32_t>((static_cast<int64_t>(world.throttle) *
+                              k_player_speed_max) / k_throttle_one);
+    world.speed += ((commanded - world.speed) * k_speed_gain) / 256;
+
     int32_t fwd[3], right[3], up[3];
     basis_of(world.q, fwd, right, up);
 
-    world.x += along(fwd[0], k_player_speed);
-    world.y += along(fwd[1], k_player_speed);
-    world.z += along(fwd[2], k_player_speed);
+    world.x += along(fwd[0], world.speed);
+    world.y += along(fwd[1], world.speed);
+    world.z += along(fwd[2], world.speed);
 
     // A soft wall rather than a clamp. Beyond the arena the outward part of
     // the velocity is simply not applied, so the ship slides along the
@@ -780,9 +791,12 @@ void lead_player(const World& world, int32_t from_x, int32_t from_y,
 
     int32_t fwd[3];
     forward_of(world.q, fwd);
-    ax = world.x + along(fwd[0], k_player_speed * flight);
-    ay = world.y + along(fwd[1], k_player_speed * flight);
-    az = world.z + along(fwd[2], k_player_speed * flight);
+    // The speed the player is ACTUALLY making, not the maximum. Leading a
+    // stationary ship as though it were at full ahead puts every shot in
+    // front of it, which reads as enemies that cannot shoot straight.
+    ax = world.x + along(fwd[0], world.speed * flight);
+    ay = world.y + along(fwd[1], world.speed * flight);
+    az = world.z + along(fwd[2], world.speed * flight);
 }
 
 void fire_from(World& world, int32_t x, int32_t y, int32_t z, Bolt kind,
@@ -1310,6 +1324,11 @@ void world_init(World& world, uint32_t seed) {
     world = World{};
     world.rng = seed == 0 ? 0x5A1CE001u : seed;
     world.q = pse::quat_identity();
+    // Launched at full ahead. The throttle is there to be pulled BACK, to
+    // turn inside something: opening at a standstill would just be a game
+    // that starts by not moving.
+    world.throttle = k_throttle_one;
+    world.speed = k_player_speed_max;
     world.hull = k_player_hull_max;
     world.shield = k_player_shield_max;
     world.missiles = k_missiles_max;
@@ -1337,4 +1356,4 @@ void world_tick(World& world, const Input& input) {
     if (input.cycle_target) cycle(world);
 }
 
-}  // namespace sl
+}  // namespace sd
