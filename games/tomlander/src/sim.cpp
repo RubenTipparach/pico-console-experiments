@@ -278,8 +278,8 @@ int building_at(int32_t x, int32_t z) {
 // across the whole footprint, so a hull crossing that footprint below roof
 // height was instantly "below the floor" and the touchdown gates judged it as a
 // LANDING. Flying level into a tower at six units a second, at the lean any
-// translating hull carries, came out as TOO STEEP. A landing verdict for a wall
-// strike, on a flight that never touched the ground.
+// translating hull carries, came out as TIPPED OVER. A landing verdict for a
+// wall strike, on a flight that never touched the ground.
 //
 // So a wall is a wall now. Coming in from the side pushes the hull back out
 // along whichever axis it is least far into, kills the velocity into the wall,
@@ -368,6 +368,36 @@ int32_t range_to_target(const World& world) {
     const int32_t big = dx > dz ? dx : dz;
     const int32_t small = dx > dz ? dz : dx;
     return big + (small >> 1) - (big >> 3);
+}
+
+// fp14 of 1 - cos, at five degree steps from level to a quarter turn. static
+// const so it lives in flash. See tilt_degrees in sim.hpp for why the reading
+// is a table.
+static const int16_t k_tilt_table[19] = {
+        0,    62,   249,   558,   988,  1535,  2195,  2965,  3833,  4799,
+     5853,  6986,  8192,  9460, 10780, 12143, 13539, 14956, 16384,
+};
+
+int32_t tilt_degrees(int32_t off_level) {
+    // Past a quarter turn the measure keeps rising to 32768 upside down, and
+    // the table only covers the first quarter. Mirror rather than extend it:
+    // 1 - cos is symmetric about 90 degrees, so the second half is the first
+    // half read backwards and costs no entries.
+    // Strictly past it, not at it: a quarter turn mirrors onto itself, so
+    // folding it would call this function with the value it was already
+    // handed and never come back. The table's last entry answers it.
+    if (off_level > 16384) {
+        if (off_level >= 32768) return 180;
+        return 180 - tilt_degrees(32768 - off_level);
+    }
+    if (off_level <= 0) return 0;
+    for (int i = 1; i < 19; i++) {
+        if (off_level > k_tilt_table[i]) continue;
+        const int32_t lo = k_tilt_table[i - 1];
+        const int32_t span = k_tilt_table[i] - lo;
+        return (i - 1) * 5 + (5 * (off_level - lo) + span / 2) / span;
+    }
+    return 90;
 }
 
 void hull_up(const World& world, int32_t& ux, int32_t& uy, int32_t& uz) {
@@ -644,7 +674,7 @@ void world_tick(World& world, const Input& input) {
             world.fault = Fault::TooFast;
         } else if (tilt(world) > k_safe_tilt) {
             world.state = Flight::Crashed;
-            world.fault = Fault::TooSteep;
+            world.fault = Fault::Tipped;
         } else if (slide > k_safe_slide) {
             world.state = Flight::Crashed;
             world.fault = Fault::Scraped;

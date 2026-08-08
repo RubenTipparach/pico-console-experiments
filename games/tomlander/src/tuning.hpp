@@ -143,9 +143,24 @@ constexpr uint8_t k_damage_max = 2;
 
 // And how far off level, in the fp14 measure above. tom-lander has NO tilt
 // gate at all: damage is speed only until the hull passes 90 degrees. A lander
-// that can land on its side is a strange lander, so the demake adds one, at
-// 20 degrees.
-constexpr int32_t k_safe_tilt = 988;
+// that can land on its side is a strange lander, so the demake adds one.
+//
+// It sat at 20 degrees, and 20 degrees is a rule the player cannot see. Two
+// measurements say so. Hold ONE pod off from a level hover, which is the most
+// ordinary input in the game, and the hull reaches 19.1 degrees in 0.6 of a
+// second while still sliding at only 5.6 u/s, comfortably inside k_safe_slide:
+// so a held direction key was enough to fail a landing that passed every other
+// gate, on an attitude that looks like flying. And the tilt a hull carries to
+// translate is bounded by the slide gate long before the tilt gate: at
+// equilibrium 20 degrees is 16 u/s, twice what a touchdown survives, so the
+// tilt gate never once caught the case it was added for.
+//
+// 45 degrees is where the picture makes the verdict for itself. A hull that far
+// over is unmistakably lying on its side on the screen, so nothing has to be
+// written on the HUD to warn about it, and everything a player would recognise
+// as a landing is a landing. The value is the lookup table's own 45 degree
+// entry, so the gate and the number the card prints agree exactly.
+constexpr int32_t k_safe_tilt = 4799;
 
 // Horizontal speed a touchdown survives, fp16 per tick. Sliding onto a deck
 // sideways is a scrape, and the original charges for it separately.
@@ -173,14 +188,19 @@ constexpr int32_t k_fuel_full = 100 << 8;
 // Per tick with all four pods at full: 13 per second at 100 Hz, fp8.
 constexpr int32_t k_fuel_burn = 33;
 
-// The grace an empty tank gets before the mission is called, in ticks. Five
-// seconds.
+// The grace an empty tank gets before the mission is called, in ticks. One
+// second.
 //
 // The gauge reaching zero is the end of the CONTROL, not the end of the
 // flight. A hull that runs dry at altitude keeps its speed and its lean and is
 // going to come down somewhere, and a dead stick glide onto the deck you were
 // sent to is a landing that counts. Calling it at zero threw all of that away.
-constexpr int32_t k_dry_grace = 500;
+//
+// One second rather than five. The grace is a MINIMUM and the hull also has to
+// have stopped moving, so a long fall is never cut short by it: the stop test
+// is what waits out a dead stick glide, and five seconds of extra sitting on a
+// hull that had already come to rest was just a pause with nothing in it.
+constexpr int32_t k_dry_grace = 100;
 
 // And how slow counts as stopped, fp16 per tick, about half a unit a second.
 // The grace is a MINIMUM wait, not a deadline: it has to have run out AND the

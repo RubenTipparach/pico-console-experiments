@@ -307,10 +307,16 @@ void draw_hud() {
 const char* fault_word(tl::Fault fault) {
     switch (fault) {
         case tl::Fault::TooFast: return "TOO FAST";
-        case tl::Fault::TooSteep: return "TOO STEEP";
+        // Not "TOO STEEP". That named the ground, and the ground has nothing
+        // to do with it: this is the hull lying over on its side. The old word
+        // was read as a comment about a slope, over an ocean that is flat.
+        case tl::Fault::Tipped: return "TIPPED OVER";
         case tl::Fault::Scraped: return "SCRAPED";
         case tl::Fault::Ditched: return "DITCHED";
-        case tl::Fault::Struck: return "HIT A TOWER";
+        // The longest word on this card by a distance. minimal_font is the
+        // 3x5 built in, 4 px an advance, so 23 characters is 91 px of text
+        // and a 103 px panel on a 120 px screen. It fits, with 17 to spare.
+        case tl::Fault::Struck: return "CRASHED INTO A BUILDING";
         case tl::Fault::Broke: return "BROKE UP";
         case tl::Fault::Dry: return "NO FUEL";
         default: return "CRASHED";
@@ -340,8 +346,20 @@ void draw_outcome() {
         // The altitude goes on the card too. Without it a verdict handed down
         // in mid air reads as a lie: the player knows they never reached the
         // ground and the card says nothing about where they were.
-        std::snprintf(fuel_line, sizeof(fuel_line), "ALT %d",
-                      tl::altitude(g_world) >> 16);
+        //
+        // A tip over gets the angle instead, for the same reason. That verdict
+        // is the only one whose measure is nowhere on the HUD, so the card is
+        // the one place it can be shown, and a number beside the limit is what
+        // turns "the game decided I failed" into "I was 58 over, the limit is
+        // 45".
+        if (g_world.fault == tl::Fault::Tipped) {
+            std::snprintf(fuel_line, sizeof(fuel_line), "TILT %d, MAX %d",
+                          tl::tilt_degrees(tl::tilt(g_world)),
+                          tl::tilt_degrees(tl::k_safe_tilt));
+        } else {
+            std::snprintf(fuel_line, sizeof(fuel_line), "ALT %d",
+                          tl::altitude(g_world) >> 16);
+        }
         lines[0] = fault_word(g_world.fault);
         lines[1] = fuel_line;
         pens[0] = Pen(255, 0, 77);
