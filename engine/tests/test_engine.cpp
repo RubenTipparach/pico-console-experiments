@@ -260,6 +260,68 @@ void test_renderer_projects_and_culls() {
     CHECK(behind_raster.triangles_drawn() == 0);
 }
 
+// The basis camera has to be the same camera, and it has to be able to roll.
+//
+// Two halves, and the second is the reason the first is not enough. An
+// identity basis must reproduce set_camera(yaw 0, pitch 0) exactly, which is
+// what proves the column reading is not a transpose: a transposed rotation is
+// still identity at identity. So the roll case follows it, where the two
+// forms genuinely differ and yaw and pitch have no answer at all.
+void test_camera_basis_matches_angles_and_can_roll() {
+    pse::Rasterizer angle_raster, basis_raster;
+    pse::Renderer3D angle_cam(angle_raster), basis_cam(basis_raster);
+
+    // A point above the camera and ahead of it. Where it lands on screen is
+    // the whole measurement.
+    const float wx = 0.0f, wy = 6.0f, wz = 40.0f;
+
+    TestSurface a(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    TestSurface b(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    angle_raster.begin_frame(a.target());
+    basis_raster.begin_frame(b.target());
+
+    angle_cam.set_camera(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    basis_cam.set_camera_basis(0.0f, 0.0f, 0.0f,
+                               pse::quat_basis(pse::quat_identity()));
+
+    int ax = 0, ay = 0, ad = 0, bx = 0, by = 0, bd = 0;
+    CHECK(angle_cam.project(wx, wy, wz, ax, ay, ad));
+    CHECK(basis_cam.project(wx, wy, wz, bx, by, bd));
+    CHECK(ax == bx && ay == by && ad == bd);
+
+    // Where dead ahead lands, measured rather than assumed: the projector's
+    // vertical mapping is not exactly symmetric about height / 2, and a test
+    // that hard codes the middle row is testing the arithmetic of the
+    // rounding rather than the camera.
+    int centre_x = 0, centre_y = 0, centre_d = 0;
+    CHECK(angle_cam.project(0.0f, 0.0f, wz, centre_x, centre_y, centre_d));
+    const int rise = centre_y - ay;      // screen y grows downward
+    CHECK(rise > 4);                     // genuinely above the centre
+
+    // Now roll the camera a quarter turn about its own forward axis (+Z),
+    // right hand rule, so the camera's right axis swings onto the world's up.
+    // A point overhead then has to leave the top of the frame and appear out
+    // to the right, on the centre row, the same distance out as it was up.
+    // Yaw and pitch cannot express this at all: there is no third angle.
+    pse::Rasterizer rolled_raster;
+    pse::Renderer3D rolled(rolled_raster);
+    TestSurface c(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    rolled_raster.begin_frame(c.target());
+    rolled.set_camera_basis(
+        0.0f, 0.0f, 0.0f,
+        pse::quat_basis(pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 1.5708f)));
+
+    int rx = 0, ry = 0, rd = 0;
+    CHECK(rolled.project(wx, wy, wz, rx, ry, rd));
+    const int run = rx - centre_x;
+    CHECK(ry >= centre_y - 1 && ry <= centre_y + 1);
+    CHECK(run >= rise - 1 && run <= rise + 1);
+    CHECK(rd == ad);                     // a roll turns the frame, not the depth
+}
+
 // A box's lid has to be visible from above, which is the only side anyone
 // looks at one from.
 //
@@ -1022,6 +1084,7 @@ int main() {
     test_gradient_covers_every_pixel();
     test_billboard_depth_claim();
     test_renderer_projects_and_culls();
+    test_camera_basis_matches_angles_and_can_roll();
     test_box_has_a_lid();
     test_a_box_is_solid_from_every_side();
     test_mesh_rendering_and_bounds();

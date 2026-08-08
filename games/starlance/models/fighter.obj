@@ -1,0 +1,59 @@
+# Enemy light fighter. Nose at +Z, 1.0 long.
+#
+# Three blocks and no canopy: there are four of these on screen at once in a
+# bad moment and each of them is a dozen pixels across, so the polygons go
+# into the silhouette rather than into detail nobody can resolve. Forward
+# swept wings, which is the whole of how it reads as not-yours at that size.
+
+mtllib fighter.mtl
+
+# ---- fuselage: blunt tail, pointed nose
+usemtl hull
+v  -0.075  -0.055  -0.500
+v   0.075  -0.055  -0.500
+v   0.075   0.060  -0.500
+v  -0.075   0.060  -0.500
+v  -0.022  -0.018   0.500
+v   0.022  -0.018   0.500
+v   0.022   0.028   0.500
+v  -0.022   0.028   0.500
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- left wing, swept FORWARD: the tip sits ahead of the root
+usemtl wing
+v  -0.360  -0.010   0.060
+v  -0.070  -0.018  -0.300
+v  -0.070   0.018  -0.300
+v  -0.360   0.010   0.060
+v  -0.360  -0.010   0.240
+v  -0.070  -0.018   0.020
+v  -0.070   0.018   0.020
+v  -0.360   0.010   0.240
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- right wing
+usemtl wing
+v   0.070  -0.018  -0.300
+v   0.360  -0.010   0.060
+v   0.360   0.010   0.060
+v   0.070   0.018  -0.300
+v   0.070  -0.018   0.020
+v   0.360  -0.010   0.240
+v   0.360   0.010   0.240
+v   0.070   0.018   0.020
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7

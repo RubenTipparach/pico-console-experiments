@@ -1,0 +1,5 @@
+newmtl hull
+Kd 0.680 0.230 0.190
+
+newmtl wing
+Kd 0.360 0.180 0.180

@@ -1,0 +1,27 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: starlance
+title: Starlance
+blurb: Cut the frigate's nav before she jumps.
+target: starlance
+sdk: 32blit
+web: true
+
+objective: "Fly five engagements against a raiding force, ending with a frigate charging a subspace jump. Fighters and bombers you simply kill. The gunship and the frigate are too big for that: they carry hardpoints you can target one at a time, and shooting one off changes what the ship can do. Take the engines and it stops. Take a turret and it stops shooting at you from that side. Take life support and the crew is gone and it comes apart on its own. Take the frigate's navigation array before the jump clock runs out and she is not going anywhere, which is the only thing in the sortie you cannot afford to miss. Your shields come back on their own and your hull does not, so break off and let them charge."
+
+controls:
+  - "up/down: pitch the nose"
+  - "left/right: yaw"
+  - "hold X, then left/right: roll"
+  - "A: guns"
+  - "B: missile, at whatever is targeted"
+  - "Y: next contact, in view first"
+  - "Y again: walk that ship's hardpoints"
+  - "X and Y together: pause"
+
+models:
+  - interceptor.obj
+  - fighter.obj
+  - bomber.obj
+  - gunship.obj
+  - frigate.obj
