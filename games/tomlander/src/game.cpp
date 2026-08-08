@@ -220,10 +220,16 @@ void panel_lines(int top, const char* const* lines, const Pen* pens, int count,
 
 // The in flight HUD. Rule 9: the minimum, and no button prompts.
 //   fuel  a bar, because a number you have to read is a number you do not
-//   fall  descent rate, in the colour of what a touchdown at it would do
 //   dent  one red mark per hard landing already taken, and nothing at all
 //         while the hull is clean, so a tidy flight costs the HUD nothing
-//   alt   how far above whatever is underneath
+//   ALT   how far above whatever is underneath
+//   SPD   descent rate, in the colour of what a touchdown at it would do
+//
+// ALT and SPD are stacked in the top right corner, labelled, ALT over SPD.
+// They used to sit in opposite corners with no labels at all, which made them
+// two unrelated numbers to hunt for rather than one instrument to read: the
+// question a lander pilot asks is "how far down and how fast", and that is one
+// glance or it is nothing.
 //   B nn  which deck, and how far, in the colour of the arrow that points at
 //         it. The decks no longer mark themselves, so this and the arrow are
 //         between them the whole of how the target is named.
@@ -250,10 +256,19 @@ void draw_hud() {
         screen.rectangle(Rect(3 + bar_w + 5 + i * 5, 4, 3, 4));
     }
 
+    // ALT over SPD, both hard against the right edge. Every string is
+    // measured, never placed by eye, so the pair stays flush whatever number
+    // of digits either of them happens to be showing.
     char line[16];
-    const int32_t fall_cm = (tl::descent(g_world) * 100) >> 16;
-    std::snprintf(line, sizeof(line), "%d", fall_cm > 0 ? fall_cm : 0);
+    std::snprintf(line, sizeof(line), "ALT %d", tl::altitude(g_world) >> 16);
     Size size = screen.measure_text(line, minimal_font);
+    const int alt_h = size.h;
+    screen.pen = Pen(200, 200, 214);
+    screen.text(line, minimal_font, Point(w - size.w - 3, 3));
+
+    const int32_t fall_cm = (tl::descent(g_world) * 100) >> 16;
+    std::snprintf(line, sizeof(line), "SPD %d", fall_cm > 0 ? fall_cm : 0);
+    size = screen.measure_text(line, minimal_font);
     // Green, amber, red, straight off the same function the touchdown is
     // judged by. The readout is whole units per second and both band edges sit
     // on exact printed values, so the colour and the number always agree: at
@@ -263,12 +278,7 @@ void draw_hud() {
         case tl::Touchdown::Hard:  screen.pen = Pen(255, 163, 0); break;
         default:                   screen.pen = Pen(0, 228, 54); break;
     }
-    screen.text(line, minimal_font, Point(w - size.w - 3, 3));
-
-    std::snprintf(line, sizeof(line), "%d", tl::altitude(g_world) >> 16);
-    size = screen.measure_text(line, minimal_font);
-    screen.pen = Pen(200, 200, 214);
-    screen.text(line, minimal_font, Point(3, h - size.h - 3));
+    screen.text(line, minimal_font, Point(w - size.w - 3, 3 + alt_h + 2));
 
     // The deck letter follows the target rather than being spelled B, because
     // the delivery retargets mid flight and a fixed letter would then name the
@@ -300,9 +310,10 @@ const char* fault_word(tl::Fault fault) {
         case tl::Fault::TooSteep: return "TOO STEEP";
         case tl::Fault::Scraped: return "SCRAPED";
         case tl::Fault::Ditched: return "DITCHED";
+        case tl::Fault::Struck: return "HIT A TOWER";
         case tl::Fault::Broke: return "BROKE UP";
         case tl::Fault::Dry: return "NO FUEL";
-        default: return "TUMBLED";
+        default: return "CRASHED";
     }
 }
 
@@ -326,9 +337,16 @@ void draw_outcome() {
         pens[2] = Pen(255, 163, 0);
         count = g_new_record ? 3 : 2;
     } else {
+        // The altitude goes on the card too. Without it a verdict handed down
+        // in mid air reads as a lie: the player knows they never reached the
+        // ground and the card says nothing about where they were.
+        std::snprintf(fuel_line, sizeof(fuel_line), "ALT %d",
+                      tl::altitude(g_world) >> 16);
         lines[0] = fault_word(g_world.fault);
+        lines[1] = fuel_line;
         pens[0] = Pen(255, 0, 77);
-        count = 1;
+        pens[1] = Pen(200, 200, 214);
+        count = 2;
     }
     // No retry prompt: any button flies again, and a line saying so is a line
     // the player has to read after every single attempt.

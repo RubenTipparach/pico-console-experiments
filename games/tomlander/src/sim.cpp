@@ -253,6 +253,13 @@ const Building k_buildings[k_building_count] = {
 
 // Which building's footprint covers this point, or -1. Chebyshev, same as the
 // pad test: a square footprint and no square root.
+// How high a building's roof stands. Read by the floor (a roof you can put
+// down on) and by the wall (the height a hull has to clear to pass over).
+int32_t building_roof(int index) {
+    const Building& b = k_buildings[index];
+    return terrain_raw(b.x * 65536, b.z * 65536) + building_height(b);
+}
+
 int building_at(int32_t x, int32_t z) {
     for (int i = 0; i < k_building_count; i++) {
         const Building& b = k_buildings[i];
@@ -262,6 +269,67 @@ int building_at(int32_t x, int32_t z) {
         if (dx <= half && dz <= half) return i;
     }
     return -1;
+}
+
+// Push a hull back out of a building it has flown INTO, and say whether the
+// impact was hard enough to end the flight.
+//
+// A building used to be nothing but a tall floor: ground_at returned its roof
+// across the whole footprint, so a hull crossing that footprint below roof
+// height was instantly "below the floor" and the touchdown gates judged it as a
+// LANDING. Flying level into a tower at six units a second, at the lean any
+// translating hull carries, came out as TOO STEEP. A landing verdict for a wall
+// strike, on a flight that never touched the ground.
+//
+// So a wall is a wall now. Coming in from the side pushes the hull back out
+// along whichever axis it is least far into, kills the velocity into the wall,
+// and leaves it flying. Only a genuinely fast impact ends anything, judged by
+// the same k_safe_slide a scrape is judged by, and it says Struck rather than
+// borrowing a landing's word. The roof is still a floor from above, which is
+// what keeps a building something you can put down on.
+bool resolve_building_walls(World& world) {
+    const int index = building_at(world.x, world.z);
+    if (index < 0) return false;
+    const Building& b = k_buildings[index];
+    // Above the roof, or only just under it, is the floor's business and not
+    // the wall's: a hull settling ONTO a roof passes through the boundary and
+    // must not be shoved off sideways for it. See k_wall_bite.
+    if (world.y >= building_roof(index) + k_rest_height - k_wall_bite) {
+        return false;
+    }
+
+    const int32_t half = b.half * 65536;
+    const int32_t cx = b.x * 65536;
+    const int32_t cz = b.z * 65536;
+    // How far in from each face, and which is nearest: that is the way out.
+    const int32_t in_x = half - iabs(world.x - cx);
+    const int32_t in_z = half - iabs(world.z - cz);
+
+    const int32_t into = in_x < in_z ? iabs(world.vx) : iabs(world.vz);
+    if (into > k_safe_slide) {
+        world.vx = world.vy = world.vz = 0;
+        world.wx = world.wy = world.wz = 0;
+        world.state = Flight::Crashed;
+        world.fault = Fault::Struck;
+        world.ticks_in_state = 0;
+        return true;
+    }
+
+    // Just OUTSIDE the footprint, not exactly on it. building_at counts the
+    // boundary as inside (dx <= half), so pushing to the edge exactly left the
+    // hull still in the building as far as the floor was concerned, and the
+    // ground check on the very next line found the roof and called it a
+    // landing. A sixteenth of a unit is under a pixel and settles it.
+    if (in_x < in_z) {
+        world.x = world.x > cx ? cx + half + k_wall_clear
+                               : cx - half - k_wall_clear;
+        world.vx = 0;
+    } else {
+        world.z = world.z > cz ? cz + half + k_wall_clear
+                               : cz - half - k_wall_clear;
+        world.vz = 0;
+    }
+    return false;
 }
 
 bool over_water(const World& world, int32_t x, int32_t z) {
@@ -285,9 +353,7 @@ int32_t ground_at(const World& world, int32_t x, int32_t z) {
     if (terrain < world.sea) terrain = world.sea;
     const int building = building_at(x, z);
     if (building >= 0) {
-        const Building& b = k_buildings[building];
-        const int32_t roof = terrain_raw(b.x * 65536, b.z * 65536) +
-                             building_height(b);
+        const int32_t roof = building_roof(building);
         if (roof > terrain) return roof + k_rest_height;
     }
     return terrain + k_rest_height;
@@ -546,6 +612,11 @@ void world_tick(World& world, const Input& input) {
         world.dry_ticks = 0;
     }
 
+    // ---- walls ----
+    // Before the ground, because a hull that has flown into a building has to
+    // be back outside it before anything asks where the floor under it is.
+    if (resolve_building_walls(world)) return;
+
     // ---- the ground ----
     // Landing well anywhere just parks the ship and it can lift off again.
     // The flight only ends on the deck it was sent to.
@@ -629,10 +700,11 @@ void world_tick(World& world, const Input& input) {
         }
     }
 
-    if (world.state == Flight::Flying && tilt(world) > k_tumble_tilt) {
-        world.state = Flight::Tumbled;
-        world.ticks_in_state = 0;
-    }
+    // Being upside down used to end the flight here, at a quarter turn. It
+    // does not any more: a tumble is a situation, not an outcome. The hull
+    // keeps its pods and the leveller can right it, so rolling past ninety
+    // degrees is something to fly out of rather than a verdict handed down
+    // while the ship is still in the air and still under control.
 
     // An empty tank ends a mission, five seconds later, once the hull has
     // stopped moving.

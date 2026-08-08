@@ -1308,6 +1308,163 @@ void test_a_menu_cursor_wraps_and_stays_in_range() {
     CHECK(tl::menu_step(0, 1, 0) == 0);
 }
 
+
+// ---- buildings are walls, not tall floors ----
+
+// Flying level into the side of a building must not end the flight, and must
+// not be judged as a landing.
+//
+// The bug: ground_at returned a building's ROOF across its whole footprint, so
+// a hull crossing that footprint below roof height was instantly "below the
+// floor" and the touchdown gates judged it. Flying level into a tower at six
+// units a second, at the lean any translating hull carries, came out as
+// TOO STEEP: a landing verdict, on a flight that never touched the ground.
+void test_flying_into_a_building_is_not_a_landing() {
+    int tested = 0;
+    for (int b = 0; b < tl::k_building_count; b++) {
+        const tl::Building& bl = tl::k_buildings[b];
+        tl::World w;
+        tl::world_init(w, tl::Mission::Delivery);
+
+        const int32_t centre_x = bl.x * 65536;
+        const int32_t centre_z = bl.z * 65536;
+        const int32_t start_x = centre_x - bl.half * 65536 - (8 << 16);
+        const int32_t roof = tl::ground_at(w, centre_x, centre_z);
+        const int32_t ground_out = tl::ground_at(w, start_x, centre_z);
+        // The room between the ground you approach over and the roof. Only the
+        // buildings with real room have a side to fly into: a block whose top
+        // is a couple of units above the hillside does not.
+        const int32_t under = roof - ground_out;
+        if (under < (6 << 16)) continue;
+        tested++;
+
+        w.x = start_x;
+        w.z = centre_z;
+        w.y = ground_out + under / 2;
+        w.grounded = false;
+        w.landed_on = 0xFF;
+        // The lean a hull carries while translating, which is what made this
+        // read as TOO STEEP.
+        w.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, -0.45f);
+        CHECK(tl::tilt(w) > tl::k_safe_tilt);
+
+        // Pinned at its entry height across the tick, because gravity acts
+        // INSIDE world_tick: without this the hull sinks, reaches the ground,
+        // and lands on it, which is a real TOO STEEP and not the thing under
+        // test. What is under test is the WALL.
+        const int32_t flying_at = w.y;
+        tl::Input none{};
+        for (int i = 0; i < 400 && w.state == tl::Flight::Flying; i++) {
+            w.vx = 4000;          // straight at it, about 6 units a second
+            w.vy = 0;
+            tl::world_tick(w, none);
+            w.y = flying_at;
+            w.vy = 0;
+        }
+        if (w.state != tl::Flight::Flying) {
+            std::printf("  building %d (%d,%d): state %d fault %d, hull at "
+                        "(%d,%d,%d), roof %d, entered at %d\n",
+                        b, bl.x, bl.z, (int)w.state, (int)w.fault,
+                        w.x >> 16, w.y >> 16, w.z >> 16, roof >> 16,
+                        (ground_out + under / 2) >> 16);
+        }
+        CHECK(w.state == tl::Flight::Flying);
+        CHECK(w.fault == tl::Fault::None);
+        // And it was stopped OUTSIDE the footprint rather than let through.
+        CHECK(iabs(w.x - centre_x) >= bl.half * 65536);
+    }
+    CHECK(tested >= 4);           // the check has something to say
+}
+
+// A fast enough side impact still ends the flight, and says what happened
+// rather than borrowing a landing's word.
+void test_a_fast_side_impact_says_struck() {
+    const tl::Building& bl = tl::k_buildings[2];      // the tower at (2,8)
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    const int32_t centre_x = bl.x * 65536, centre_z = bl.z * 65536;
+    w.x = centre_x - bl.half * 65536 - (8 << 16);
+    w.z = centre_z;
+    w.y = tl::ground_at(w, centre_x, centre_z) - (6 << 16);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    const int32_t flying_at = w.y;
+    tl::Input none{};
+    for (int i = 0; i < 400 && w.state == tl::Flight::Flying; i++) {
+        w.vx = tl::k_safe_slide * 3;          // well past a scrape
+        w.vy = 0;
+        tl::world_tick(w, none);
+        if (w.state == tl::Flight::Flying) { w.y = flying_at; w.vy = 0; }
+    }
+    CHECK(w.state == tl::Flight::Crashed);
+    CHECK(w.fault == tl::Fault::Struck);
+    CHECK(w.fault != tl::Fault::TooSteep);    // never a landing's word
+}
+
+// A roof is still a floor from ABOVE, which is what keeps a building something
+// a player can put down on.
+void test_a_roof_is_still_a_floor_from_above() {
+    const tl::Building& bl = tl::k_buildings[2];      // the tower at (2,8)
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    const int32_t centre_x = bl.x * 65536, centre_z = bl.z * 65536;
+    const int32_t roof = tl::ground_at(w, centre_x, centre_z);
+    w.x = centre_x;
+    w.z = centre_z;
+    w.y = roof + (10 << 16);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    tl::Input level{};
+    level.level = true;
+    for (int i = 0; i < 600 && !w.grounded && w.state == tl::Flight::Flying; i++) {
+        // Ease down onto it rather than drop, so this is a landing and not a
+        // test of the descent gate.
+        level.level = tl::descent(w) > tl::k_soft_descent / 2;
+        tl::world_tick(w, level);
+    }
+    CHECK(w.grounded);
+    CHECK(w.state == tl::Flight::Flying);     // parked on a roof, free to lift
+    CHECK(w.y >= roof - (1 << 16));           // and it is the ROOF it is on
+}
+
+// ---- a tumble is a situation, not an outcome ----
+
+// Rolling past ninety degrees used to end the flight on the spot, while the
+// hull was still in the air and still under control. It does not any more: a
+// hull can be inverted, and it can fly out of it.
+void test_a_tumble_does_not_end_the_flight() {
+    for (float angle = 1.6f; angle <= 3.1f; angle += 0.3f) {
+        tl::World w;
+        tl::world_init(w);
+        w.y = 120 << 16;
+        w.grounded = false;
+        w.landed_on = 0xFF;
+        w.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, angle);
+        CHECK(tl::tilt(w) > tl::k_tumble_tilt);   // past a quarter turn
+        tl::Input none{};
+        tl::world_tick(w, none);
+        CHECK(w.state == tl::Flight::Flying);
+        CHECK(w.fault == tl::Fault::None);
+    }
+
+    // And the leveller can bring one back, which is what makes it a situation
+    // worth being in rather than a slower way to lose.
+    tl::World w;
+    tl::world_init(w);
+    w.y = 200 << 16;
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    w.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 2.0f);   // 115 degrees
+    const int32_t started_at = tl::tilt(w);
+    CHECK(started_at > tl::k_tumble_tilt);
+    tl::Input level{};
+    level.level = true;
+    run(w, level, 900);
+    CHECK(w.state == tl::Flight::Flying);
+    CHECK(tl::tilt(w) < started_at);          // it is coming back
+    CHECK(tl::tilt(w) < tl::k_safe_tilt);     // all the way back, in fact
+}
+
 // Touching the sea is lost however gently, because a lander is not a boat and
 // a soft ditching that merely parked the ship would make the ocean scenery.
 void test_ditching_is_a_crash_at_any_speed() {
@@ -1390,6 +1547,10 @@ int main() {
     test_the_title_lists_every_unlocked_mission();
     test_pause_can_leave_the_flight();
     test_a_menu_cursor_wraps_and_stays_in_range();
+    test_flying_into_a_building_is_not_a_landing();
+    test_a_fast_side_impact_says_struck();
+    test_a_roof_is_still_a_floor_from_above();
+    test_a_tumble_does_not_end_the_flight();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
