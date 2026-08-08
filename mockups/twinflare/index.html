@@ -35,11 +35,21 @@
           border:1px solid #000;background:#000;outline:none;touch-action:none}
   canvas#screen:focus{outline:2px solid var(--accent);outline-offset:3px}
   .focusnote{font-size:11.5px;color:var(--dim);margin-top:8px;text-align:center}
+  /* The screen steps DOWN in whole multiples, never to a fraction. It is a
+     120 pixel picture and image-rendering:pixelated only tells the truth at
+     an integer scale; 2.4x would soften exactly the pixels the page exists
+     to show. Same reasoning as web/shell.html pinning its canvas. */
+  @media (max-width:470px){
+    body{padding:20px 12px 60px}
+    canvas#screen{width:240px;height:240px}
+  }
+  @media (max-width:330px){ canvas#screen{width:120px;height:120px} }
   .focusnote.on{color:var(--good)}
 
   /* ---- gamepad, laid out like web/shell.html: X top, Y left, A right, B bottom ---- */
   .pad{display:flex;gap:26px;align-items:center;margin-top:14px;justify-content:center}
   .dpad,.face{position:relative;width:96px;height:96px}
+  .btn:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .btn{position:absolute;width:32px;height:32px;border-radius:7px;border:1px solid #2c3346;
        background:#1a2030;color:#cfd6e6;font:600 12px/1 ui-monospace,monospace;
        display:flex;align-items:center;justify-content:center;cursor:pointer;
@@ -73,7 +83,11 @@
   .meter{height:7px;background:#1b2130;border-radius:4px;overflow:hidden;margin-top:3px}
   .meter i{display:block;height:100%;background:var(--accent2);transition:width .08s linear}
 
-  /* ---- tables ---- */
+  /* ---- tables ----
+     Every design table is wrapped so IT scrolls rather than the page. A
+     three column table of engine constraints is wider than a phone and
+     the body must never scroll sideways. */
+  .tw{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
   table{border-collapse:collapse;font-size:12.5px;margin:6px 0 4px}
   th{text-align:left;color:var(--accent);font-weight:400;letter-spacing:.08em;
      font-size:11px;text-transform:uppercase;padding:0 18px 6px 0;
@@ -177,7 +191,7 @@ screen is what the panel can show. Click it and fly.</p>
 
 <h2>Controls</h2>
 
-<table>
+<div class="tw"><table>
   <thead><tr><th>Button</th><th>Does</th><th>Why</th></tr></thead>
   <tbody>
   <tr><td>B</td><td>throttle</td><td>as asked</td></tr>
@@ -188,7 +202,7 @@ screen is what the panel can show. Click it and fly.</p>
   <tr><td>left / right</td><td>steer</td><td></td></tr>
   <tr><td>up / down</td><td>pitch the nose</td><td>hold up in the air to glide</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <div class="note">
 <b>The one change from the brief, and it needs your call.</b> The brief puts
@@ -282,7 +296,7 @@ engines drawn on it.</p>
 
 <h2>Damage, boost, repair</h2>
 
-<table>
+<div class="tw"><table>
   <thead><tr><th>Mechanic</th><th>How it works</th></tr></thead>
   <tbody>
   <tr><td>Engine health</td><td>Tracked separately per engine, as asked. The two bars bottom left are the only place it is shown, because a combined bar would hide the exact state the whole model is about.</td></tr>
@@ -294,7 +308,7 @@ engines drawn on it.</p>
   <tr><td>Both gone</td><td>A wreck. The pod tumbles, then rejoins at the last node with both engines back at half. A three lap race that ends on lap one is a race nobody runs twice.</td></tr>
   <tr><td>Other damage</td><td>Grinding a wall, and landing harder than 26 u/s. A damaged engine smokes, so the state is readable without looking at the bars.</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <h2>The six pods</h2>
 
@@ -336,7 +350,7 @@ actually does, not because anyone preferred them. They were found by reading
 and the bench above is built on all six, so it fails in the same places the
 device would.</p>
 
-<table>
+<div class="tw"><table>
   <thead><tr><th>The engine does this</th><th>So the design does this</th></tr></thead>
   <tbody>
   <tr><td><b>There is no clipping anywhere.</b> A triangle with one corner past the near plane is dropped whole, not cut.</td><td>The road is short strips, never long quads, and the nearest strip is anchored to the camera rather than to the road. Dust Rider learned this one already: its comment says the desert vanished.</td></tr>
@@ -346,7 +360,7 @@ device would.</p>
   <tr><td><b><code>ScreenTriangle</code> stores screen x and y as int16 with no clamp.</b> A wide ground quad near the near plane can project past 32767 and wrap to the other side of the screen.</td><td>Projected coordinates are clamped before they are stored.</td></tr>
   <tr><td><b><code>run_split</code> splits at exactly half the screen height</b>, and a road game puts nearly all its fill in the bottom half.</td><td>Budget on the split buying much less than 2x. Core 1 does most of the work and core 0 waits. Keeping the horizon near the middle of the frame is the only lever, and it is one the camera pitch already pulls.</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <h2>Screens</h2>
 
@@ -362,7 +376,7 @@ what the engine already spends (a <code>Rasterizer</code> is 14,456 bytes and
 the shared <code>FrameQueue</code> is 21,766, and both are shared, not per
 game).</p>
 
-<table>
+<div class="tw"><table>
   <thead><tr><th>Item</th><th>Cost</th><th>Working</th></tr></thead>
   <tbody>
   <tr><td>Track nodes, flash</td><td id="c-nodes">-</td><td>8 bytes a node, four tracks, at one node every 8 world units</td></tr>
@@ -374,7 +388,7 @@ game).</p>
   <tr><td>Save, flash</td><td>~64 B</td><td>best lap per track per pod is 24 entries, plus which are unlocked</td></tr>
   <tr><td>Peak triangles a frame</td><td id="c-tris">-</td><td>measured in this bench across all four tracks with six pods on screen. The queue holds 640, but that is a RAM ceiling and a drop threshold, not a time budget, and nobody has ever measured the time budget on real hardware</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <div class="note"><b>The honest caveat.</b> Triangle counts are the only
 performance number anyone in this repo can produce without a device, and
@@ -404,7 +418,7 @@ that puts the HUD and the menus in <code>render.cpp</code> rather than in
 anything drawn with <code>screen.text</code> is unverified until the game is
 run on a desktop, and this game has a lot of HUD.</p>
 
-<table>
+<div class="tw"><table>
   <thead><tr><th>File</th><th>Purpose</th><th>Rough</th></tr></thead>
   <tbody>
   <tr><td>games/twinflare/game.yml</td><td>gallery metadata, objective, controls</td><td>25</td></tr>
@@ -419,7 +433,7 @@ run on a desktop, and this game has a lot of HUD.</p>
   <tr><td>src/game.cpp</td><td>SDK only: buttons, the tick accumulator, sound, save</td><td>200</td></tr>
   <tr><td>tests/CMakeLists.txt, test_sim.cpp, preview.cpp</td><td>host tests and the thumbnail harness</td><td>400</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <p>Staged so every stage is playable:</p>
 <ul>
