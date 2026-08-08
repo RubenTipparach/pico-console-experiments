@@ -44,6 +44,23 @@ target_include_directories(starlance_model_tests PRIVATE
 target_link_libraries(starlance_model_tests pse-core)
 add_test(NAME starlance_model_tests COMMAND starlance_model_tests)
 
+# The chase camera, which is the only part of the renderer carrying state
+# between frames. It is eased rather than pinned, and an eased basis stops
+# being a rotation unless something puts it back, which no single screenshot
+# would show.
+add_executable(starlance_render_tests
+    test_render.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sim.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/render.cpp
+    ${starlance_models}
+)
+target_include_directories(starlance_render_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(starlance_render_tests pse-core)
+add_test(NAME starlance_render_tests COMMAND starlance_render_tests)
+
 # The preview harness renders real frames through the real engine and the real
 # models, no SDK anywhere, and writes them as PPM images. Starlance draws its
 # whole HUD through pse::draw_text rather than the SDK's screen.text, so unlike
