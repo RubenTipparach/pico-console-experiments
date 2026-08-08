@@ -312,14 +312,62 @@
 
   /* ---- the mini tutorial ----
 
-     What the game wants and what each button does, as panels. It sits between
-     the screen and the pad, which is the one place a thumb is not already
-     going, and it holds a fixed height so paging through it cannot move the
-     gamepad under the player's fingers. */
+     What the game wants and what each button does, as panels behind a button.
+
+     This used to sit inline between the screen and the pad, with a min-height
+     that was described as fixed and was not: min-height is a floor, so a long
+     objective grew the block, and on a phone it pushed the gamepad clean off
+     the bottom of the page. A player could read about the controls and then
+     not reach them, which is the exact failure rule 12 exists to prevent.
+
+     So it is a modal now. It opens over the game, it scrolls inside itself
+     however long the text runs, and nothing it does can move the pad, because
+     it is out of the column's flow entirely. It still opens by itself the
+     first time a game is loaded, so it is the first thing a player meets. */
+  #guide {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: #000000cc;
+  }
+  #guide[hidden] { display: none; }
+
+  #guide-card {
+    width: min(100%, 30rem);
+    /* However long the objective runs, the card stops here and scrolls. A
+       card that can grow without limit is the inline layout's bug again in a
+       different place. */
+    max-height: min(80dvh, 34rem);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.9rem;
+    border: 2px solid var(--line);
+    background: var(--ground);
+  }
+
+  #guide-close {
+    font: inherit;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    align-self: stretch;
+    color: var(--ink);
+    background: var(--panel);
+    border: 2px solid var(--line);
+    padding: 0.5rem;
+    cursor: pointer;
+  }
+  #guide-close:active { background: var(--line); }
+
   #tutorial {
     flex: 0 0 auto;
-    width: min(100%, 30rem);
-    padding: 0 1rem;
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -328,7 +376,6 @@
 
   #tutorial .panels {
     position: relative;
-    min-height: 4.5rem;
     display: grid;
   }
 
@@ -448,6 +495,7 @@
     <a href="../" title="Back to the gallery">&larr;</a>
     <button id="fullscreen" type="button">Fullscreen</button>
     <button id="togglepad" type="button">Controls</button>
+    <button id="guide-open" type="button">How to play</button>
   </div>
 
   <div id="stage">
@@ -460,11 +508,6 @@
       <progress value="0" max="100" id="progress" hidden></progress>
     </div>
   </div>
-
-  <!-- Filled in per game by tools/gen_shell.py from that game's game.yml.
-       Left empty for a local build opened straight off disk, which is why the
-       nav script below tolerates finding no panels. -->
-  <!--PSE_TUTORIAL-->
 
   <div id="pad">
     <div class="dpad">
@@ -490,6 +533,20 @@
       <button type="button" data-btn="a" data-key="KeyZ" data-kbd="KeyD" aria-label="A">A</button>
       <button type="button" data-btn="b" data-key="KeyX" data-kbd="KeyS" aria-label="B">B</button>
     </div>
+  </div>
+</div>
+
+<!-- The tutorial, as a modal over the game rather than a block under it.
+
+     The section inside is filled in per game by tools/gen_shell.py from that
+     game's game.yml, and the placeholder is replaced in place, so the
+     generator does not know or care that it now lands in a dialog. Left empty
+     for a local build opened straight off disk, which is why the scripts
+     tolerate finding no panels. -->
+<div id="guide" role="dialog" aria-modal="true" aria-label="How to play" hidden>
+  <div id="guide-card">
+    <!--PSE_TUTORIAL-->
+    <button id="guide-close" type="button">Close</button>
   </div>
 </div>
 
@@ -720,6 +777,53 @@
     if (prev) prev.addEventListener('click', function () { show(at - 1); });
     if (next) next.addEventListener('click', function () { show(at + 1); });
     show(0);
+
+    // ---- opening and closing it ----
+    //
+    // The panels live in a modal, so something has to open it. The bar button
+    // does, and so does the first load of a game: rule 12 wants the tutorial
+    // to be the first thing a player meets, and a button nobody presses is
+    // not that. After that the flag is remembered per game, keyed on the path,
+    // so learning one game does not silence the next one's panels.
+    var guide = document.getElementById('guide');
+    var openButton = document.getElementById('guide-open');
+    if (!guide) return;
+
+    var SEEN_KEY = 'picosystem-guide-' + location.pathname;
+
+    function setGuide(open) {
+      guide.hidden = !open;
+      if (open) show(0);
+    }
+
+    if (openButton) {
+      openButton.addEventListener('click', function () { setGuide(true); });
+    }
+    var closeButton = document.getElementById('guide-close');
+    if (closeButton) {
+      closeButton.addEventListener('click', function () { setGuide(false); });
+    }
+    // Tapping the darkened area around the card closes it, which is what a
+    // phone player will try first. Only the backdrop itself: a tap that lands
+    // on the card must not close the thing being read.
+    guide.addEventListener('click', function (event) {
+      if (event.target === guide) setGuide(false);
+    });
+    // Escape closes it too. Registered on the capture phase ahead of the
+    // keyboard-to-gamepad bridge, so it cannot be swallowed on the way past.
+    window.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || guide.hidden) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setGuide(false);
+    }, true);
+
+    var seen = null;
+    try { seen = localStorage.getItem(SEEN_KEY); } catch (ignored) {}
+    if (!seen) {
+      setGuide(true);
+      try { localStorage.setItem(SEEN_KEY, '1'); } catch (ignored) {}
+    }
   })();
 
   // ---- pad visibility -----------------------------------------------------
