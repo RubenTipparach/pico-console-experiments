@@ -84,8 +84,9 @@ struct Subsystem {
 };
 
 enum class Task : uint8_t {
-    Pursue,      // turn onto the player and close
-    Break,       // inside knife range: hold the heading and come round again
+    Pursue,      // turn onto the player and close, guns free
+    Break,       // burst spent or too close: turn away, run, come about
+    Retreat,     // too badly hurt to fight: leave, and keep leaving
     Derelict,    // life support gone, nobody flying it
 };
 
@@ -102,6 +103,12 @@ struct Ship {
 
     Task task;
     uint16_t task_ticks;          // how long the current task has run
+    // How long THIS break lasts, rolled when it starts so every contact does
+    // not come about on the same tick.
+    uint16_t break_ticks;
+    // Shots put down on this pass. A pass ends on the count or on the range,
+    // and without the count a fighter that never quite closes never leaves.
+    uint8_t pass_shots;
     uint16_t reload;              // ticks until the next shot
     uint16_t hit_flash;           // ticks of white left on the model
 
@@ -183,8 +190,22 @@ enum class Loss : uint8_t {
     Jumped,      // the frigate charged its jump and left
 };
 
-// How many engagements the sortie is. The last one is the frigate.
-constexpr uint8_t k_wave_count = 5;
+// Which sortie is being flown.
+//
+// Two, and they are different jobs rather than two difficulties of the same
+// one. Patrol is fighters and bombers and nothing that carries a hardpoint, so
+// it is the whole game minus the half that needs explaining. Assault is the
+// one the game is really about: the same opening, then a gunship, then a
+// frigate charging a jump, which is where targeting a subsystem stops being a
+// curiosity and becomes the thing you have to do.
+enum class Mission : uint8_t { Patrol, Assault, MissionCount };
+
+// The longest any sortie runs to, which is what the wave counter is sized
+// against. Ask wave_count() for a particular mission's length.
+constexpr uint8_t k_max_waves = 5;
+
+uint8_t wave_count(Mission mission);
+const char* mission_name(Mission mission);
 
 // ---- input ----
 //
@@ -240,21 +261,27 @@ struct World {
     int8_t target;               // index into ships, or -1
     int8_t target_sub;           // index into that ship's subs, or -1 for the hull
 
+    Mission mission;
     Phase phase;
     Loss loss;
-    uint8_t wave;                // 1..k_wave_count
+    uint8_t wave;                // 1..wave_count(mission)
     uint16_t wave_timer;         // ticks until the next wave arrives
     uint32_t jump_charge;        // the frigate's subspace clock, counting up
     bool jump_stopped;           // its navigation is gone: it is not leaving
 
     uint32_t score;
     uint16_t kills;
+    // Driven off rather than destroyed: hurt badly enough to run, and far
+    // enough out to be gone. Counted apart from kills because letting one go
+    // is a different outcome from killing it, and worth less.
+    uint16_t routed;
     uint16_t subs_killed;
 };
 
 // ---- driving it ----
 
-void world_init(World& world, uint32_t seed = 0x5A1CE001u);
+void world_init(World& world, uint32_t seed = 0x5A1CE001u,
+                Mission mission = Mission::Assault);
 void world_tick(World& world, const Input& input);
 
 // ---- reading it, for the renderer and the HUD ----

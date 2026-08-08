@@ -337,6 +337,158 @@ void test_the_arena_holds_the_player() {
     CHECK(world.out_of_bounds);
 }
 
+// ---- how a fighter fights ----
+
+// The bug this was written for: the contact used to sit on top of the player
+// permanently. It broke off only inside fourteen units, held its heading for
+// under a second and turned straight back, which at that range is an orbit.
+//
+// The test is the shape of the range over time. An orbit stays close and
+// never opens; an engagement cycle swings between knife range and a long way
+// out, repeatedly.
+void test_the_engagement_is_a_cycle_and_not_an_orbit() {
+    sd::World world;
+    sd::world_init(world);
+    jump_to_wave(world, 1);
+
+    // One contact, so the trace is about one ship's behaviour.
+    bool kept = false;
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        if (!world.ships[i].active) continue;
+        if (kept) world.ships[i].active = false;
+        kept = true;
+    }
+    const int8_t at = index_of(world, sd::Hull::Fighter);
+    if (at < 0) { CHECK(false); return; }
+    const sd::Ship& fighter = world.ships[at];
+
+    int32_t closest = 1 << 30, furthest = 0;
+    int breaks = 0, approaches = 0;
+    sd::Task last = fighter.task;
+    for (int i = 0; i < 4000 && fighter.active; i++) {
+        sd::world_tick(world, nothing());
+        const int32_t range = sd::range_to(world, fighter);
+        // Ignore the opening run in, which starts a hundred units out.
+        if (i > 300) {
+            if (range < closest) closest = range;
+            if (range > furthest) furthest = range;
+        }
+        if (fighter.task != last) {
+            if (fighter.task == sd::Task::Break) breaks++;
+            if (fighter.task == sd::Task::Pursue) approaches++;
+            last = fighter.task;
+        }
+    }
+
+    std::printf("cycle: range swung %d to %d units over %d breaks\n",
+                closest >> sd::k_fp, furthest >> sd::k_fp, breaks);
+
+    // It came back round more than once, so this is a cycle rather than one
+    // long departure.
+    CHECK(breaks >= 2);
+    CHECK(approaches >= 2);
+    // And it genuinely leaves. An orbit would never have opened this far.
+    CHECK(furthest > sd::units(100));
+}
+
+// A pass ends on the shot count, not only on the range. Without that a
+// contact that never quite closes never breaks off at all.
+void test_a_fighter_breaks_off_after_its_burst() {
+    sd::World world;
+    sd::world_init(world);
+    jump_to_wave(world, 1);
+    const int8_t at = index_of(world, sd::Hull::Fighter);
+    if (at < 0) { CHECK(false); return; }
+    sd::Ship& fighter = world.ships[at];
+    clear_except(world, at);
+
+    int fired = 0;
+    for (int i = 0; i < 3000 && fighter.task != sd::Task::Break; i++) {
+        const uint8_t before = fighter.pass_shots;
+        sd::world_tick(world, nothing());
+        if (fighter.pass_shots > before) fired++;
+    }
+    CHECK(fighter.task == sd::Task::Break);
+    // It either ran out of burst or got inside knife range. Both are ends of
+    // a pass; what must not happen is neither.
+    const int32_t range = sd::range_to(world, fighter);
+    CHECK(fired >= sd::k_shots_per_pass || range < sd::k_break_close);
+}
+
+// Guns cold on the way out. A contact still shooting over its shoulder does
+// not give the player the window the break exists to create.
+void test_a_fighter_holds_its_fire_while_breaking() {
+    sd::World world;
+    sd::world_init(world);
+    jump_to_wave(world, 1);
+    const int8_t at = index_of(world, sd::Hull::Fighter);
+    if (at < 0) { CHECK(false); return; }
+    sd::Ship& fighter = world.ships[at];
+    clear_except(world, at);
+
+    // Run until it is breaking, then clear the sky and watch.
+    for (int i = 0; i < 3000 && fighter.task != sd::Task::Break; i++) {
+        sd::world_tick(world, nothing());
+    }
+    CHECK(fighter.task == sd::Task::Break);
+
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) world.shots[i].active = false;
+
+    int fired = 0;
+    for (int i = 0; i < 200 && fighter.task == sd::Task::Break; i++) {
+        sd::world_tick(world, nothing());
+        for (uint8_t k = 0; k < sd::k_max_bolts; k++) {
+            if (world.shots[k].active &&
+                world.shots[k].kind != sd::Bolt::PlayerGun) {
+                fired++;
+                world.shots[k].active = false;
+            }
+        }
+    }
+    CHECK(fired == 0);
+}
+
+// Hurt badly enough and it leaves, and leaving really means gone: the slot
+// frees, so a wave still clears and the sortie cannot stall on a cripple
+// nobody can catch.
+void test_a_hurt_fighter_runs_and_then_leaves() {
+    sd::World world;
+    sd::world_init(world);
+    jump_to_wave(world, 1);
+    const int8_t at = index_of(world, sd::Hull::Fighter);
+    if (at < 0) { CHECK(false); return; }
+    sd::Ship& fighter = world.ships[at];
+    clear_except(world, at);
+
+    run(world, 200, nothing());
+    CHECK(fighter.task != sd::Task::Retreat);
+
+    // Beaten down past the line it gives up at.
+    fighter.hull = static_cast<int16_t>(
+        (fighter.hull_max * (sd::k_retreat_hull_percent - 5)) / 100);
+    sd::world_tick(world, nothing());
+    CHECK(fighter.task == sd::Task::Retreat);
+
+    // Once running it does not change its mind, and the range only opens.
+    const int32_t started = sd::range_to(world, fighter);
+    run(world, 400, nothing());
+    if (fighter.active) {
+        CHECK(fighter.task == sd::Task::Retreat);
+        CHECK(sd::range_to(world, fighter) > started);
+    }
+
+    const uint32_t score_before = world.score;
+    for (int i = 0; i < 6000 && fighter.active; i++) {
+        sd::world_tick(world, nothing());
+    }
+    CHECK(!fighter.active);
+    CHECK(world.routed == 1);
+    CHECK(world.kills == 0);
+    // Driven off is worth something, and less than killed.
+    CHECK(world.score > score_before);
+    CHECK(world.score < score_before + 100);
+}
+
 // ---- targeting ----
 
 void test_the_cycle_takes_what_is_in_front_before_what_is_behind() {
@@ -649,6 +801,60 @@ void test_killing_the_navigation_array_stops_the_jump_for_good() {
     CHECK(world.jump_stopped);
 }
 
+// Two sorties, and they are different jobs rather than two lengths of the
+// same one. Patrol is the half of the game that needs no explaining: nothing
+// in it carries a hardpoint, so nothing in it requires the player to have
+// worked out the targeting cycle first.
+void test_patrol_is_short_and_carries_no_capital_ships() {
+    sd::World world;
+    sd::world_init(world, 0x9001u, sd::Mission::Patrol);
+    CHECK(world.mission == sd::Mission::Patrol);
+    CHECK(sd::wave_count(sd::Mission::Patrol) == 3);
+
+    int seen = 0;
+    for (uint8_t wave = 1; wave <= sd::wave_count(sd::Mission::Patrol); wave++) {
+        jump_to_wave(world, wave);
+        for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+            const sd::Ship& ship = world.ships[i];
+            if (!ship.active) continue;
+            seen++;
+            CHECK(ship.cls == sd::Hull::Fighter || ship.cls == sd::Hull::Bomber);
+            CHECK(ship.sub_count == 0);
+        }
+        for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+            world.ships[i].active = false;
+        }
+    }
+    CHECK(seen > 0);
+}
+
+// The assault is the one the game is about, so it has to actually contain the
+// thing the game is about.
+void test_the_assault_ends_with_the_frigate() {
+    sd::World world;
+    sd::world_init(world, 0x9002u, sd::Mission::Assault);
+    CHECK(sd::wave_count(sd::Mission::Assault) == 5);
+
+    jump_to_wave(world, sd::wave_count(sd::Mission::Assault));
+    CHECK(index_of(world, sd::Hull::Frigate) >= 0);
+    CHECK(sd::jump_ticks_left(world) > 0);
+}
+
+// A patrol ends after ITS last wave, not after the assault's. Getting this
+// wrong would leave the short mission asking for two engagements that were
+// never called in.
+void test_a_patrol_ends_after_its_own_last_wave() {
+    sd::World world;
+    sd::world_init(world, 0x9003u, sd::Mission::Patrol);
+    jump_to_wave(world, sd::wave_count(sd::Mission::Patrol));
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) world.ships[i].active = false;
+    sd::world_tick(world, nothing());
+    CHECK(world.phase == sd::Phase::Won);
+
+    // And there is no frigate anywhere in it to lose to.
+    CHECK(world.loss == sd::Loss::None);
+}
+
 void test_clearing_a_wave_calls_in_the_next_one() {
     sd::World world;
     sd::world_init(world);
@@ -675,7 +881,7 @@ void test_clearing_a_wave_calls_in_the_next_one() {
 void test_clearing_the_last_wave_wins_the_sortie() {
     sd::World world;
     sd::world_init(world);
-    jump_to_wave(world, sd::k_wave_count);
+    jump_to_wave(world, sd::wave_count(world.mission));
     for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         world.ships[i].active = false;
     }
@@ -779,33 +985,34 @@ void test_a_kill_leaves_something_to_look_at() {
     sd::world_init(world);
     jump_to_wave(world, 1);
 
-    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
-        if (!world.ships[i].active) continue;
-        world.ships[i].hull = 1;
-        world.ships[i].shield = 0;
-        break;
-    }
+    const int8_t at = index_of(world, sd::Hull::Fighter);
+    if (at < 0) { CHECK(false); return; }
+    clear_except(world, at);
+    sd::Ship& victim = world.ships[at];
+    victim.shield = 0;
 
-    sd::Input fire = nothing();
-    fire.fire = true;
-    // Sit the player right on top of the first contact so the shot cannot
-    // miss, then hold the trigger.
-    const sd::Ship* victim = first_of(world, sd::Hull::Fighter);
-    CHECK(victim != nullptr);
-    if (victim == nullptr) return;
+    // Held on the nose and shot until it dies, rather than flown at and hoped
+    // for. This test used to set the hull to 1 and fire down the centre line
+    // for six hundred ticks, with the assertions inside `if (kills > 0)`, and
+    // once a hurt contact started running away it never died: the checks
+    // stopped running and the test kept passing. A guard around the thing
+    // being tested is a test that can retire without telling anyone.
+    hold_and_fire(world, facing_ahead(), sd::units(24), 3000,
+                  [&](int32_t& x, int32_t& y, int32_t& z) {
+                      x = victim.x; y = victim.y; z = victim.z;
+                      return victim.active;
+                  },
+                  [&] { return world.kills > 0; });
 
-    for (int i = 0; i < 600 && world.kills == 0 && sd::in_flight(world); i++) {
-        sd::world_tick(world, fire);
-    }
+    CHECK(world.kills == 1);
+    CHECK(!victim.active);
 
-    if (world.kills > 0) {
-        uint8_t blasts = 0;
-        for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
-            if (world.blasts[i].active) blasts++;
-        }
-        CHECK(blasts > 0);
-        CHECK(world.score > 0);
+    uint8_t blasts = 0;
+    for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
+        if (world.blasts[i].active) blasts++;
     }
+    CHECK(blasts > 0);
+    CHECK(world.score > 0);
 }
 
 // ---- budget ----
@@ -829,6 +1036,10 @@ int main() {
     test_a_flight_is_a_pure_function_of_its_inputs();
     test_the_arena_holds_the_player();
 
+    test_the_engagement_is_a_cycle_and_not_an_orbit();
+    test_a_fighter_breaks_off_after_its_burst();
+    test_a_fighter_holds_its_fire_while_breaking();
+    test_a_hurt_fighter_runs_and_then_leaves();
     test_the_cycle_takes_what_is_in_front_before_what_is_behind();
     test_pressing_target_again_walks_the_hardpoints();
     test_a_dead_hardpoint_is_skipped_by_the_cycle();
@@ -840,6 +1051,9 @@ int main() {
 
     test_the_frigate_leaves_if_its_navigation_is_left_alone();
     test_killing_the_navigation_array_stops_the_jump_for_good();
+    test_patrol_is_short_and_carries_no_capital_ships();
+    test_the_assault_ends_with_the_frigate();
+    test_a_patrol_ends_after_its_own_last_wave();
     test_clearing_a_wave_calls_in_the_next_one();
     test_clearing_the_last_wave_wins_the_sortie();
 

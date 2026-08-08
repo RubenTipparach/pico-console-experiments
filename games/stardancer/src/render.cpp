@@ -1161,11 +1161,13 @@ void draw_title(const Chrome& chrome, const pse::RenderTarget& target) {
     pse::draw_text_centred(target, "5TH WING", target.width / 2, 50, 90, 130,
                            170);
 
-    const char* lines[kTitleItemCount] = {"LAUNCH", sound_word(chrome.sound_on),
-                                          pitch_word(chrome.invert_pitch)};
-    uint8_t lit[kTitleItemCount] = {0, 0, 0};
+    const char* lines[kTitleItemCount] = {
+        sd::mission_name(sd::Mission::Patrol),
+        sd::mission_name(sd::Mission::Assault),
+        sound_word(chrome.sound_on), pitch_word(chrome.invert_pitch)};
+    uint8_t lit[kTitleItemCount] = {0, 0, 0, 0};
     lit[chrome.item % kTitleItemCount] = 1;
-    panel(target, lines, lit, kTitleItemCount, 68, 1);
+    panel(target, lines, lit, kTitleItemCount, 62, 1);
 
     if (chrome.best_score > 0) {
         char line[16];
@@ -1204,8 +1206,11 @@ void draw_debrief(const World& world, const Chrome& chrome,
                            ' ', ' ', 'S', 'U', 'B', ' ', subs[0], subs[1],
                            '\0'};
 
-    const char* lines[3] = {verdict, score, kills_line};
-    panel(target, lines, nullptr, 3, 46, 1);
+    // Which sortie, because two of them end in the same words otherwise and a
+    // score means nothing without knowing which one earned it.
+    const char* lines[4] = {sd::mission_name(world.mission), verdict, score,
+                            kills_line};
+    panel(target, lines, nullptr, 4, 42, 1);
 
     if (world.score >= chrome.best_score && world.score > 0) {
         pse::draw_text_centred(target, "BEST", target.width / 2,

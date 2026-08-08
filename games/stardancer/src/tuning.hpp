@@ -159,6 +159,47 @@ constexpr int16_t k_shell_damage = 14;
 
 constexpr int32_t k_player_radius = centi(90);
 
+// ---- how a fighter fights ----
+//
+// The engagement is a cycle, not a chase: come in, put a burst down, blow
+// through, run out, come about, do it again. The first version had no run out
+// in it. It broke off only when it got inside fourteen units, held its heading
+// for under a second, and turned straight back, which at that range is an
+// orbit: the contact sat on top of the player permanently, never presented a
+// clean shot, and read as an enemy going round in a circle. Every number here
+// is about opening that cycle up.
+
+// Fire this many shots on a pass, then leave. Without a shot count a fighter
+// only ever breaks off on range, so one that never quite closes never breaks
+// off at all.
+constexpr uint8_t k_shots_per_pass = 3;
+
+// Inside this and it goes through rather than trying to stay: a fighter still
+// turning at zero range is the orbit again.
+constexpr int32_t k_break_close = units(20);
+
+// How long a break lasts, and how far it goes. Both, because either alone is
+// wrong.
+//
+// A break of ten to fifteen seconds is what a dogfight wants and what the
+// arena cannot give: at 26 units a second that is 260 to 390 units of running,
+// and the arena is 340 across with contacts stopping being drawn at 320. So
+// the timer is the intent and the range is the governor, whichever comes
+// first, and in practice the range does at around four seconds. Raising
+// k_break_range is the one knob that makes breaks longer; it costs draw
+// distance.
+constexpr uint16_t k_break_ticks_min = 1000;      // 10 seconds
+constexpr uint16_t k_break_ticks_span = 500;      // up to 15
+constexpr int32_t k_break_range = units(140);
+
+// A fighter that has taken this much of a beating stops fighting and runs,
+// and once it is this far out it is gone. Running is not a stall: the ship
+// leaves the field, so a wave still clears, and chasing it down is worth full
+// marks against letting it go for a third.
+constexpr int32_t k_retreat_hull_percent = 35;
+constexpr int32_t k_escape_range = units(270);
+constexpr int32_t k_rout_score_divisor = 3;
+
 // ---- targeting ----
 
 // Only contacts inside this cone off the nose count as "in view" for the

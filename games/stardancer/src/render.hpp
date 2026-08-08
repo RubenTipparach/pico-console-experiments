@@ -33,8 +33,14 @@ enum PauseItem : uint8_t {
 };
 
 // The title screen's rows.
+//
+// The two sorties are two rows rather than a mission row plus a launch row.
+// One press to fly is worth more than the tidiness of a settings-style list,
+// and with the names on the buttons there is nothing to explain about which
+// one is selected.
 enum TitleItem : uint8_t {
-    kLaunch,
+    kFlyPatrol,
+    kFlyAssault,
     kTitleSound,
     kTitleInvert,
     kTitleItemCount,
