@@ -19,6 +19,7 @@ build:
   - dustrider
   - kingfisher
   - picospace
+  - starlance
 
 hold:
   - chicken

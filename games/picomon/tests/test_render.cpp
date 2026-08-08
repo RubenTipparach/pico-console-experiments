@@ -582,6 +582,93 @@ void test_menus_draw_something() {
 
 }  // namespace
 
+// A caught creature is in the ball, and it stays there.
+//
+// Hiding it only during the Wobble and Caught animations put it straight back
+// on its mound the moment the state moved to the GOTCHA message, so it looked
+// like it had burst out at the exact instant the text said it had been caught.
+void test_a_caught_creature_stays_in_the_ball() {
+    auto arena = [](bool caught, pm::BattleState state) {
+        pm::World w = fresh();
+        w.mode = pm::Mode::Battle;
+        w.battle = pm::Battle{};
+        w.battle.foe = pm::make_mon(0, 5);      // EMBERKIT, the orange one
+        w.battle.trainer_npc = 0xFF;
+        w.battle.active = 0;
+        w.battle.wild = true;
+        w.battle.state = state;
+        w.battle.caught = caught;
+        return w;
+    };
+    // Emberkit's orange, counted on the foe's half only, above the text panel.
+    auto orange = [](const Frame& f) {
+        int n = 0;
+        for (int y = 0; y < 84; y++)
+            for (int x = 62; x < 120; x++) {
+                const uint8_t* p = f.at(x, y);
+                if (p[0] > 0xA0 && p[1] > 0x40 && p[1] < 0xA0 && p[2] < 0x50) n++;
+            }
+        return n;
+    };
+
+    Frame out, in_ball;
+    pm::World a = arena(false, pm::BattleState::Message);
+    pm::World b = arena(true, pm::BattleState::Message);
+    render(a, out, 1000);
+    render(b, in_ball, 1000);
+    const int n_out = orange(out), n_in = orange(in_ball);
+    std::printf("  caught: %d creature pixels loose, %d once in the ball\n",
+                n_out, n_in);
+    check(n_out > 20, "the foe is on screen before it is caught");
+    check(n_in * 4 < n_out, "and is gone from the arena once it is caught");
+
+    // Over is the state the player actually sits in while pressing through
+    // the GOTCHA text, so it has to hold too.
+    Frame over;
+    pm::World c = arena(true, pm::BattleState::Over);
+    render(c, over, 1000);
+    std::printf("  caught: %d creature pixels at the end of the battle\n",
+                orange(over));
+    check(orange(over) * 4 < n_out, "and stays gone for the rest of the scene");
+}
+
+// The find notice names the item. Two different items must not draw the same
+// panel, or the name is not reaching the screen.
+void test_finding_an_item_draws_its_name() {
+    auto notice = [](uint8_t item, uint8_t count) {
+        pm::World w = fresh();
+        w.mode = pm::Mode::Dialogue;
+        w.text_count = 1;
+        w.text_page = 0;
+        w.found_item = item;
+        w.found_count = count;
+        return w;
+    };
+    auto ink = [](const Frame& f) {
+        // Strictly inside the panel, and only the rows the first line of text
+        // occupies. The panel's own border is drawn in 0xEE, the same shade as
+        // the text, and there are over three hundred pixels of it: counting
+        // the whole bottom third would pass this test on an empty panel.
+        int n = 0;
+        for (int y = 88; y < 100; y++)
+            for (int x = 6; x < 114; x++) {
+                const uint8_t* p = f.at(x, y);
+                if (p[0] > 0xC0 && p[1] > 0xC0 && p[2] > 0xC0) n++;
+            }
+        return n;
+    };
+    Frame potion, dusk;
+    pm::World p = notice(pm::item_potion, 1);
+    pm::World d = notice(pm::item_duskball, 2);
+    render(p, potion, 1000);
+    render(d, dusk, 1000);
+    std::printf("  found: %d ink pixels for POTION, %d for DUSK BALL x2\n",
+                ink(potion), ink(dusk));
+    check(ink(potion) > 30, "the notice actually prints something");
+    check(ink(dusk) > ink(potion),
+          "a longer name and a count print more than a short name");
+}
+
 int main() {
     test_overworld_has_a_map_in_it();
     test_north_is_up();
@@ -598,6 +685,8 @@ int main() {
     test_battle_floor_is_solid();
     test_title_shows_its_creature();
     test_menus_draw_something();
+    test_a_caught_creature_stays_in_the_ball();
+    test_finding_an_item_draws_its_name();
 
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);

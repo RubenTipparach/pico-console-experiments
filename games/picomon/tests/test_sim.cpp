@@ -717,6 +717,58 @@ void test_a_ball_can_always_be_thrown() {
     check(t < 5000, "a thrown ball always resolves");
 }
 
+int held(const pm::World& w, uint8_t item) {
+    for (int i = 0; i < w.bag_count; i++)
+        if (w.bag[i].item == item) return w.bag[i].count;
+    return 0;
+}
+
+// Picking something up off the ground used to be a sound effect and nothing
+// else: the bag silently gained an item and the screen never said which, so
+// on a 120 pixel screen with no inventory notification the find was easy to
+// walk over and miss entirely.
+void test_finding_an_item_says_what_it_was() {
+    // Route 1 has a single GREAT BALL lying at 5,6.
+    pm::World w = start_world(11);
+    w.zone = pm::zone_route1;
+    w.tx = 5;
+    w.ty = 6;
+    w.mode = pm::Mode::Overworld;
+    const int before = held(w, pm::item_greatball);
+    pm::world_tick(w, press_a());
+    check(w.mode == pm::Mode::Dialogue, "picking an item up says something");
+    check(w.found_item == pm::item_greatball, "and names the item it was");
+    check(w.found_count == 1, "and how many were there");
+    check(held(w, pm::item_greatball) == before + 1,
+          "and the item is actually in the bag");
+
+    // Pressing on closes it and hands the player back to the overworld.
+    pm::world_tick(w, press_a());
+    check(w.mode == pm::Mode::Overworld, "and the notice closes");
+
+    // A stack says how many. The cave's DUSK BALLs come in twos.
+    pm::World c = start_world(11);
+    c.zone = pm::zone_hollowcave;
+    c.tx = 17;
+    c.ty = 13;
+    c.mode = pm::Mode::Overworld;
+    pm::world_tick(c, press_a());
+    check(c.found_item == pm::item_duskball && c.found_count == 2,
+          "a stack of two is reported as two");
+
+    // Ordinary dialogue must not inherit the last find, or every sign in the
+    // game would claim to be an item lying on the floor.
+    pm::World s = start_world(11);
+    s.zone = pm::zone_route1;
+    s.tx = 5;
+    s.ty = 6;
+    s.mode = pm::Mode::Overworld;
+    pm::world_tick(s, press_a());          // find it
+    pm::world_tick(s, press_a());          // close
+    check(s.found_item == 0xFF || s.mode == pm::Mode::Overworld,
+          "the notice does not linger");
+}
+
 void test_state_fits_its_budget() {
     // The device numbers, checked here so they cannot drift unnoticed.
     std::printf("  sizeof(World)    = %zu bytes\n", sizeof(pm::World));
@@ -735,6 +787,7 @@ int main() {
     test_encounters_happen_and_end();
     test_catch_formula();
     test_a_ball_can_always_be_thrown();
+    test_finding_an_item_says_what_it_was();
     test_damage_is_bounded();
     test_levelling_never_overflows();
     test_save_round_trips();

@@ -344,6 +344,35 @@ void draw_cargo(const World& world) {
                          255, 255, 255, 0.0f, 0, 0.0f, k_tex_crate);
 }
 
+// The fuel crates, as green cubes hanging in the air.
+//
+// draw_box rather than a model, which is rule 11's stated exception: a cube is
+// a primitive the engine already generates parametrically, and an .obj of one
+// would be six quads nobody will ever open in Blender. Twelve triangles each,
+// and a mission never places more than three.
+//
+// Green because nothing else in the scene is. The ground runs one rusted hue
+// from basin to ridge, the decks are grey steel and the sky is butterscotch,
+// so the one saturated green thing on Mars is unmistakably an object rather
+// than scenery. The lid is the brighter of the two tones, which is the light
+// direction every other box in this game is shaded by.
+void draw_crates(const World& world) {
+    for (int i = 0; i < world.crate_count; i++) {
+        const tl::FuelCrate& c = world.crates[i];
+        if (c.state != tl::Crate::Out) continue;
+        const float half = 1.6f;
+        // draw_box's y is the BASE of the box, not its middle: the unit cube
+        // it builds from runs 0 to 1 in y so that a building sits on the
+        // ground. A crate hangs in the air and its middle is the point the
+        // pickup is measured from, so the base has to be dropped by a half or
+        // the cube is drawn 1.6 units above the thing you fly into.
+        g_renderer.draw_box(to_f(c.x), to_f(c.y) - half, to_f(c.z),
+                            half * 2.0f, half * 2.0f, half * 2.0f,
+                            96, 240, 112,       // lid
+                            34, 168, 68);       // sides
+    }
+}
+
 void draw_ship(const World& world) {
     // The attitude straight through, as the orientation it is. No angles are
     // extracted on the way, which is the point: extracting them would put the
@@ -573,6 +602,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     draw_buildings(world);
     draw_pads(world);
     draw_cargo(world);
+    draw_crates(world);
     draw_ship(world);
 
     // A Martian sky, and it had to move when the ground did. The whole point

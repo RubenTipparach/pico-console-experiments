@@ -36,6 +36,20 @@ public:
     // Place the camera explicitly.
     void set_camera(float x, float y, float z, float yaw, float pitch);
 
+    // The same, given the orientation as a basis instead of two angles.
+    //
+    // Yaw and pitch cannot describe a rolled camera: there is no third angle,
+    // and the up vector is derived from a right vector pinned to the world's
+    // horizontal plane. That is right for a camera watching a scene with a
+    // ground in it, and wrong for one carried by a body that banks, where the
+    // horizon is supposed to tilt. The basis columns are the camera's own
+    // axes in world space, exactly as pse::quat_basis returns them: column 0
+    // right, column 1 up, column 2 forward.
+    //
+    // Cheaper as well: the angle form spends four trig calls building this
+    // same frame before it can start.
+    void set_camera_basis(float x, float y, float z, const Basis& basis);
+
     // Near and far clip. The default 0.25 to 400 covers anything, and that is
     // the problem: the depth buffer is one byte, a perspective depth curve
     // spends nearly all of its resolution near the near plane, and a scene
@@ -143,6 +157,11 @@ public:
 private:
     void rebuild_view_projection();
 
+    // Fill the camera frame from a yaw and a pitch. The one place the two
+    // angle form turns into the frame the projection is actually built from,
+    // so the angle camera and the basis camera cannot drift apart.
+    void frame_from_angles(float yaw, float pitch);
+
     void emit_quad(const int sx[8], const int sy[8], const int sz[8],
                    const bool visible[8], const uint8_t face[4],
                    uint8_t r, uint8_t g, uint8_t b, bool highlight_edge);
@@ -150,7 +169,14 @@ private:
     Rasterizer& rasterizer_;
 
     float camera_x_ = 0.0f, camera_y_ = 0.0f, camera_z_ = 0.0f;
-    float camera_yaw_ = 0.0f, camera_pitch_ = 0.0f;
+
+    // The camera's own axes in world space. Stored rather than a yaw and a
+    // pitch because a rolled camera has no yaw and pitch to store, and
+    // because the projection wants these and nothing else.
+    float cam_right_[3] = {1.0f, 0.0f, 0.0f};
+    float cam_up_[3] = {0.0f, 1.0f, 0.0f};
+    float cam_forward_[3] = {0.0f, 0.0f, 1.0f};
+
     float fov_degrees_ = 90.0f;
     float z_near_ = 0.25f;     // k_default_z_near in the .cpp
     float z_far_ = 400.0f;     // k_default_z_far

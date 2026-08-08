@@ -1,0 +1,11 @@
+newmtl hull
+Kd 0.720 0.760 0.820
+
+newmtl canopy
+Kd 0.240 0.560 0.720
+
+newmtl wing
+Kd 0.420 0.470 0.550
+
+newmtl engine
+Kd 0.900 0.520 0.180

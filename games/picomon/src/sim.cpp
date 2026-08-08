@@ -239,6 +239,7 @@ void world_init(World& w, uint32_t seed) {
     w.rng = seed ? seed : 0x9E3779B9u;
     w.mode = Mode::Title;
     w.battle.trainer_npc = 0xFF;
+    w.found_item = 0xFF;
     world_new_game(w);
     w.mode = Mode::Title;
 }
@@ -284,6 +285,7 @@ bool world_load(World& w, const SaveData& in) {
     for (int i = 0; i < k_dex_bytes; i++) { w.seen[i] = in.seen[i]; w.caught[i] = in.caught[i]; }
     if (!tile_walkable(zone_of(w), w.tx, w.ty)) return false;
     w.step = 0;
+    w.found_item = 0xFF;
     w.mode = Mode::Overworld;
     return true;
 }
@@ -298,6 +300,19 @@ void say(World& w, uint16_t first, uint8_t count, uint8_t npc = 0xFF) {
     w.text_count = count;
     w.text_page = 0;
     w.talking_npc = npc;
+    w.found_item = 0xFF;
+    w.mode = Mode::Dialogue;
+}
+
+// The one line of text this game does not have a baked page for, because the
+// item and the number are only known at the moment the player stands on it.
+void say_found(World& w, uint8_t item, uint8_t count) {
+    w.text_first = 0;
+    w.text_count = 1;
+    w.text_page = 0;
+    w.talking_npc = 0xFF;
+    w.found_item = item;
+    w.found_count = count;
     w.mode = Mode::Dialogue;
 }
 
@@ -306,17 +321,21 @@ int bag_find(const World& w, uint8_t item) {
     return -1;
 }
 
-void bag_add(World& w, uint8_t item, uint8_t count) {
+// Answers whether the bag took it. A ground item announces itself by name
+// now, and a notice that says FOUND when the bag was full and nothing was
+// added is worse than no notice at all.
+bool bag_add(World& w, uint8_t item, uint8_t count) {
     const int at = bag_find(w, item);
     if (at >= 0) {
         const int total = w.bag[at].count + count;
         w.bag[at].count = uint8_t(total > 99 ? 99 : total);
-        return;
+        return true;
     }
-    if (w.bag_count >= k_max_bag) return;
+    if (w.bag_count >= k_max_bag) return false;
     w.bag[w.bag_count].item = item;
     w.bag[w.bag_count].count = count;
     w.bag_count++;
+    return true;
 }
 
 void bag_take(World& w, int slot) {
@@ -889,10 +908,13 @@ void interact(World& w) {
         const int y = pass == 0 ? fy : w.ty;
         const EventDef* e = event_at(w, x, y, EventKind::Item);
         if (!e || (e->flag != k_no_flag && flag_get(w, e->flag))) continue;
-        bag_add(w, e->arg0, e->arg1);
+        // A full bag leaves the item where it is: the flag stays clear, so
+        // the player can come back for it once there is room.
+        if (!bag_add(w, e->arg0, e->arg1)) { w.sfx = Sfx::Cancel; return; }
         if (e->flag != k_no_flag) flag_set(w, e->flag);
         w.sfx = Sfx::Item;
         w.save_pending = true;
+        say_found(w, e->arg0, e->arg1);
         return;
     }
 }

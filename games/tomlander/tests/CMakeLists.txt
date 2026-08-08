@@ -7,6 +7,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/obj_model.cmake)
 
 add_executable(tomlander_sim_tests
     test_sim.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/menu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/sim.cpp
 )
 target_include_directories(tomlander_sim_tests PRIVATE

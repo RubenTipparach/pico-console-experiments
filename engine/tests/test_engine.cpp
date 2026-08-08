@@ -260,6 +260,68 @@ void test_renderer_projects_and_culls() {
     CHECK(behind_raster.triangles_drawn() == 0);
 }
 
+// The basis camera has to be the same camera, and it has to be able to roll.
+//
+// Two halves, and the second is the reason the first is not enough. An
+// identity basis must reproduce set_camera(yaw 0, pitch 0) exactly, which is
+// what proves the column reading is not a transpose: a transposed rotation is
+// still identity at identity. So the roll case follows it, where the two
+// forms genuinely differ and yaw and pitch have no answer at all.
+void test_camera_basis_matches_angles_and_can_roll() {
+    pse::Rasterizer angle_raster, basis_raster;
+    pse::Renderer3D angle_cam(angle_raster), basis_cam(basis_raster);
+
+    // A point above the camera and ahead of it. Where it lands on screen is
+    // the whole measurement.
+    const float wx = 0.0f, wy = 6.0f, wz = 40.0f;
+
+    TestSurface a(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    TestSurface b(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    angle_raster.begin_frame(a.target());
+    basis_raster.begin_frame(b.target());
+
+    angle_cam.set_camera(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    basis_cam.set_camera_basis(0.0f, 0.0f, 0.0f,
+                               pse::quat_basis(pse::quat_identity()));
+
+    int ax = 0, ay = 0, ad = 0, bx = 0, by = 0, bd = 0;
+    CHECK(angle_cam.project(wx, wy, wz, ax, ay, ad));
+    CHECK(basis_cam.project(wx, wy, wz, bx, by, bd));
+    CHECK(ax == bx && ay == by && ad == bd);
+
+    // Where dead ahead lands, measured rather than assumed: the projector's
+    // vertical mapping is not exactly symmetric about height / 2, and a test
+    // that hard codes the middle row is testing the arithmetic of the
+    // rounding rather than the camera.
+    int centre_x = 0, centre_y = 0, centre_d = 0;
+    CHECK(angle_cam.project(0.0f, 0.0f, wz, centre_x, centre_y, centre_d));
+    const int rise = centre_y - ay;      // screen y grows downward
+    CHECK(rise > 4);                     // genuinely above the centre
+
+    // Now roll the camera a quarter turn about its own forward axis (+Z),
+    // right hand rule, so the camera's right axis swings onto the world's up.
+    // A point overhead then has to leave the top of the frame and appear out
+    // to the right, on the centre row, the same distance out as it was up.
+    // Yaw and pitch cannot express this at all: there is no third angle.
+    pse::Rasterizer rolled_raster;
+    pse::Renderer3D rolled(rolled_raster);
+    TestSurface c(pse::k_render_width, pse::k_render_height,
+                  pse::PixelFormat::rgb565);
+    rolled_raster.begin_frame(c.target());
+    rolled.set_camera_basis(
+        0.0f, 0.0f, 0.0f,
+        pse::quat_basis(pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 1.5708f)));
+
+    int rx = 0, ry = 0, rd = 0;
+    CHECK(rolled.project(wx, wy, wz, rx, ry, rd));
+    const int run = rx - centre_x;
+    CHECK(ry >= centre_y - 1 && ry <= centre_y + 1);
+    CHECK(run >= rise - 1 && run <= rise + 1);
+    CHECK(rd == ad);                     // a roll turns the frame, not the depth
+}
+
 // A box's lid has to be visible from above, which is the only side anyone
 // looks at one from.
 //
@@ -313,6 +375,65 @@ void test_box_has_a_lid() {
         }
     }
     CHECK(lid_from_below == 0);
+}
+
+// Every one of a box's six faces, checked from square in front of it.
+//
+// test_box_has_a_lid above proves the lid is there and that the box is not
+// see-through from above, and that was not enough: it says nothing about the
+// four WALLS, and the walls shipped wound the way this rasterizer culls. A box
+// drew its FAR walls and hid its near ones, so you looked straight through it
+// at the inside of the other side, and pico-santa shipped a whole city like
+// that. A cube built that way has a V notch bitten out of the bottom of its
+// silhouette, pointing up instead of down, which is subtle enough on a
+// building with other buildings behind it to go years unnoticed.
+//
+// Standing square on ONE face is what makes the answer unambiguous: exactly
+// one face can be seen, so a correct box keeps two triangles and an inside out
+// one keeps the three facing away. Counting triangles rather than sampling
+// colour on purpose: draw_box shades the four walls 0.70 to 1.00 of a single
+// side colour and lifts two corners of every triangle by 30, so the tone
+// ranges overlap and a census by colour cannot name a face.
+//
+// A camera at a corner does NOT catch this. It keeps three faces either way,
+// so the count is right and only the choice is wrong, which is exactly how the
+// bug survived the first fix.
+void test_a_box_is_solid_from_every_side() {
+    struct Case { const char* name; float x, y, z, yaw, pitch; };
+    // The box spans -2..2 in x and z and 0.5..4.5 in y, centre (0, 2.5, 0).
+    // Each camera stands 20 out along one axis and aims back at it.
+    const Case cases[] = {
+        {"-Z wall",  0.0f,   2.5f, -20.0f,  0.0f,     0.0f},
+        {"+Z wall",  0.0f,   2.5f,  20.0f,  3.14159f, 0.0f},
+        {"-X wall", -20.0f,  2.5f,   0.0f,  1.5708f,  0.0f},
+        {"+X wall",  20.0f,  2.5f,   0.0f, -1.5708f,  0.0f},
+        {"top",      0.0f,  24.0f,   0.0f,  0.0f,    -1.5708f},
+        {"bottom",   0.0f, -20.0f,   0.0f,  0.0f,     1.5708f},
+    };
+    for (const Case& c : cases) {
+        TestSurface surface(pse::k_render_width, pse::k_render_height,
+                            pse::PixelFormat::rgb888);
+        pse::Rasterizer raster;
+        pse::Renderer3D renderer(raster);
+        raster.begin_frame(surface.target());
+        renderer.set_fov(58.0f);
+        renderer.set_camera(c.x, c.y, c.z, c.yaw, c.pitch);
+        renderer.draw_box(0.0f, 0.5f, 0.0f, 4.0f, 4.0f, 4.0f,
+                          255, 255, 255, 100, 100, 100);
+        CHECK(raster.triangles_drawn() == 2);
+    }
+
+    // And three faces from a corner above, which is the view a game uses.
+    TestSurface corner(pse::k_render_width, pse::k_render_height,
+                       pse::PixelFormat::rgb888);
+    pse::Rasterizer corner_raster;
+    pse::Renderer3D corner_view(corner_raster);
+    corner_raster.begin_frame(corner.target());
+    corner_view.set_fov(58.0f);
+    corner_view.set_camera(-14.0f, 14.0f, -14.0f, 0.785f, -0.5f);
+    corner_view.draw_box(0.0f, 0.5f, 0.0f, 4.0f, 4.0f, 4.0f,
+                         255, 255, 255, 100, 100, 100);
+    CHECK(corner_raster.triangles_drawn() == 6);
 }
 
 // A mesh from obj2cpp must render, and must survive a corrupt index without
@@ -963,7 +1084,9 @@ int main() {
     test_gradient_covers_every_pixel();
     test_billboard_depth_claim();
     test_renderer_projects_and_culls();
+    test_camera_basis_matches_angles_and_can_roll();
     test_box_has_a_lid();
+    test_a_box_is_solid_from_every_side();
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
     test_mesh_roll();

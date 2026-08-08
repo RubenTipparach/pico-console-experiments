@@ -4,6 +4,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/textures.cmake)
 add_picosystem_game(tomlander
     SOURCES
         src/game.cpp
+        src/menu.cpp
         src/sim.cpp
         src/render.cpp
     MODELS

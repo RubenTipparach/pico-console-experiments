@@ -1,0 +1,11 @@
+newmtl hull
+Kd 0.420 0.450 0.400
+
+newmtl bridge
+Kd 0.560 0.590 0.540
+
+newmtl turret
+Kd 0.700 0.560 0.220
+
+newmtl engine
+Kd 0.280 0.320 0.320

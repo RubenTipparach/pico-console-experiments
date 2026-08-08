@@ -257,6 +257,37 @@ int main(int argc, char** argv) {
         }
     }
 
+    // 11: closing on a fuel crate, which is what the delivery's first leg now
+    // looks like. Framed from behind and a little short of it, the way a
+    // player sees one coming.
+    {
+        tl::World run2;
+        tl::world_init(run2, tl::Mission::Delivery);
+        int idx = -1;
+        for (int i = 0; i < run2.crate_count; i++) {
+            if (run2.crates[i].state == tl::Crate::Out) { idx = i; break; }
+        }
+        if (idx < 0) {
+            fail("the delivery must put a fuel crate on the map from the start");
+        } else {
+            const tl::FuelCrate& c = run2.crates[idx];
+            run2.x = c.x - (6 << 16);
+            run2.z = c.z - (5 << 16);
+            run2.y = c.y - (1 << 16);
+            run2.grounded = false;
+            run2.landed_on = 0xFF;
+            capture(run2, 0.6f, out, "preview_11_fuel.ppm");
+
+            // A crate has to be somewhere the ship can actually be. Twelve
+            // units over the ground is the cruise band, and a crate buried in
+            // a hillside or hung above the ceiling is one nobody collects.
+            const int32_t floor_y = tl::ground_at(run2, c.x, c.z);
+            if (c.y <= floor_y || c.y > tl::k_max_altitude) {
+                fail("a fuel crate must hang in the air the ship flies through");
+            }
+        }
+    }
+
     // The arrow promise, checked against the projection that actually draws
     // the deck: it must appear when the deck is out of frame and stay away
     // when it is in frame. The arrow's direction comes from the world bearing

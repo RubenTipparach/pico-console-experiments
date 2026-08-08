@@ -51,17 +51,29 @@ const float k_box_vertices[8][3] = {
     {0.5f, 1.0f, 0.5f},   {-0.5f, 1.0f, 0.5f},
 };
 
-// The two end faces are wound the other way round from the four walls, and
-// that is not a style choice: written the same way as the walls they face
-// INWARD, the backface cull drops them, and a box viewed from above shows the
-// ground through the hole where its lid should be. It shipped that way, and
-// the reason nobody caught it is that the lid is only missing from the side
-// you normally look from: draw_box's top_r/g/b was reachable exclusively by a
-// camera underneath the box, which is to say never. test_engine.cpp now
-// renders one from above and checks the top colour actually lands on screen.
+// All six faces are wound the same way, and it is the way this rasterizer
+// keeps rather than the way that looks right written down.
+//
+// Both halves of this have shipped broken, in opposite directions, and the
+// reason is the same each time: a box hides its own bug. The lid was wound
+// the other way from the walls once, so a camera above it saw the ground
+// through the hole where the lid should be, and the fix flipped the LID. That
+// made the lid appear and left the four walls in the winding this rasterizer
+// culls, so from then on a box drew its FAR walls and hid its near ones: you
+// were looking straight through the box at the inside of the other side. A
+// cube like that has a V notch bitten out of the bottom of its silhouette,
+// pointing the wrong way, which is subtle enough that pico-santa shipped a
+// whole city of it. The fuel crates in tomlander are what finally made it
+// obvious, because a small green cube against a plain background has nothing
+// to hide behind.
+//
+// So: the walls were the ones that needed flipping, not the lid. Do not
+// "correct" any of these to the right hand rule by inspection. The check is a
+// camera that stands in front of ONE named wall, in test_engine.cpp, which
+// fails if the near wall is missing OR if a far one is drawn.
 const uint8_t k_box_faces[6][4] = {
-    {0, 3, 2, 1}, {5, 6, 7, 4}, {4, 7, 3, 0},
-    {1, 2, 6, 5}, {2, 6, 7, 3}, {5, 1, 0, 4},
+    {1, 2, 3, 0}, {4, 7, 6, 5}, {0, 3, 7, 4},
+    {5, 6, 2, 1}, {2, 6, 7, 3}, {5, 1, 0, 4},
 };
 
 constexpr int k_face_top = 4;
@@ -87,12 +99,52 @@ void Renderer3D::set_fov(float degrees) {
     rebuild_view_projection();
 }
 
+void Renderer3D::frame_from_angles(float yaw, float pitch) {
+    const float cos_pitch = cosf(pitch), sin_pitch = sinf(pitch);
+    const float cos_yaw = cosf(yaw), sin_yaw = sinf(yaw);
+
+    // Right handed. `forward` is where the camera looks, so a positive pitch
+    // looks up and yaw 0 looks down +Z. `right` stays in the world's
+    // horizontal plane, which is exactly what makes this form unable to roll.
+    cam_forward_[0] = sin_yaw * cos_pitch;
+    cam_forward_[1] = sin_pitch;
+    cam_forward_[2] = cos_yaw * cos_pitch;
+    cam_right_[0] = cos_yaw;
+    cam_right_[1] = 0.0f;
+    cam_right_[2] = -sin_yaw;
+    cam_up_[0] = cam_forward_[1] * cam_right_[2] - cam_forward_[2] * cam_right_[1];
+    cam_up_[1] = cam_forward_[2] * cam_right_[0] - cam_forward_[0] * cam_right_[2];
+    cam_up_[2] = cam_forward_[0] * cam_right_[1] - cam_forward_[1] * cam_right_[0];
+}
+
 void Renderer3D::set_camera(float x, float y, float z, float yaw, float pitch) {
     camera_x_ = x;
     camera_y_ = y;
     camera_z_ = z;
-    camera_yaw_ = yaw;
-    camera_pitch_ = pitch;
+    frame_from_angles(yaw, pitch);
+    rebuild_view_projection();
+}
+
+void Renderer3D::set_camera_basis(float x, float y, float z,
+                                  const Basis& basis) {
+    camera_x_ = x;
+    camera_y_ = y;
+    camera_z_ = z;
+
+    // Basis is row major with out = m * v, so the world space image of the
+    // body's own x axis is the first COLUMN, not the first row. Reading it as
+    // a row transposes the rotation, which turns the camera the opposite way
+    // about every axis and is subtle enough to look almost right.
+    cam_right_[0] = basis.m[0];
+    cam_right_[1] = basis.m[3];
+    cam_right_[2] = basis.m[6];
+    cam_up_[0] = basis.m[1];
+    cam_up_[1] = basis.m[4];
+    cam_up_[2] = basis.m[7];
+    cam_forward_[0] = basis.m[2];
+    cam_forward_[1] = basis.m[5];
+    cam_forward_[2] = basis.m[8];
+
     rebuild_view_projection();
 }
 
@@ -110,8 +162,7 @@ void Renderer3D::set_orbit_camera(float target_x, float target_y, float target_z
     camera_x_ = x;
     camera_y_ = y;
     camera_z_ = z;
-    camera_yaw_ = atan2f(dx, dz);
-    camera_pitch_ = atan2f(dy, sqrtf(dx * dx + dz * dz));
+    frame_from_angles(atan2f(dx, dz), atan2f(dy, sqrtf(dx * dx + dz * dz)));
     rebuild_view_projection();
 }
 
@@ -127,18 +178,9 @@ void Renderer3D::rebuild_view_projection() {
     projection[2][3] = -((2.0f * z_far_ * z_near_) / (z_far_ - z_near_));
     projection[3][2] = -1.0f;
 
-    const float cos_pitch = cosf(camera_pitch_), sin_pitch = sinf(camera_pitch_);
-    const float cos_yaw = cosf(camera_yaw_), sin_yaw = sinf(camera_yaw_);
-
-    // Right handed basis. `forward` is where the camera looks, so a positive
-    // pitch looks up and yaw 0 looks down +Z.
-    const float forward[3] = {sin_yaw * cos_pitch, sin_pitch, cos_yaw * cos_pitch};
-    const float right[3] = {cos_yaw, 0.0f, -sin_yaw};
-    const float up[3] = {
-        forward[1] * right[2] - forward[2] * right[1],
-        forward[2] * right[0] - forward[0] * right[2],
-        forward[0] * right[1] - forward[1] * right[0],
-    };
+    const float* forward = cam_forward_;
+    const float* right = cam_right_;
+    const float* up = cam_up_;
     const float eye[3] = {camera_x_, camera_y_, camera_z_};
 
     // View row 2 is -forward, which is what makes w = -view_z positive for

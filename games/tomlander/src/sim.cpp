@@ -143,6 +143,85 @@ int32_t terrain_height(const World& world, int32_t x, int32_t z) {
     return h;
 }
 
+namespace {
+
+// Where the fuel crates stand, per mission.
+//
+// PLACEMENT, not geometry: a crate is a cube the renderer draws parametrically,
+// and this table only says where. Kept off the straight line between decks on
+// purpose. A crate sitting exactly on the course is fuel you collect by not
+// steering, and the point of moving fuel off the pads was to make it a
+// decision. Five or six units to one side is a lean and a lean back, which is
+// the whole of this game's vocabulary.
+//
+// Also kept clear of the buildings in k_buildings: a crate inside a tower is
+// one you cannot reach without hitting the tower.
+struct CratePlacement { int16_t x, z; bool waits; };
+
+// The delivery. One out on the A to B leg, the teaching crate beside deck B,
+// and one on the B to C leg.
+//
+// The teaching one WAITS. The player picks up the cargo on deck B, and a fuel
+// crate is sitting eleven units off the deck when they lift again: close
+// enough that it is the next thing they fly through, far enough that they had
+// to fly through it. That is the whole tutorial, and it costs no words.
+// Clearance is measured against the TOWERS, not against every building. A
+// crate hangs twelve units up and a block is at most 4.8 tall, so a crate can
+// sit right over one; a tower is 10 to 15 and is genuinely in the way. Six
+// units clear of a tower's footprint is what these are placed for, which keeps
+// the hull outside it on any approach that reaches the crate.
+const CratePlacement k_crates_delivery[] = {
+    { -7,  12, false},   // A to B, halfway, 7 off the line
+    { 26,  32, true },   // beside deck B, on the way out toward deck C
+    { 10,  47, false},   // B to C, halfway, 6 off the line
+};
+
+// The salvage. Two over open water, on opposite sides of the crossing, so the
+// one you steer for going out is not the one you steer for coming back.
+const CratePlacement k_crates_salvage[] = {
+    {-145,  20, false},
+    {-172,  18, false},
+};
+
+void place_crates(World& world, Mission mission) {
+    const CratePlacement* table = nullptr;
+    int count = 0;
+    // Mission one places none. It is one leg on one tank with room to spare,
+    // and the delivery is where a crate first has to be understood: meeting
+    // one before it matters would spend the lesson on a flight that did not
+    // need it.
+    if (mission == Mission::Delivery) {
+        table = k_crates_delivery;
+        count = static_cast<int>(sizeof(k_crates_delivery) /
+                                 sizeof(k_crates_delivery[0]));
+    } else if (mission == Mission::Salvage) {
+        table = k_crates_salvage;
+        count = static_cast<int>(sizeof(k_crates_salvage) /
+                                 sizeof(k_crates_salvage[0]));
+    }
+    if (count > k_crate_max) count = k_crate_max;
+
+    world.crate_count = static_cast<uint8_t>(count);
+    world.crates_taken = 0;
+    for (int i = 0; i < k_crate_max; i++) {
+        if (i >= count) {
+            world.crates[i] = FuelCrate{0, 0, 0, Crate::Taken};
+            continue;
+        }
+        const int32_t x = table[i].x * 65536;
+        const int32_t z = table[i].z * 65536;
+        // Floats above whatever is underneath, which over the salvage's ocean
+        // is the waterline rather than the sea floor: ground_at clamps to the
+        // sea, so a crate out at the wreck hangs twelve units over the water
+        // instead of twelve units over a seabed forty units down.
+        world.crates[i] = FuelCrate{
+            x, z, ground_at(world, x, z) + k_crate_hover,
+            table[i].waits ? Crate::Waiting : Crate::Out};
+    }
+}
+
+}  // namespace
+
 int pad_at(const World& world, int32_t x, int32_t z) {
     for (int i = 0; i < k_pad_count; i++) {
         if (iabs(x - world.pads[i].x) <= world.pads[i].half &&
@@ -306,6 +385,7 @@ void world_init(World& world, Mission mission) {
     world.fuel = k_fuel_full;
     world.damage = 0;
     world.dry_ticks = 0;
+    place_crates(world, mission);
 
     // Every mission starts ON pad A, not falling toward it. The first thing a
     // player does is take off, which is also the first thing they need to
@@ -444,6 +524,28 @@ void world_tick(World& world, const Input& input) {
                                   (world.wy * 6434 + 32768) >> 16,
                                   (world.wz * 6434 + 32768) >> 16);
 
+    // ---- fuel crates ----
+    // Checked after the move and before the ground, so a crate low over a
+    // hillside is still collected on the tick the hull passes through it
+    // rather than on the tick after it has already put down.
+    for (int i = 0; i < world.crate_count; i++) {
+        FuelCrate& c = world.crates[i];
+        if (c.state != Crate::Out) continue;
+        if (iabs(world.x - c.x) > k_crate_reach) continue;
+        if (iabs(world.y - c.y) > k_crate_reach) continue;
+        if (iabs(world.z - c.z) > k_crate_reach) continue;
+        c.state = Crate::Taken;
+        world.crates_taken++;
+        world.fuel += k_crate_fuel;
+        // A tank does not overfill. Two crates in a row is one crate's worth
+        // of fuel and one crate wasted, which is what makes taking them in the
+        // right order worth thinking about.
+        if (world.fuel > k_fuel_full) world.fuel = k_fuel_full;
+        // Fuel back in the tank is control back in the player's hands, so the
+        // countdown that was going to call the flight starts again from zero.
+        world.dry_ticks = 0;
+    }
+
     // ---- the ground ----
     // Landing well anywhere just parks the ship and it can lift off again.
     // The flight only ends on the deck it was sent to.
@@ -493,31 +595,21 @@ void world_tick(World& world, const Input& input) {
                 world.target = world.deliver_to;
                 world.grounded = true;
                 world.landed_on = static_cast<uint8_t>(pad);
-                // A leg gets a tank.
+                // The deck does NOT refuel. It used to fill the tank, and that
+                // made the decks free: arrive on fumes every time and fuel
+                // stopped being a thing you thought about. The fuel is out on
+                // the map now, in crates you have to fly through.
                 //
-                // Not generosity. What a leg costs, three ways:
-                //
-                //   48 percent  the arithmetic. Hovering needs 36 percent of
-                //               the pods, and holding a 20 degree lean needs
-                //               38, which crosses 66 units in about ten
-                //               seconds.
-                //   57 to 65    flown, by the best of the autopilots tried
-                //               here: a pilot that pulses the leveller to
-                //               hold altitude and leans between the pulses.
-                //   83 to 100   flown by the blunt one the preview harness
-                //               uses, which holds level whenever it is low.
-                //
-                // Two legs is 96 percent of a tank at the arithmetic best and
-                // 114 or more as anyone actually flies it, so without a refuel
-                // the delivery and the salvage sit somewhere between razor
-                // thin and impossible, and which one depends on how well the
-                // player flies, which is the worst way for a mission to be
-                // unwinnable: it looks like their fault.
-                //
-                // Only a deck that CONTINUES the flight refuels. The one that
-                // ends it does not, so the tank left at the finish is still
-                // the score the debrief prints and still worth flying for.
-                world.fuel = k_fuel_full;
+                // Picking the load up is what puts the delivery's teaching
+                // crate on the map, eleven units off this deck. The player
+                // meets their first crate on the way out with a full load
+                // aboard, which is the moment the fuel starts to matter, and
+                // nothing had to be written on the screen to explain it.
+                for (int i = 0; i < world.crate_count; i++) {
+                    if (world.crates[i].state == Crate::Waiting) {
+                        world.crates[i].state = Crate::Out;
+                    }
+                }
             } else {
                 if (carrying(world)) world.cargo = kCargoDone;
                 world.state = Flight::Landed;

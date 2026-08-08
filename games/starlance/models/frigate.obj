@@ -1,0 +1,169 @@
+# Enemy frigate: the capital ship, 26 units long on the field, and the one the
+# whole sortie is about.
+#
+# Nine blocks, and every hardpoint sits in one you can see: the navigation
+# array in the prow, the two turrets on their beam sponsons, the shield
+# generator on the bridge, the life support pod slung underneath, and the
+# drives in the block at the tail. Cut any of them off and both the picture
+# and the ship's behaviour change, which is only true because the picture has
+# somewhere for each of them to be.
+#
+# Seats, from k_frigate_subs in src/sim.cpp, divided by 100 and by the 26 unit
+# hull length: nav (0, 0.027, 0.388), turrets (+/-0.104, 0.031, 0.139),
+# shields (0, 0.077, -0.023), life support (0, -0.038, -0.127),
+# engines (0, 0, -0.446).
+
+mtllib frigate.mtl
+
+# ---- spine: the long body everything else hangs off
+usemtl hull
+v  -0.075  -0.045  -0.420
+v   0.075  -0.045  -0.420
+v   0.075   0.045  -0.420
+v  -0.075   0.045  -0.420
+v  -0.062  -0.040   0.300
+v   0.062  -0.040   0.300
+v   0.062   0.045   0.300
+v  -0.062   0.045   0.300
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- prow, carrying the navigation array
+usemtl prow
+v  -0.062  -0.040   0.300
+v   0.062  -0.040   0.300
+v   0.062   0.045   0.300
+v  -0.062   0.045   0.300
+v  -0.020  -0.018   0.500
+v   0.020  -0.018   0.500
+v   0.020   0.030   0.500
+v  -0.020   0.030   0.500
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- bridge: the shield generator sits on this
+usemtl bridge
+v  -0.048   0.042  -0.140
+v   0.048   0.042  -0.140
+v   0.048   0.105  -0.140
+v  -0.048   0.105  -0.140
+v  -0.036   0.042   0.070
+v   0.036   0.042   0.070
+v   0.036   0.088   0.070
+v  -0.036   0.088   0.070
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- left turret sponson. Tip is the low x corner: see models/README.md.
+usemtl turret
+v  -0.145   0.005   0.060
+v  -0.072  -0.005   0.040
+v  -0.072   0.052   0.040
+v  -0.145   0.048   0.060
+v  -0.145   0.005   0.215
+v  -0.072  -0.005   0.245
+v  -0.072   0.052   0.245
+v  -0.145   0.048   0.215
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- right turret sponson
+usemtl turret
+v   0.072  -0.005   0.040
+v   0.145   0.005   0.060
+v   0.145   0.048   0.060
+v   0.072   0.052   0.040
+v   0.072  -0.005   0.245
+v   0.145   0.005   0.215
+v   0.145   0.048   0.215
+v   0.072   0.052   0.245
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- ventral pod: life support
+usemtl pod
+v  -0.045  -0.098  -0.210
+v   0.045  -0.098  -0.210
+v   0.045  -0.030  -0.210
+v  -0.045  -0.030  -0.210
+v  -0.038  -0.088  -0.040
+v   0.038  -0.088  -0.040
+v   0.038  -0.030  -0.040
+v  -0.038  -0.030  -0.040
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- left flank blister
+usemtl plate
+v  -0.108  -0.030  -0.365
+v  -0.074  -0.034  -0.365
+v  -0.074   0.034  -0.365
+v  -0.108   0.030  -0.365
+v  -0.108  -0.030  -0.060
+v  -0.074  -0.034  -0.060
+v  -0.074   0.034  -0.060
+v  -0.108   0.030  -0.060
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- right flank blister
+usemtl plate
+v   0.074  -0.034  -0.365
+v   0.108  -0.030  -0.365
+v   0.108   0.030  -0.365
+v   0.074   0.034  -0.365
+v   0.074  -0.034  -0.060
+v   0.108  -0.030  -0.060
+v   0.108   0.030  -0.060
+v   0.074   0.034  -0.060
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- engine block
+usemtl engine
+v  -0.098  -0.062  -0.500
+v   0.098  -0.062  -0.500
+v   0.098   0.062  -0.500
+v  -0.098   0.062  -0.500
+v  -0.082  -0.050  -0.390
+v   0.082  -0.050  -0.390
+v   0.082   0.050  -0.390
+v  -0.082   0.050  -0.390
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7

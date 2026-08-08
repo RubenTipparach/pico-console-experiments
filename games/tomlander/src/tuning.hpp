@@ -173,10 +173,36 @@ constexpr int32_t k_dry_grace = 500;
 // pushing the ship is something still happening, and the flight should not be
 // called while it is.
 constexpr int32_t k_at_rest_speed = 328;
-// 255 and the leveller fires all four pods at it. Flown properly, pulsing the
-// leveller rather than leaning on it, a leg costs 57 to 65 percent of a tank.
-// Two legs therefore do not fit in one, which is why a deck that continues a
-// mission refuels: see the touchdown in sim.cpp.
+
+// One tank is 8.5 seconds of holding level, because k_level_base is 236 of 255
+// and the leveller fires all four pods at it. Flown properly, pulsing the
+// leveller rather than leaning on it, a leg costs 57 to 65 percent of a tank,
+// so two legs do not fit in one tank. That is what fuel crates are for.
+
+// ---- fuel crates ----
+//
+// Half a tank each. Landing on a deck used to fill the tank, and that made the
+// decks free: you could arrive on fumes every time and never think about fuel
+// again. A crate has to be flown to, so the fuel sits somewhere on the map
+// instead of under the ship, and taking it on is a course you choose rather
+// than something that happens to you for landing.
+//
+// Half rather than a whole tank because a leg costs 57 to 65 percent: one
+// crate buys most of a leg back, and two crates are still not two legs. The
+// tank never fills past k_fuel_full, so flying through two in a row wastes the
+// second, which is what makes where they sit a decision.
+constexpr int32_t k_crate_fuel = k_fuel_full / 2;
+
+// How close counts as flying into one: Chebyshev, in fp16 world units, on all
+// three axes. The hull is about 5.9 across and the cube is 3.2, so 4 units is
+// a little more than touching. A crate you have lined up should not slip past
+// for the want of half a unit at six units a second.
+constexpr int32_t k_crate_reach = 4 << 16;
+
+// How far a crate floats above whatever is under it, ground or waterline.
+// Inside the cruise band on purpose, so collecting one is a course change
+// rather than a descent and a climb back out of it.
+constexpr int32_t k_crate_hover = 12 << 16;
 
 // ---- auto level, the down button ----
 

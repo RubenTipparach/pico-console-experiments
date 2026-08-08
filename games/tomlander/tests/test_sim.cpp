@@ -12,6 +12,7 @@
 
 #include <cstdio>
 
+#include "menu.hpp"
 #include "sim.hpp"
 #include "tuning.hpp"
 
@@ -962,18 +963,18 @@ void test_what_a_dead_stick_glide_lands_on_is_what_decides_it() {
     CHECK(smashed.fault == tl::Fault::TooFast);
 }
 
-// A deck that continues a mission fills the tank; the one that ends it does
-// not. Without the first half the delivery and the salvage cannot be flown at
-// all: a leg costs 57 to 65 percent of a tank, so two of them do not fit in
-// one. Without the second half the fuel left at the finish would always be a
-// full tank and the debrief's score would mean nothing.
-void test_a_leg_refuels_and_an_ending_does_not() {
+// No deck refuels any more. Landing used to fill the tank, which made every
+// deck free: arrive on fumes every time and fuel stopped being a decision. The
+// fuel is out on the map in crates now, so a touchdown is worth exactly the
+// deck it is on and nothing else.
+void test_a_deck_no_longer_refuels() {
     tl::World w;
     tl::world_init(w, tl::Mission::Delivery);
-    w.fuel = tl::k_fuel_full / 5;
+    const int32_t low = tl::k_fuel_full / 5;
+    w.fuel = low;
     CHECK(w.target == 1);
 
-    // Set down on deck B, where the crate is: a leg, not an ending.
+    // Set down on deck B, where the cargo is: a leg, not an ending.
     w.x = w.pads[1].x;
     w.z = w.pads[1].z;
     w.y = tl::ground_at(w, w.x, w.z);
@@ -984,9 +985,10 @@ void test_a_leg_refuels_and_an_ending_does_not() {
     CHECK(w.state == tl::Flight::Flying);   // the flight carries on
     CHECK(tl::carrying(w));
     CHECK(w.target == 2);
-    CHECK(w.fuel == tl::k_fuel_full);       // and it carries on with a tank
+    CHECK(w.fuel == low);                   // and it carries on with what it had
 
-    // Now deck C, which ends it. The tank is left where the flying left it.
+    // Deck C ends it, and leaves the tank where the flying left it, which is
+    // what keeps the fuel at the finish worth flying for.
     w.fuel = tl::k_fuel_full / 3;
     w.x = w.pads[2].x;
     w.z = w.pads[2].z;
@@ -997,37 +999,313 @@ void test_a_leg_refuels_and_an_ending_does_not() {
     CHECK(w.state == tl::Flight::Landed);
     CHECK(w.cargo == tl::kCargoDone);
     CHECK(w.fuel == tl::k_fuel_full / 3);
+}
 
-    // The salvage works the same way, and it is the mission that needs it
-    // most: 99 units each way.
+// Flying through a green cube is half a tank. The one piece of fuel the player
+// can go and get, so everything about reaching it is checked here: that it is
+// only collected in the box the reach describes, that it is collected once,
+// that it cannot overfill, and that it takes the dry countdown off the hull.
+void test_a_fuel_crate_is_half_a_tank_and_is_taken_once() {
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    CHECK(w.crate_count > 0);
+    CHECK(w.crates_taken == 0);
+
+    // The first crate that is actually out on the map.
+    int idx = -1;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Out) { idx = i; break; }
+    }
+    CHECK(idx >= 0);
+    const tl::FuelCrate at = w.crates[idx];
+
+    // Just outside the reach on one axis is not a pickup. Checked on all
+    // three, because a box test that forgot an axis would be a crate you
+    // collected by flying over it at any altitude.
+    for (int axis = 0; axis < 3; axis++) {
+        tl::World miss;
+        tl::world_init(miss, tl::Mission::Delivery);
+        miss.x = at.x; miss.y = at.y; miss.z = at.z;
+        const int32_t off = tl::k_crate_reach + (1 << 16);
+        if (axis == 0) miss.x += off;
+        if (axis == 1) miss.y += off;
+        if (axis == 2) miss.z += off;
+        miss.grounded = false;
+        miss.landed_on = 0xFF;
+        const int32_t before = miss.fuel;
+        tl::Input none{};
+        tl::world_tick(miss, none);
+        CHECK(miss.crates_taken == 0);
+        CHECK(miss.fuel <= before);
+    }
+
+    // Straight through the middle of it is.
+    w.fuel = tl::k_fuel_full / 4;
+    w.x = at.x; w.y = at.y; w.z = at.z;
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    w.dry_ticks = 200;
+    tl::Input none{};
+    tl::world_tick(w, none);
+    CHECK(w.crates_taken == 1);
+    CHECK(w.crates[idx].state == tl::Crate::Taken);
+    // A quarter tank plus half a tank, minus whatever the tick's own drift
+    // cost, which is nothing with no pod firing.
+    CHECK(w.fuel == tl::k_fuel_full / 4 + tl::k_crate_fuel);
+    // Fuel back in the tank is control back, so the countdown starts again.
+    CHECK(w.dry_ticks == 0);
+
+    // Sitting in the same place does not collect it twice.
+    tl::world_tick(w, none);
+    CHECK(w.crates_taken == 1);
+
+    // And a tank does not overfill, which is what makes the order they are
+    // taken in worth thinking about.
+    tl::World full;
+    tl::world_init(full, tl::Mission::Delivery);
+    int out = -1;
+    for (int i = 0; i < full.crate_count; i++) {
+        if (full.crates[i].state == tl::Crate::Out) { out = i; break; }
+    }
+    full.x = full.crates[out].x;
+    full.y = full.crates[out].y;
+    full.z = full.crates[out].z;
+    full.grounded = false;
+    full.landed_on = 0xFF;
+    tl::world_tick(full, none);
+    CHECK(full.fuel == tl::k_fuel_full);
+}
+
+// Where the crates are, per mission, and the one that teaches what they are.
+void test_the_delivery_teaches_crates_and_the_hop_has_none() {
+    // The hop is one leg on one tank with room to spare. Meeting a crate there
+    // would spend the lesson on a flight that did not need it.
+    tl::World hop;
+    tl::world_init(hop, tl::Mission::Hop);
+    CHECK(hop.crate_count == 0);
+
+    // The delivery places three, and exactly one of them waits: it appears
+    // when the cargo comes aboard, eleven units off the deck the player is
+    // standing on, so the first crate they ever meet is the next thing they
+    // fly through.
+    tl::World w;
+    tl::world_init(w, tl::Mission::Delivery);
+    int waiting = 0, out = 0;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Waiting) waiting++;
+        if (w.crates[i].state == tl::Crate::Out) out++;
+    }
+    CHECK(w.crate_count == 3);
+    CHECK(waiting == 1);
+    CHECK(out == 2);
+
+    // Find it, and check it really is beside deck B rather than somewhere the
+    // player would have to go looking.
+    int idx = -1;
+    for (int i = 0; i < w.crate_count; i++) {
+        if (w.crates[i].state == tl::Crate::Waiting) { idx = i; break; }
+    }
+    const int32_t dx = w.crates[idx].x - w.pads[1].x;
+    const int32_t dz = w.crates[idx].z - w.pads[1].z;
+    const int32_t reach = (iabs(dx) > iabs(dz) ? iabs(dx) : iabs(dz)) >> 16;
+    CHECK(reach > (tl::k_pad_half >> 16));   // off the deck, not on it
+    CHECK(reach < 16);                       // and in sight of it
+
+    // Picking the cargo up is what puts it out.
+    w.x = w.pads[1].x;
+    w.z = w.pads[1].z;
+    w.y = tl::ground_at(w, w.x, w.z);
+    w.grounded = false;
+    w.landed_on = 0xFF;
+    tl::Input none{};
+    tl::world_tick(w, none);
+    CHECK(tl::carrying(w));
+    CHECK(w.crates[idx].state == tl::Crate::Out);
+
+    // The salvage places two, both out from the start: by then the player has
+    // met one and there is nothing left to teach.
     tl::World sea;
     tl::world_init(sea, tl::Mission::Salvage);
-    sea.fuel = 1;
-    sea.x = sea.pads[1].x;
-    sea.z = sea.pads[1].z;
-    sea.y = tl::ground_at(sea, sea.x, sea.z);
-    sea.grounded = false;
-    sea.landed_on = 0xFF;
-    tl::world_tick(sea, none);
-    CHECK(sea.state == tl::Flight::Flying);
-    CHECK(sea.fuel == tl::k_fuel_full);
+    CHECK(sea.crate_count == 2);
+    for (int i = 0; i < sea.crate_count; i++) {
+        CHECK(sea.crates[i].state == tl::Crate::Out);
+    }
 
-    // Reaching the pickup on the last drop of fuel is a save, not a loss:
-    // the refuel is resolved in the same tick, ahead of the dry check.
-    CHECK(sea.fault == tl::Fault::None);
+    // And they hang over the WATER, not over the sea floor forty units down.
+    // ground_at clamps to the waterline, so this is really a check that the
+    // crates were placed through it rather than through terrain_height.
+    for (int i = 0; i < sea.crate_count; i++) {
+        CHECK(sea.crates[i].y > sea.sea);
+        CHECK(sea.crates[i].y < sea.sea + (30 << 16));
+    }
+}
 
-    // A deck that is not the target refuels nothing, whatever it is.
-    tl::World stray;
-    tl::world_init(stray, tl::Mission::Delivery);
-    stray.fuel = tl::k_fuel_full / 4;
-    stray.x = stray.pads[2].x;              // deck C, not the current target
-    stray.z = stray.pads[2].z;
-    stray.y = tl::ground_at(stray, stray.x, stray.z);
-    stray.grounded = false;
-    stray.landed_on = 0xFF;
-    tl::world_tick(stray, none);
-    CHECK(stray.state == tl::Flight::Flying);
-    CHECK(stray.fuel < tl::k_fuel_full);
+
+// ---- the shell around a flight ----
+//
+// These rules used to live inline in game.cpp, which is SDK code that nothing
+// in a host checkout can build, so they shipped unverified every time. Three
+// player visible bugs came out of that in a row and all three are checked here.
+
+// Every mission number reaches its own flight, and back again.
+//
+// The bug: start_flight read `mission >= 2 ? Delivery : Hop`, which was correct
+// with two missions and wrong with three. Picking mission three flew the
+// DELIVERY, so finishing it set progress to three and the game never changed
+// again. The gauge went up and the flight did not, which is the worst shape a
+// progression bug can take because it looks like it is working.
+void test_every_mission_number_reaches_its_own_flight() {
+    CHECK(tl::mission_for(1) == tl::Mission::Hop);
+    CHECK(tl::mission_for(2) == tl::Mission::Delivery);
+    CHECK(tl::mission_for(3) == tl::Mission::Salvage);
+
+    // Every number in range is a DIFFERENT flight. This is the check the old
+    // code failed: two numbers mapping to one mission is the whole bug.
+    for (uint8_t a = 1; a <= tl::k_mission_count; a++) {
+        for (uint8_t b = 1; b <= tl::k_mission_count; b++) {
+            if (a == b) continue;
+            CHECK(tl::mission_for(a) != tl::mission_for(b));
+        }
+    }
+
+    // And it round trips, so nothing has to open code the mapping backwards.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        CHECK(tl::number_of(tl::mission_for(n)) == n);
+    }
+
+    // A number out of range is the hop, not undefined behaviour: a corrupt
+    // save should drop the player somewhere winnable rather than refuse.
+    CHECK(tl::mission_for(0) == tl::Mission::Hop);
+    CHECK(tl::mission_for(99) == tl::Mission::Hop);
+
+    // Every mission actually builds a world, which is what makes the mapping
+    // worth anything. Checked through world_init rather than by inspection.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        tl::World w;
+        tl::world_init(w, tl::mission_for(n));
+        CHECK(w.mission == tl::mission_for(n));
+        CHECK(w.state == tl::Flight::Flying);
+    }
+}
+
+// Landing a mission opens the next one, and nothing ever takes one away.
+void test_landing_opens_the_next_mission() {
+    CHECK(tl::progress_after(1, tl::Mission::Hop) == 2);
+    CHECK(tl::progress_after(2, tl::Mission::Delivery) == 3);
+
+    // The last mission opens nothing, and does not run off the end.
+    CHECK(tl::progress_after(3, tl::Mission::Salvage) == 3);
+    CHECK(tl::next_mission(tl::Mission::Salvage) == tl::k_mission_count);
+
+    // Replaying an early mission with everything open takes nothing away.
+    CHECK(tl::progress_after(3, tl::Mission::Hop) == 3);
+    CHECK(tl::progress_after(3, tl::Mission::Delivery) == 3);
+
+    // But pressing on from a replayed hop goes to the DELIVERY, not to the
+    // furthest thing unlocked: onward means the next one, and the menu is
+    // where a player goes to skip about.
+    CHECK(tl::next_mission(tl::Mission::Hop) == 2);
+    CHECK(tl::next_mission(tl::Mission::Delivery) == 3);
+
+    // Walked end to end: a player who lands every mission in turn opens each
+    // one exactly when they should, and finishes with all of them.
+    uint8_t progress = 1;
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        CHECK(n <= progress);          // the mission is open before it is flown
+        progress = tl::progress_after(progress, tl::mission_for(n));
+    }
+    CHECK(progress == tl::k_mission_count);
+}
+
+// The title menu is a level select: one row per mission unlocked, then SOUND.
+//
+// The bug: the title had a single START row that flew the furthest mission
+// reached, so a player with three missions open had no way to fly the first
+// two ever again.
+void test_the_title_lists_every_unlocked_mission() {
+    // A first boot is one mission and SOUND.
+    CHECK(tl::title_row_count(1) == 2);
+    CHECK(tl::title_row_mission(1, 0) == 1);
+    CHECK(tl::title_row_mission(1, 1) == 0);      // SOUND, never a mission
+
+    // And it grows with progress, one row at a time.
+    for (uint8_t progress = 1; progress <= tl::k_mission_count; progress++) {
+        CHECK(tl::title_row_count(progress) == progress + 1);
+        for (uint8_t row = 0; row < progress; row++) {
+            CHECK(tl::title_row_mission(progress, row) == row + 1);
+        }
+        // The last row is always SOUND, whatever the progress.
+        CHECK(tl::title_row_mission(progress,
+                                    tl::title_row_count(progress) - 1) == 0);
+        // Every unlocked mission is reachable from some row. This is the
+        // check the single START row failed.
+        for (uint8_t n = 1; n <= progress; n++) {
+            bool listed = false;
+            for (uint8_t row = 0; row < tl::title_row_count(progress); row++) {
+                if (tl::title_row_mission(progress, row) == n) listed = true;
+            }
+            CHECK(listed);
+        }
+        // And nothing LOCKED is on the list.
+        for (uint8_t row = 0; row < tl::title_row_count(progress); row++) {
+            CHECK(tl::title_row_mission(progress, row) <= progress);
+        }
+    }
+
+    // Every row name is real, and they are all different, so no two rows read
+    // the same.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        const char* name = tl::mission_name(n);
+        CHECK(name != nullptr && name[0] != 0);
+        for (uint8_t m = 1; m <= tl::k_mission_count; m++) {
+            if (m != n) CHECK(tl::mission_name(m) != name);
+        }
+    }
+}
+
+// Pause has a way back to the title, which is the row that was missing: without
+// it the only ways out of a flight were to finish it or wreck it, and on the
+// web that meant reloading the page to pick a different mission.
+void test_pause_can_leave_the_flight() {
+    CHECK(tl::kPauseRowCount == 4);
+    CHECK(tl::kPauseResume == 0);
+    CHECK(tl::kPauseMenu < tl::kPauseRowCount);
+    // The four rows are distinct, which a hand written switch on indices would
+    // not guarantee.
+    CHECK(tl::kPauseResume != tl::kPauseRestart);
+    CHECK(tl::kPauseRestart != tl::kPauseMenu);
+    CHECK(tl::kPauseMenu != tl::kPauseSound);
+
+    // Leaving a flight puts the cursor on the mission that was abandoned, so
+    // stepping out to try a different one lands where you were rather than at
+    // the top of the list.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        const uint8_t row =
+            static_cast<uint8_t>(tl::number_of(tl::mission_for(n)) - 1);
+        CHECK(tl::title_row_mission(tl::k_mission_count, row) == n);
+    }
+}
+
+// A cursor wraps both ways and never leaves the list, at every length the
+// title menu can be.
+void test_a_menu_cursor_wraps_and_stays_in_range() {
+    for (uint8_t count = 1; count <= tl::k_mission_count + 1; count++) {
+        CHECK(tl::menu_step(0, -1, count) == count - 1);   // up from the top
+        CHECK(tl::menu_step(count - 1, 1, count) == 0);    // down from the end
+        // Walked all the way round in both directions, never out of range.
+        uint8_t at = 0;
+        for (int step = 0; step < count * 3; step++) {
+            at = tl::menu_step(at, 1, count);
+            CHECK(at < count);
+        }
+        CHECK(at == (count * 3) % count);
+        for (int step = 0; step < count * 3; step++) {
+            at = tl::menu_step(at, -1, count);
+            CHECK(at < count);
+        }
+    }
+    // An empty list cannot move, rather than dividing by zero.
+    CHECK(tl::menu_step(0, 1, 0) == 0);
 }
 
 // Touching the sea is lost however gently, because a lander is not a boat and
@@ -1104,7 +1382,14 @@ int main() {
     test_a_hard_landing_costs_hull_and_two_of_them_end_it();
     test_running_dry_is_a_glide_before_it_is_a_fail();
     test_what_a_dead_stick_glide_lands_on_is_what_decides_it();
-    test_a_leg_refuels_and_an_ending_does_not();
+    test_a_deck_no_longer_refuels();
+    test_a_fuel_crate_is_half_a_tank_and_is_taken_once();
+    test_the_delivery_teaches_crates_and_the_hop_has_none();
+    test_every_mission_number_reaches_its_own_flight();
+    test_landing_opens_the_next_mission();
+    test_the_title_lists_every_unlocked_mission();
+    test_pause_can_leave_the_flight();
+    test_a_menu_cursor_wraps_and_stays_in_range();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
