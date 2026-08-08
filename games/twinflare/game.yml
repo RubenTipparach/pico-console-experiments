@@ -1,0 +1,25 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: twinflare
+title: Twin Flare
+blurb: Two engines on cables, four planets, one hover field.
+target: twinflare
+sdk: 32blit
+web: true
+
+objective: "Three laps against five rivals. The pod hangs off two engines and a hover field keeps it off the ground, so it never crashes into the road, only off it. Each engine takes damage on its own, and a damaged one pulls you toward it. Repair costs speed, boosting costs heat, and heat costs engines."
+
+controls:
+  - "B: throttle"
+  - "B twice: boost, once the green light beside the heat bar is on"
+  - "Y: air brake, and it nearly doubles how hard you can turn"
+  - "X: repair both engines, at a third of the throttle"
+  - "left/right: steer"
+  - "up/down: pitch the nose. Nose up in the air to glide a gap"
+  - "A: pause"
+
+models:
+  - engine_slim.obj
+  - engine_heavy.obj
+  - cockpit.obj
+  - rock.obj
