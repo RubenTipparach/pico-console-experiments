@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:32:14Z",
-      "commit": "62286ba",
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:32:14Z",
-      "commit": "62286ba",
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:32:14Z",
-      "commit": "62286ba",
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,19 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:32:14Z",
-      "commit": "62286ba",
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
+      "dir": "games/picospace",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "picospace",
+      "target": "picospace",
+      "title": "Pico Space Program",
+      "web": true
+    },
+    {
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
       "dir": "games/starlance",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:32:14Z",
-      "commit": "62286ba",
+      "built_at": "2026-08-08T03:37:16Z",
+      "commit": "a66f272",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,6 +89,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-08T03:32:14Z",
+  "generated_at": "2026-08-08T03:37:16Z",
   "schema": 2
 }
