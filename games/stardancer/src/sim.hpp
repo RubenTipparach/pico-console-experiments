@@ -1,6 +1,6 @@
 #pragma once
 
-// Starlance: the flight model, the guns, the enemy ships and the mission.
+// Star Dancer: the flight model, the guns, the enemy ships and the mission.
 //
 // Pure integer C++ with no SDK, no floats and no allocation, which is what
 // lets the host tests prove the things a comment can only claim: that a rolled
@@ -24,7 +24,7 @@
 
 #include "tuning.hpp"
 
-namespace sl {
+namespace sd {
 
 // ---- ships ----
 
@@ -201,7 +201,7 @@ struct Input {
     bool launch;         // missile, held (the reload is what limits it)
     // One step, on the tick it is set. The shell raises it when the target
     // button is RELEASED rather than when it goes down, because holding that
-    // button means something else: see slr::Chrome::look_at_target.
+    // button means something else: see sdr::Chrome::look_at_target.
     bool cycle_target;
 };
 
@@ -340,4 +340,4 @@ inline bool in_flight(const World& world) {
 // field or its navigation is already gone.
 uint32_t jump_ticks_left(const World& world);
 
-}  // namespace sl
+}  // namespace sd

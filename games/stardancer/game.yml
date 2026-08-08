@@ -1,9 +1,9 @@
 # Gallery and build metadata. See games/README.md for every field.
 
-slug: starlance
-title: Starlance
+slug: stardancer
+title: Star Dancer
 blurb: Cut the frigate's nav before she jumps.
-target: starlance
+target: stardancer
 sdk: 32blit
 web: true
 

@@ -48,18 +48,18 @@ pse::RenderTarget target() {
     return {g_buffer.data(), k_w, k_h, k_w * 3, pse::PixelFormat::rgb888};
 }
 
-slr::Chrome playing() {
-    slr::Chrome chrome{};
-    chrome.screen = slr::Screen::Play;
+sdr::Chrome playing() {
+    sdr::Chrome chrome{};
+    chrome.screen = sdr::Screen::Play;
     return chrome;
 }
 
 // One frame at a plausible frame time.
-slr::CameraState frame(const sl::World& world, const slr::Chrome& chrome,
+sdr::CameraState frame(const sd::World& world, const sdr::Chrome& chrome,
                        uint32_t& clock, uint32_t dt_ms = 16) {
     clock += dt_ms;
-    slr::render_scene(world, chrome, target(), clock);
-    return slr::last_camera();
+    sdr::render_scene(world, chrome, target(), clock);
+    return sdr::last_camera();
 }
 
 float dot3(const float a[3], const float b[3]) {
@@ -67,7 +67,7 @@ float dot3(const float a[3], const float b[3]) {
 }
 
 // The property the whole file exists for: still a rotation.
-void expect_orthonormal(const slr::CameraState& cam, int line) {
+void expect_orthonormal(const sdr::CameraState& cam, int line) {
     const float lr = dot3(cam.right, cam.right);
     const float lu = dot3(cam.up, cam.up);
     const float lf = dot3(cam.forward, cam.forward);
@@ -82,9 +82,9 @@ void expect_orthonormal(const slr::CameraState& cam, int line) {
           "up is square to forward", line);
 }
 
-void ship_forward(const sl::World& world, float out[3]) {
+void ship_forward(const sd::World& world, float out[3]) {
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     out[0] = basis.m[2];
     out[1] = basis.m[5];
     out[2] = basis.m[8];
@@ -95,11 +95,11 @@ void ship_forward(const sl::World& world, float out[3]) {
 // The first frame has nothing to ease from, so it must land on the ship rather
 // than fly in from wherever the camera was left by the last sortie.
 void test_the_first_frame_snaps_rather_than_swooping() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     uint32_t clock = 1000;
 
-    const slr::CameraState cam = frame(world, playing(), clock, 5000);
+    const sdr::CameraState cam = frame(world, playing(), clock, 5000);
     expect_orthonormal(cam, __LINE__);
 
     float nose[3];
@@ -108,9 +108,9 @@ void test_the_first_frame_snaps_rather_than_swooping() {
     CHECK(dot3(cam.forward, nose) > 0.999f);
 
     // And sitting behind it, not on it.
-    const float dx = cam.x - static_cast<float>(world.x) / sl::k_one;
-    const float dy = cam.y - static_cast<float>(world.y) / sl::k_one;
-    const float dz = cam.z - static_cast<float>(world.z) / sl::k_one;
+    const float dx = cam.x - static_cast<float>(world.x) / sd::k_one;
+    const float dy = cam.y - static_cast<float>(world.y) / sd::k_one;
+    const float dz = cam.z - static_cast<float>(world.z) / sd::k_one;
     const float range = std::sqrt(dx * dx + dy * dy + dz * dz);
     CHECK(range > 3.0f && range < 12.0f);
 }
@@ -118,21 +118,21 @@ void test_the_first_frame_snaps_rather_than_swooping() {
 // The point of the whole thing: during a turn the camera is BEHIND the ship's
 // heading, and it catches up once the turn stops.
 void test_the_camera_trails_a_turn_and_then_catches_up() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     world.wave_timer = 60000;             // an empty sky, nothing to distract
     uint32_t clock = 1000;
 
     frame(world, playing(), clock, 5000);   // seed
 
-    sl::Input yaw{};
+    sd::Input yaw{};
     yaw.yaw = 1;
 
     // Turn hard for half a second, a frame of sim per frame of render.
     float worst = 1.0f;
     for (int f = 0; f < 30; f++) {
-        for (int t = 0; t < 2; t++) sl::world_tick(world, yaw);
-        const slr::CameraState cam = frame(world, playing(), clock);
+        for (int t = 0; t < 2; t++) sd::world_tick(world, yaw);
+        const sdr::CameraState cam = frame(world, playing(), clock);
         expect_orthonormal(cam, __LINE__);
         float nose[3];
         ship_forward(world, nose);
@@ -146,10 +146,10 @@ void test_the_camera_trails_a_turn_and_then_catches_up() {
 
     // Stop turning and it settles back onto the nose.
     for (int f = 0; f < 60; f++) {
-        for (int t = 0; t < 2; t++) sl::world_tick(world, sl::Input{});
+        for (int t = 0; t < 2; t++) sd::world_tick(world, sd::Input{});
         frame(world, playing(), clock);
     }
-    const slr::CameraState settled = slr::last_camera();
+    const sdr::CameraState settled = sdr::last_camera();
     expect_orthonormal(settled, __LINE__);
     float nose[3];
     ship_forward(world, nose);
@@ -160,17 +160,17 @@ void test_the_camera_trails_a_turn_and_then_catches_up() {
 // sweep through a whole circle while forward barely moves. If the basis is
 // going to stop being a basis, it stops here.
 void test_a_hard_roll_keeps_the_basis_a_basis() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     world.wave_timer = 60000;
     uint32_t clock = 1000;
     frame(world, playing(), clock, 5000);
 
-    sl::Input roll{};
+    sd::Input roll{};
     roll.roll = 1;
     for (int f = 0; f < 200; f++) {
-        for (int t = 0; t < 2; t++) sl::world_tick(world, roll);
-        const slr::CameraState cam = frame(world, playing(), clock);
+        for (int t = 0; t < 2; t++) sd::world_tick(world, roll);
+        const sdr::CameraState cam = frame(world, playing(), clock);
         expect_orthonormal(cam, __LINE__);
     }
 }
@@ -180,47 +180,47 @@ void test_a_hard_roll_keeps_the_basis_a_basis() {
 // measurement is whether the target is nearer the middle of the lens than the
 // ship's own heading is.
 void test_padlock_puts_the_target_in_front_of_the_lens() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     uint32_t clock = 1000;
 
     // A wave on the field, and something selected.
     world.wave = 1;
-    world.phase = sl::Phase::Briefing;
+    world.phase = sd::Phase::Briefing;
     world.wave_timer = 0;
-    sl::world_tick(world, sl::Input{});
-    sl::Input pick{};
+    sd::world_tick(world, sd::Input{});
+    sd::Input pick{};
     pick.cycle_target = true;
-    sl::world_tick(world, pick);
+    sd::world_tick(world, pick);
 
-    const sl::Ship* target = sl::target_ship(world);
+    const sd::Ship* target = sd::target_ship(world);
     CHECK(target != nullptr);
     if (target == nullptr) return;
 
     // Turn away from it so the nose and the contact genuinely disagree.
-    sl::Input yaw{};
+    sd::Input yaw{};
     yaw.yaw = 1;
-    for (int t = 0; t < 90; t++) sl::world_tick(world, yaw);
+    for (int t = 0; t < 90; t++) sd::world_tick(world, yaw);
 
-    slr::Chrome chrome = playing();
+    sdr::Chrome chrome = playing();
     frame(world, chrome, clock, 5000);      // seed, not looking
 
-    auto aim_at_target = [&](const slr::CameraState& cam) {
-        float to[3] = {static_cast<float>(target->x) / sl::k_one - cam.x,
-                       static_cast<float>(target->y) / sl::k_one - cam.y,
-                       static_cast<float>(target->z) / sl::k_one - cam.z};
+    auto aim_at_target = [&](const sdr::CameraState& cam) {
+        float to[3] = {static_cast<float>(target->x) / sd::k_one - cam.x,
+                       static_cast<float>(target->y) / sd::k_one - cam.y,
+                       static_cast<float>(target->z) / sd::k_one - cam.z};
         const float len = std::sqrt(dot3(to, to));
         if (len < 1e-6f) return 1.0f;
         to[0] /= len; to[1] /= len; to[2] /= len;
         return dot3(cam.forward, to);
     };
 
-    const float looking_away = aim_at_target(slr::last_camera());
+    const float looking_away = aim_at_target(sdr::last_camera());
 
     // Hold the button and let the camera swing.
     chrome.look_at_target = true;
     for (int f = 0; f < 60; f++) frame(world, chrome, clock);
-    const slr::CameraState locked = slr::last_camera();
+    const sdr::CameraState locked = sdr::last_camera();
     expect_orthonormal(locked, __LINE__);
     const float looking_at = aim_at_target(locked);
 
@@ -233,7 +233,7 @@ void test_padlock_puts_the_target_in_front_of_the_lens() {
     // Let go and it comes back to the nose.
     chrome.look_at_target = false;
     for (int f = 0; f < 90; f++) frame(world, chrome, clock);
-    const slr::CameraState released = slr::last_camera();
+    const sdr::CameraState released = sdr::last_camera();
     expect_orthonormal(released, __LINE__);
     float nose[3];
     ship_forward(world, nose);
@@ -249,23 +249,23 @@ void test_padlock_puts_the_target_in_front_of_the_lens() {
 // edge case for this feature, it is the main one: a contact off the wingtip is
 // the whole reason to look away from the nose.
 void test_padlock_holds_its_roll_with_the_target_abeam() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     world.wave_timer = 60000;
     uint32_t clock = 1000;
 
     // One contact, parked exactly off the right wingtip. The ship starts at
     // the origin looking down +z, so +x is abeam.
-    world.ships[0] = sl::Ship{};
+    world.ships[0] = sd::Ship{};
     world.ships[0].active = true;
-    world.ships[0].cls = sl::Hull::Fighter;
+    world.ships[0].cls = sd::Hull::Fighter;
     world.ships[0].q = pse::quat_identity();
     world.ships[0].hull = world.ships[0].hull_max = 26;
-    world.ships[0].x = sl::units(40);
+    world.ships[0].x = sd::units(40);
     world.target = 0;
     world.target_sub = -1;
 
-    slr::Chrome chrome = playing();
+    sdr::Chrome chrome = playing();
     chrome.look_at_target = true;
 
     // Settle, then check the camera is both looking at it and still upright
@@ -273,7 +273,7 @@ void test_padlock_holds_its_roll_with_the_target_abeam() {
     frame(world, chrome, clock, 5000);
     for (int f = 0; f < 40; f++) frame(world, chrome, clock);
 
-    const slr::CameraState cam = slr::last_camera();
+    const sdr::CameraState cam = sdr::last_camera();
     expect_orthonormal(cam, __LINE__);
 
     // Looking along +x, at the contact.
@@ -282,7 +282,7 @@ void test_padlock_holds_its_roll_with_the_target_abeam() {
     // And the camera's up still agrees with the ship's up, which is world +y.
     // A collapsed reference would have put it anywhere.
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     const float ship_up[3] = {basis.m[1], basis.m[4], basis.m[7]};
     std::printf("abeam padlock: up . ship up = %.4f\n",
                 static_cast<double>(dot3(cam.up, ship_up)));
@@ -292,20 +292,20 @@ void test_padlock_holds_its_roll_with_the_target_abeam() {
 // A ship that moves a long way between frames is a restart, not a manoeuvre.
 // Easing across that would be a long swoop through the arena.
 void test_a_teleport_snaps_instead_of_flying_across_the_arena() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     world.wave_timer = 60000;
     uint32_t clock = 1000;
     frame(world, playing(), clock, 5000);
 
-    world.x += sl::units(120);
-    world.z -= sl::units(90);
-    const slr::CameraState cam = frame(world, playing(), clock);
+    world.x += sd::units(120);
+    world.z -= sd::units(90);
+    const sdr::CameraState cam = frame(world, playing(), clock);
     expect_orthonormal(cam, __LINE__);
 
-    const float dx = cam.x - static_cast<float>(world.x) / sl::k_one;
-    const float dy = cam.y - static_cast<float>(world.y) / sl::k_one;
-    const float dz = cam.z - static_cast<float>(world.z) / sl::k_one;
+    const float dx = cam.x - static_cast<float>(world.x) / sd::k_one;
+    const float dy = cam.y - static_cast<float>(world.y) / sd::k_one;
+    const float dz = cam.z - static_cast<float>(world.z) / sd::k_one;
     // Right behind the ship again on the very next frame, not somewhere on the
     // way there.
     CHECK(std::sqrt(dx * dx + dy * dy + dz * dz) < 12.0f);
@@ -315,22 +315,22 @@ void test_a_teleport_snaps_instead_of_flying_across_the_arena() {
 // frame has to move the camera further than a fast one. Otherwise the camera
 // lags differently on the device than it does on a laptop.
 void test_the_ease_follows_the_clock_and_not_the_frame_count() {
-    sl::Input yaw{};
+    sd::Input yaw{};
     yaw.yaw = 1;
 
     auto lag_after = [&](uint32_t dt_ms, int frames, int ticks_per_frame) {
-        sl::World world;
-        sl::world_init(world);
+        sd::World world;
+        sd::world_init(world);
         world.wave_timer = 60000;
         uint32_t clock = 1000;
         frame(world, playing(), clock, 5000);
         for (int f = 0; f < frames; f++) {
-            for (int t = 0; t < ticks_per_frame; t++) sl::world_tick(world, yaw);
+            for (int t = 0; t < ticks_per_frame; t++) sd::world_tick(world, yaw);
             frame(world, playing(), clock, dt_ms);
         }
         float nose[3];
         ship_forward(world, nose);
-        return dot3(slr::last_camera().forward, nose);
+        return dot3(sdr::last_camera().forward, nose);
     };
 
     // The same half second of turning, once at 16 ms a frame and once at 32.

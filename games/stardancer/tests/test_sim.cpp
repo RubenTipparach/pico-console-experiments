@@ -1,4 +1,4 @@
-// Starlance's flight model and combat rules, proven rather than asserted.
+// Star Dancer's flight model and combat rules, proven rather than asserted.
 //
 // The sim is pure integer C++ with no SDK in it, which is the whole reason
 // these can run at all: a battle is a function from a seed and a list of
@@ -23,22 +23,22 @@ void check(bool ok, const char* expr, int line) {
 
 #define CHECK(expr) check((expr), #expr, __LINE__)
 
-sl::Input nothing() { return sl::Input{}; }
+sd::Input nothing() { return sd::Input{}; }
 
-void run(sl::World& world, int ticks, const sl::Input& in) {
-    for (int i = 0; i < ticks; i++) sl::world_tick(world, in);
+void run(sd::World& world, int ticks, const sd::Input& in) {
+    for (int i = 0; i < ticks; i++) sd::world_tick(world, in);
 }
 
 // Put the sortie straight into one wave with nothing else on the field.
-void jump_to_wave(sl::World& world, uint8_t wave) {
+void jump_to_wave(sd::World& world, uint8_t wave) {
     world.wave = wave;
-    world.phase = sl::Phase::Briefing;
+    world.phase = sd::Phase::Briefing;
     world.wave_timer = 0;
-    sl::world_tick(world, nothing());
+    sd::world_tick(world, nothing());
 }
 
-const sl::Ship* first_of(const sl::World& world, sl::Hull cls) {
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+const sd::Ship* first_of(const sd::World& world, sd::Hull cls) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (world.ships[i].active && world.ships[i].cls == cls) {
             return &world.ships[i];
         }
@@ -46,8 +46,8 @@ const sl::Ship* first_of(const sl::World& world, sl::Hull cls) {
     return nullptr;
 }
 
-int8_t index_of(const sl::World& world, sl::Hull cls) {
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+int8_t index_of(const sd::World& world, sd::Hull cls) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (world.ships[i].active && world.ships[i].cls == cls) {
             return static_cast<int8_t>(i);
         }
@@ -55,7 +55,7 @@ int8_t index_of(const sl::World& world, sl::Hull cls) {
     return -1;
 }
 
-int8_t find_sub(const sl::Ship& ship, sl::Sub kind) {
+int8_t find_sub(const sd::Ship& ship, sd::Sub kind) {
     for (uint8_t s = 0; s < ship.sub_count; s++) {
         if (ship.subs[s].kind == kind) return static_cast<int8_t>(s);
     }
@@ -63,8 +63,8 @@ int8_t find_sub(const sl::Ship& ship, sl::Sub kind) {
 }
 
 // Nobody but the ship under test.
-void clear_except(sl::World& world, int8_t keep) {
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+void clear_except(sd::World& world, int8_t keep) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (i != static_cast<uint8_t>(keep)) world.ships[i].active = false;
     }
 }
@@ -87,7 +87,7 @@ void clear_except(sl::World& world, int8_t keep) {
 // pod is reachable from below and nowhere else, which is the geometry working,
 // not a bug in it.
 template <typename Aim, typename Done>
-int hold_and_fire(sl::World& world, const pse::Quat& facing, int32_t standoff,
+int hold_and_fire(sd::World& world, const pse::Quat& facing, int32_t standoff,
                   int max_ticks, Aim aim, Done done) {
     int32_t fx, fy, fz;
     pse::quat_rotate(facing, 0, 0, pse::k_quat_one, fx, fy, fz);
@@ -104,9 +104,9 @@ int hold_and_fire(sl::World& world, const pse::Quat& facing, int32_t standoff,
         world.q = facing;
         world.wx = world.wy = world.wz = 0;
 
-        sl::Input fire = nothing();
+        sd::Input fire = nothing();
         fire.fire = true;
-        sl::world_tick(world, fire);
+        sd::world_tick(world, fire);
         if (done()) return i;
     }
     return max_ticks;
@@ -131,19 +131,19 @@ pse::Quat facing_up() {
 // instead of up. With a quaternion it goes where the nose is pointing. The
 // measurement is the same in both cases and only one of them passes.
 void test_a_rolled_ship_still_pitches_about_its_own_nose() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
 
     // Roll ninety degrees to the right, then stop and settle.
-    sl::Input roll = nothing();
+    sd::Input roll = nothing();
     roll.roll = 1;
     // k_roll_rate is Q14 radians a tick; a quarter turn is 1.5708 radians.
-    const int roll_ticks = static_cast<int>((1.5708 * 16384) / sl::k_roll_rate);
+    const int roll_ticks = static_cast<int>((1.5708 * 16384) / sd::k_roll_rate);
     run(world, roll_ticks, roll);
     run(world, 40, nothing());
 
     pse::Basis rolled;
-    sl::player_basis(world, rolled);
+    sd::player_basis(world, rolled);
     // Rolling right drops the right wing, so the canopy leans right and the
     // ship's own up (column 1 of the basis) swings onto the world's +x.
     const float up_x = rolled.m[1], up_y = rolled.m[4];
@@ -152,13 +152,13 @@ void test_a_rolled_ship_still_pitches_about_its_own_nose() {
 
     // Now pull back. The nose has to climb along the ship's own up, which is
     // world +x while it is rolled, and must NOT climb along the world's y.
-    sl::Input pitch = nothing();
+    sd::Input pitch = nothing();
     pitch.pitch = 1;
     const float before_x = rolled.m[2], before_y = rolled.m[5];
     run(world, 60, pitch);
 
     pse::Basis after;
-    sl::player_basis(world, after);
+    sd::player_basis(world, after);
     const float moved_x = after.m[2] - before_x;
     const float moved_y = after.m[5] - before_y;
 
@@ -170,15 +170,15 @@ void test_a_rolled_ship_still_pitches_about_its_own_nose() {
 }
 
 void test_the_ship_flies_where_its_nose_points() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     run(world, 100, nothing());
     // Started at the origin looking down +z, so a hundred ticks of cruise is
     // a hundred ticks of +z and nothing else.
-    CHECK(world.z > sl::k_player_speed_max * 90);
+    CHECK(world.z > sd::k_player_speed_max * 90);
     CHECK(world.x == 0 && world.y == 0);
 
-    sl::Input yaw = nothing();
+    sd::Input yaw = nothing();
     yaw.yaw = 1;
     run(world, 200, yaw);
     // Yawing right has to take the ship to the right, which is +x.
@@ -189,42 +189,42 @@ void test_the_ship_flies_where_its_nose_points() {
 // the ship, and it takes about a fifth of a second to notice, which is the
 // difference between a throttle and a brake.
 void test_the_throttle_commands_a_speed_the_ship_eases_onto() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     world.wave_timer = 60000;              // an empty sky
 
     // Launched at full ahead.
-    CHECK(world.throttle == sl::k_throttle_one);
-    CHECK(world.speed == sl::k_player_speed_max);
+    CHECK(world.throttle == sd::k_throttle_one);
+    CHECK(world.speed == sd::k_player_speed_max);
 
-    sl::Input back = nothing();
+    sd::Input back = nothing();
     back.throttle = -1;
 
     // One tick of lever is a lot of lever and almost no ship.
-    sl::world_tick(world, back);
-    CHECK(world.throttle < sl::k_throttle_one);
-    CHECK(world.speed > (sl::k_player_speed_max * 9) / 10);
+    sd::world_tick(world, back);
+    CHECK(world.throttle < sd::k_throttle_one);
+    CHECK(world.speed > (sd::k_player_speed_max * 9) / 10);
 
     // Held all the way back, the lever bottoms out and the ship follows.
     run(world, 400, back);
     CHECK(world.throttle == 0);
-    CHECK(world.speed < sl::k_player_speed_max / 50);
+    CHECK(world.speed < sd::k_player_speed_max / 50);
 
     // And a stopped ship goes nowhere, however it is pointed.
     const int32_t x = world.x, y = world.y, z = world.z;
-    sl::Input turn = nothing();
+    sd::Input turn = nothing();
     turn.yaw = 1;
     run(world, 60, turn);
-    const int32_t moved = sl::distance(x, y, z, world.x, world.y, world.z);
-    CHECK(moved < sl::units(1));
+    const int32_t moved = sd::distance(x, y, z, world.x, world.y, world.z);
+    CHECK(moved < sd::units(1));
 
     // Forward again, and it comes back up to full and no further.
-    sl::Input ahead = nothing();
+    sd::Input ahead = nothing();
     ahead.throttle = 1;
     run(world, 600, ahead);
-    CHECK(world.throttle == sl::k_throttle_one);
-    CHECK(world.speed <= sl::k_player_speed_max);
-    CHECK(world.speed > (sl::k_player_speed_max * 9) / 10);
+    CHECK(world.throttle == sd::k_throttle_one);
+    CHECK(world.speed <= sd::k_player_speed_max);
+    CHECK(world.speed > (sd::k_player_speed_max * 9) / 10);
 }
 
 // A stationary player must not be led as though they were at full ahead, or
@@ -237,16 +237,16 @@ void test_the_throttle_commands_a_speed_the_ship_eases_onto() {
 // calculation is world.speed, and the measurement is the angle between the
 // bolt and the straight line to the player.
 void test_enemies_lead_the_speed_actually_being_made() {
-    sl::World fast, slow;
-    sl::world_init(fast, 0x1234u);
-    sl::world_init(slow, 0x1234u);
+    sd::World fast, slow;
+    sd::world_init(fast, 0x1234u);
+    sd::world_init(slow, 0x1234u);
     jump_to_wave(fast, 1);
     jump_to_wave(slow, 1);
 
-    auto first_enemy_bolt = [](const sl::World& w, int32_t out[3]) {
-        for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
-            const sl::Shot& shot = w.shots[i];
-            if (!shot.active || shot.kind == sl::Bolt::PlayerGun) continue;
+    auto first_enemy_bolt = [](const sd::World& w, int32_t out[3]) {
+        for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
+            const sd::Shot& shot = w.shots[i];
+            if (!shot.active || shot.kind == sd::Bolt::PlayerGun) continue;
             out[0] = shot.vx; out[1] = shot.vy; out[2] = shot.vz;
             return true;
         }
@@ -259,15 +259,15 @@ void test_enemies_lead_the_speed_actually_being_made() {
     int32_t fast_bolt[3] = {0, 0, 0}, slow_bolt[3] = {0, 0, 0};
     bool got = false;
     for (int i = 0; i < 3000 && !got; i++) {
-        sl::world_tick(fast, nothing());
+        sd::world_tick(fast, nothing());
 
         slow.x = fast.x; slow.y = fast.y; slow.z = fast.z;
         slow.q = fast.q;
-        for (uint8_t k = 0; k < sl::k_max_ships; k++) slow.ships[k] = fast.ships[k];
-        for (uint8_t k = 0; k < sl::k_max_bolts; k++) slow.shots[k].active = false;
+        for (uint8_t k = 0; k < sd::k_max_ships; k++) slow.ships[k] = fast.ships[k];
+        for (uint8_t k = 0; k < sd::k_max_bolts; k++) slow.shots[k].active = false;
         slow.speed = 0;
         slow.throttle = 0;
-        sl::world_tick(slow, nothing());
+        sd::world_tick(slow, nothing());
 
         got = first_enemy_bolt(fast, fast_bolt) &&
               first_enemy_bolt(slow, slow_bolt);
@@ -276,7 +276,7 @@ void test_enemies_lead_the_speed_actually_being_made() {
     if (!got) return;
 
     // Both worlds hold the same ships, so the shooter is the same one.
-    const sl::Ship* shooter = first_of(fast, sl::Hull::Fighter);
+    const sd::Ship* shooter = first_of(fast, sd::Hull::Fighter);
     CHECK(shooter != nullptr);
     if (shooter == nullptr) return;
 
@@ -309,17 +309,17 @@ void test_enemies_lead_the_speed_actually_being_made() {
 }
 
 void test_a_flight_is_a_pure_function_of_its_inputs() {
-    sl::World a, b;
-    sl::world_init(a, 0xC0FFEE11u);
-    sl::world_init(b, 0xC0FFEE11u);
+    sd::World a, b;
+    sd::world_init(a, 0xC0FFEE11u);
+    sd::world_init(b, 0xC0FFEE11u);
 
-    sl::Input in = nothing();
+    sd::Input in = nothing();
     in.fire = true;
     in.yaw = 1;
     for (int i = 0; i < 3000; i++) {
         in.pitch = static_cast<int8_t>((i / 120) % 3 - 1);
-        sl::world_tick(a, in);
-        sl::world_tick(b, in);
+        sd::world_tick(a, in);
+        sd::world_tick(b, in);
     }
     CHECK(a.tick == b.tick);
     CHECK(a.x == b.x && a.y == b.y && a.z == b.z);
@@ -328,24 +328,24 @@ void test_a_flight_is_a_pure_function_of_its_inputs() {
 }
 
 void test_the_arena_holds_the_player() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     run(world, 40000, nothing());
-    CHECK(world.x <= sl::k_arena_half && world.x >= -sl::k_arena_half);
-    CHECK(world.y <= sl::k_arena_half && world.y >= -sl::k_arena_half);
-    CHECK(world.z <= sl::k_arena_half && world.z >= -sl::k_arena_half);
+    CHECK(world.x <= sd::k_arena_half && world.x >= -sd::k_arena_half);
+    CHECK(world.y <= sd::k_arena_half && world.y >= -sd::k_arena_half);
+    CHECK(world.z <= sd::k_arena_half && world.z >= -sd::k_arena_half);
     CHECK(world.out_of_bounds);
 }
 
 // ---- targeting ----
 
 void test_the_cycle_takes_what_is_in_front_before_what_is_behind() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 3);
 
-    int8_t order[sl::k_max_ships];
-    const uint8_t count = sl::target_order(world, order);
+    int8_t order[sd::k_max_ships];
+    const uint8_t count = sd::target_order(world, order);
     CHECK(count == 4);
 
     // Everything inside the forward cone comes first, and within that group
@@ -356,10 +356,10 @@ void test_the_cycle_takes_what_is_in_front_before_what_is_behind() {
     int32_t last_range = -1;
     int32_t last_align = 32767;
     for (uint8_t i = 0; i < count; i++) {
-        const sl::Ship& ship = world.ships[order[i]];
-        const int32_t align = sl::alignment(world, ship.x, ship.y, ship.z);
-        const int32_t range = sl::range_to(world, ship);
-        if (align >= sl::k_view_cos) {
+        const sd::Ship& ship = world.ships[order[i]];
+        const int32_t align = sd::alignment(world, ship.x, ship.y, ship.z);
+        const int32_t range = sd::range_to(world, ship);
+        if (align >= sd::k_view_cos) {
             CHECK(!left_the_cone);
             CHECK(range >= last_range);
             last_range = range;
@@ -375,18 +375,18 @@ void test_the_cycle_takes_what_is_in_front_before_what_is_behind() {
 // press after the last one moves on to the next contact. That is the whole of
 // the control the brief asked for, and it is one rule rather than two.
 void test_pressing_target_again_walks_the_hardpoints() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    sl::Input y = nothing();
+    sd::Input y = nothing();
     y.cycle_target = true;
 
     int8_t frigate_at = -1;
     for (int press = 0; press < 24 && frigate_at < 0; press++) {
-        sl::world_tick(world, y);
-        const sl::Ship* ship = sl::target_ship(world);
-        if (ship != nullptr && ship->cls == sl::Hull::Frigate) {
+        sd::world_tick(world, y);
+        const sd::Ship* ship = sd::target_ship(world);
+        if (ship != nullptr && ship->cls == sd::Hull::Frigate) {
             frigate_at = world.target;
         }
     }
@@ -401,39 +401,39 @@ void test_pressing_target_again_walks_the_hardpoints() {
 
     // Then one press per hardpoint, in order, all on the same ship.
     for (uint8_t s = 0; s < subs; s++) {
-        sl::world_tick(world, y);
+        sd::world_tick(world, y);
         CHECK(world.target == frigate_at);
         CHECK(world.target_sub == static_cast<int8_t>(s));
-        CHECK(sl::target_subsystem(world) != nullptr);
+        CHECK(sd::target_subsystem(world) != nullptr);
     }
 
     // And the press after the last one leaves the ship.
-    sl::world_tick(world, y);
+    sd::world_tick(world, y);
     CHECK(world.target != frigate_at || world.target_sub == -1);
 }
 
 void test_a_dead_hardpoint_is_skipped_by_the_cycle() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     CHECK(at >= 0);
     if (at < 0) return;
 
     // Take the navigation array off it, then walk the hardpoints and check
     // the cycle never offers the one that is gone.
-    const int8_t nav = find_sub(world.ships[at], sl::Sub::Navigation);
+    const int8_t nav = find_sub(world.ships[at], sd::Sub::Navigation);
     CHECK(nav >= 0);
     world.ships[at].subs[nav].hull = 0;
 
     world.target = at;
     world.target_sub = -1;
 
-    sl::Input y = nothing();
+    sd::Input y = nothing();
     y.cycle_target = true;
     for (int press = 0; press < 6; press++) {
-        sl::world_tick(world, y);
+        sd::world_tick(world, y);
         if (world.target != at) break;
         CHECK(world.target_sub != nav);
     }
@@ -444,16 +444,16 @@ void test_a_dead_hardpoint_is_skipped_by_the_cycle() {
 // Aiming at a turret damages the turret, and the plating beside it stays
 // where it was. Without this the whole subsystem idea is decoration.
 void test_a_bolt_on_a_turret_hurts_the_turret_and_not_the_hull() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     CHECK(at >= 0);
     if (at < 0) return;
 
-    sl::Ship& frigate = world.ships[at];
-    const int8_t turret = find_sub(frigate, sl::Sub::Weapons);
+    sd::Ship& frigate = world.ships[at];
+    const int8_t turret = find_sub(frigate, sd::Sub::Weapons);
     CHECK(turret >= 0);
     if (turret < 0) return;
 
@@ -467,9 +467,9 @@ void test_a_bolt_on_a_turret_hurts_the_turret_and_not_the_hull() {
     // sits outboard of the frigate's plating box, so a bolt on this line
     // reaches it without the hull swallowing the shot first, which is exactly
     // what the box is there for.
-    hold_and_fire(world, facing_ahead(), sl::units(40), 300,
+    hold_and_fire(world, facing_ahead(), sd::units(40), 300,
                   [&](int32_t& x, int32_t& y, int32_t& z) {
-                      sl::sub_position(frigate, frigate.subs[turret], x, y, z);
+                      sd::sub_position(frigate, frigate.subs[turret], x, y, z);
                       return frigate.active;
                   },
                   [&] { return frigate.subs[turret].hull < turret_before; });
@@ -486,26 +486,26 @@ void test_a_bolt_on_a_turret_hurts_the_turret_and_not_the_hull() {
 // turret on a frigate at eighty units is two pixels and the mechanic the game
 // is built around cannot be operated.
 void test_selecting_a_hardpoint_makes_it_hittable() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     if (at < 0) { CHECK(false); return; }
     clear_except(world, at);
 
-    sl::Ship& frigate = world.ships[at];
-    const int8_t engines = find_sub(frigate, sl::Sub::Engines);
+    sd::Ship& frigate = world.ships[at];
+    const int8_t engines = find_sub(frigate, sd::Sub::Engines);
     if (engines < 0) { CHECK(false); return; }
 
     // Aim a whole hull width off the engine block, with nothing selected.
     const int16_t before = frigate.subs[engines].hull;
     world.target = -1;
     world.target_sub = -1;
-    hold_and_fire(world, facing_ahead(), sl::units(30), 200,
+    hold_and_fire(world, facing_ahead(), sd::units(30), 200,
                   [&](int32_t& x, int32_t& y, int32_t& z) {
-                      sl::sub_position(frigate, frigate.subs[engines], x, y, z);
-                      y += sl::units(3);
+                      sd::sub_position(frigate, frigate.subs[engines], x, y, z);
+                      y += sd::units(3);
                       return frigate.active;
                   },
                   [&] { return frigate.subs[engines].hull < before; });
@@ -514,10 +514,10 @@ void test_selecting_a_hardpoint_makes_it_hittable() {
     // Same line of fire, engines now selected.
     world.target = at;
     world.target_sub = engines;
-    hold_and_fire(world, facing_ahead(), sl::units(30), 200,
+    hold_and_fire(world, facing_ahead(), sd::units(30), 200,
                   [&](int32_t& x, int32_t& y, int32_t& z) {
-                      sl::sub_position(frigate, frigate.subs[engines], x, y, z);
-                      y += sl::units(3);
+                      sd::sub_position(frigate, frigate.subs[engines], x, y, z);
+                      y += sd::units(3);
                       return frigate.active;
                   },
                   [&] { return frigate.subs[engines].hull < before; });
@@ -525,26 +525,26 @@ void test_selecting_a_hardpoint_makes_it_hittable() {
 }
 
 void test_shooting_the_engines_stops_the_ship() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 4);
 
-    const int8_t at = index_of(world, sl::Hull::Gunship);
+    const int8_t at = index_of(world, sd::Hull::Gunship);
     CHECK(at >= 0);
     if (at < 0) return;
 
-    sl::Ship& gunship = world.ships[at];
-    const int8_t engines = find_sub(gunship, sl::Sub::Engines);
+    sd::Ship& gunship = world.ships[at];
+    const int8_t engines = find_sub(gunship, sd::Sub::Engines);
     CHECK(engines >= 0);
     if (engines < 0) return;
 
-    CHECK(sl::has_capability(gunship, sl::Sub::Engines));
+    CHECK(sd::has_capability(gunship, sd::Sub::Engines));
     const int32_t moved_before = gunship.z;
     run(world, 60, nothing());
     CHECK(gunship.x != 0 || gunship.y != 0 || gunship.z != moved_before);
 
     gunship.subs[engines].hull = 0;
-    CHECK(!sl::has_capability(gunship, sl::Sub::Engines));
+    CHECK(!sd::has_capability(gunship, sd::Sub::Engines));
 
     const int32_t x = gunship.x, y = gunship.y, z = gunship.z;
     run(world, 120, nothing());
@@ -552,15 +552,15 @@ void test_shooting_the_engines_stops_the_ship() {
 }
 
 void test_losing_life_support_leaves_a_derelict() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     if (at < 0) { CHECK(false); return; }
 
-    sl::Ship& frigate = world.ships[at];
-    const int8_t crew = find_sub(frigate, sl::Sub::LifeSupport);
+    sd::Ship& frigate = world.ships[at];
+    const int8_t crew = find_sub(frigate, sd::Sub::LifeSupport);
     CHECK(crew >= 0);
     if (crew < 0) return;
 
@@ -570,61 +570,61 @@ void test_losing_life_support_leaves_a_derelict() {
     // one the game actually runs and not one this test performed itself.
     world.target = at;
     world.target_sub = crew;
-    hold_and_fire(world, facing_up(), sl::units(34), 1200,
+    hold_and_fire(world, facing_up(), sd::units(34), 1200,
                   [&](int32_t& x, int32_t& y, int32_t& z) {
-                      sl::sub_position(frigate, frigate.subs[crew], x, y, z);
+                      sd::sub_position(frigate, frigate.subs[crew], x, y, z);
                       return frigate.active;
                   },
                   [&] { return frigate.subs[crew].hull == 0; });
     CHECK(frigate.subs[crew].hull == 0);
-    CHECK(frigate.task == sl::Task::Derelict);
+    CHECK(frigate.task == sd::Task::Derelict);
 
     // Nobody is flying it, so it comes apart on its own.
     const int16_t hull = frigate.hull;
-    run(world, sl::k_derelict_period * 4, nothing());
+    run(world, sd::k_derelict_period * 4, nothing());
     CHECK(frigate.hull < hull);
 }
 
 // ---- the mission ----
 
 void test_the_frigate_leaves_if_its_navigation_is_left_alone() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
-    CHECK(sl::jump_ticks_left(world) > 0);
+    CHECK(sd::jump_ticks_left(world) > 0);
 
     // Alone with the frigate, and with its guns already off it, so the only
     // thing that can end this sortie is the clock. Otherwise the test passes
     // on the escort killing the player, which is a different loss entirely
     // and would keep passing after the jump stopped working.
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     if (at < 0) { CHECK(false); return; }
     clear_except(world, at);
     for (uint8_t s = 0; s < world.ships[at].sub_count; s++) {
-        if (world.ships[at].subs[s].kind == sl::Sub::Weapons) {
+        if (world.ships[at].subs[s].kind == sd::Sub::Weapons) {
             world.ships[at].subs[s].hull = 0;
         }
     }
 
-    for (uint32_t i = 0; i < sl::k_jump_charge + 400 && sl::in_flight(world);
+    for (uint32_t i = 0; i < sd::k_jump_charge + 400 && sd::in_flight(world);
          i++) {
-        sl::world_tick(world, nothing());
+        sd::world_tick(world, nothing());
     }
-    CHECK(world.phase == sl::Phase::Lost);
-    CHECK(world.loss == sl::Loss::Jumped);
+    CHECK(world.phase == sd::Phase::Lost);
+    CHECK(world.loss == sd::Loss::Jumped);
 }
 
 void test_killing_the_navigation_array_stops_the_jump_for_good() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 5);
 
-    const int8_t at = index_of(world, sl::Hull::Frigate);
+    const int8_t at = index_of(world, sd::Hull::Frigate);
     if (at < 0) { CHECK(false); return; }
-    const int8_t nav = find_sub(world.ships[at], sl::Sub::Navigation);
+    const int8_t nav = find_sub(world.ships[at], sd::Sub::Navigation);
     if (nav < 0) { CHECK(false); return; }
     clear_except(world, at);
-    sl::Ship& frigate = world.ships[at];
+    sd::Ship& frigate = world.ships[at];
 
     run(world, 400, nothing());
     const uint32_t charged = world.jump_charge;
@@ -633,61 +633,61 @@ void test_killing_the_navigation_array_stops_the_jump_for_good() {
 
     world.target = at;
     world.target_sub = nav;
-    hold_and_fire(world, facing_ahead(), sl::units(40), 1500,
+    hold_and_fire(world, facing_ahead(), sd::units(40), 1500,
                   [&](int32_t& x, int32_t& y, int32_t& z) {
-                      sl::sub_position(frigate, frigate.subs[nav], x, y, z);
+                      sd::sub_position(frigate, frigate.subs[nav], x, y, z);
                       return frigate.active;
                   },
                   [&] { return world.jump_stopped; });
     CHECK(world.jump_stopped);
-    CHECK(sl::jump_ticks_left(world) == 0);
+    CHECK(sd::jump_ticks_left(world) == 0);
 
     // And it stays stopped. The clock does not restart, and the sortie cannot
     // be lost to a jump any more however long it runs.
     run(world, 3000, nothing());
-    CHECK(world.loss != sl::Loss::Jumped);
+    CHECK(world.loss != sd::Loss::Jumped);
     CHECK(world.jump_stopped);
 }
 
 void test_clearing_a_wave_calls_in_the_next_one() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 1);
     CHECK(world.wave == 1);
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         world.ships[i].active = false;
     }
-    sl::world_tick(world, nothing());
+    sd::world_tick(world, nothing());
     CHECK(world.wave == 2);
-    CHECK(world.phase == sl::Phase::Briefing);
+    CHECK(world.phase == sd::Phase::Briefing);
     CHECK(world.wave_timer > 0);
 
     run(world, world.wave_timer + 2, nothing());
-    CHECK(world.phase == sl::Phase::Fighting);
+    CHECK(world.phase == sd::Phase::Fighting);
     uint8_t live = 0;
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (world.ships[i].active) live++;
     }
     CHECK(live == 3);
 }
 
 void test_clearing_the_last_wave_wins_the_sortie() {
-    sl::World world;
-    sl::world_init(world);
-    jump_to_wave(world, sl::k_wave_count);
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+    sd::World world;
+    sd::world_init(world);
+    jump_to_wave(world, sd::k_wave_count);
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         world.ships[i].active = false;
     }
-    sl::world_tick(world, nothing());
-    CHECK(world.phase == sl::Phase::Won);
-    CHECK(!sl::in_flight(world));
+    sd::world_tick(world, nothing());
+    CHECK(world.phase == sd::Phase::Won);
+    CHECK(!sd::in_flight(world));
 
     // A decided sortie stops taking input, so a held trigger cannot run the
     // score up after the fact.
     const uint32_t score = world.score;
     const uint32_t tick = world.tick;
-    sl::Input fire = nothing();
+    sd::Input fire = nothing();
     fire.fire = true;
     run(world, 200, fire);
     CHECK(world.score == score);
@@ -697,17 +697,17 @@ void test_clearing_the_last_wave_wins_the_sortie() {
 // ---- weapons ----
 
 void test_the_guns_converge_rather_than_running_parallel() {
-    sl::World world;
-    sl::world_init(world);
-    sl::Input fire = nothing();
+    sd::World world;
+    sd::world_init(world);
+    sd::Input fire = nothing();
     fire.fire = true;
-    sl::world_tick(world, fire);
+    sd::world_tick(world, fire);
 
     int found = 0;
     int32_t vx[2] = {0, 0};
-    for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
         if (!world.shots[i].active) continue;
-        if (world.shots[i].kind != sl::Bolt::PlayerGun) continue;
+        if (world.shots[i].kind != sd::Bolt::PlayerGun) continue;
         if (found < 2) vx[found] = world.shots[i].vx;
         found++;
     }
@@ -721,15 +721,15 @@ void test_the_guns_converge_rather_than_running_parallel() {
 }
 
 void test_a_missile_needs_a_target_and_spends_a_round() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 1);
 
-    sl::Input launch = nothing();
+    sd::Input launch = nothing();
     launch.launch = true;
 
     const uint8_t rack = world.missiles;
-    CHECK(rack == sl::k_missiles_max);
+    CHECK(rack == sd::k_missiles_max);
 
     // Nothing targeted: the launcher does nothing at all, and above all does
     // not quietly eat a missile.
@@ -737,15 +737,15 @@ void test_a_missile_needs_a_target_and_spends_a_round() {
     run(world, 30, launch);
     CHECK(world.missiles == rack);
 
-    sl::Input y = nothing();
+    sd::Input y = nothing();
     y.cycle_target = true;
-    sl::world_tick(world, y);
+    sd::world_tick(world, y);
     CHECK(world.target >= 0);
 
-    sl::world_tick(world, launch);
+    sd::world_tick(world, launch);
     CHECK(world.missiles == rack - 1);
     uint8_t flying = 0;
-    for (uint8_t i = 0; i < sl::k_max_missiles; i++) {
+    for (uint8_t i = 0; i < sd::k_max_missiles; i++) {
         if (world.missiles_live[i].active) flying++;
     }
     CHECK(flying == 1);
@@ -756,8 +756,8 @@ void test_a_missile_needs_a_target_and_spends_a_round() {
 }
 
 void test_shields_come_back_and_hull_does_not() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     // An empty sky: the point is what the ship does on its own, and a wave
     // arriving partway through would be measuring the enemy's aim instead.
     world.wave_timer = 60000;
@@ -766,41 +766,41 @@ void test_shields_come_back_and_hull_does_not() {
     world.shield_idle = 0;
 
     // Nothing recharges while the shield is still settling.
-    run(world, sl::k_shield_regen_delay / 2, nothing());
+    run(world, sd::k_shield_regen_delay / 2, nothing());
     CHECK(world.shield == 20);
 
-    run(world, sl::k_shield_regen_delay + 400, nothing());
+    run(world, sd::k_shield_regen_delay + 400, nothing());
     CHECK(world.shield > 20);
     CHECK(world.hull == 50);
 }
 
 void test_a_kill_leaves_something_to_look_at() {
-    sl::World world;
-    sl::world_init(world);
+    sd::World world;
+    sd::world_init(world);
     jump_to_wave(world, 1);
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         if (!world.ships[i].active) continue;
         world.ships[i].hull = 1;
         world.ships[i].shield = 0;
         break;
     }
 
-    sl::Input fire = nothing();
+    sd::Input fire = nothing();
     fire.fire = true;
     // Sit the player right on top of the first contact so the shot cannot
     // miss, then hold the trigger.
-    const sl::Ship* victim = first_of(world, sl::Hull::Fighter);
+    const sd::Ship* victim = first_of(world, sd::Hull::Fighter);
     CHECK(victim != nullptr);
     if (victim == nullptr) return;
 
-    for (int i = 0; i < 600 && world.kills == 0 && sl::in_flight(world); i++) {
-        sl::world_tick(world, fire);
+    for (int i = 0; i < 600 && world.kills == 0 && sd::in_flight(world); i++) {
+        sd::world_tick(world, fire);
     }
 
     if (world.kills > 0) {
         uint8_t blasts = 0;
-        for (uint8_t i = 0; i < sl::k_max_blasts; i++) {
+        for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
             if (world.blasts[i].active) blasts++;
         }
         CHECK(blasts > 0);
@@ -812,11 +812,11 @@ void test_a_kill_leaves_something_to_look_at() {
 
 void test_the_world_fits_its_ram_budget() {
     std::printf("sizeof(World) = %u bytes\n",
-                static_cast<unsigned>(sizeof(sl::World)));
+                static_cast<unsigned>(sizeof(sd::World)));
     // The framebuffer, the depth buffer and the triangle queue have already
     // spent most of a PicoSystem's 264 KB before this file allocates a byte.
     // Eight is generous for a battle and small enough to be sure.
-    CHECK(sizeof(sl::World) <= 8192);
+    CHECK(sizeof(sd::World) <= 8192);
 }
 
 }  // namespace

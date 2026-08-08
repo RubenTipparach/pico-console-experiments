@@ -9,16 +9,16 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
-#include "starlance/bomber.hpp"
-#include "starlance/fighter.hpp"
-#include "starlance/frigate.hpp"
-#include "starlance/gunship.hpp"
-#include "starlance/interceptor.hpp"
+#include "stardancer/bomber.hpp"
+#include "stardancer/fighter.hpp"
+#include "stardancer/frigate.hpp"
+#include "stardancer/gunship.hpp"
+#include "stardancer/interceptor.hpp"
 
-namespace slr {
+namespace sdr {
 namespace {
 
-using sl::World;
+using sd::World;
 
 // The Rasterizer and the FrameQueue come from the engine rather than being
 // declared here: on the console every game is linked into one binary, and a
@@ -135,7 +135,7 @@ inline uint8_t clamp8(int v) {
 }
 
 inline float fp_to_f(int32_t v) {
-    return static_cast<float>(v) / static_cast<float>(sl::k_one);
+    return static_cast<float>(v) / static_cast<float>(sd::k_one);
 }
 
 int isqrt_int(int value) {
@@ -470,12 +470,12 @@ void draw_backdrop(const pse::RenderTarget& target) {
 
 // ---- the battle ----
 
-const pse::MeshData& mesh_for(sl::Hull cls) {
+const pse::MeshData& mesh_for(sd::Hull cls) {
     switch (cls) {
-        case sl::Hull::Bomber:  return models::starlance::bomber;
-        case sl::Hull::Gunship: return models::starlance::gunship;
-        case sl::Hull::Frigate: return models::starlance::frigate;
-        default:                return models::starlance::fighter;
+        case sd::Hull::Bomber:  return models::stardancer::bomber;
+        case sd::Hull::Gunship: return models::stardancer::gunship;
+        case sd::Hull::Frigate: return models::stardancer::frigate;
+        default:                return models::stardancer::fighter;
     }
 }
 
@@ -493,7 +493,7 @@ float camera_distance(int32_t x, int32_t y, int32_t z) {
 // be looking. The easing below chases this, it does not replace it.
 void ideal_camera(const World& world, const Chrome& chrome, Camera& out) {
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
 
     const float ship_right[3] = {basis.m[0], basis.m[3], basis.m[6]};
     const float ship_up[3] = {basis.m[1], basis.m[4], basis.m[7]};
@@ -505,11 +505,11 @@ void ideal_camera(const World& world, const Chrome& chrome, Camera& out) {
     out.y = fp_to_f(world.y) - ship_fwd[1] * k_cam_back + ship_up[1] * k_cam_lift;
     out.z = fp_to_f(world.z) - ship_fwd[2] * k_cam_back + ship_up[2] * k_cam_lift;
 
-    const sl::Ship* target = sl::target_ship(world);
+    const sd::Ship* target = sd::target_ship(world);
     if (chrome.look_at_target && target != nullptr) {
         int32_t tx = target->x, ty = target->y, tz = target->z;
-        const sl::Subsystem* sub = sl::target_subsystem(world);
-        if (sub != nullptr) sl::sub_position(*target, *sub, tx, ty, tz);
+        const sd::Subsystem* sub = sd::target_subsystem(world);
+        if (sub != nullptr) sd::sub_position(*target, *sub, tx, ty, tz);
 
         float look[3] = {fp_to_f(tx) - out.x, fp_to_f(ty) - out.y,
                          fp_to_f(tz) - out.z};
@@ -611,17 +611,17 @@ void bracket_depth(const World& world) {
         any = true;
     };
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
-        consider(ship.x, ship.y, ship.z, fp_to_f(sl::hull_length(ship.cls)));
+        consider(ship.x, ship.y, ship.z, fp_to_f(sd::hull_length(ship.cls)));
     }
-    for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
         if (world.shots[i].active) {
             consider(world.shots[i].x, world.shots[i].y, world.shots[i].z, 1.0f);
         }
     }
-    for (uint8_t i = 0; i < sl::k_max_blasts; i++) {
+    for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
         if (world.blasts[i].active) {
             consider(world.blasts[i].x, world.blasts[i].y, world.blasts[i].z,
                      2.0f);
@@ -664,23 +664,23 @@ constexpr float k_lod_pixels = 4.0f;
 // What a contact is drawn as when it is too small to be a shape. Colour per
 // class, so a dot at two hundred units still says whether it is a fighter or
 // something that needs a wing.
-void contact_colour(sl::Hull cls, uint8_t& r, uint8_t& g, uint8_t& b) {
+void contact_colour(sd::Hull cls, uint8_t& r, uint8_t& g, uint8_t& b) {
     switch (cls) {
-        case sl::Hull::Bomber:  r = 232; g = 176; b = 96; break;
-        case sl::Hull::Gunship: r = 168; g = 206; b = 150; break;
-        case sl::Hull::Frigate: r = 176; g = 196; b = 226; break;
+        case sd::Hull::Bomber:  r = 232; g = 176; b = 96; break;
+        case sd::Hull::Gunship: r = 168; g = 206; b = 150; break;
+        case sd::Hull::Frigate: r = 176; g = 196; b = 226; break;
         default:                r = 234; g = 110; b = 92; break;
     }
 }
 
-bool too_small_to_draw(const World& world, const sl::Ship& ship,
+bool too_small_to_draw(const World& world, const sd::Ship& ship,
                        float& out_scale) {
     int x = 0, y = 0;
     uint8_t depth = 0;
     out_scale = 0.0f;
     if (!g_renderer.project_billboard(fp_to_f(ship.x), fp_to_f(ship.y),
                                       fp_to_f(ship.z),
-                                      fp_to_f(sl::hull_length(ship.cls)), x, y,
+                                      fp_to_f(sd::hull_length(ship.cls)), x, y,
                                       out_scale, depth)) {
         // Off screen or behind: nothing to draw either way, and the mesh path
         // would reach the same conclusion more slowly.
@@ -693,12 +693,12 @@ void draw_hulls(const World& world) {
     g_stats.hulls_drawn = 0;
     g_stats.hulls_live = 0;
 
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
         g_stats.hulls_live++;
 
-        if (sl::range_to(world, ship) > sl::k_draw_range) continue;
+        if (sd::range_to(world, ship) > sd::k_draw_range) continue;
 
         float scale = 0.0f;
         if (too_small_to_draw(world, ship, scale)) continue;
@@ -712,13 +712,13 @@ void draw_hulls(const World& world) {
 
         // A derelict is a dead grey. Nothing else says "that one has stopped
         // fighting" on a hull twelve pixels across.
-        const bool dead_crew = ship.task == sl::Task::Derelict;
+        const bool dead_crew = ship.task == sd::Task::Derelict;
         const uint8_t tint = dead_crew ? 130 : 255;
 
         g_renderer.draw_mesh(mesh_for(ship.cls), fp_to_f(ship.x),
                              fp_to_f(ship.y), fp_to_f(ship.z),
                              pse::quat_basis(ship.q),
-                             fp_to_f(sl::hull_length(ship.cls)), tint, tint,
+                             fp_to_f(sd::hull_length(ship.cls)), tint, tint,
                              tint, flash);
     }
 }
@@ -726,10 +726,10 @@ void draw_hulls(const World& world) {
 // Hulls too small to be shapes, drawn as depth tested blobs after the
 // geometry. See k_lod_pixels for why this exists at all.
 void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_ships; i++) {
-        const sl::Ship& ship = world.ships[i];
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+        const sd::Ship& ship = world.ships[i];
         if (!ship.active) continue;
-        if (sl::range_to(world, ship) > sl::k_draw_range) continue;
+        if (sd::range_to(world, ship) > sd::k_draw_range) continue;
 
         float scale = 0.0f;
         if (!too_small_to_draw(world, ship, scale)) continue;
@@ -739,7 +739,7 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
         uint8_t depth = 0;
         if (!g_renderer.project_billboard(fp_to_f(ship.x), fp_to_f(ship.y),
                                           fp_to_f(ship.z),
-                                          fp_to_f(sl::hull_length(ship.cls)), x,
+                                          fp_to_f(sd::hull_length(ship.cls)), x,
                                           y, scale, depth)) {
             continue;
         }
@@ -748,7 +748,7 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
 
         uint8_t r, g, b;
         contact_colour(ship.cls, r, g, b);
-        if (ship.task == sl::Task::Derelict) { r = 120; g = 120; b = 126; }
+        if (ship.task == sd::Task::Derelict) { r = 120; g = 120; b = 126; }
 
         // One pixel at the limit of sight, growing to the size the mesh takes
         // over at, so a contact closing on you does not pop from a dot to a
@@ -762,8 +762,8 @@ void draw_far_contacts(const World& world, const pse::RenderTarget& target) {
 // second is two pixels of dot per frame, which reads as noise. Drawn after the
 // geometry so it can be depth tested against the ships it is flying past.
 void draw_bolts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
-        const sl::Shot& shot = world.shots[i];
+    for (uint8_t i = 0; i < sd::k_max_bolts; i++) {
+        const sd::Shot& shot = world.shots[i];
         if (!shot.active) continue;
 
         const float hx = fp_to_f(shot.x), hy = fp_to_f(shot.y);
@@ -780,8 +780,8 @@ void draw_bolts(const World& world, const pse::RenderTarget& target) {
             static_cast<uint8_t>(clamp_int(d0 * 255 / pse::k_fixed_one, 0, 255));
 
         uint8_t r = 130, g = 245, b = 170;          // player: green
-        if (shot.kind == sl::Bolt::EnemyGun) { r = 255; g = 120; b = 90; }
-        if (shot.kind == sl::Bolt::TurretShell) { r = 255; g = 200; b = 80; }
+        if (shot.kind == sd::Bolt::EnemyGun) { r = 255; g = 120; b = 90; }
+        if (shot.kind == sd::Bolt::TurretShell) { r = 255; g = 200; b = 80; }
 
         line_depth(target, x0, y0, x1, y1, depth, r, g, b);
         plot_depth(target, x0, y0, depth, 255, 255, 255);
@@ -789,8 +789,8 @@ void draw_bolts(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_missiles(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_missiles; i++) {
-        const sl::Missile& m = world.missiles_live[i];
+    for (uint8_t i = 0; i < sd::k_max_missiles; i++) {
+        const sd::Missile& m = world.missiles_live[i];
         if (!m.active) continue;
         int x = 0, y = 0, depth = 0;
         if (!g_renderer.project(fp_to_f(m.x), fp_to_f(m.y), fp_to_f(m.z), x, y,
@@ -808,13 +808,13 @@ void draw_missiles(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_blasts(const World& world, const pse::RenderTarget& target) {
-    for (uint8_t i = 0; i < sl::k_max_blasts; i++) {
-        const sl::Blast& blast = world.blasts[i];
+    for (uint8_t i = 0; i < sd::k_max_blasts; i++) {
+        const sd::Blast& blast = world.blasts[i];
         if (!blast.active) continue;
 
         const float world_size =
             static_cast<float>(blast.size) / 100.0f *
-            (1.0f - static_cast<float>(blast.life) / sl::k_blast_life * 0.55f);
+            (1.0f - static_cast<float>(blast.life) / sd::k_blast_life * 0.55f);
 
         int x = 0, y = 0;
         float scale = 0.0f;
@@ -828,7 +828,7 @@ void draw_blasts(const World& world, const pse::RenderTarget& target) {
         const int radius = clamp_int(static_cast<int>(scale), 1, 34);
         // Cools from white through amber to a dull red as it ages, which is
         // the whole of the animation: three colours and a growing radius.
-        const int age = 255 - (blast.life * 255) / sl::k_blast_life;
+        const int age = 255 - (blast.life * 255) / sd::k_blast_life;
         const uint8_t r = 255;
         const uint8_t g = clamp8(240 - age);
         const uint8_t b = clamp8(200 - age * 2);
@@ -843,12 +843,12 @@ void draw_blasts(const World& world, const pse::RenderTarget& target) {
 void draw_own_hull(const World& world) {
     g_renderer.set_depth_range(k_hull_near, k_hull_far);
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     const uint8_t flash =
         world.hit_flash > 0 ? static_cast<uint8_t>(world.hit_flash * 22) : 0;
-    g_renderer.draw_mesh(models::starlance::interceptor, fp_to_f(world.x),
+    g_renderer.draw_mesh(models::stardancer::interceptor, fp_to_f(world.x),
                          fp_to_f(world.y), fp_to_f(world.z), basis,
-                         fp_to_f(sl::hull_length(sl::Hull::Fighter)), 255, 255,
+                         fp_to_f(sd::hull_length(sd::Hull::Fighter)), 255, 255,
                          255, flash);
 }
 
@@ -894,9 +894,9 @@ void print_uint(char* out, uint32_t value, int width) {
 // a crosshair that lies.
 void draw_reticle(const World& world, const pse::RenderTarget& target) {
     pse::Basis basis;
-    sl::player_basis(world, basis);
+    sd::player_basis(world, basis);
     const float fx = basis.m[2], fy = basis.m[5], fz = basis.m[8];
-    const float reach = fp_to_f(sl::k_gun_convergence);
+    const float reach = fp_to_f(sd::k_gun_convergence);
 
     int x = 0, y = 0, depth = 0;
     if (!g_renderer.project(fp_to_f(world.x) + fx * reach,
@@ -919,10 +919,10 @@ void draw_reticle(const World& world, const pse::RenderTarget& target) {
 // Where to aim to hit what is targeted: the target's position plus its own
 // velocity over the time a bolt takes to arrive. Without this, hitting
 // anything crossing is guesswork, and with it the game is about flying.
-void draw_lead(const World& world, const sl::Ship& ship, int box_x, int box_y,
+void draw_lead(const World& world, const sd::Ship& ship, int box_x, int box_y,
                const pse::RenderTarget& target) {
-    const int32_t range = sl::range_to(world, ship);
-    const int32_t flight = range / sl::k_gun_speed;
+    const int32_t range = sd::range_to(world, ship);
+    const int32_t flight = range / sd::k_gun_speed;
     if (flight > 400) return;
 
     int32_t fwd[3];
@@ -958,7 +958,7 @@ void draw_lead(const World& world, const sl::Ship& ship, int box_x, int box_y,
 void draw_off_screen_arrow(const World& world, int32_t tx, int32_t ty,
                            int32_t tz, const pse::RenderTarget& target) {
     int32_t bx, by, bz;
-    sl::bearing(world, tx, ty, tz, bx, by, bz);
+    sd::bearing(world, tx, ty, tz, bx, by, bz);
 
     // The bearing is in the player's frame, so its x and y ARE screen right
     // and screen up, with y flipped for the raster. A target dead astern has
@@ -987,19 +987,19 @@ void draw_off_screen_arrow(const World& world, int32_t tx, int32_t ty,
 }
 
 void draw_target_hud(const World& world, const pse::RenderTarget& target) {
-    const sl::Ship* ship = sl::target_ship(world);
+    const sd::Ship* ship = sd::target_ship(world);
     if (ship == nullptr) return;
 
-    const sl::Subsystem* sub = sl::target_subsystem(world);
+    const sd::Subsystem* sub = sd::target_subsystem(world);
     int32_t mark_x = ship->x, mark_y = ship->y, mark_z = ship->z;
-    if (sub != nullptr) sl::sub_position(*ship, *sub, mark_x, mark_y, mark_z);
+    if (sub != nullptr) sd::sub_position(*ship, *sub, mark_x, mark_y, mark_z);
 
     int x = 0, y = 0;
     float scale = 0.0f;
     uint8_t depth = 0;
     const float size = sub != nullptr
-                           ? fp_to_f(sl::sub_radius(*ship, *sub))
-                           : fp_to_f(sl::hull_radius(ship->cls));
+                           ? fp_to_f(sd::sub_radius(*ship, *sub))
+                           : fp_to_f(sd::hull_radius(ship->cls));
 
     const bool on_screen = g_renderer.project_billboard(
         fp_to_f(mark_x), fp_to_f(mark_y), fp_to_f(mark_z), size, x, y, scale,
@@ -1022,11 +1022,11 @@ void draw_target_hud(const World& world, const pse::RenderTarget& target) {
 
     // The panel: what it is, how far, and how much is left of it.
     char line[24];
-    const char* name = sub != nullptr ? sl::sub_name(sub->kind)
-                                      : sl::hull_name(ship->cls);
+    const char* name = sub != nullptr ? sd::sub_name(sub->kind)
+                                      : sd::hull_name(ship->cls);
     pse::draw_text(target, name, 2, 2, 150, 220, 250);
 
-    const int32_t range = sl::range_to(world, *ship) / sl::k_one;
+    const int32_t range = sd::range_to(world, *ship) / sd::k_one;
     print_uint(line, static_cast<uint32_t>(clamp_int(range, 0, 999)), 3);
     pse::draw_text(target, line, target.width - 2 - pse::text_width(line, 1), 2,
                    150, 220, 250);
@@ -1046,26 +1046,26 @@ void draw_status(const World& world, const pse::RenderTarget& target) {
     // on a 120 pixel screen costs more room than the bar it names, and colour
     // is enough when the same three sit in the same order every frame.
     const int base = target.height - 17;
-    bar(target, 2, base, 40, world.hull, sl::k_player_hull_max, 240, 90, 80);
-    bar(target, 2, base + 5, 40, world.shield, sl::k_player_shield_max, 90, 170,
+    bar(target, 2, base, 40, world.hull, sd::k_player_hull_max, 240, 90, 80);
+    bar(target, 2, base + 5, 40, world.shield, sd::k_player_shield_max, 90, 170,
         250);
-    bar(target, 2, base + 10, 40, world.throttle, sl::k_throttle_one, 120, 220,
+    bar(target, 2, base + 10, 40, world.throttle, sd::k_throttle_one, 120, 220,
         130);
 
     // The speed actually being made, drawn as a notch on the throttle bar.
     // The lever and the ship disagree for about a fifth of a second after a
     // change, and that gap IS the feel of the throttle: without it the bar
     // says the ship has already done what it has only been asked to do.
-    if (sl::k_player_speed_max > 0) {
+    if (sd::k_player_speed_max > 0) {
         const int notch = clamp_int(
             static_cast<int>((static_cast<int64_t>(world.speed) * 40) /
-                             sl::k_player_speed_max), 0, 39);
+                             sd::k_player_speed_max), 0, 39);
         pse::fill_rect(target, 2 + notch, base + 9, 1, 5, 230, 255, 210);
     }
 
     // Missiles as pips rather than a number. A count needs a label to say what
     // it counts; six squares next to a launcher bar do not.
-    for (int i = 0; i < sl::k_missiles_max; i++) {
+    for (int i = 0; i < sd::k_missiles_max; i++) {
         const bool have = i < world.missiles;
         pse::fill_rect(target, 46 + i * 3, base + 4, 2, 6,
                        have ? 250 : 46, have ? 220 : 50, have ? 110 : 62);
@@ -1086,7 +1086,7 @@ void draw_mission(const World& world, const pse::RenderTarget& target,
     // clear, and it is still the only thing in the game that can be lost by
     // being ignored.
     const int clock_y = target.height - 22;
-    const uint32_t left = sl::jump_ticks_left(world);
+    const uint32_t left = sd::jump_ticks_left(world);
     if (left > 0) {
         const uint32_t seconds = left / 100;
         print_uint(line, seconds, 2);
@@ -1100,7 +1100,7 @@ void draw_mission(const World& world, const pse::RenderTarget& target,
                                120, 240, 150);
     }
 
-    if (world.phase == sl::Phase::Briefing) {
+    if (world.phase == sd::Phase::Briefing) {
         print_uint(line, world.wave, 1);
         char banner[16] = {'W', 'A', 'V', 'E', ' ', line[0], '\0'};
         pse::draw_text_centred(target, banner, target.width / 2,
@@ -1149,16 +1149,23 @@ const char* pitch_word(bool invert) {
 }
 
 void draw_title(const Chrome& chrome, const pse::RenderTarget& target) {
-    pse::draw_text_centred(target, "STARLANCE", target.width / 2, 24, 190, 225,
+    // Two lines, because the name does not fit on one at this size and a
+    // title is the one string worth having big. Eleven characters at scale 2
+    // is 130 pixels on a screen 120 wide, so a single line would print off
+    // both edges at once. Split rather than shrunk: a title set in the same
+    // size as the menu under it stops reading as a title.
+    pse::draw_text_centred(target, "STAR", target.width / 2, 16, 190, 225, 255,
+                           2);
+    pse::draw_text_centred(target, "DANCER", target.width / 2, 32, 190, 225,
                            255, 2);
-    pse::draw_text_centred(target, "5TH WING", target.width / 2, 40, 90, 130,
+    pse::draw_text_centred(target, "5TH WING", target.width / 2, 50, 90, 130,
                            170);
 
     const char* lines[kTitleItemCount] = {"LAUNCH", sound_word(chrome.sound_on),
                                           pitch_word(chrome.invert_pitch)};
     uint8_t lit[kTitleItemCount] = {0, 0, 0};
     lit[chrome.item % kTitleItemCount] = 1;
-    panel(target, lines, lit, kTitleItemCount, 62, 1);
+    panel(target, lines, lit, kTitleItemCount, 68, 1);
 
     if (chrome.best_score > 0) {
         char line[16];
@@ -1180,9 +1187,9 @@ void draw_pause(const Chrome& chrome, const pse::RenderTarget& target) {
 void draw_debrief(const World& world, const Chrome& chrome,
                   const pse::RenderTarget& target) {
     const char* verdict = "WING LOST";
-    if (world.phase == sl::Phase::Won) {
+    if (world.phase == sd::Phase::Won) {
         verdict = "FRIGATE DOWN";
-    } else if (world.loss == sl::Loss::Jumped) {
+    } else if (world.loss == sd::Loss::Jumped) {
         verdict = "SHE JUMPED";
     }
 
@@ -1267,4 +1274,4 @@ CameraState last_camera() {
     return out;
 }
 
-}  // namespace slr
+}  // namespace sdr
