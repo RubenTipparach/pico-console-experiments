@@ -271,9 +271,9 @@ int main(int argc, char** argv) {
             fail("the delivery must put a fuel crate on the map from the start");
         } else {
             const tl::FuelCrate& c = run2.crates[idx];
-            run2.x = c.x - (9 << 16);
-            run2.z = c.z - (7 << 16);
-            run2.y = c.y + (1 << 16);
+            run2.x = c.x - (6 << 16);
+            run2.z = c.z - (5 << 16);
+            run2.y = c.y - (1 << 16);
             run2.grounded = false;
             run2.landed_on = 0xFF;
             capture(run2, 0.6f, out, "preview_11_fuel.ppm");

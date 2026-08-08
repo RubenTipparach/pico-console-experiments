@@ -51,17 +51,29 @@ const float k_box_vertices[8][3] = {
     {0.5f, 1.0f, 0.5f},   {-0.5f, 1.0f, 0.5f},
 };
 
-// The two end faces are wound the other way round from the four walls, and
-// that is not a style choice: written the same way as the walls they face
-// INWARD, the backface cull drops them, and a box viewed from above shows the
-// ground through the hole where its lid should be. It shipped that way, and
-// the reason nobody caught it is that the lid is only missing from the side
-// you normally look from: draw_box's top_r/g/b was reachable exclusively by a
-// camera underneath the box, which is to say never. test_engine.cpp now
-// renders one from above and checks the top colour actually lands on screen.
+// All six faces are wound the same way, and it is the way this rasterizer
+// keeps rather than the way that looks right written down.
+//
+// Both halves of this have shipped broken, in opposite directions, and the
+// reason is the same each time: a box hides its own bug. The lid was wound
+// the other way from the walls once, so a camera above it saw the ground
+// through the hole where the lid should be, and the fix flipped the LID. That
+// made the lid appear and left the four walls in the winding this rasterizer
+// culls, so from then on a box drew its FAR walls and hid its near ones: you
+// were looking straight through the box at the inside of the other side. A
+// cube like that has a V notch bitten out of the bottom of its silhouette,
+// pointing the wrong way, which is subtle enough that pico-santa shipped a
+// whole city of it. The fuel crates in tomlander are what finally made it
+// obvious, because a small green cube against a plain background has nothing
+// to hide behind.
+//
+// So: the walls were the ones that needed flipping, not the lid. Do not
+// "correct" any of these to the right hand rule by inspection. The check is a
+// camera that stands in front of ONE named wall, in test_engine.cpp, which
+// fails if the near wall is missing OR if a far one is drawn.
 const uint8_t k_box_faces[6][4] = {
-    {0, 3, 2, 1}, {5, 6, 7, 4}, {4, 7, 3, 0},
-    {1, 2, 6, 5}, {2, 6, 7, 3}, {5, 1, 0, 4},
+    {1, 2, 3, 0}, {4, 7, 6, 5}, {0, 3, 7, 4},
+    {5, 6, 2, 1}, {2, 6, 7, 3}, {5, 1, 0, 4},
 };
 
 constexpr int k_face_top = 4;

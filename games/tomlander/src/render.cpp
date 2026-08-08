@@ -361,7 +361,12 @@ void draw_crates(const World& world) {
         const tl::FuelCrate& c = world.crates[i];
         if (c.state != tl::Crate::Out) continue;
         const float half = 1.6f;
-        g_renderer.draw_box(to_f(c.x), to_f(c.y), to_f(c.z),
+        // draw_box's y is the BASE of the box, not its middle: the unit cube
+        // it builds from runs 0 to 1 in y so that a building sits on the
+        // ground. A crate hangs in the air and its middle is the point the
+        // pickup is measured from, so the base has to be dropped by a half or
+        // the cube is drawn 1.6 units above the thing you fly into.
+        g_renderer.draw_box(to_f(c.x), to_f(c.y) - half, to_f(c.z),
                             half * 2.0f, half * 2.0f, half * 2.0f,
                             96, 240, 112,       // lid
                             34, 168, 68);       // sides

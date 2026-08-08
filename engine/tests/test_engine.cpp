@@ -315,6 +315,65 @@ void test_box_has_a_lid() {
     CHECK(lid_from_below == 0);
 }
 
+// Every one of a box's six faces, checked from square in front of it.
+//
+// test_box_has_a_lid above proves the lid is there and that the box is not
+// see-through from above, and that was not enough: it says nothing about the
+// four WALLS, and the walls shipped wound the way this rasterizer culls. A box
+// drew its FAR walls and hid its near ones, so you looked straight through it
+// at the inside of the other side, and pico-santa shipped a whole city like
+// that. A cube built that way has a V notch bitten out of the bottom of its
+// silhouette, pointing up instead of down, which is subtle enough on a
+// building with other buildings behind it to go years unnoticed.
+//
+// Standing square on ONE face is what makes the answer unambiguous: exactly
+// one face can be seen, so a correct box keeps two triangles and an inside out
+// one keeps the three facing away. Counting triangles rather than sampling
+// colour on purpose: draw_box shades the four walls 0.70 to 1.00 of a single
+// side colour and lifts two corners of every triangle by 30, so the tone
+// ranges overlap and a census by colour cannot name a face.
+//
+// A camera at a corner does NOT catch this. It keeps three faces either way,
+// so the count is right and only the choice is wrong, which is exactly how the
+// bug survived the first fix.
+void test_a_box_is_solid_from_every_side() {
+    struct Case { const char* name; float x, y, z, yaw, pitch; };
+    // The box spans -2..2 in x and z and 0.5..4.5 in y, centre (0, 2.5, 0).
+    // Each camera stands 20 out along one axis and aims back at it.
+    const Case cases[] = {
+        {"-Z wall",  0.0f,   2.5f, -20.0f,  0.0f,     0.0f},
+        {"+Z wall",  0.0f,   2.5f,  20.0f,  3.14159f, 0.0f},
+        {"-X wall", -20.0f,  2.5f,   0.0f,  1.5708f,  0.0f},
+        {"+X wall",  20.0f,  2.5f,   0.0f, -1.5708f,  0.0f},
+        {"top",      0.0f,  24.0f,   0.0f,  0.0f,    -1.5708f},
+        {"bottom",   0.0f, -20.0f,   0.0f,  0.0f,     1.5708f},
+    };
+    for (const Case& c : cases) {
+        TestSurface surface(pse::k_render_width, pse::k_render_height,
+                            pse::PixelFormat::rgb888);
+        pse::Rasterizer raster;
+        pse::Renderer3D renderer(raster);
+        raster.begin_frame(surface.target());
+        renderer.set_fov(58.0f);
+        renderer.set_camera(c.x, c.y, c.z, c.yaw, c.pitch);
+        renderer.draw_box(0.0f, 0.5f, 0.0f, 4.0f, 4.0f, 4.0f,
+                          255, 255, 255, 100, 100, 100);
+        CHECK(raster.triangles_drawn() == 2);
+    }
+
+    // And three faces from a corner above, which is the view a game uses.
+    TestSurface corner(pse::k_render_width, pse::k_render_height,
+                       pse::PixelFormat::rgb888);
+    pse::Rasterizer corner_raster;
+    pse::Renderer3D corner_view(corner_raster);
+    corner_raster.begin_frame(corner.target());
+    corner_view.set_fov(58.0f);
+    corner_view.set_camera(-14.0f, 14.0f, -14.0f, 0.785f, -0.5f);
+    corner_view.draw_box(0.0f, 0.5f, 0.0f, 4.0f, 4.0f, 4.0f,
+                         255, 255, 255, 100, 100, 100);
+    CHECK(corner_raster.triangles_drawn() == 6);
+}
+
 // A mesh from obj2cpp must render, and must survive a corrupt index without
 // reading out of bounds.
 void test_mesh_rendering_and_bounds() {
@@ -964,6 +1023,7 @@ int main() {
     test_billboard_depth_claim();
     test_renderer_projects_and_culls();
     test_box_has_a_lid();
+    test_a_box_is_solid_from_every_side();
     test_mesh_rendering_and_bounds();
     test_mesh_pitch();
     test_mesh_roll();
