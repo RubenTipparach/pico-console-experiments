@@ -13,9 +13,9 @@
 //   the landing legs appear exactly when the booster is gone, and never
 //   through it;
 //
-//   the prograde marker on the ring points the way the sim says the ship is
-//   travelling, which nothing else can see because the marker is plotted
-//   straight into the framebuffer;
+//   the two views agree about which way round the body the ship is going,
+//   refereed by the sim, which is the check that catches one of them being a
+//   mirror image of the other;
 //
 //   and a frame never overflows the triangle queue.
 //
@@ -167,50 +167,89 @@ void check_horizon(ps::World& w, const char* what) {
     }
 }
 
-void check_prograde(const ps::World& w, const char* what) {
+// Do the two views agree about which way round the body the ship is going?
+//
+// This is the check the previous one should have been. That version worked out
+// where it expected the prograde marker from the same expression the renderer
+// placed it with, so it agreed with the renderer no matter what the renderer
+// did, and it agreed all the way through a flight view that was a mirror image
+// of the map: a ship climbing away to the left on the map had its marker off
+// to the right out of the window.
+//
+// The referee here is the SIM, which neither view gets a say in. The sign of
+// r cross v is which way round the body the ship is travelling, and it is a
+// fact about the flight rather than about a picture of it. Both views then
+// have to match it, independently:
+//
+//   the flight view always keeps the body below the ship and the ship's own
+//   up pointing up the screen, so travelling counter clockwise means the
+//   prograde marker is to the LEFT;
+//
+//   the map plots world x right and world y up, so travelling counter
+//   clockwise means the ship marker walks counter clockwise about the centre
+//   of the frame, which after the screen's y flip is a negative cross product
+//   in screen coordinates.
+//
+// Neither sentence mentions how either view is built.
+void check_views_agree(const ps::World& w, const char* what) {
+    int32_t bx, by, bvx, bvy;
+    ps::body_position(w, w.ref_body, bx, by);
+    ps::body_velocity(w, w.ref_body, bvx, bvy);
+    const double rx = static_cast<double>(w.x >> 16) - bx;
+    const double ry = static_cast<double>(w.y >> 16) - by;
+    const double vx = (w.vx - bvx) / 65536.0;
+    const double vy = (w.vy - bvy) / 65536.0;
+    const double spin = rx * vy - ry * vx;      // + is counter clockwise
+    const double reach = std::sqrt(rx * rx + ry * ry);
+    const double speed = std::sqrt(vx * vx + vy * vy);
+    // Straight up has no side to be on. Only judge it when the ship is
+    // actually going round the body rather than away from it.
+    if (reach <= 0.0 || speed <= 0.0 ||
+        std::fabs(spin) < reach * speed * 0.25) {
+        std::printf("  %-16s going too nearly straight up to have a side\n",
+                    what);
+        return;
+    }
+    const bool counter = spin > 0.0;
+
     draw(w, psr::View::Flight, "");
-    const psr::FrameStats s = psr::last_frame_stats();
-    if (s.prograde_x < 0) {
+    const psr::FrameStats fl = psr::last_frame_stats();
+    if (fl.prograde_x < 0) {
         std::printf("FAIL: %s: no prograde marker\n", what);
         g_failures++;
         return;
     }
-    // The marker is a point on a ring in the ship's own plane, seen by a
-    // camera that is above that plane, so its screen offset is the local
-    // direction with the vertical squashed by the tilt. That rules out
-    // comparing screen angles: the squash is real and it is the point.
-    //
-    // What does survive the projection is the SIGN of each component, and
-    // that is what this checks, because every way the marker has actually
-    // gone wrong shows up in a sign. Forgetting to rotate the velocity into
-    // the ship's local frame leaves the marker pointing at the world's axes,
-    // which is wrong by the ship's bearing: a quarter of an orbit later it
-    // points at the ground. Flipping screen y leaves it pointing at the
-    // retrograde dot.
-    const double dir = (ps::prograde_angle(w) - ps::bearing_from(w, w.ref_body))
-                       * 2 * 3.14159265358979 / ps::k_turn;
-    const double want_x = std::sin(dir);      // along the track
-    const double want_y = std::cos(dir);      // away from the body
-    const double got_x = s.prograde_x - s.ship_x;
-    const double got_y = s.ship_y - s.prograde_y;   // screen y runs down
-    const double reach = std::sqrt(got_x * got_x + got_y * got_y);
-    std::printf("  %-16s prograde local (%+.2f,%+.2f), marker (%+.0f,%+.0f) "
-                "at %.0f px\n", what, want_x, want_y, got_x, got_y, reach);
+    const int side = fl.prograde_x - fl.ship_x;
 
-    // A component near zero has no sign worth checking: the marker is rounded
-    // to a pixel, and half a pixel either side of centre is not an error.
-    if (std::fabs(want_x) > 0.25 && want_x * got_x <= 0.0) {
-        std::printf("FAIL: %s: marker is on the wrong side along the track\n",
-                    what);
+    // The map, a moment apart, so its own idea of the travel direction comes
+    // out of where it puts the ship rather than out of any expression shared
+    // with the flight view.
+    draw(w, psr::View::Map, "");
+    const psr::FrameStats m0 = psr::last_frame_stats();
+    ps::World later = w;
+    const ps::Input none{};
+    later.warp_step = 2;
+    for (int i = 0; i < 40 && ps::flying(later); i++) ps::world_tick(later, none);
+    draw(later, psr::View::Map, "");
+    const psr::FrameStats m1 = psr::last_frame_stats();
+    const double mx = m1.ship_x - m0.ship_x, my = m1.ship_y - m0.ship_y;
+    // Screen y runs down, so a world counter clockwise walk is a negative
+    // cross product here.
+    const double map_spin = -((m0.ship_x - 60.0) * my - (m0.ship_y - 60.0) * mx);
+
+    std::printf("  %-16s sim says %s, flight marker is %s, map walks %s\n",
+                what, counter ? "counter clockwise" : "clockwise",
+                side < 0 ? "LEFT " : "RIGHT",
+                map_spin > 0 ? "counter clockwise" : "clockwise");
+
+    if (counter != (side < 0)) {
+        std::printf("FAIL: %s: the flight view has the ship going the other "
+                    "way round\n", what);
         g_failures++;
     }
-    if (std::fabs(want_y) > 0.25 && want_y * got_y <= 0.0) {
-        std::printf("FAIL: %s: marker is the wrong side of the ship\n", what);
-        g_failures++;
-    }
-    if (reach < 6.0 || reach > 34.0) {
-        std::printf("FAIL: %s: marker %.0f px from the ship, not on the ring\n",
-                    what, reach);
+    if (std::fabs(map_spin) > 1.0 && counter != (map_spin > 0.0)) {
+        std::printf("FAIL: %s: the map has the ship going the other way "
+                    "round\n", what);
         g_failures++;
     }
 }
@@ -256,7 +295,7 @@ int main(int argc, char** argv) {
     ascend(w, 12000, 20000);
     capture(w, psr::View::Flight, out, "preview_2_climb.ppm");
     check_horizon(w, "in the climb");
-    check_prograde(w, "in the climb");
+    check_views_agree(w, "in the climb");
 
     ascend(w, 80000, 40000);
     capture(w, psr::View::Flight, out, "preview_3_cutoff.ppm");
@@ -266,8 +305,45 @@ int main(int argc, char** argv) {
     coast(w, 6000);
     capture(w, psr::View::Flight, out, "preview_4_coast.ppm");
     check_horizon(w, "coasting");
-    check_prograde(w, "coasting");
+    check_views_agree(w, "coasting");
     capture(w, psr::View::Map, out, "preview_5_map.ppm");
+
+    // The same question from a quarter of the way round the planet, and going
+    // the other way. Both are here because the mirror this catches came out of
+    // the frame's handedness, and a handedness error is invisible at one
+    // bearing and in one direction: the launch site sits at a quarter turn,
+    // where the ship's local up happens to be the world's up too, so every
+    // frame captured above tests the one place a rotation and a reflection
+    // look the same.
+    for (int quarter = 0; quarter < 4; quarter++) {
+        for (int way = 0; way < 2; way++) {
+            ps::World probe;
+            ps::world_init(probe, ps::Mission::Pip);
+            probe.grounded = false;
+            probe.landed_on = ps::kBodyCount;
+            probe.stage = 1;
+            probe.fuel_kg = ps::k_stages[1].fuel_kg * ps::k_fp8;
+            const int32_t bearing = quarter * (ps::k_turn / 4) + 300;
+            const int32_t reach = ps::k_home_radius_m + 40000;
+            const double v = std::sqrt(
+                static_cast<double>(ps::k_bodies[ps::kPicopiter].mu) / reach);
+            const double a = bearing * 2 * 3.14159265358979 / ps::k_turn;
+            probe.x = static_cast<int64_t>(std::llround(std::cos(a) * reach)) *
+                      ps::k_fp16;
+            probe.y = static_cast<int64_t>(std::llround(std::sin(a) * reach)) *
+                      ps::k_fp16;
+            const double sign = way ? -1.0 : 1.0;
+            probe.vx = static_cast<int32_t>(
+                std::lround(-std::sin(a) * v * sign * ps::k_fp16));
+            probe.vy = static_cast<int32_t>(
+                std::lround(std::cos(a) * v * sign * ps::k_fp16));
+            probe.ref_body = ps::reference_body(probe);
+            char label[24];
+            std::snprintf(label, sizeof(label), "at %d, %s", bearing,
+                          way ? "clockwise" : "counter");
+            check_views_agree(probe, label);
+        }
+    }
 
     // The moon, and a ship on it. Placed rather than flown: the sim tests fly
     // the whole mission, and repeating it here would cost the preview several
