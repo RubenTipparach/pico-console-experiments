@@ -382,6 +382,111 @@ void test_every_gap_is_passable() {
     }
 }
 
+void test_running_wide_costs_time_and_not_the_run() {
+    // Reported from playing it: going off course dropped the pod and killed
+    // it. The ground beside the road fell away by up to thirty units and the
+    // crash floor is twenty six, so drifting wide was fatal rather than slow.
+    // A hover field that holds you over the road and drops you beside it is a
+    // trapdoor, not a field.
+    const Track& t = track(0);
+    Race race;
+    race_init(race, 0, 0);
+    Input in{};
+    for (int i = 0; i < 400; ++i) { drive(race, t, in); race_tick(race, in); }
+
+    // Sixty units off the centreline, six times the road's half width.
+    const TrackNode& n = t.nodes[race.pod.node];
+    const TrackNode& next = t.nodes[(race.pod.node + 1) % t.node_count];
+    const int32_t head = fatan2(node_x(next) - node_x(n), node_z(next) - node_z(n));
+    race.pod.x = node_x(n) + ftrig(fp(60), fcos(head));
+    race.pod.z = node_z(n) - ftrig(fp(60), fsin(head));
+    race.pod.y = node_y(n) + fp(3);
+    race.pod.yaw = head;
+
+    in.throttle = true;
+    in.left = in.right = in.brake = in.up = false;
+    int32_t offroad_speed = 0;
+    for (int i = 0; i < 300; ++i) {
+        race_tick(race, in);
+        check(race.pod.wreck_ticks == 0, "running wide does not wreck the pod");
+        if (g_failures) return;
+        offroad_speed = pod_speed(race.pod);
+    }
+    check(!race.pod.on_road, "the pod really is off the road for this test");
+    check(race.pod.clearance > 0, "the pod still hovers over the rough");
+
+    // And it is slower out there, which is the whole penalty. Measured on the
+    // DRAG rather than by racing two pods: both start at the same speed with
+    // the throttle shut and coast for a third of a second, so neither travels
+    // far enough to reach a corner and the only difference between them is the
+    // surface.
+    //
+    // Two earlier versions of this measured something else. One raced a
+    // braking autopilot round corners against a straight line off road run and
+    // concluded the rough was faster; the next held both straight for three
+    // seconds, by which time the on road pod had driven off the road.
+    Race rough, smooth;
+    race_init(rough, 0, 0);
+    race_init(smooth, 0, 0);
+    Race* const pair[2] = {&rough, &smooth};
+    for (Race* r : pair) {
+        r->pod.node = race.pod.node;
+        r->pod.x = node_x(n);
+        r->pod.z = node_z(n);
+        r->pod.yaw = head;
+        r->pod.vx = ftrig(per_s(fp(70)), fsin(head));
+        r->pod.vz = ftrig(per_s(fp(70)), fcos(head));
+    }
+    // Only the rough one is moved off the racing line.
+    rough.pod.x += ftrig(fp(60), fcos(head));
+    rough.pod.z -= ftrig(fp(60), fsin(head));
+
+    // Each starts at ITS OWN rest height. The shoulder sits three units below
+    // the road, so dropping the rough pod in at the road's height leaves it
+    // six units up, which is above the hover field's reach: it was airborne,
+    // not on the rough, and the surface it was being tested on never touched
+    // it.
+    for (Race* r : pair) {
+        const Surface s = surface_at(t, r->pod.node, r->pod.x, r->pod.z);
+        r->pod.y = s.y + k_hover_height;
+    }
+
+    Input coast{};
+    for (int i = 0; i < 40; ++i) { race_tick(rough, coast); race_tick(smooth, coast); }
+    check(smooth.pod.on_road, "the reference pod stayed on the road");
+    check(!rough.pod.on_road, "the rough pod stayed off it");
+    check(pod_speed(rough.pod) < pod_speed(smooth.pod),
+          "the rough is slower than the road");
+    std::printf("  coasting: %d u/s on the rough against %d u/s on the road\n",
+                pod_speed(rough.pod) * k_tick_hz / k_one,
+                pod_speed(smooth.pod) * k_tick_hz / k_one);
+}
+
+void test_only_a_gap_is_fatal() {
+    // Falling is reserved for a hole in the road. If this ever stops being
+    // true the jumps stop meaning anything.
+    const Track& t = track(0);
+    int gap_node = -1;
+    for (uint16_t i = 0; i < t.node_count; ++i)
+        if (t.nodes[i].flags & kGap) { gap_node = i; break; }
+    if (gap_node < 0) return;
+
+    Race race;
+    race_init(race, 0, 0);
+    const TrackNode& n = t.nodes[gap_node];
+    race.pod.node = static_cast<uint16_t>(gap_node);
+    race.pod.x = node_x(n);
+    race.pod.z = node_z(n);
+    race.pod.y = node_y(n) + fp(2);
+    Input in{};
+    bool died = false;
+    for (int i = 0; i < 400 && !died; ++i) {
+        race_tick(race, in);
+        if (race.pod.wreck_ticks > 0) died = true;
+    }
+    check(died, "a pod parked over a gap falls and wrecks");
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -420,6 +525,8 @@ int main() {
     test_repair_cannot_resurrect();
     test_a_gap_is_a_hole_and_not_a_wall();
     test_every_gap_is_passable();
+    test_running_wide_costs_time_and_not_the_run();
+    test_only_a_gap_is_fatal();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 

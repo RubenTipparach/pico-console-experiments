@@ -161,9 +161,20 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
             s.wall = true;
             return s;
         }
-        // Off the road the ground falls away, which is what makes leaving the
-        // track a risk rather than a wider track.
-        const int32_t drop = over > fp(34) ? fp(30) : fscale(over, 900);
+        // Off the road is a SHOULDER, not a cliff.
+        //
+        // It used to fall away by up to thirty units, and the crash floor is
+        // twenty six, so drifting wide did not cost you time, it killed you:
+        // the ground vanished downward, the pod followed it, and the run
+        // ended. That is not what going off line should mean in a racing game,
+        // and it is not what the hover field is for either, since a field that
+        // holds you over the road but drops you beside it is a trapdoor.
+        //
+        // Three units down and no further. The hover field still has something
+        // to push against out here, so the pod stays flyable and can be driven
+        // back on; what it costs is grip and speed, applied in race_tick.
+        // Falling is reserved for a GAP, where there is genuinely no road.
+        const int32_t drop = over > fp(12) ? fp(3) : fscale(over, 250);
         s.y = node_y(a) - drop;
         return s;
     }
@@ -414,6 +425,11 @@ void race_tick(Race& race, const Input& in) {
         // that points at arithmetic.
         int64_t k = static_cast<int64_t>(324) * w.air / 1000;
         if (in.brake) k = k * k_drag_brake / 1000;
+        // Off the road is slow. This is the whole penalty for leaving the
+        // track now that the ground beside it no longer kills, and it wants to
+        // be felt rather than survived: a pod that runs wide loses the corner,
+        // and a pod that cuts across the scenery loses more than it saved.
+        if (!pod.on_road && pod.grounded) k = k * k_offroad_drag / 1000;
         if (alive == 1) k = k * (1000 + k_asym_drag) / 1000;
         if (pod.boost_ticks > 0) k = k * 1000 / k_boost_top;
         const int64_t top_scale = stat_scale(rc.top, k_spread_top);

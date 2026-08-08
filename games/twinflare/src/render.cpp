@@ -53,6 +53,13 @@ constexpr float k_engine_y = 0.45f;
 constexpr float k_engine_z = 3.30f;
 constexpr float k_pod_z = -1.55f;
 
+// How far the engines turn ahead of the pod, per radian a second of yaw rate,
+// and how much of the cockpit's swing shows as it pointing away from them.
+// These two are the whole visible difference between a podracer and a plane.
+constexpr float k_engine_lead = 0.34f;
+constexpr float k_cockpit_trail = 0.80f;
+constexpr float k_swing_throw = 3.4f;
+
 constexpr float k_brad = 6.2831853f / 65536.0f;
 
 float to_rad(int32_t brads) { return brads * k_brad; }
@@ -159,53 +166,119 @@ void normal_of(const float a[3], const float b[3], const float c[3], float out[3
 
 pse::Renderer3D* g_renderer = nullptr;
 
-// A quad in world space, flat shaded off its own normal. The engine has no
-// call for this: draw_box is axis aligned and draw_mesh wants a MeshData, so
-// the road builds its own ScreenTriangles exactly as Dust Rider's push_quad
-// does.
-void quad(const float p0[3], const float p1[3], const float p2[3],
-          const float p3[3], const uint8_t colour[3]) {
-    int sx[4], sy[4], sz[4];
-    const float* pts[4] = {p0, p1, p2, p3};
-    for (int i = 0; i < 4; ++i) {
-        if (!g_renderer->project(pts[i][0], pts[i][1], pts[i][2], sx[i], sy[i], sz[i])) {
-            // Dropped whole, because the engine drops it whole anyway. This is
-            // why the road is short strips: a long quad running from under the
-            // nose to the horizon vanishes the instant its near corner crosses
-            // the plane, and Dust Rider's comment already says the desert did
-            // exactly that.
-            return;
+// ---- floating origin --------------------------------------------------------
+//
+// Every vertex is handed to the projector RELATIVE TO THE CAMERA, and the
+// camera itself sits at the origin. This is not tidiness, it is the fix for
+// visible jitter.
+//
+// Renderer3D::project starts with `to_fixed(wx)`, which is the 1024 scale
+// fixed point the whole projection runs in, and then multiplies by the view
+// projection matrix and divides. The error in that chain grows with the
+// MAGNITUDE of the coordinate going in, and a lap here is 2,400 units around,
+// so a pod on the back straight was feeding the projector numbers around 600
+// while the pod at the start line fed it numbers around 20. The road visibly
+// shimmered at one end of the track and was rock steady at the other.
+//
+// Subtracting the camera first bounds every coordinate the projector ever sees
+// by the far plane, 170, wherever on the track the race actually is. It costs
+// three subtractions per vertex and it is the difference between a track that
+// jitters and one that does not.
+float g_origin[3] = {0.0f, 0.0f, 0.0f};
+float g_forward[3] = {0.0f, 0.0f, 1.0f};
+RenderStats g_stats{};
+
+void note_coordinate(const float p[3]) {
+    for (int i = 0; i < 3; ++i) {
+        const float a = p[i] < 0.0f ? -p[i] : p[i];
+        if (a > g_stats.max_coordinate) g_stats.max_coordinate = a;
+    }
+}
+
+// The real near plane, which is not k_near.
+//
+// project() rejects a vertex once its NDC z reaches 0, and for this projection
+// that happens at the HARMONIC MEAN of the two planes rather than at the near
+// one: 2*n*f/(n+f). With 2 and 170 that is 3.953 units, not 2. Clipping has to
+// happen at the line the engine actually rejects on, or the clipped vertex is
+// rejected in turn and the polygon vanishes anyway.
+constexpr float k_near_view = 2.0f * k_near * k_far / (k_near + k_far);
+constexpr float k_clip_at = k_near_view * 1.02f;   // a whisker inside it
+
+// Depth along the view axis of a camera relative point.
+float view_z(const float p[3]) {
+    return p[0] * g_forward[0] + p[1] * g_forward[1] + p[2] * g_forward[2];
+}
+
+// A convex polygon in camera relative space, flat shaded, CLIPPED against the
+// near plane rather than dropped at it.
+//
+// The engine has no clipping of any kind: draw_mesh projects all three corners
+// and bins the triangle if any one fails, and that is documented as deliberate.
+// It is survivable for a model, which is small and either in front of you or
+// not. It is not survivable for a road, because the strip under the nose is
+// exactly the one whose near edge crosses the plane, so the ground vanished
+// from under the pod the moment the camera got low or the pod pitched down. The
+// road did not need to be dropped; it needed to be CUT, and cutting it is nine
+// lines of Sutherland-Hodgman against one plane.
+void poly(const float (*pts)[3], int count, const uint8_t colour[3]) {
+    float clipped[10][3];
+    int n = 0;
+    for (int i = 0; i < count && n < 9; ++i) {
+        const float* a = pts[i];
+        const float* b = pts[(i + 1) % count];
+        const float za = view_z(a), zb = view_z(b);
+        const bool in_a = za >= k_clip_at, in_b = zb >= k_clip_at;
+        if (in_a) {
+            clipped[n][0] = a[0]; clipped[n][1] = a[1]; clipped[n][2] = a[2];
+            ++n;
+        }
+        if (in_a != in_b && n < 9) {
+            const float t = (k_clip_at - za) / (zb - za);
+            clipped[n][0] = a[0] + (b[0] - a[0]) * t;
+            clipped[n][1] = a[1] + (b[1] - a[1]) * t;
+            clipped[n][2] = a[2] + (b[2] - a[2]) * t;
+            ++n;
         }
     }
-    float n[3];
-    normal_of(p0, p1, p2, n);
-    const Rgb c = shade(colour, n[0], n[1], n[2]);
+    if (n < 3) return;
+    if (n != count) ++g_stats.clipped;
+
+    int sx[10], sy[10], sz[10];
+    for (int i = 0; i < n; ++i) {
+        note_coordinate(clipped[i]);
+        if (!g_renderer->project(clipped[i][0], clipped[i][1], clipped[i][2],
+                                 sx[i], sy[i], sz[i])) {
+            ++g_stats.dropped_far;
+            return;   // past the FAR plane, which is a real reason to drop it
+        }
+        // ScreenTriangle stores screen x and y as int16 and renderer3d casts
+        // the projected int straight in with no clamp, so a wide quad close to
+        // the near plane can project past 32767 and wrap to the other side of
+        // the screen. Clipping makes this rarer; it does not make it
+        // impossible, because a vertex can be far off to the side and still in
+        // front.
+        sx[i] = sx[i] < -4000 ? -4000 : (sx[i] > 4000 ? 4000 : sx[i]);
+        sy[i] = sy[i] < -4000 ? -4000 : (sy[i] > 4000 ? 4000 : sy[i]);
+    }
+
+    float nrm[3];
+    normal_of(clipped[0], clipped[1], clipped[2], nrm);
+    const Rgb c = shade(colour, nrm[0], nrm[1], nrm[2]);
     pse::ScreenTriangle tri{};
     tri.r0 = tri.r1 = tri.r2 = c.r;
     tri.g0 = tri.g1 = tri.g2 = c.g;
     tri.b0 = tri.b1 = tri.b2 = c.b;
-    // Wound to face the camera, decided per triangle from the screen space
-    // signed area rather than assumed from the source order.
-    //
-    // Rasterizer::draw culls backfaces, and the first version of this handed
-    // it whichever order the caller happened to write the corners in: every
-    // road quad and every horizon column was culled, so the game rendered a
-    // sky, a pod and two rocks, with no ground under any of it. The pod
-    // survived because draw_mesh sorts its own winding out.
-    //
-    // Flipping rather than fixing the callers is also correct here and not
-    // just convenient: the road is a surface a pod can end up underneath
-    // after falling through a gap, and a one sided road would vanish from
-    // below at exactly the moment the player wants to see where it went.
-    const auto put = [&](int a, int b, int d) {
-        // Rasterizer::rejected's own expression, character for character, and
-        // that matters: written the other way round it is the NEGATIVE of the
-        // engine's, so "flip when this is backfacing" flipped exactly the
-        // triangles that were already facing the right way and the road went
-        // from partly missing to entirely missing.
+
+    // Fanned from the first vertex, and wound to face the camera using
+    // Rasterizer::rejected's own signed area expression character for
+    // character. Written as its negative it flips exactly the triangles that
+    // were already correct.
+    for (int i = 1; i + 1 < n; ++i) {
+        int a = 0, b = i, d = i + 1;
         const long area = static_cast<long>(sx[d] - sx[a]) * (sy[b] - sy[a])
                         - static_cast<long>(sy[d] - sy[a]) * (sx[b] - sx[a]);
-        if (area == 0) return;
+        if (area == 0) continue;
         if (area < 0) { const int t = b; b = d; d = t; }
         tri.x0 = static_cast<int16_t>(sx[a]); tri.y0 = static_cast<int16_t>(sy[a]);
         tri.x1 = static_cast<int16_t>(sx[b]); tri.y1 = static_cast<int16_t>(sy[b]);
@@ -214,9 +287,17 @@ void quad(const float p0[3], const float p1[3], const float p2[3],
         tri.z1 = static_cast<uint16_t>(sz[b]);
         tri.z2 = static_cast<uint16_t>(sz[d]);
         g_renderer->rasterizer().draw(tri);
+        ++g_stats.triangles;
+    }
+}
+
+void quad(const float p0[3], const float p1[3], const float p2[3],
+          const float p3[3], const uint8_t colour[3]) {
+    const float pts[4][3] = {
+        {p0[0], p0[1], p0[2]}, {p1[0], p1[1], p1[2]},
+        {p2[0], p2[1], p2[2]}, {p3[0], p3[1], p3[2]},
     };
-    put(0, 1, 2);
-    put(0, 2, 3);
+    poly(pts, 4, colour);
 }
 
 // ---- the road ---------------------------------------------------------------
@@ -236,9 +317,10 @@ void edge_point(const Track& t, int index, float side, float out[3], float widen
     const float m = std::sqrt(dx * dx + dz * dz);
     if (m > 0.0001f) { dx /= m; dz /= m; }
     const float half = to_world(node_half_width(a)) * widen;
-    out[0] = ax + dz * half * side;
-    out[1] = to_world(node_y(a));
-    out[2] = az - dx * half * side;
+    // Camera relative on the way out, so nothing downstream has to remember.
+    out[0] = ax + dz * half * side - g_origin[0];
+    out[1] = to_world(node_y(a)) - g_origin[1];
+    out[2] = az - dx * half * side - g_origin[2];
 }
 
 void draw_road(const Track& t, const Pod& pod) {
@@ -267,12 +349,21 @@ void draw_road(const Track& t, const Pod& pod) {
                 const float sgn = side ? 1.0f : -1.0f;
                 edge_point(t, i, sgn, wi, 1.35f);
                 edge_point(t, j, sgn, wj, 1.35f);
-                edge_point(t, i, sgn, fi, 4.0f);
-                edge_point(t, j, sgn, fj, 4.0f);
-                const float drop = (a.flags & kWall) ? 4.0f : -2.2f;
+                // Fourteen half widths, not four. The sim lets a pod drive off
+                // the road now instead of dropping it into the floor, so the
+                // ground has to be THERE when it does: at four the plain ran
+                // out about thirty eight units off the centreline and a pod
+                // that ran wide found itself flying over nothing, which read
+                // as the world having a hole in it. This costs no triangles at
+                // all, only bigger ones.
+                edge_point(t, i, sgn, fi, 14.0f);
+                edge_point(t, j, sgn, fj, 14.0f);
+                // Matched to surface_at: three units below the road and flat
+                // out to the horizon, so what is drawn is what is driven on.
+                const float drop = (a.flags & kWall) ? 4.0f : -3.0f;
                 fi[1] += drop; fj[1] += drop;
-                wi[1] += (a.flags & kWall) ? 4.0f : -0.74f;
-                wj[1] += (a.flags & kWall) ? 4.0f : -0.74f;
+                wi[1] += (a.flags & kWall) ? 4.0f : -3.0f;
+                wj[1] += (a.flags & kWall) ? 4.0f : -3.0f;
                 if (side) quad(wi, wj, fj, fi, pal.ground[band]);
                 else      quad(fi, fj, wj, wi, pal.ground[band]);
                 // Walls get a colour of their own rather than borrowing the
@@ -333,7 +424,9 @@ void draw_horizon(const Track& t, const Camera& cam) {
     for (const Wall& w : walls) {
         const float dx = std::sin(cam.yaw), dz = std::cos(cam.yaw);
         const float rx = dz, rz = -dx;
-        const float base = cam.y - 26.0f;
+        // The camera is the origin now, so the wall's own height is simply
+        // below it. It was pinned to the camera already; this just says so.
+        const float base = -26.0f;
         const auto height = [&](int k) {
             const uint32_t h = static_cast<uint32_t>(k + w.phase) * 2654435761u;
             return w.base + w.amp * (((h >> 13) & 255) / 255.0f);
@@ -344,9 +437,9 @@ void draw_horizon(const Track& t, const Camera& cam) {
             const float t0 = (i - k_cols / 2) * k_span, t1 = t0 + k_span;
             const int k0 = static_cast<int>(cam.x * 0.02f) + i;
             const float h0 = height(k0), h1 = height(k0 + 1);
-            const float p0[3] = {cam.x + dx * w.depth + rx * t0, base, cam.z + dz * w.depth + rz * t0};
+            const float p0[3] = {dx * w.depth + rx * t0, base, dz * w.depth + rz * t0};
             const float p1[3] = {p0[0], base + h0, p0[2]};
-            const float p3[3] = {cam.x + dx * w.depth + rx * t1, base, cam.z + dz * w.depth + rz * t1};
+            const float p3[3] = {dx * w.depth + rx * t1, base, dz * w.depth + rz * t1};
             const float p2[3] = {p3[0], base + h1, p3[2]};
             quad(p0, p1, p2, p3, w.col);
         }
@@ -369,6 +462,7 @@ void draw_props(const Track& t, const Pod& pod) {
         float p[3];
         edge_point(t, i, side, p, 1.0f + off / to_world(node_half_width(n)));
         const uint8_t* col = t.palette.rock[(h >> 3) & 1];
+        note_coordinate(p);
         g_renderer->draw_mesh(models::twinflare::rock, p[0], p[1] + 1.0f, p[2],
                               static_cast<float>(h & 255) * 0.024f, scale,
                               col[0], col[1], col[2]);
@@ -379,7 +473,7 @@ void draw_props(const Track& t, const Pod& pod) {
 
 struct PodPose {
     float x, y, z;
-    float yaw, pitch, roll, swing;
+    float yaw, pitch, roll, swing, yaw_rate;
     uint8_t racer;
     uint8_t dead;
     int32_t engine[2];
@@ -391,10 +485,11 @@ struct PodPose {
 // A ribbon that always faces the camera, for the cables and the binder arc. A
 // tube this thin is one pixel wide, so a tube's worth of triangles buys
 // nothing.
-void ribbon(const float a[3], const float b[3], const Camera& cam, float width,
+void ribbon(const float a[3], const float b[3], const Camera&, float width,
             const uint8_t col[3]) {
     float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
-    const float vx = a[0] - cam.x, vy = a[1] - cam.y, vz = a[2] - cam.z;
+    // a is already camera relative, so the vector from the camera to it IS it.
+    const float vx = a[0], vy = a[1], vz = a[2];
     float n[3] = {d[1] * vz - d[2] * vy, d[2] * vx - d[0] * vz, d[0] * vy - d[1] * vx};
     const float m = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
     if (m < 0.0001f) return;
@@ -416,9 +511,9 @@ void local_point(const PodPose& p, float dx, float dy, float dz, float out[3]) {
         cp * sr, cp * cr, -sp,
         -sy * cr + cy * sp * sr, sy * sr + cy * sp * cr, cy * cp,
     };
-    out[0] = p.x + m[0] * dx + m[1] * dy + m[2] * dz;
-    out[1] = p.y + m[3] * dx + m[4] * dy + m[5] * dz;
-    out[2] = p.z + m[6] * dx + m[7] * dy + m[8] * dz;
+    out[0] = p.x + m[0] * dx + m[1] * dy + m[2] * dz - g_origin[0];
+    out[1] = p.y + m[3] * dx + m[4] * dy + m[5] * dz - g_origin[1];
+    out[2] = p.z + m[6] * dx + m[7] * dy + m[8] * dz - g_origin[2];
 }
 
 // Three levels of detail, and they are not an optimisation anyone reached for
@@ -432,15 +527,39 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     const Racer& rc = racer(p.racer);
     const pse::MeshData& engine_mesh = rc.heavy ? models::twinflare::engine_heavy
                                                 : models::twinflare::engine_slim;
+    // THE ENGINES LEAD AND THE COCKPIT TRAILS, and until now neither did:
+    // every part was drawn at the pod's own yaw, so the whole thing rotated
+    // as one rigid object and the two mass model the sim is running was
+    // invisible. The sim was swinging; the renderer was not showing it.
+    //
+    // Out in front on their own mountings, the engines are already pointing
+    // where the pod is going to be, so they carry the yaw plus a lead taken
+    // from the turn rate. The cockpit hangs behind on cables, so it carries
+    // the yaw MINUS the swing and sits out to the side of the line between
+    // them. Through a fast corner the three parts visibly disagree about
+    // which way the pod is facing, which is the whole look of the vehicle.
+    PodPose eng = p;
+    eng.yaw = p.yaw + p.yaw_rate * k_engine_lead;
+    eng.pitch = p.pitch * 0.7f;
+    eng.roll = p.roll * 0.55f;
+
+    PodPose cab = p;
+    cab.yaw = p.yaw - p.swing * k_cockpit_trail;
+    cab.roll = p.roll + p.swing * 0.45f;
+
     float left[3], right[3], cockpit[3], top[3];
-    local_point(p, -k_engine_x, k_engine_y, k_engine_z, left);
-    local_point(p, k_engine_x, k_engine_y, k_engine_z, right);
+    local_point(eng, -k_engine_x, k_engine_y, k_engine_z, left);
+    local_point(eng, k_engine_x, k_engine_y, k_engine_z, right);
     // The cockpit sits where the SWING put it, not where the hull points. This
     // is the only place the two mass model shows and it is the whole reason
     // for it: through a corner the cockpit is visibly off to one side of the
     // line between the engines.
-    local_point(p, p.swing * 2.6f, -0.25f, k_pod_z - std::fabs(p.swing) * 0.5f, cockpit);
+    local_point(p, p.swing * k_swing_throw, -0.25f,
+                k_pod_z - std::fabs(p.swing) * 0.6f, cockpit);
     local_point(p, 0.0f, 0.30f, k_pod_z + 0.9f, top);
+    note_coordinate(left);
+    note_coordinate(right);
+    note_coordinate(cockpit);
 
     if (lod >= 2) {
         // Two flat quads where the engines are, still in the pod's own colour,
@@ -458,13 +577,13 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
 
     if (lod == 0) {
         g_renderer->draw_mesh(models::twinflare::cockpit, cockpit[0], cockpit[1],
-                              cockpit[2], p.yaw, 1.0f,
+                              cockpit[2], cab.yaw, 1.0f,
                               rc.colour[0][0], rc.colour[0][1], rc.colour[0][2],
-                              p.pitch, 0, p.roll);
+                              cab.pitch, 0, cab.roll);
         const uint8_t cable[3] = {58, 62, 72};
         float ea[3], eb[3];
-        local_point(p, -k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, ea);
-        local_point(p, k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, eb);
+        local_point(eng, -k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, ea);
+        local_point(eng, k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, eb);
         if (!(p.dead & 1)) ribbon(top, ea, cam, 0.09f, cable);
         if (!(p.dead & 2)) ribbon(top, eb, cam, 0.09f, cable);
 
@@ -478,7 +597,7 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
             for (int k = 0; k <= 4; ++k) {
                 const float u = k / 4.0f;
                 float arc[3];
-                local_point(p, (-1.0f + 2.0f * u) * k_engine_x * 0.92f,
+                local_point(eng, (-1.0f + 2.0f * u) * k_engine_x * 0.92f,
                             k_engine_y + std::sin(u * 3.14159f) * 0.55f,
                             k_engine_z - 1.5f, arc);
                 if (k) ribbon(prev, arc, cam, 0.07f, glow);
@@ -492,11 +611,11 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         const float wear = p.engine_max ? static_cast<float>(p.engine[i]) / p.engine_max : 1.0f;
         const uint8_t tint = static_cast<uint8_t>(140 + 115 * wear);
         const float* at = i ? right : left;
-        g_renderer->draw_mesh(engine_mesh, at[0], at[1], at[2], p.yaw, 1.0f,
+        g_renderer->draw_mesh(engine_mesh, at[0], at[1], at[2], eng.yaw, 1.0f,
                               static_cast<uint8_t>(rc.colour[0][0] * tint / 255),
                               static_cast<uint8_t>(rc.colour[0][1] * tint / 255),
                               static_cast<uint8_t>(rc.colour[0][2] * tint / 255),
-                              p.pitch, p.boosting ? 90 : 0, p.roll);
+                              eng.pitch, p.boosting ? 90 : 0, eng.roll);
     }
 }
 
@@ -505,6 +624,7 @@ PodPose pose_of(const Pod& pod) {
     p.x = to_world(pod.x); p.y = to_world(pod.y); p.z = to_world(pod.z);
     p.yaw = to_rad(pod.yaw); p.pitch = to_rad(pod.pitch); p.roll = to_rad(pod.roll);
     p.swing = to_rad(pod.swing);
+    p.yaw_rate = to_rad(pod.yaw_rate >> k_rate_fp) * k_tick_hz;
     p.racer = pod.racer_index;
     p.dead = pod.dead;
     p.engine[0] = pod.engine[0]; p.engine[1] = pod.engine[1];
@@ -517,6 +637,7 @@ PodPose pose_of(const Rival& r) {
     PodPose p{};
     p.x = to_world(r.x); p.y = to_world(r.y); p.z = to_world(r.z);
     p.yaw = to_rad(r.yaw); p.roll = to_rad(r.roll);
+    p.yaw_rate = 0.0f;
     p.racer = r.racer_index;
     p.engine[0] = p.engine[1] = 1000;
     p.engine_max = 1000;
@@ -790,13 +911,19 @@ void render_frame(const Race& race, const Chrome& chrome,
         return;
     }
 
+    g_stats = RenderStats{};
     queue.reset();
     raster.begin_frame_collect(target, queue);
 
     const Camera cam = follow(race.pod, 1.0f / 60.0f);
     renderer.set_depth_range(k_near, k_far);
     renderer.set_fov(k_fov);
-    renderer.set_camera_basis(cam.x, cam.y, cam.z, camera_basis(cam));
+    // At the origin, because every vertex handed to it is camera relative.
+    g_origin[0] = cam.x; g_origin[1] = cam.y; g_origin[2] = cam.z;
+    g_forward[0] = std::sin(cam.yaw) * std::cos(cam.pitch);
+    g_forward[1] = std::sin(cam.pitch);
+    g_forward[2] = std::cos(cam.yaw) * std::cos(cam.pitch);
+    renderer.set_camera_basis(0.0f, 0.0f, 0.0f, camera_basis(cam));
 
     draw_horizon(t, cam);
     draw_road(t, race.pod);
@@ -855,5 +982,7 @@ void render_frame(const Race& race, const Chrome& chrome,
         pse::draw_text_centred(target, "FLARE", 60, 38, 255, 150, 50, 2);
     }
 }
+
+const RenderStats& render_stats() { return g_stats; }
 
 }  // namespace twinflare

@@ -38,4 +38,21 @@ struct Chrome {
 void render_frame(const Race& race, const Chrome& chrome,
                   const pse::RenderTarget& target);
 
+// What the last frame actually did, for the tests and for budgeting.
+//
+// `max_coordinate` is the largest camera relative coordinate handed to the
+// projector, and it is the one number that says whether the floating origin is
+// working. Renderer3D projects in 1024 scale fixed point and its error grows
+// with the magnitude going in, so a game that feeds it absolute world
+// coordinates shimmers at the far end of a 2,400 unit lap and is rock steady
+// at the start line. Feeding it camera relative coordinates bounds this by the
+// far plane wherever on the track the race is, and a test can say so.
+struct RenderStats {
+    float max_coordinate;
+    uint16_t clipped;      // polygons cut by the near plane rather than dropped
+    uint16_t dropped_far;  // polygons wholly beyond the far plane
+    uint16_t triangles;
+};
+const RenderStats& render_stats();
+
 }  // namespace twinflare
