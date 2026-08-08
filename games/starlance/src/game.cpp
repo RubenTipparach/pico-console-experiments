@@ -54,8 +54,21 @@ static_assert(sizeof(SaveData) <= 16, "save record grew");
 // also a press that changes target.
 constexpr uint32_t k_any_face = Button::A | Button::B | Button::X | Button::Y;
 
+// `tapped`, not `pressed`, and the name is load bearing.
+//
+// The SDK has a `blit::pressed(uint32_t)` of its own, and this file says
+// `using namespace blit;`. A helper called `pressed` in here is found first by
+// ordinary lookup and hides it, which is fine right up until the argument is a
+// `blit::Button`: that pulls `blit` in as an associated namespace, argument
+// dependent lookup adds the SDK's overload back, and both are then exact
+// matches for a uint32_t. Every call passing a Button is ambiguous and every
+// call passing a plain uint32_t compiles, which is why it looked like three
+// unrelated errors rather than one shadowed name.
+//
+// The host tests cannot catch this: they never compile a game's SDK facing
+// file, so the first thing to notice was the build on main.
 bool held(uint32_t button) { return (buttons & button) != 0; }
-bool pressed(uint32_t button) { return (buttons.pressed & button) != 0; }
+bool tapped(uint32_t button) { return (buttons.pressed & button) != 0; }
 
 sl::Input read_flight() {
     sl::Input in{};
@@ -84,7 +97,7 @@ sl::Input read_flight() {
     in.launch = held(Button::B);
     // Y alone cycles. With X down it is the pause chord, handled by the
     // caller, and must not also step the target.
-    in.cycle_target = !modifier && pressed(Button::Y);
+    in.cycle_target = !modifier && tapped(Button::Y);
     return in;
 }
 
@@ -201,11 +214,11 @@ void finish_sortie() {
 // any face button picks. Nothing on screen names a button, per rule 9, and
 // with nothing naming one no press can be the wrong guess.
 void menu_move(uint8_t& item, uint8_t count) {
-    if (pressed(Button::DPAD_UP)) {
+    if (tapped(Button::DPAD_UP)) {
         item = item == 0 ? static_cast<uint8_t>(count - 1)
                          : static_cast<uint8_t>(item - 1);
     }
-    if (pressed(Button::DPAD_DOWN)) {
+    if (tapped(Button::DPAD_DOWN)) {
         item = static_cast<uint8_t>((item + 1) % count);
     }
 }
@@ -223,7 +236,7 @@ void toggle_pitch() {
 
 void update_title() {
     menu_move(g_chrome.item, slr::kTitleItemCount);
-    if (!pressed(k_any_face)) return;
+    if (!tapped(k_any_face)) return;
     switch (g_chrome.item) {
         case slr::kLaunch:      launch(); break;
         case slr::kTitleSound:  toggle_sound(); break;
@@ -234,7 +247,7 @@ void update_title() {
 
 void update_paused() {
     menu_move(g_chrome.item, slr::kPauseItemCount);
-    if (!pressed(k_any_face)) return;
+    if (!tapped(k_any_face)) return;
     switch (g_chrome.item) {
         case slr::kResume:
             g_chrome.screen = slr::Screen::Play;
@@ -282,7 +295,7 @@ void voice_the_frame() {
 void update_play(uint32_t elapsed) {
     // X and Y together pauses, and it is checked before anything reads either
     // of them for flying, so the chord cannot also roll or change target.
-    if (held(Button::X) && pressed(Button::Y)) {
+    if (held(Button::X) && tapped(Button::Y)) {
         g_chrome.screen = slr::Screen::Paused;
         g_chrome.item = slr::kResume;
         sound_stop();
@@ -308,7 +321,7 @@ void update_play(uint32_t elapsed) {
 }
 
 void update_debrief() {
-    if (pressed(k_any_face)) {
+    if (tapped(k_any_face)) {
         g_chrome.screen = slr::Screen::Title;
         g_chrome.item = slr::kLaunch;
     }
