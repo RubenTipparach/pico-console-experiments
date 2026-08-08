@@ -6,6 +6,7 @@
 #include "pse/game.hpp"
 
 #include "render.hpp"
+#include "menu.hpp"
 #include "sim.hpp"
 
 using namespace blit;
@@ -155,8 +156,11 @@ void save_if_needed() {
 }
 
 void start_flight(uint8_t mission) {
-    tl::world_init(g_world, mission >= 2 ? tl::Mission::Delivery
-                                         : tl::Mission::Hop);
+    // tl::mission_for, not a comparison written here. This line used to read
+    // `mission >= 2 ? Delivery : Hop`, which made mission three unreachable:
+    // picking it flew the delivery, finishing that set progress to three, and
+    // the game never changed again.
+    tl::world_init(g_world, tl::mission_for(mission));
     g_cam_yaw = 0.0f;
     g_new_record = false;
     g_shell = Shell::Play;
@@ -339,31 +343,40 @@ Pen row_pen(uint8_t item, uint8_t self) {
     return item == self ? k_pick : k_rest;
 }
 
-// The title, which is now a menu. START flies the furthest mission reached,
-// SOUND toggles in place, and the best fuel line stays where it was under
-// them.
+// The title, which is a level select.
+//
+// One row per mission unlocked, then SOUND. A first boot is two rows and the
+// list grows as the player earns it: no locked rows, no greyed out teases,
+// nothing on screen that cannot be pressed. Rule 9's sparse UI falls out of the
+// progression rather than being imposed on it.
+//
+// It used to be a single START row that flew the furthest mission reached,
+// which meant a player who had opened three missions had no way to fly the
+// first two ever again.
 void draw_title() {
-    char start[16];
     char best[20];
-    const char* lines[4];
-    Pen pens[4];
+    // Room for the title, every mission, SOUND, and the best fuel line.
+    //
+    // Asserted rather than trusted: this file does not compile in a host
+    // checkout, so a fourth mission would overrun these arrays on the device
+    // and nowhere before it. The assert fires at the first build that has one.
+    constexpr int k_title_lines = tl::k_mission_count + 3;
+    static_assert(k_title_lines >= 1 + (tl::k_mission_count + 1) + 1,
+                  "the title menu needs a row for the name, every mission, "
+                  "SOUND, and the best fuel line");
+    const char* lines[k_title_lines];
+    Pen pens[k_title_lines];
     int count = 0;
 
     lines[count] = "TOM LANDER";
     pens[count++] = k_pick;
 
-    // The row names the mission when there is more than one to name, so
-    // "START" alone never leaves the player guessing which flight it means.
-    if (g_progress > 1) {
-        std::snprintf(start, sizeof(start), "START %d", g_progress);
-        lines[count] = start;
-    } else {
-        lines[count] = "START";
+    const uint8_t rows = tl::title_row_count(g_progress);
+    for (uint8_t row = 0; row < rows; row++) {
+        const uint8_t mission = tl::title_row_mission(g_progress, row);
+        lines[count] = mission ? tl::mission_name(mission) : sound_word();
+        pens[count++] = row_pen(g_title_item, row);
     }
-    pens[count++] = row_pen(g_title_item, 0);
-
-    lines[count] = sound_word();
-    pens[count++] = row_pen(g_title_item, 1);
 
     if (g_best_fuel > 0) {
         std::snprintf(best, sizeof(best), "best fuel %d",
@@ -371,17 +384,23 @@ void draw_title() {
         lines[count] = best;
         pens[count++] = Pen(180, 180, 195);
     }
-    panel_lines(screen.bounds.h / 2 - 20, lines, pens, count,
+    panel_lines(screen.bounds.h / 2 - 8 - count * 4, lines, pens, count,
                 Pen(12, 14, 28, 200));
 }
 
 // Pause gains the same toggle, because sound is the one setting worth changing
-// without quitting the flight to do it.
+// without quitting the flight to do it, and a MENU row, because without one the
+// only ways out of a flight were to finish it or wreck it. On the web that
+// meant reloading the page to pick a different mission.
 void draw_pause() {
-    const char* items[3] = {"RESUME", "RESTART", sound_word()};
-    const Pen pens[3] = {row_pen(g_pause_item, 0), row_pen(g_pause_item, 1),
-                         row_pen(g_pause_item, 2)};
-    panel_lines(screen.bounds.h / 2 - 18, items, pens, 3, Pen(12, 14, 28, 220));
+    const char* items[tl::kPauseRowCount] = {"RESUME", "RESTART", "MENU",
+                                             sound_word()};
+    Pen pens[tl::kPauseRowCount];
+    for (uint8_t i = 0; i < tl::kPauseRowCount; i++) {
+        pens[i] = row_pen(g_pause_item, i);
+    }
+    panel_lines(screen.bounds.h / 2 - 22, items, pens, tl::kPauseRowCount,
+                Pen(12, 14, 28, 220));
 }
 
 void game_init() {
@@ -457,10 +476,11 @@ void step_sim() {
                 g_save_pending = true;
             }
             // The delivery is unlocked by finishing the hop, and stays
-            // unlocked. Nothing here ever counts progress back down.
-            const uint8_t next = static_cast<uint8_t>(g_world.mission) + 1;
-            if (next <= tl::k_mission_count && next > g_progress) {
-                g_progress = next;
+            // unlocked. progress_after never counts down, so replaying an
+            // early mission cannot take a later one away.
+            const uint8_t opened = tl::progress_after(g_progress, g_world.mission);
+            if (opened != g_progress) {
+                g_progress = opened;
                 g_save_pending = true;
             }
         } else {
@@ -484,13 +504,12 @@ void game_update(uint32_t time) {
     if (g_shell == Shell::Title) {
         g_tick_accumulator = 0;
         sound_stop();
-        menu_move(g_title_item, 2);
+        menu_move(g_title_item, tl::title_row_count(g_progress));
         if (buttons.pressed & k_any_face) {
-            if (g_title_item == 0) {
-                start_flight(g_progress);
-            } else {
-                toggle_sound();
-            }
+            const uint8_t mission =
+                tl::title_row_mission(g_progress, g_title_item);
+            if (mission) start_flight(mission);
+            else toggle_sound();
         }
         save_if_needed();
         return;
@@ -499,12 +518,20 @@ void game_update(uint32_t time) {
     if (g_shell == Shell::Paused) {
         g_tick_accumulator = 0;
         sound_stop();
-        menu_move(g_pause_item, 3);
+        menu_move(g_pause_item, tl::kPauseRowCount);
         if (buttons.pressed & k_any_face) {
-            if (g_pause_item == 0) {
+            if (g_pause_item == tl::kPauseResume) {
                 g_shell = Shell::Play;
-            } else if (g_pause_item == 1) {
-                start_flight(static_cast<uint8_t>(g_world.mission));
+            } else if (g_pause_item == tl::kPauseRestart) {
+                start_flight(tl::number_of(g_world.mission));
+            } else if (g_pause_item == tl::kPauseMenu) {
+                // Back to the title, with the cursor on the mission that was
+                // just abandoned rather than at the top of the list, so
+                // stepping out to try a different one lands where you were.
+                g_shell = Shell::Title;
+                g_title_item = static_cast<uint8_t>(
+                    tl::number_of(g_world.mission) - 1);
+                sound_stop();
             } else {
                 toggle_sound();
             }
@@ -520,12 +547,14 @@ void game_update(uint32_t time) {
         // touched down does not skip the card it produced.
         if (g_world.ticks_in_state > 40 &&
             (buttons.pressed & (k_any_face | Button::DPAD_DOWN))) {
-            // Landing the hop rolls straight on into the delivery. A crash
-            // flies the same mission again, because the thing that just went
-            // wrong is the thing worth another go.
+            // Landing rolls straight on into the NEXT mission, not the
+            // furthest one unlocked: replaying the hop with everything open
+            // should lead to the delivery rather than skip to the salvage.
+            // A crash flies the same mission again, because the thing that
+            // just went wrong is the thing worth another go.
             start_flight(g_world.state == tl::Flight::Landed
-                             ? g_progress
-                             : static_cast<uint8_t>(g_world.mission));
+                             ? tl::next_mission(g_world.mission)
+                             : tl::number_of(g_world.mission));
         }
         tl::Input none{};
         tl::world_tick(g_world, none);       // counts out the grace period

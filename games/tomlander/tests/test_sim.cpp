@@ -12,6 +12,7 @@
 
 #include <cstdio>
 
+#include "menu.hpp"
 #include "sim.hpp"
 #include "tuning.hpp"
 
@@ -1139,6 +1140,174 @@ void test_the_delivery_teaches_crates_and_the_hop_has_none() {
     }
 }
 
+
+// ---- the shell around a flight ----
+//
+// These rules used to live inline in game.cpp, which is SDK code that nothing
+// in a host checkout can build, so they shipped unverified every time. Three
+// player visible bugs came out of that in a row and all three are checked here.
+
+// Every mission number reaches its own flight, and back again.
+//
+// The bug: start_flight read `mission >= 2 ? Delivery : Hop`, which was correct
+// with two missions and wrong with three. Picking mission three flew the
+// DELIVERY, so finishing it set progress to three and the game never changed
+// again. The gauge went up and the flight did not, which is the worst shape a
+// progression bug can take because it looks like it is working.
+void test_every_mission_number_reaches_its_own_flight() {
+    CHECK(tl::mission_for(1) == tl::Mission::Hop);
+    CHECK(tl::mission_for(2) == tl::Mission::Delivery);
+    CHECK(tl::mission_for(3) == tl::Mission::Salvage);
+
+    // Every number in range is a DIFFERENT flight. This is the check the old
+    // code failed: two numbers mapping to one mission is the whole bug.
+    for (uint8_t a = 1; a <= tl::k_mission_count; a++) {
+        for (uint8_t b = 1; b <= tl::k_mission_count; b++) {
+            if (a == b) continue;
+            CHECK(tl::mission_for(a) != tl::mission_for(b));
+        }
+    }
+
+    // And it round trips, so nothing has to open code the mapping backwards.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        CHECK(tl::number_of(tl::mission_for(n)) == n);
+    }
+
+    // A number out of range is the hop, not undefined behaviour: a corrupt
+    // save should drop the player somewhere winnable rather than refuse.
+    CHECK(tl::mission_for(0) == tl::Mission::Hop);
+    CHECK(tl::mission_for(99) == tl::Mission::Hop);
+
+    // Every mission actually builds a world, which is what makes the mapping
+    // worth anything. Checked through world_init rather than by inspection.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        tl::World w;
+        tl::world_init(w, tl::mission_for(n));
+        CHECK(w.mission == tl::mission_for(n));
+        CHECK(w.state == tl::Flight::Flying);
+    }
+}
+
+// Landing a mission opens the next one, and nothing ever takes one away.
+void test_landing_opens_the_next_mission() {
+    CHECK(tl::progress_after(1, tl::Mission::Hop) == 2);
+    CHECK(tl::progress_after(2, tl::Mission::Delivery) == 3);
+
+    // The last mission opens nothing, and does not run off the end.
+    CHECK(tl::progress_after(3, tl::Mission::Salvage) == 3);
+    CHECK(tl::next_mission(tl::Mission::Salvage) == tl::k_mission_count);
+
+    // Replaying an early mission with everything open takes nothing away.
+    CHECK(tl::progress_after(3, tl::Mission::Hop) == 3);
+    CHECK(tl::progress_after(3, tl::Mission::Delivery) == 3);
+
+    // But pressing on from a replayed hop goes to the DELIVERY, not to the
+    // furthest thing unlocked: onward means the next one, and the menu is
+    // where a player goes to skip about.
+    CHECK(tl::next_mission(tl::Mission::Hop) == 2);
+    CHECK(tl::next_mission(tl::Mission::Delivery) == 3);
+
+    // Walked end to end: a player who lands every mission in turn opens each
+    // one exactly when they should, and finishes with all of them.
+    uint8_t progress = 1;
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        CHECK(n <= progress);          // the mission is open before it is flown
+        progress = tl::progress_after(progress, tl::mission_for(n));
+    }
+    CHECK(progress == tl::k_mission_count);
+}
+
+// The title menu is a level select: one row per mission unlocked, then SOUND.
+//
+// The bug: the title had a single START row that flew the furthest mission
+// reached, so a player with three missions open had no way to fly the first
+// two ever again.
+void test_the_title_lists_every_unlocked_mission() {
+    // A first boot is one mission and SOUND.
+    CHECK(tl::title_row_count(1) == 2);
+    CHECK(tl::title_row_mission(1, 0) == 1);
+    CHECK(tl::title_row_mission(1, 1) == 0);      // SOUND, never a mission
+
+    // And it grows with progress, one row at a time.
+    for (uint8_t progress = 1; progress <= tl::k_mission_count; progress++) {
+        CHECK(tl::title_row_count(progress) == progress + 1);
+        for (uint8_t row = 0; row < progress; row++) {
+            CHECK(tl::title_row_mission(progress, row) == row + 1);
+        }
+        // The last row is always SOUND, whatever the progress.
+        CHECK(tl::title_row_mission(progress,
+                                    tl::title_row_count(progress) - 1) == 0);
+        // Every unlocked mission is reachable from some row. This is the
+        // check the single START row failed.
+        for (uint8_t n = 1; n <= progress; n++) {
+            bool listed = false;
+            for (uint8_t row = 0; row < tl::title_row_count(progress); row++) {
+                if (tl::title_row_mission(progress, row) == n) listed = true;
+            }
+            CHECK(listed);
+        }
+        // And nothing LOCKED is on the list.
+        for (uint8_t row = 0; row < tl::title_row_count(progress); row++) {
+            CHECK(tl::title_row_mission(progress, row) <= progress);
+        }
+    }
+
+    // Every row name is real, and they are all different, so no two rows read
+    // the same.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        const char* name = tl::mission_name(n);
+        CHECK(name != nullptr && name[0] != 0);
+        for (uint8_t m = 1; m <= tl::k_mission_count; m++) {
+            if (m != n) CHECK(tl::mission_name(m) != name);
+        }
+    }
+}
+
+// Pause has a way back to the title, which is the row that was missing: without
+// it the only ways out of a flight were to finish it or wreck it, and on the
+// web that meant reloading the page to pick a different mission.
+void test_pause_can_leave_the_flight() {
+    CHECK(tl::kPauseRowCount == 4);
+    CHECK(tl::kPauseResume == 0);
+    CHECK(tl::kPauseMenu < tl::kPauseRowCount);
+    // The four rows are distinct, which a hand written switch on indices would
+    // not guarantee.
+    CHECK(tl::kPauseResume != tl::kPauseRestart);
+    CHECK(tl::kPauseRestart != tl::kPauseMenu);
+    CHECK(tl::kPauseMenu != tl::kPauseSound);
+
+    // Leaving a flight puts the cursor on the mission that was abandoned, so
+    // stepping out to try a different one lands where you were rather than at
+    // the top of the list.
+    for (uint8_t n = 1; n <= tl::k_mission_count; n++) {
+        const uint8_t row =
+            static_cast<uint8_t>(tl::number_of(tl::mission_for(n)) - 1);
+        CHECK(tl::title_row_mission(tl::k_mission_count, row) == n);
+    }
+}
+
+// A cursor wraps both ways and never leaves the list, at every length the
+// title menu can be.
+void test_a_menu_cursor_wraps_and_stays_in_range() {
+    for (uint8_t count = 1; count <= tl::k_mission_count + 1; count++) {
+        CHECK(tl::menu_step(0, -1, count) == count - 1);   // up from the top
+        CHECK(tl::menu_step(count - 1, 1, count) == 0);    // down from the end
+        // Walked all the way round in both directions, never out of range.
+        uint8_t at = 0;
+        for (int step = 0; step < count * 3; step++) {
+            at = tl::menu_step(at, 1, count);
+            CHECK(at < count);
+        }
+        CHECK(at == (count * 3) % count);
+        for (int step = 0; step < count * 3; step++) {
+            at = tl::menu_step(at, -1, count);
+            CHECK(at < count);
+        }
+    }
+    // An empty list cannot move, rather than dividing by zero.
+    CHECK(tl::menu_step(0, 1, 0) == 0);
+}
+
 // Touching the sea is lost however gently, because a lander is not a boat and
 // a soft ditching that merely parked the ship would make the ocean scenery.
 void test_ditching_is_a_crash_at_any_speed() {
@@ -1216,6 +1385,11 @@ int main() {
     test_a_deck_no_longer_refuels();
     test_a_fuel_crate_is_half_a_tank_and_is_taken_once();
     test_the_delivery_teaches_crates_and_the_hop_has_none();
+    test_every_mission_number_reaches_its_own_flight();
+    test_landing_opens_the_next_mission();
+    test_the_title_lists_every_unlocked_mission();
+    test_pause_can_leave_the_flight();
+    test_a_menu_cursor_wraps_and_stays_in_range();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
