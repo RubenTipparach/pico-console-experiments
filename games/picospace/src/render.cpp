@@ -44,9 +44,25 @@ constexpr float k_pi = 3.14159265f;
 //       engine's camera has world +y for its up vector, so a ship a quarter of
 //       the way round the planet would otherwise fly sideways across the
 //       screen with the ground up the left hand edge.
-//   +x  along the ship's track, the way its bearing increases.
+//   +x  along the ship's track, the way its bearing DECREASES, and the sign
+//       there is the whole of a bug worth writing down. The obvious choice is
+//       increasing bearing, and it makes the frame left handed against the
+//       map: the map plots world x right and world y up, which puts its
+//       viewer on one side of the orbital plane, and increasing-bearing-is-
+//       right puts this camera on the other. Both pictures were internally
+//       consistent and they were mirror images of each other, so a ship
+//       climbing away to the left on the map had its prograde marker off to
+//       the right out of the window.
 //   +z  out of the orbital plane, which nothing in the sim ever moves along
-//       and everything in the picture needs.
+//       and everything in the picture needs. It is x cross y, and with x as
+//       above that puts the camera on the same side of the plane as the map's
+//       viewer, which is the whole point.
+//
+// Everything that turns an in plane WORLD direction into this frame goes
+// through local_dir below, so the sign lives in one place. A world direction
+// at angle t, seen from a ship at bearing b, is (-sin(t - b), cos(t - b)):
+// straight up the screen when the two agree, and swinging left as t runs
+// ahead of b.
 //
 // The camera sits behind and above the origin and looks at it, so the ship is
 // always dead centre and the world turns under it.
@@ -125,6 +141,25 @@ float radians_of(int32_t angle_units) {
     return angle_units * (2.0f * k_pi / ps::k_turn);
 }
 
+// An in plane world direction, as a unit vector in the ship's local frame.
+// `ahead` is how far the direction leads the ship's own bearing, in radians.
+//
+// This is the frame's handedness, written once. Everything that places
+// something by a bearing (the ship's nose, the pad, the prograde marker, a
+// patch of ground) goes through it or through the same pair of expressions,
+// and the whole flight view was mirrored against the map because the sign of
+// the first one was the other way round.
+void local_dir(float ahead, float& x, float& y) {
+    x = -std::sin(ahead);
+    y = std::cos(ahead);
+}
+
+// The roll that turns the model's nose, which points up its own +y, onto a
+// world direction leading the ship's bearing by `ahead`. draw_mesh's roll
+// turns +x toward +y, so it takes (0,1) to (-sin, cos), which is local_dir
+// exactly: the roll IS the lead angle.
+float roll_for(float ahead) { return ahead; }
+
 // Everything the frame needs, worked out once.
 struct Frame {
     float scale;          // view units per metre
@@ -181,7 +216,9 @@ void surface_point(float alpha, float gamma, float rad, float drop,
     const float ha = std::sin(alpha * 0.5f), hg = std::sin(gamma * 0.5f);
     // 1 - cos(a)cos(g) == 2 sin^2(a/2) + cos(a) * 2 sin^2(g/2)
     const float bend = 2.0f * ha * ha + ca * 2.0f * hg * hg;
-    x = rad * sa * cg;
+    // Negated for the same reason local_dir's x is: a sample further round
+    // the body in the direction of increasing bearing lies to the LEFT.
+    x = -rad * sa * cg;
     y = -drop - rad * bend;
     z = rad * sg;
 }
@@ -353,7 +390,7 @@ void draw_stars(const pse::RenderTarget& t, float fade) {
 // comes from ps::terrain_at, whose value in the ship's own plane is exactly
 // the ps::terrain_m the sim lands on, so the hill in the picture is the hill
 // the gear touches.
-void draw_ground(const World& w, const Frame& f) {
+void draw_ground(const Frame& f) {
     const ps::Body& body = ps::k_bodies[f.ref];
     const float rv = body.radius_m * f.scale;
     if (rv < 0.4f) return;
@@ -467,7 +504,7 @@ void draw_ground(const World& w, const Frame& f) {
 // fall, so the roll is the attitude measured against the ship's own bearing,
 // and at launch it is zero whichever quarter of the planet the pad is on.
 float ship_roll(const World& w, const Frame& f) {
-    return -radians_of(w.angle / ps::k_fp16 - f.bearing);
+    return roll_for(radians_of(w.angle / ps::k_fp16 - f.bearing));
 }
 
 void draw_ship(const World& w, const Frame& f) {
@@ -494,7 +531,7 @@ void plane_offset(const World& w, const Frame& f, float wx, float wy,
     const float ux = std::cos(b), uy = std::sin(b);
     // +y is the local up, +x is along the track.
     y = (dx * ux + dy * uy) * f.scale;
-    x = (-dx * uy + dy * ux) * f.scale;
+    x = (dx * uy - dy * ux) * f.scale;
 }
 
 // The spent booster, drawn where it really is and tumbling the way the sim is
@@ -508,14 +545,15 @@ void draw_debris(const World& w, const Frame& f) {
     if (std::fabs(x) > 90.0f || std::fabs(y) > 90.0f) return;
     g_renderer.draw_mesh(models::picospace::booster, x, y, 0.0f, 0.0f,
                          k_ship_draw * 0.8f, 200, 200, 210, 0.0f, 0,
-                         -radians_of(w.debris_angle - f.bearing));
+                         roll_for(radians_of(w.debris_angle -
+                                             f.bearing)));
 }
 
 // The pad, where it really stands. Drawn only while the world is near enough
 // to life size for it to be a building rather than a dot: from orbit it is ten
 // metres of concrete on a 90 km planet, and asking the rasterizer which sub
 // pixel that lands on costs 68 triangles for nothing.
-void draw_pad(const World& w, const Frame& f) {
+void draw_pad(const Frame& f) {
     g_stats.pad_drawn = false;
     if (f.ref != ps::kPicopiter || f.scale < k_ship_draw * 0.04f) return;
     const float alpha = radians_of(ps::k_turn / 4 - f.bearing);
@@ -530,7 +568,7 @@ void draw_pad(const World& w, const Frame& f) {
 
     g_stats.pad_drawn = true;
     g_renderer.draw_mesh(models::picospace::pad, x, y, z, 0.0f, f.scale,
-                         255, 255, 255, 0.0f, 0, -alpha);
+                         255, 255, 255, 0.0f, 0, roll_for(alpha));
 }
 
 // ---- the plume ------------------------------------------------------------
@@ -621,7 +659,9 @@ void draw_ring(const World& w, const Frame& f, const pse::RenderTarget& t) {
         // The velocity is in the sim's plane; the ring is too. Turn it into
         // the local frame the same way every other in plane direction is.
         const float dir = radians_of(ps::prograde_angle(w) - f.bearing);
-        const float lx = std::sin(dir) * k_ring, ly = std::cos(dir) * k_ring;
+        float ux2, uy2;
+        local_dir(dir, ux2, uy2);
+        const float lx = ux2 * k_ring, ly = uy2 * k_ring;
         int sx, sy;
         if (project_local(lx, ly, 0.0f, sx, sy)) {
             mark(t, static_cast<float>(sx), static_cast<float>(sy),
@@ -716,8 +756,8 @@ void draw_flight(const World& w, const pse::RenderTarget& target,
 
     draw_ship(w, f);
     draw_debris(w, f);
-    draw_pad(w, f);
-    draw_ground(w, f);
+    draw_pad(f);
+    draw_ground(f);
 
     const Rgb top = mix(k_sky_high, k_space, f.space);
     const Rgb low = mix(k_sky_low, k_space, f.space);

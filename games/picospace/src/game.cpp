@@ -221,7 +221,15 @@ Pen row_pen(uint8_t item, uint8_t self) {
 // judging a landing and wants metres; over it they are judging an orbit and a
 // five digit number of metres is unreadable at this size.
 void write_range(char* out, int size, int32_t metres) {
-    if (metres < 10000) {
+    // The MAGNITUDE decides the unit, not the value. A periapsis below the
+    // surface is negative, and it is negative by tens of kilometres, so a
+    // signed comparison sent every one of them down the metres branch: an
+    // ascent that is very obviously suborbital reported "PE -45771M", eight
+    // characters of false precision in the corner of a 120 pixel screen, and
+    // the one number where the sign is the whole message was the hardest one
+    // on screen to read.
+    const int32_t reach = metres < 0 ? -metres : metres;
+    if (reach < 10000) {
         std::snprintf(out, size, "%dm", metres);
     } else {
         std::snprintf(out, size, "%dk", metres / 1000);
