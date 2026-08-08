@@ -213,6 +213,46 @@ void test_the_parts_of_the_pod_disagree_in_a_corner() {
                 peak_swing, peak_swing * 360.0 / 65536.0);
 }
 
+void test_the_cables_are_attached_to_something() {
+    // Reported from looking at the screenshots: the cables did not come from
+    // the pod, they met in the middle and joined nothing.
+    //
+    // They were strung between a FIXED point on the pod's centreline and a
+    // point 0.59 units inboard of each engine centre. The first does not
+    // follow the cockpit, which swings up to two units out to the side, so at
+    // full swing the pod end was 2.4 units from the cockpit: further than the
+    // cockpit is long. The second grazed a hull of radius 0.62 at best.
+    //
+    // Both ends are anchored off the parts' drawn positions now, in each
+    // part's own frame, and render_stats reports how far the worst anchor sits
+    // outside the hull it belongs to. This drives a whole lap so the check
+    // covers every attitude the pod actually reaches, not just a straight.
+    const Track& t = track(0);
+    Race race;
+    race_init(race, 0, 0);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    float worst = 0.0f;
+    int32_t peak_swing = 0;
+    for (int i = 0; i < 3000; ++i) {
+        drive(race, t, in);
+        race_tick(race, in);
+        const int32_t sw = race.pod.swing < 0 ? -race.pod.swing : race.pod.swing;
+        if (sw > peak_swing) peak_swing = sw;
+        if (i % 50 != 0) continue;
+        render_frame(race, chrome, target());
+        if (render_stats().cable_gap > worst) worst = render_stats().cable_gap;
+    }
+    check(worst <= 0.0f, "every cable anchor is inside the hull it attaches to");
+    // And the lap really did swing the cockpit, or the check above proves
+    // nothing: a pod that never swung would pass it trivially.
+    check(peak_swing > 3000, "the cockpit swung hard enough for this to matter");
+    std::printf("  worst cable anchor sits %.2f units outside its hull, "
+                "peak swing %.0f degrees\n",
+                worst, peak_swing * 360.0 / 65536.0);
+}
+
 }  // namespace
 
 int main() {
@@ -220,6 +260,7 @@ int main() {
     test_near_geometry_is_cut_and_not_dropped();
     test_there_is_ground_when_the_pod_runs_wide();
     test_the_parts_of_the_pod_disagree_in_a_corner();
+    test_the_cables_are_attached_to_something();
 
     if (g_failures) {
         std::printf("%d failure(s)\n", g_failures);

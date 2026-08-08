@@ -52,6 +52,11 @@ struct RenderStats {
     uint16_t clipped;      // polygons cut by the near plane rather than dropped
     uint16_t dropped_far;  // polygons wholly beyond the far plane
     uint16_t triangles;
+    // How far the worst cable anchor sits outside the hull it attaches to.
+    // Zero is welded on. The cables used to be strung between two points that
+    // were on neither the engines nor the cockpit, so they met in the middle
+    // and connected to nothing.
+    float cable_gap;
 };
 const RenderStats& render_stats();
 

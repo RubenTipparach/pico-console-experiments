@@ -101,7 +101,11 @@ def build_cockpit():
     m.quad("hull", f_bl, f_br, b_br, b_bl)
     m.quad("trim", f_br, b_br, b_tr, f_tr)
     m.quad("trim", b_bl, f_bl, f_tl, b_tl)
-    m.quad("glow", b_br, b_bl, b_tl, b_tr)
+    # The tail is 'trim' and not 'glow'. Glow is a dark grey meant as an
+    # accent, and draw_mesh's tint MULTIPLIES, so times a pod's livery it came
+    # out nearly black: the cockpit read as a hole from directly behind, which
+    # is the one angle the chase camera is always at.
+    m.quad("trim", b_br, b_bl, b_tl, b_tr)
     return m
 
 
@@ -130,7 +134,7 @@ MODELS = {
                      [("intake", (120, 120, 130)), ("hull", (200, 200, 200)),
                       ("trim", (150, 150, 158)), ("glow", (255, 170, 90))]),
     "cockpit": (build_cockpit,
-                [("hull", (200, 200, 200)), ("trim", (150, 150, 158)),
+                [("hull", (200, 200, 200)), ("trim", (168, 168, 176)),
                  ("canopy", (70, 96, 120)), ("glow", (90, 90, 100))]),
     "rock": (build_rock, [("stone", (170, 170, 170))]),
 }

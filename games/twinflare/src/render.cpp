@@ -56,9 +56,35 @@ constexpr float k_pod_z = -1.55f;
 // How far the engines turn ahead of the pod, per radian a second of yaw rate,
 // and how much of the cockpit's swing shows as it pointing away from them.
 // These two are the whole visible difference between a podracer and a plane.
+// Where a cable meets each part, in that part's own frame.
+//
+// On the REAR top of the cockpit, not the front. Being inside the mesh is not
+// enough: the chase camera sits behind and above, so an anchor on the front
+// top face is on a face the player never sees, and the cable lands above the
+// cockpit's visible silhouette and reads as floating even though it is welded
+// on. Anchoring just behind the middle puts it on the edge the camera can
+// actually see.
+constexpr float k_cable_pod_x = 0.40f;
+constexpr float k_cable_pod_y = 0.30f;
+constexpr float k_cable_pod_z = -0.15f;
+constexpr float k_cable_eng_in = 0.42f;   // inboard, toward the cockpit
+constexpr float k_cable_eng_y = -0.10f;
+constexpr float k_cable_eng_z = -0.85f;   // aft of the engine's middle
+
+// Half extents of each mesh, for measuring whether an anchor is really on the
+// part. A sphere was too generous to catch the front face mistake above: the
+// cockpit's half diagonal is 1.44, so a radius of 1.2 passed anchors that were
+// nowhere the camera could see them.
+constexpr float k_cockpit_half[3] = {0.58f, 0.40f, 1.05f};
+constexpr float k_engine_half[3] = {0.62f, 0.60f, 1.75f};
+
 constexpr float k_engine_lead = 0.34f;
 constexpr float k_cockpit_trail = 0.80f;
-constexpr float k_swing_throw = 3.4f;
+// How far the cockpit is thrown sideways per radian of swing. It was 3.4,
+// which at the swing limit put the cockpit two units out: past the inboard
+// face of an engine, so the pod looked like it had come apart rather than
+// like it was cornering hard.
+constexpr float k_swing_throw = 2.1f;
 
 constexpr float k_brad = 6.2831853f / 65536.0f;
 
@@ -502,6 +528,35 @@ void ribbon(const float a[3], const float b[3], const Camera&, float width,
     quad(p3, p2, p1, p0, col);   // both faces: a ribbon has no outside
 }
 
+// An offset in a PART's own frame, from a centre that is already camera
+// relative. local_point works from the pod's origin and subtracts the world
+// origin on the way out; this works from wherever a part was actually drawn,
+// which is what anything attaching to that part needs.
+void offset_from(const float centre[3], float yaw, float pitch, float roll,
+                 float dx, float dy, float dz, float out[3]) {
+    const float cy = std::cos(yaw), sy = std::sin(yaw);
+    const float cp = std::cos(pitch), sp = std::sin(pitch);
+    const float cr = std::cos(roll), sr = std::sin(roll);
+    const float m[9] = {
+        cy * cr + sy * sp * sr, -cy * sr + sy * sp * cr, sy * cp,
+        cp * sr, cp * cr, -sp,
+        -sy * cr + cy * sp * sr, sy * sr + cy * sp * cr, cy * cp,
+    };
+    out[0] = centre[0] + m[0] * dx + m[1] * dy + m[2] * dz;
+    out[1] = centre[1] + m[3] * dx + m[4] * dy + m[5] * dz;
+    out[2] = centre[2] + m[6] * dx + m[7] * dy + m[8] * dz;
+}
+
+// How far a point in a part's own frame lies outside that part's box. Zero
+// means the anchor is inside the mesh.
+void note_anchor(float dx, float dy, float dz, const float half[3]) {
+    const float off[3] = {dx < 0 ? -dx : dx, dy < 0 ? -dy : dy, dz < 0 ? -dz : dz};
+    for (int i = 0; i < 3; ++i) {
+        const float over = off[i] - half[i];
+        if (over > g_stats.cable_gap) g_stats.cable_gap = over;
+    }
+}
+
 void local_point(const PodPose& p, float dx, float dy, float dz, float out[3]) {
     const float cy = std::cos(p.yaw), sy = std::sin(p.yaw);
     const float cp = std::cos(p.pitch), sp = std::sin(p.pitch);
@@ -547,7 +602,7 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     cab.yaw = p.yaw - p.swing * k_cockpit_trail;
     cab.roll = p.roll + p.swing * 0.45f;
 
-    float left[3], right[3], cockpit[3], top[3];
+    float left[3], right[3], cockpit[3];
     local_point(eng, -k_engine_x, k_engine_y, k_engine_z, left);
     local_point(eng, k_engine_x, k_engine_y, k_engine_z, right);
     // The cockpit sits where the SWING put it, not where the hull points. This
@@ -556,7 +611,6 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     // line between the engines.
     local_point(p, p.swing * k_swing_throw, -0.25f,
                 k_pod_z - std::fabs(p.swing) * 0.6f, cockpit);
-    local_point(p, 0.0f, 0.30f, k_pod_z + 0.9f, top);
     note_coordinate(left);
     note_coordinate(right);
     note_coordinate(cockpit);
@@ -580,12 +634,42 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                               cockpit[2], cab.yaw, 1.0f,
                               rc.colour[0][0], rc.colour[0][1], rc.colour[0][2],
                               cab.pitch, 0, cab.roll);
+        // BOTH ENDS OF A CABLE ARE ON THE PARTS THEY JOIN, which sounds
+        // obvious and was not true. The pod end was a fixed point on the pod's
+        // centreline, so it did not follow the cockpit when the cockpit swung:
+        // 0.9 units adrift at rest and 2.4 at full swing, which is further
+        // than the cockpit is long. The engine end sat 0.59 units inboard of
+        // the engine centre against a hull radius of 0.62, so it grazed the
+        // surface at best. The two cables therefore met in the middle of the
+        // pod and attached to nothing at either end.
+        //
+        // They are anchored off the drawn positions now, in each part's OWN
+        // frame, so a cable stays welded to its engine and its cockpit however
+        // far the two disagree about which way they are facing.
         const uint8_t cable[3] = {58, 62, 72};
-        float ea[3], eb[3];
-        local_point(eng, -k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, ea);
-        local_point(eng, k_engine_x * 0.75f, k_engine_y - 0.3f, k_engine_z - 1.2f, eb);
-        if (!(p.dead & 1)) ribbon(top, ea, cam, 0.09f, cable);
-        if (!(p.dead & 2)) ribbon(top, eb, cam, 0.09f, cable);
+        float ca[3], cb[3], ea[3], eb[3];
+        // On the cockpit's roof, forward of centre, one anchor per cable.
+        offset_from(cockpit, cab.yaw, cab.pitch, cab.roll,
+                    -k_cable_pod_x, k_cable_pod_y, k_cable_pod_z, ca);
+        offset_from(cockpit, cab.yaw, cab.pitch, cab.roll,
+                    k_cable_pod_x, k_cable_pod_y, k_cable_pod_z, cb);
+        // On each engine's inboard flank, aft of centre, inside the hull so it
+        // reads as emerging from it rather than touching it.
+        offset_from(left, eng.yaw, eng.pitch, eng.roll,
+                    k_cable_eng_in, k_cable_eng_y, k_cable_eng_z, ea);
+        offset_from(right, eng.yaw, eng.pitch, eng.roll,
+                    -k_cable_eng_in, k_cable_eng_y, k_cable_eng_z, eb);
+
+        // How far each anchor sits outside the BOX of the part it belongs to,
+        // measured in that part's own frame rather than as a distance in the
+        // world. Zero is inside. This is the number the test reads, because a
+        // cable ending beside its engine looks exactly like a cable attached
+        // to it until one frame is looked at closely.
+        note_anchor(k_cable_pod_x, k_cable_pod_y, k_cable_pod_z, k_cockpit_half);
+        note_anchor(k_cable_eng_in, k_cable_eng_y, k_cable_eng_z, k_engine_half);
+
+        if (!(p.dead & 1)) ribbon(ca, ea, cam, 0.09f, cable);
+        if (!(p.dead & 2)) ribbon(cb, eb, cam, 0.09f, cable);
 
         // The energy binder: the arc of plasma strung between the engines, and
         // the one piece of a podracer everybody can draw from memory. It goes
@@ -597,7 +681,9 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
             for (int k = 0; k <= 4; ++k) {
                 const float u = k / 4.0f;
                 float arc[3];
-                local_point(eng, (-1.0f + 2.0f * u) * k_engine_x * 0.92f,
+                // Reaching all the way to the engines rather than stopping
+                // short of them, for the same reason the cables now do.
+                local_point(eng, (-1.0f + 2.0f * u) * (k_engine_x - 0.3f),
                             k_engine_y + std::sin(u * 3.14159f) * 0.55f,
                             k_engine_z - 1.5f, arc);
                 if (k) ribbon(prev, arc, cam, 0.07f, glow);
