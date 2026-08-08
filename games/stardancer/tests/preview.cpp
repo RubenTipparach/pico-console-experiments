@@ -233,6 +233,10 @@ int main(int argc, char** argv) {
         sdr::Chrome chrome = playing();
         chrome.screen = sdr::Screen::Paused;
         chrome.item = sdr::kPauseSound;
+        // Shown with both settings flipped, so the frame is evidence the rows
+        // are readouts and not fixed labels.
+        chrome.sound_on = false;
+        chrome.invert_pitch = true;
         capture(cap, chrome, out, "preview_8_pause.ppm");
     }
 

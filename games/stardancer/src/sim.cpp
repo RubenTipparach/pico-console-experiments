@@ -647,6 +647,7 @@ void spawn_wave(World& world, uint8_t wave) {
         ship->shield = ship->shield_max = st.shield;
         ship->speed = st.speed;
         ship->task = Task::Pursue;
+        ship->pass_shots = 0;
         // Staggered, so a wave does not open with every gun on the same tick.
         ship->reload = static_cast<uint16_t>(90 + (next_random(world) % 120));
 
@@ -815,32 +816,75 @@ void tick_fighter(World& world, Ship& ship, int32_t range) {
     // A bomber breaks off much further out than a fighter does. It is not
     // trying to get on your six, it is trying to stay at the range its
     // torpedoes work from and not be somewhere a fighter's guns can hold it.
-    const int32_t break_range = ship.cls == Hull::Bomber ? units(45) : units(14);
+    const int32_t close_range =
+        ship.cls == Hull::Bomber ? units(50) : k_break_close;
+    const int32_t rate =
+        ship.cls == Hull::Bomber ? k_turn_bomber : k_turn_fighter;
+
+    if (ship.task == Task::Derelict) return;
+
+    // Hurt badly enough and it stops fighting. Checked before the state
+    // machine and never unset: a ship that has decided to run does not change
+    // its mind because the player backed off.
+    if (ship.task != Task::Retreat &&
+        static_cast<int32_t>(ship.hull) * 100 <
+            static_cast<int32_t>(ship.hull_max) * k_retreat_hull_percent) {
+        ship.task = Task::Retreat;
+        ship.task_ticks = 0;
+    }
 
     ship.task_ticks++;
+
     switch (ship.task) {
         case Task::Pursue:
-            // Close, then stop steering and go through: a fighter that keeps
-            // turning at zero range simply orbits its target forever, which
-            // looks like a bug and plays like one.
-            if (range < break_range) {
+            // Two ways to end a pass. Range, so a contact that closes to knife
+            // fighting goes through instead of trying to stay there, and shot
+            // count, so one that never quite closes still leaves eventually
+            // rather than sitting on the player's nose forever.
+            if (range < close_range || ship.pass_shots >= k_shots_per_pass) {
                 ship.task = Task::Break;
                 ship.task_ticks = 0;
+                ship.pass_shots = 0;
+                ship.break_ticks = static_cast<uint16_t>(
+                    k_break_ticks_min + (next_random(world) % k_break_ticks_span));
             }
             break;
+
         case Task::Break:
-            if (ship.task_ticks > 55 + (next_random(world) % 40)) {
+            // Actively turning AWAY, not merely holding the heading. Holding
+            // it was the whole bug: a contact that stops steering next to you
+            // is still next to you, and the moment it resumed it was already
+            // pointing at you again.
+            if (can_turn) {
+                turn_toward(ship.q, ship.x - world.x, ship.y - world.y,
+                            ship.z - world.z, rate);
+            }
+            if (ship.task_ticks > ship.break_ticks || range > k_break_range) {
                 ship.task = Task::Pursue;
                 ship.task_ticks = 0;
             }
-            break;
+            // Guns cold on the way out. This is the player's window, and a
+            // contact still shooting over its shoulder does not give them one.
+            return;
+
+        case Task::Retreat:
+            if (can_turn) {
+                turn_toward(ship.q, ship.x - world.x, ship.y - world.y,
+                            ship.z - world.z, rate);
+            }
+            if (range > k_escape_range) {
+                ship.active = false;
+                world.routed++;
+                award(world, static_cast<uint32_t>(stats(ship.cls).score) /
+                                 k_rout_score_divisor);
+            }
+            return;
+
         case Task::Derelict:
             return;
     }
 
-    if (ship.task == Task::Pursue && can_turn) {
-        const int32_t rate =
-            ship.cls == Hull::Bomber ? k_turn_bomber : k_turn_fighter;
+    if (can_turn) {
         turn_toward(ship.q, world.x - ship.x, world.y - ship.y,
                     world.z - ship.z, rate);
     }
@@ -862,6 +906,7 @@ void tick_fighter(World& world, Ship& ship, int32_t range) {
     if (aligned < 15900 || range > st.fire_range) return;
 
     ship.reload = st.fire_period;
+    ship.pass_shots++;
     const int32_t nose = ship.cls == Hull::Bomber ? centi(180) : centi(110);
     fire_from(world, ship.x + along(fwd[0], nose), ship.y + along(fwd[1], nose),
               ship.z + along(fwd[2], nose), Bolt::EnemyGun, k_bolt_speed,

@@ -84,8 +84,9 @@ struct Subsystem {
 };
 
 enum class Task : uint8_t {
-    Pursue,      // turn onto the player and close
-    Break,       // inside knife range: hold the heading and come round again
+    Pursue,      // turn onto the player and close, guns free
+    Break,       // burst spent or too close: turn away, run, come about
+    Retreat,     // too badly hurt to fight: leave, and keep leaving
     Derelict,    // life support gone, nobody flying it
 };
 
@@ -102,6 +103,12 @@ struct Ship {
 
     Task task;
     uint16_t task_ticks;          // how long the current task has run
+    // How long THIS break lasts, rolled when it starts so every contact does
+    // not come about on the same tick.
+    uint16_t break_ticks;
+    // Shots put down on this pass. A pass ends on the count or on the range,
+    // and without the count a fighter that never quite closes never leaves.
+    uint8_t pass_shots;
     uint16_t reload;              // ticks until the next shot
     uint16_t hit_flash;           // ticks of white left on the model
 
@@ -249,6 +256,10 @@ struct World {
 
     uint32_t score;
     uint16_t kills;
+    // Driven off rather than destroyed: hurt badly enough to run, and far
+    // enough out to be gone. Counted apart from kills because letting one go
+    // is a different outcome from killing it, and worth less.
+    uint16_t routed;
     uint16_t subs_killed;
 };
 

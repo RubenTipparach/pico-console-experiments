@@ -128,23 +128,17 @@ sd::Input read_flight() {
 
 // ---- sound ----
 //
-// Four cues and an engine, synthesised rather than sampled: the 32blit
-// channels make all of this from waveforms, so it costs a few hundred bytes of
-// code and no asset at all.
-constexpr uint8_t k_ch_engine = 0;
-constexpr uint8_t k_ch_gun = 1;
-constexpr uint8_t k_ch_hit = 2;
-bool g_engine_sounding = false;
+// Synthesised rather than sampled: the 32blit channels make all of this from
+// waveforms, so it costs a few hundred bytes of code and no asset at all.
+//
+// Two channels, both event driven. There is deliberately no engine loop: a
+// continuous noise channel under everything is a hiss you cannot stop
+// noticing, and it carries no information at all, because the ship is always
+// under power.
+constexpr uint8_t k_ch_gun = 0;
+constexpr uint8_t k_ch_hit = 1;
 
 void sound_init() {
-    channels[k_ch_engine].waveforms = Waveform::NOISE;
-    channels[k_ch_engine].attack_ms = 200;
-    channels[k_ch_engine].decay_ms = 100;
-    channels[k_ch_engine].sustain = 0xffff;
-    channels[k_ch_engine].release_ms = 400;
-    channels[k_ch_engine].frequency = 140;
-    channels[k_ch_engine].volume = 0;
-
     channels[k_ch_gun].waveforms = Waveform::SQUARE;
     channels[k_ch_gun].attack_ms = 2;
     channels[k_ch_gun].sustain = 0;
@@ -154,22 +148,6 @@ void sound_init() {
     channels[k_ch_hit].attack_ms = 2;
     channels[k_ch_hit].sustain = 0;
     channels[k_ch_hit].release_ms = 220;
-}
-
-void engine_sound(bool on) {
-    if (on && g_chrome.sound_on) {
-        if (!g_engine_sounding) {
-            channels[k_ch_engine].volume = 1400;
-            channels[k_ch_engine].trigger_attack();
-            g_engine_sounding = true;
-        }
-        return;
-    }
-    if (g_engine_sounding) {
-        channels[k_ch_engine].volume = 0;
-        channels[k_ch_engine].trigger_release();
-        g_engine_sounding = false;
-    }
 }
 
 void cue(uint8_t channel, uint16_t frequency, uint16_t decay_ms,
@@ -182,7 +160,6 @@ void cue(uint8_t channel, uint16_t frequency, uint16_t decay_ms,
 }
 
 void sound_stop() {
-    engine_sound(false);
     channels[k_ch_gun].volume = 0;
     channels[k_ch_hit].volume = 0;
 }
@@ -349,7 +326,6 @@ void update_play(uint32_t elapsed) {
     }
 
     voice_the_frame();
-    engine_sound(true);
 
     if (!sd::in_flight(g_world)) finish_sortie();
 }
@@ -388,7 +364,6 @@ void game_update(uint32_t time) {
         case sdr::Screen::Debrief: update_debrief(); break;
     }
 
-    if (g_chrome.screen != sdr::Screen::Play) engine_sound(false);
 
     save_if_needed();
 }

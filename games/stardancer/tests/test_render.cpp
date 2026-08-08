@@ -343,9 +343,44 @@ void test_the_ease_follows_the_clock_and_not_the_frame_count() {
     CHECK(std::fabs(fine - coarse) < 0.01f);
 }
 
+// The settings menus are real, and they show the setting.
+//
+// Toggling lives in game.cpp, which is SDK code no host test can compile, so
+// what can be checked here is the half that decides what a player SEES: that
+// the pause and title menus redraw when a setting changes rather than printing
+// a fixed label that happens to read "SOUND ON".
+void test_the_menus_show_the_settings_they_toggle() {
+    sd::World world;
+    sd::world_init(world);
+    uint32_t clock = 1000;
+
+    auto snapshot = [&](sdr::Screen screen, bool sound, bool invert) {
+        sdr::Chrome chrome{};
+        chrome.screen = screen;
+        chrome.sound_on = sound;
+        chrome.invert_pitch = invert;
+        clock += 16;
+        sdr::render_scene(world, chrome, target(), clock);
+        return g_buffer;   // a copy
+    };
+
+    for (sdr::Screen screen : {sdr::Screen::Paused, sdr::Screen::Title}) {
+        const std::vector<uint8_t> sound_on = snapshot(screen, true, false);
+        const std::vector<uint8_t> sound_off = snapshot(screen, false, false);
+        const std::vector<uint8_t> inverted = snapshot(screen, true, true);
+
+        // Flipping either setting has to change the picture. If it does not,
+        // the row is a label rather than a readout.
+        CHECK(sound_on != sound_off);
+        CHECK(sound_on != inverted);
+        CHECK(sound_off != inverted);
+    }
+}
+
 }  // namespace
 
 int main() {
+    test_the_menus_show_the_settings_they_toggle();
     test_the_first_frame_snaps_rather_than_swooping();
     test_the_camera_trails_a_turn_and_then_catches_up();
     test_a_hard_roll_keeps_the_basis_a_basis();
