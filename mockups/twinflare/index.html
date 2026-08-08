@@ -321,11 +321,43 @@ in flash, which is the only version of this that fits.</p>
 
 <h2>The four tracks</h2>
 
-<p>A track is a ring of nodes and <b>four numbers</b>. The numbers are why
-these are four games rather than four palettes: gravity, grip, cooling and
-drag are multipliers the sim applies everywhere, so the moon is not a grey
-desert, it is a place where a jump goes three times as far, the air brake
-barely bites and the heat has nowhere to go.</p>
+<p>A track is a <b>shape</b>, a <b>profile</b> and <b>four numbers</b>.</p>
+
+<p>The shape is a closed ring of control points, splined and resampled. It was
+a list of "turn 46 degrees over 170 units" commands, and that was wrong in a
+way only the minimaps showed: a plan that turns through 360 degrees closes its
+<i>heading</i>, not its <i>position</i>, so every plan had to be forced to turn
+the same way the whole way round to land back where it started. A shape that
+only ever turns one way is an oval, and there were four of them. Control points
+close by construction, which frees every corner to go whichever way the track
+wants, so a circuit can carry a hairpin, a long straight and a switchback
+without any of them fighting the closure.</p>
+
+<p>The profile is elevation as keyframes around the lap, so hills and dips
+exist independently of ramps.</p>
+
+<p>The four numbers are why these are four games rather than four palettes:
+gravity, grip, cooling and drag are multipliers the sim applies everywhere, so
+the moon is not a grey desert, it is a place where a jump goes a long way, the
+air brake barely bites and the heat has nowhere to go.</p>
+
+<div class="note"><b>Corners are relaxed, not nudged.</b> A shape is authored
+for its character: where the straight is, where the switchback goes, which way
+the tail hooks. Whether a given corner is physically takeable is a different
+question, and answering it by moving coordinates by hand went exactly as you
+would expect: fix the hairpin, discover the tail is now 14 units of radius, fix
+the tail, discover the hairpin came back. So the shape is authored freely and
+then relaxed by a tool until nothing is under target, measuring the
+<b>sampled curve</b> rather than the control polygon. That distinction is the
+whole reason the first relaxer did nothing: Catmull-Rom passes through its
+control points but bulges between them, so a polygon whose corners all look
+gentle can carry a 7 unit radius halfway along a span.<br><br>
+The target is not a taste number. The pod turns at roughly
+<code>YAW_MAX * (1 - YAW_SPEED_FALL * v/vmax)</code> rad/s, so a radius is
+<code>v / omega</code>: about 103 units at full speed, and about 20 at 45 u/s
+on the air brake, which multiplies yaw authority by 1.75. <b>Tightest corner</b>
+on each card is therefore a real answer to "can this be driven", the same way
+<b>worst case jump</b> answers "can this be cleared".</div>
 
 <div class="grid" id="trackcards"></div>
 
@@ -396,6 +428,13 @@ performance number anyone in this repo can produce without a device, and
 room to spare, which proves it will not drop geometry. It does not prove it
 will hit 50 frames a second on a 133 MHz M0+ with no FPU, and the first
 build's real job is to find that out.</div>
+
+<div class="note"><b>The tracks were ovals, and the minimap is what said so.</b>
+Every one of the four was authored as turn-and-length commands, and closing
+the loop forced them all to turn one way for a full circle. On the bench they
+were fine to drive; drawn as a map they were four rings. That is the argument
+for rendering the cards through the real engine rather than describing them:
+nothing about driving a lap tells you the lap is a circle.</div>
 
 <div class="note"><b>What the bench already caught.</b> The first version of
 this drew 731 triangles into a queue that holds 640, with the whole pack
@@ -701,19 +740,47 @@ const RACERS = [
 /* ==================================================================
    THE FOUR TRACKS
 
-   A track is TWO things: a ring of nodes, and a world.
+   A track is THREE things: a shape, a profile, and a world.
 
-   The ring is the road. It is authored as a list of segments rather
-   than as 200 typed out coordinates, and the builder below walks it
-   into nodes at a fixed spacing, because a road authored as
-   "left 40 degrees over 120 units, then a ramp" is a road somebody can
-   edit and 200 coordinates is not.
+   The SHAPE is a closed ring of control points, splined and resampled
+   at a fixed node spacing, and then RELAXED until every corner is one the
+   pod can physically take. That last step is a tool, not a hand edit:
+   authoring by nudging coordinates went fix the hairpin, discover the
+   tail is now 14 units, fix the tail, discover the hairpin came back.
+   The relaxer measures the SAMPLED curve rather than the control polygon,
+   which matters because Catmull-Rom passes through its points but bulges
+   between them: a polygon whose corners all look gentle can still carry a
+   7 unit radius halfway along a span. What is written below is the
+   relaxed output, the way tools/gen_tomlander_props.py writes .obj files
+   that are then committed and editable.
 
-   The world is four numbers, and it is the reason four tracks are four
+   The target is not a taste number. The pod turns at about
+   YAW_MAX * (1 - YAW_SPEED_FALL * v/vmax) rad/s, so radius = v / omega:
+   103 units at 90 u/s, and about 20 at 45 u/s on the air brake, which
+   multiplies yaw authority by 1.75. A corner at 45 units is therefore one
+   you brake for and take. It was a list of "turn 46 degrees over 170
+   units" commands, and that was wrong in a way that only showed up once
+   the minimaps were drawn: a plan that turns through 360 degrees closes
+   its HEADING, not its POSITION, so every plan had to be forced to turn
+   the same way all the way round to land back where it started, and a
+   shape that only ever turns one way is an oval. Four ovals. Control
+   points close by construction, which frees every corner to go
+   whichever way the track wants, so a circuit can have a hairpin, a
+   long straight and an S without any of them fighting the closure.
+
+   The PROFILE is elevation, as keyframes around the lap, interpolated
+   smoothly. Hills and dips now exist independently of ramps, which is
+   what stops the moon reading as a flat grey desert.
+
+   The WORLD is four numbers, and it is the reason four tracks are four
    games rather than four skins. Gravity, grip, cooling and drag are
-   multipliers the sim applies everywhere, so the moon is not a grey
-   desert: it is a place where a jump goes three times as far, the air
-   brake barely bites, and the heat has nowhere to go.
+   multipliers the sim applies everywhere, so ASHFALL is not a grey
+   DUNE SEA: it is a place where a jump goes a long way, the air brake
+   barely bites, and the heat has nowhere to go.
+
+   Features are placed by position around the lap rather than by which
+   authoring command they happened to sit on, so moving a corner does
+   not move the jump.
    ================================================================== */
 
 // segment flags
@@ -722,16 +789,13 @@ const F_NONE = 0, F_RAMP = 1, F_GAP = 2, F_BOOST = 4, F_WALL = 8, F_SHORT = 16;
 const TRACKS = [
   {
     id:'dune', name:'DUNE SEA', laps:3,
-    sub:'Twin suns, no shade, and a canyon nobody mentions until it is under you.',
+    sub:'A long run down the flats, a hairpin at the far rocks, and a canyon nobody mentions until it is under you.',
     world:{ grav:1.00, grip:1.00, cool:1.00, drag:1.00 },
     worldline:'Baseline. Everything else is measured against this.',
     // The road must not be a shade of the ground. It was, on the first
     // pass (198,170,124 of road against 206,178,128 of desert) and at 4
     // bits a channel those are the SAME COLOUR: the bench rendered a
-    // beautiful dune sea with no visible track in it, and the only way to
-    // tell where the road went was to drive off it. Every palette here now
-    // separates road from ground by more than one 4-bit step in at least
-    // two channels, and the edge stripe below carries the rest.
+    // beautiful dune sea with no visible track in it.
     sky:[[128,176,222],[226,206,170]],
     ground:[[220,190,138],[190,160,112]],
     road:[[160,132,94],[140,114,80]],
@@ -739,19 +803,29 @@ const TRACKS = [
     wall:[196,166,120],
     rock:[[122,94,66],[86,64,46]],
     hazard:'Sand drifts across the road and drags one engine.',
-    // [turn deg, length, rise, flags]
-    // The turns sum to 360. They did not before, and the tail-bend that
-    // closes the ring had to drag the last eighth of the road back across
-    // half the map to make a lap of it: every track came out as a long
-    // thin hairpin rather than a circuit, and the minimap said so. A plan
-    // is a circuit when it turns all the way round; the bend at the end is
-    // for the last few degrees, not for the missing three hundred.
-    plan:[
-      [0,190,0,F_NONE],[ 62,150,0,F_NONE],[0,110,0,F_BOOST],
-      [ 40,170,6,F_RAMP],[0,90,-6,F_GAP],[0,140,0,F_NONE],
-      [ 58,190,0,F_WALL],[0,120,0,F_SHORT],[ 34,140,0,F_NONE],
-      [0,160,4,F_RAMP],[ 30,150,-4,F_NONE],[ 56,130,0,F_NONE],
-      [0,150,0,F_BOOST],[ 46,170,0,F_NONE],[ 34,120,0,F_NONE],
+    // A long main straight along the bottom, a fast right onto the back
+    // section, a proper hairpin at the far end, then an S that spits you
+    // out onto the straight again.
+    // The S on the left was 20 units of radius, which at 90 u/s is not a
+    // corner, it is a wall with a gap in it: the pod turns about 0.87
+    // rad/s at speed, so anything under about 100 units has to be braked
+    // for and anything under 20 cannot be taken at all. Same shape, same
+    // hairpin, opened out to 47.
+    shape:[      [ -47,-195],[ 130,-224],[ 320,-186],[ 432, -80],
+      [ 428,  62],[ 320, 168],[ 168, 200],[  41, 149],
+      [ -42,  67],[-160,  96],[-320, 128],[-469, 119],
+      [-554,  39],[-499, -59],[-360, -76],[-200,-104],
+      [-102,-142],
+    ],
+    elev:[0, 0, 4, 10, 6, -2, -8, -4, 2, 6, 2, -2, 0],
+    feat:[
+      { at:0.06, len:0.030, flag:F_BOOST, units:26 },
+      { at:0.20, len:0.055, flag:F_RAMP,  units:110 },
+      { at:0.255,len:0.028, flag:F_GAP,   units:56 },
+      { at:0.36, len:0.090, flag:F_WALL  },
+      { at:0.50, len:0.060, flag:F_SHORT },
+      { at:0.63, len:0.050, flag:F_RAMP,  units:110 },
+      { at:0.78, len:0.030, flag:F_BOOST, units:26 },
     ],
   },
   {
@@ -766,19 +840,29 @@ const TRACKS = [
     wall:[86,146,150],
     rock:[[52,92,96],[28,54,64]],
     hazard:'Submerged half. Depth fade darkens everything below the surface.',
-    plan:[
-      [0,150,0,F_NONE],[ 54,160,0,F_NONE],[0,120,8,F_RAMP],
-      [0,100,-14,F_NONE],[ 66,180,0,F_WALL],[0,130,0,F_BOOST],
-      [ 40,150,0,F_SHORT],[0,110,-4,F_GAP],[ 52,170,0,F_NONE],
-      [0,140,10,F_RAMP],[ 44,150,-8,F_NONE],[0,130,0,F_NONE],
-      [ 62,160,0,F_NONE],[ 42,140,0,F_BOOST],
+    // A kidney: the causeway runs the long outside edge, then the road
+    // pinches inward through the trench and doubles back on itself.
+    shape:[      [-300,-170],[  20,-214],[ 280,-160],[ 400, -30],
+      [ 356, 110],[ 210, 190],[  60, 150],[  10,  30],
+      [ -70, -40],[-190,  20],[-230, 150],[-350, 210],
+      [-470, 130],[-450, -20],[-390,-120],
+    ],
+    elev:[6, 10, 12, 8, 2, -6, -14, -18, -12, -4, 2, 6],
+    feat:[
+      { at:0.10, len:0.055, flag:F_RAMP,  units:110 },
+      { at:0.24, len:0.090, flag:F_WALL  },
+      { at:0.36, len:0.030, flag:F_BOOST, units:26 },
+      { at:0.46, len:0.060, flag:F_SHORT },
+      { at:0.565,len:0.030, flag:F_GAP,   units:56 },
+      { at:0.70, len:0.055, flag:F_RAMP,  units:110 },
+      { at:0.88, len:0.030, flag:F_BOOST, units:26 },
     ],
   },
   {
     id:'ash', name:'ASHFALL', laps:2,
-    sub:'A dead moon. No air to brake against and nowhere for the heat to go.',
-    world:{ grav:0.42, grip:1.20, cool:0.45, drag:0.55 },
-    worldline:'Two fifths of the desert gravity and half its air. Jumps go a long way, the air brake barely bites, and the boost gauge never really cools.',
+    sub:'A dead moon, and the longest lap here. Two straights you can hold the boost down, and two jumps that need it.',
+    world:{ grav:0.50, grip:1.20, cool:0.45, drag:0.55 },
+    worldline:'Half the desert gravity and half its air. Jumps go a long way, the air brake barely bites, and the boost gauge never really cools.',
     sky:[[8,8,16],[34,32,44]],
     ground:[[78,76,86],[52,50,60]],
     road:[[158,156,168],[126,124,138]],
@@ -786,17 +870,34 @@ const TRACKS = [
     wall:[126,124,136],
     rock:[[86,84,94],[44,42,52]],
     hazard:'No cooling. Overheat is the track, not an accident.',
-    plan:[
-      [0,200,0,F_BOOST],[ 58,180,0,F_NONE],[0,140,12,F_RAMP],
-      [0,160,-12,F_GAP],[ 64,190,0,F_WALL],[0,150,0,F_SHORT],
-      [ 44,160,0,F_NONE],[0,180,14,F_RAMP],[0,120,-14,F_GAP],
-      [ 56,170,0,F_NONE],[0,160,0,F_BOOST],[ 48,180,0,F_NONE],
-      [ 90,150,0,F_NONE],
+    // Stretched and angular, because low gravity wants room. Two very
+    // long straights on the outside, a hairpin at each end, and a kink
+    // in the middle of the back one so it is not a drag strip.
+    // Was still the roundest of the four, which on the track that is
+    // meant to be the fastest is the least interesting place for it. The
+    // infield now bites: the road runs the long outside edge, then dives
+    // in to a slow V and climbs back out, so the two boost straights are
+    // paid for by the one corner nobody takes flat.
+    shape:[      [-560, -70],[-410,-186],[-190,-214],[  40,-206],
+      [ 300,-186],[ 496,-104],[ 566,  46],[ 470, 176],
+      [ 296, 206],[ 150, 120],[  30, 190],[-140, 208],
+      [-299, 132],[-429, 180],[-540,  90],
+    ],
+    elev:[0, 8, 18, 10, -4, -14, -8, 2, 10, 14, 8, -4, -6],
+    feat:[
+      { at:0.02, len:0.030, flag:F_BOOST, units:26 },
+      { at:0.17, len:0.060, flag:F_RAMP,  units:110 },
+      { at:0.225,len:0.030, flag:F_GAP,   units:56 },
+      { at:0.34, len:0.085, flag:F_WALL  },
+      { at:0.47, len:0.065, flag:F_SHORT },
+      { at:0.60, len:0.060, flag:F_RAMP,  units:110 },
+      { at:0.655,len:0.030, flag:F_GAP,   units:56 },
+      { at:0.82, len:0.030, flag:F_BOOST, units:26 },
     ],
   },
   {
     id:'frost', name:'HOARFROST', laps:3,
-    sub:'Narrow, walled, and the road does not hold on to you.',
+    sub:'A serpentine between ice walls. Nothing here is a straight for long, and the road does not hold on to you.',
     world:{ grav:1.05, grip:0.52, cool:1.55, drag:1.05 },
     worldline:'Half the grip of the desert. The pod goes where it was going, not where it is pointing, and the walls are close.',
     sky:[[168,182,200],[220,230,240]],
@@ -810,80 +911,150 @@ const TRACKS = [
     // stay on.
     rock:[[190,206,226],[152,172,200]],
     hazard:'Crosswind. It pushes, and on ice a push is a lap.',
-    // Gentler than it was. The first draft turned 52 to 60 degrees inside
-    // 140 units at half the desert's grip, which is a corner that cannot be
-    // taken at any speed: the pod arrives sideways and the wall does the
-    // rest. Same shape, same wall count, longer arcs. The track is still
-    // the one that slides; it is no longer the one that is impossible.
-    plan:[
-      [0,150,0,F_NONE],[ 50,190,0,F_WALL],[0,110,0,F_BOOST],
-      [ 44,200,0,F_WALL],[0,130,6,F_RAMP],[0,100,-6,F_GAP],
-      [ 48,170,0,F_NONE],[0,120,0,F_SHORT],[ 52,190,0,F_WALL],
-      [0,140,0,F_NONE],[ 46,190,0,F_WALL],[0,130,4,F_RAMP],
-      [ 60,170,-4,F_NONE],[0,150,0,F_BOOST],[ 60,150,0,F_NONE],
+    // A serpentine: the control points alternate side to side so the
+    // road changes direction constantly. On half grip that is the whole
+    // character of the track, and it is the shape a turn-and-length plan
+    // could never have produced.
+    shape:[      [-327,-162],[-170,-230],[ -20,-140],[ 130,-236],
+      [ 300,-170],[ 398, -40],[ 318,  86],[ 160,  40],
+      [  40, 140],[-106, 170],[-206,  99],[-328, 141],
+      [-417,  50],[-389, -40],[-388,-109],
+    ],
+    elev:[0, 5, 9, 4, -3, -7, -2, 5, 8, 3, -3, -2],
+    feat:[
+      { at:0.08, len:0.085, flag:F_WALL  },
+      { at:0.20, len:0.030, flag:F_BOOST, units:26 },
+      { at:0.27, len:0.090, flag:F_WALL  },
+      { at:0.40, len:0.050, flag:F_RAMP,  units:110 },
+      { at:0.45, len:0.028, flag:F_GAP,   units:56 },
+      { at:0.545,len:0.055, flag:F_SHORT },
+      { at:0.64, len:0.090, flag:F_WALL  },
+      { at:0.80, len:0.050, flag:F_RAMP,  units:110 },
+      { at:0.90, len:0.030, flag:F_BOOST, units:26 },
     ],
   },
 ];
 
 /* ------------------------------------------------------------------
-   Walking a plan into nodes.
+   Walking a shape into nodes.
 
    NODE_SPACING is the only thing that decides how much flash a track
    costs, so it is written down rather than tuned by feel: at 8 units a
-   2000 unit lap is 250 nodes, and a node is 8 bytes.
+   2,400 unit lap is 300 nodes, and a node is 8 bytes.
+
+   On the device this runs once, at build time, not at boot: the same
+   shape of tool as obj2cpp.py, turning something a person can edit
+   into a const table in flash. Twelve control points are 48 bytes and
+   300 nodes are 2.4 KB, and flash is the resource this machine has.
    ------------------------------------------------------------------ */
 const NODE_SPACING = 8;
 
+// Catmull-Rom, which passes THROUGH its control points rather than
+// near them. That matters for authoring: a point dropped where the
+// hairpin should be is where the hairpin is.
+function catmull(p0, p1, p2, p3, u) {
+  const u2 = u * u, u3 = u2 * u;
+  return [
+    0.5 * ((2*p1[0]) + (-p0[0]+p2[0])*u + (2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*u2
+           + (-p0[0]+3*p1[0]-3*p2[0]+p3[0])*u3),
+    0.5 * ((2*p1[1]) + (-p0[1]+p2[1])*u + (2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*u2
+           + (-p0[1]+3*p1[1]-3*p2[1]+p3[1])*u3),
+  ];
+}
+
 function buildTrack(t) {
+  const cp = t.shape, m = cp.length;
+
+  // Dense sample of the closed spline, then resample at constant arc
+  // length. Sampling the spline at constant PARAMETER would bunch nodes
+  // into the corners and stretch them down the straights, and since a
+  // node is also the collision resolution that would make the hairpins
+  // accurate and the straights coarse, which is backwards.
+  const dense = [];
+  const SUB = 40;
+  for (let i = 0; i < m; i++) {
+    const p0 = cp[(i-1+m)%m], p1 = cp[i], p2 = cp[(i+1)%m], p3 = cp[(i+2)%m];
+    for (let k = 0; k < SUB; k++) dense.push(catmull(p0, p1, p2, p3, k / SUB));
+  }
+  const D = dense.length;
+  const cum = [0];
+  for (let i = 1; i <= D; i++) {
+    const a = dense[i-1], b = dense[i % D];
+    cum.push(cum[i-1] + Math.hypot(b[0]-a[0], b[1]-a[1]));
+  }
+  const total = cum[D];
+  const count = Math.max(24, Math.round(total / NODE_SPACING));
+  const step = total / count;
+
   const nodes = [];
-  let x = 0, z = 0, y = 0, head = 0;
-  for (const [turn, len, rise, flags] of t.plan) {
-    const steps = Math.max(1, Math.round(len / NODE_SPACING));
-    const dTurn = (turn * Math.PI / 180) / steps;
-    const dRise = rise / steps;
-    for (let i = 0; i < steps; i++) {
-      head += dTurn;
-      x += Math.sin(head) * NODE_SPACING;
-      z += Math.cos(head) * NODE_SPACING;
-      y += dRise;
-      // A gap is a hole in the road, so it carries no surface at all and
-      // the hover field has nothing to push against. That is the whole
-      // implementation of "jump this or fall in".
-      // 8.5 and not 7.5 between walls. At 7.5 (a fifteen unit corridor)
-      // HOARFROST could not be held on the road by a damped autopilot at
-      // half grip, let alone by a thumb, and a track nobody can finish is
-      // not a hard track. The walls still narrow it; they no longer close
-      // it.
-      const hw = (flags & F_WALL) ? 8.5 : (flags & F_SHORT) ? 11 : 9.5;
-      // A feature is not the whole segment it was authored on. A boost
-      // pad written against a 150 unit stretch became a 150 unit stretch
-      // of glowing blue road, which is not a pad, it is a colour scheme.
-      // A pad is three nodes; a gap is four; a ramp is the rise itself and
-      // keeps the whole segment.
-      let f = flags;
-      if ((flags & F_BOOST) && i >= 3) f &= ~F_BOOST;
-      if ((flags & F_GAP) && (i < 2 || i > 7)) f &= ~F_GAP;
-      nodes.push({ x, z, y, hw, flags: f, head });
+  let seek = 0;
+  for (let i = 0; i < count; i++) {
+    const want = i * step;
+    while (seek < D - 1 && cum[seek+1] < want) seek++;
+    const span = cum[seek+1] - cum[seek] || 1;
+    const u = (want - cum[seek]) / span;
+    const a = dense[seek], b = dense[(seek+1) % D];
+    const frac = i / count;
+    nodes.push({
+      x: a[0] + (b[0]-a[0]) * u,
+      z: a[1] + (b[1]-a[1]) * u,
+      y: elevAt(t, frac),
+      hw: 9.5, flags: F_NONE, head: 0, frac,
+    });
+  }
+
+  // Features, placed by where they are around the LAP rather than by
+  // which authoring command they sat on, so moving a corner does not
+  // move the jump.
+  //
+  // WHERE a feature is, is a fraction of the lap. HOW LONG it is, is in
+  // world units, and the two are different on purpose. A gap written as
+  // 3 percent of the lap was 59 units on the short track and 83 on the
+  // long one, so making ASHFALL bigger silently made its jumps harder;
+  // the length of a hole in the road is a thing in metres, not a
+  // proportion of the circuit it happens to sit on.
+  for (const f of t.feat) {
+    const span = f.units ? f.units / NODE_SPACING / count : f.len;
+    const i0 = Math.round(f.at * count), i1 = Math.round((f.at + span) * count);
+    for (let i = i0; i < i1; i++) {
+      const nd = nodes[((i % count) + count) % count];
+      nd.flags |= f.flag;
     }
   }
-  // Close the ring. The plan will not land exactly back on the start, so
-  // the last eighth of it is bent home. Authoring a closed loop by hand
-  // is a fool's errand; closing it here means a plan can be edited
-  // freely and still be a lap.
-  const n = nodes.length, tail = Math.floor(n / 8);
-  for (let i = 0; i < tail; i++) {
-    const k = n - tail + i, f = (i + 1) / tail;
-    const e = f * f * (3 - 2 * f);
-    nodes[k].x += (0 - nodes[n - 1].x) * e;
-    nodes[k].z += (0 - nodes[n - 1].z) * e;
-    nodes[k].y += (0 - nodes[n - 1].y) * e;
+  for (const nd of nodes) {
+    nd.hw = (nd.flags & F_WALL) ? 8.5 : (nd.flags & F_SHORT) ? 11 : 9.5;
+    // A ramp is a rise, and the rise is the elevation profile's job now.
+    // What the flag still does is mark the lip: the last stretch before a
+    // gap, drawn so the player can see the launch coming.
   }
+
+  const n = nodes.length;
   for (let i = 0; i < n; i++) {
     const a = nodes[(i + n - 1) % n], b = nodes[(i + 1) % n];
     nodes[i].head = Math.atan2(b.x - a.x, b.z - a.z);
   }
   t.nodes = nodes;
   t.length = n * NODE_SPACING;
+
+  // The tightest corner on the lap, which is the number that says whether
+  // a shape is drivable at all. Radius = spacing / turn per node. At 90
+  // u/s with the speed falloff the pod turns about 0.87 rad/s, so a
+  // corner under about 100 units has to be braked for, and one under 20
+  // cannot be taken at any speed.
+  let tightest = 1e9;
+  for (let i = 0; i < n; i++) {
+    // Its own wrap, not partF's wrapPi: that is a `const` arrow in a file
+    // that loads AFTER this one, and buildTrack runs at load time, so
+    // reaching for it here is a temporal dead zone error rather than a
+    // missing function.
+    let d = nodes[(i+1)%n].head - nodes[i].head;
+    while (d > Math.PI) d -= Math.PI*2;
+    while (d < -Math.PI) d += Math.PI*2;
+    d = Math.abs(d);
+    if (d > 1e-4) tightest = Math.min(tightest, NODE_SPACING / d);
+  }
+  t.tightest = Math.round(tightest);
+
   // Scenery. Deterministic from the index so the same track is the same
   // track every time the page loads, which a mockup that is being argued
   // about needs more than a game does.
@@ -903,6 +1074,19 @@ function buildTrack(t) {
     });
   }
   return t;
+}
+
+/* Elevation around the lap, from keyframes, smoothly. A closed
+   Catmull-Rom on one axis, so the hill at the end of the lap meets the
+   dip at the start of it without a step. */
+function elevAt(t, frac) {
+  const e = t.elev, m = e.length;
+  const f = ((frac % 1) + 1) % 1 * m;
+  const i = Math.floor(f), u = f - i;
+  const p0 = e[(i-1+m)%m], p1 = e[i%m], p2 = e[(i+1)%m], p3 = e[(i+2)%m];
+  const u2 = u*u, u3 = u2*u;
+  return 0.5 * ((2*p1) + (-p0+p2)*u + (2*p0-5*p1+4*p2-p3)*u2
+                + (-p0+3*p1-3*p2+p3)*u3);
 }
 TRACKS.forEach(buildTrack);
 /* ==================================================================
@@ -2575,13 +2759,22 @@ function glide(t, rc, pitch) {
   // off the edge and wrecks, and the "top speed" this then reported for
   // ASHFALL was 101 against the desert's 628. That is not a track that is
   // slow, it is a measurement taken while falling.
-  for (let i = 0; i < 1600; i++) { steerToLine(s, inp); s.step(inp, TUNE.TICK); }
-  const v = s.speed;
+  // The FASTEST the pod got, not where it happened to be after sixteen
+  // seconds. The probe drives the real track, and the real track has gaps
+  // in it: with no nose-up the pod falls in one, wrecks, and rejoins at 12
+  // u/s. Sampling the final speed then reported ASHFALL's worst case jump
+  // as 25 units against an 80 unit gap and painted the card red, which is
+  // a measurement of the probe rather than of the track.
+  let v = 0;
+  for (let i = 0; i < 1600; i++) {
+    steerToLine(s, inp); s.step(inp, TUNE.TICK);
+    if (!s.dead_run && s.speed > v) v = s.speed;
+  }
   const gHere = TUNE.GRAV * t.world.grav;
   let y = 0, vy = v * 0.30, x = 0, vx = v;
   for (let i = 0; i < 4000 && (i < 4 || y > 0); i++) {
     const lift = pitch > 0
-      ? Math.min(TUNE.LIFT_MAX * t.world.drag, gHere * 0.82,
+      ? Math.min(TUNE.LIFT_MAX * t.world.drag, gHere * 0.62,
                  TUNE.LIFT * vx * pitch * t.world.drag)
       : 0;
     vy += (-gHere + lift) * TUNE.TICK;
@@ -2626,7 +2819,17 @@ function widestGap(t) {
     c.getContext('2d').putImageData(r.img, 0, 0);
 
     const flat = glide(t, RACERS[1], 0);            // slowest pod, no glide
-    const best = glide(t, RACERS[3], TUNE.PITCH_MAX); // fastest pod, nose up
+    // The best case is SEARCHED, not assumed to be maximum nose-up.
+    // Holding PITCH_MAX bleeds so much speed through induced drag that on
+    // HOARFROST it went 85 units against the flat launch's 137, and a
+    // "best case" below the worst case is a label telling a lie. The
+    // optimum is somewhere in the middle and it moves with the track's
+    // air, so the honest thing is to sweep for it.
+    let best = flat;
+    for (let k = 0; k <= 10; k++) {
+      const cand = glide(t, RACERS[3], TUNE.PITCH_MAX * k / 10);
+      if (cand.reach > best.reach) best = cand;
+    }
     const gap = widestGap(t);
     const counts = F.map(([f]) => {
       let n = 0, prev = 0;
@@ -2644,6 +2847,9 @@ function widestGap(t) {
       '<tr><td style="padding:1px 10px 1px 0">cooling</td><td>' + t.world.cool.toFixed(2) + 'x</td></tr>' +
       '<tr><td style="padding:1px 10px 1px 0">air</td><td>' + t.world.drag.toFixed(2) + 'x</td></tr>' +
       '<tr><td style="padding:1px 10px 1px 0">top speed</td><td>' + best.speed + '</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">tightest corner</td><td style="color:' +
+        (t.tightest >= 40 ? '#5ee08a' : t.tightest >= 25 ? '#ffbe46' : '#ff4d5e') +
+        '">' + t.tightest + ' u</td></tr>' +
       '<tr><td style="padding:1px 10px 1px 0">widest gap</td><td>' + gap + ' u</td></tr>' +
       '<tr><td style="padding:1px 10px 1px 0">worst case jump</td><td style="color:' +
         (flat.reach > gap * 1.4 ? '#5ee08a' : '#ff4d5e') + '">' + flat.reach + ' u</td></tr>' +

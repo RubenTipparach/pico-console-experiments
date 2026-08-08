@@ -76,8 +76,35 @@ and the bench gates the boost on speed for the same reason.
 - **The camera is a character.** Eased rather than welded, carrying a third of
   the pod's bank, pulling back on boost.
 
-The four tracks are a ring of nodes and **four numbers**: gravity, grip,
-cooling and drag. That is what makes them four games rather than four palettes.
+## A track is a shape, a profile and four numbers
+
+The **shape** is a closed ring of control points, splined and resampled. It was
+a list of "turn 46 degrees over 170 units" commands, and that was wrong in a way
+only the minimaps showed: a plan that turns through 360 degrees closes its
+*heading*, not its *position*, so every plan had to be forced to turn the same
+way the whole way round to land back where it started. A shape that only ever
+turns one way is an oval, and there were four of them. Control points close by
+construction, which frees every corner to go whichever way the track wants, so
+a circuit can carry a hairpin, a long straight and a switchback without any of
+them fighting the closure.
+
+Corners are **relaxed, not nudged**. A shape is authored for its character;
+whether a given corner is takeable is a different question, and answering it by
+hand went fix the hairpin, discover the tail is now 14 units, fix the tail,
+discover the hairpin came back. The relaxer measures the **sampled curve**
+rather than the control polygon, which is why the first one did nothing:
+Catmull-Rom passes through its points but bulges between them, so a polygon
+whose corners all look gentle can carry a 7 unit radius halfway along a span.
+The target comes from the pod: it turns at about
+`YAW_MAX * (1 - YAW_SPEED_FALL * v/vmax)` rad/s, so a radius is `v / omega`,
+about 103 units at full speed and about 20 at 45 u/s on the air brake. Every
+card reports its tightest corner.
+
+The **profile** is elevation as keyframes around the lap, so hills and dips
+exist independently of ramps.
+
+The **four numbers** are gravity, grip, cooling and drag. That is what makes
+them four games rather than four palettes.
 
 ## What building the bench found
 
@@ -106,7 +133,22 @@ six.
   all its fill in the bottom half, so budget on the split buying much less than
   2x.
 
-And four bugs the bench caught that prose would not have:
+And these, which prose would not have caught:
+
+- **All four tracks were ovals**, and the minimap is what said so. They were
+  fine to drive; drawn as maps they were four rings. Nothing about driving a lap
+  tells you the lap is a circle.
+- **A gap's width was a fraction of the lap**, so making ASHFALL longer silently
+  made its jumps harder. Where a feature sits is a proportion of the circuit;
+  how long it is, is a thing in metres.
+- **The speed probe was measuring a wrecked pod.** It drove the real track to
+  find a top speed, the real track has gaps in it, and with no nose-up the pod
+  fell in one and rejoined at 12 u/s. ASHFALL's worst case jump came out at 25
+  units against an 80 unit gap and the card went red for a fault in the ruler.
+- **On the moon, the glide never came down.** The lift cap was 0.82 of local
+  gravity, so the pod descended at 0.18 g whatever the track: 1,889 units of
+  glide on a 2,760 unit lap is not a jump, it is a flight, and a race nobody can
+  lose by missing one.
 
 - **731 triangles into a queue that holds 640**, with the pack inside forty
   units, which is exactly the moment a race is won. The engine mesh had four
