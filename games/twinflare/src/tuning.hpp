@@ -78,6 +78,9 @@ constexpr int32_t k_asym_drag = 220;          // thousandths of extra drag, one 
 constexpr int32_t k_drag = 4950;              // hundred-thousandths, quadratic
 constexpr int32_t k_drag_brake = 7200;        // thousandths multiplier, air brake out
 constexpr int32_t k_roll_drag = per_s2(fp(1, 900));
+// Rough ground, in thousandths of the normal drag. Leaving the road costs
+// time; it does not cost the run.
+constexpr int32_t k_offroad_drag = 2600;
 
 // ---- steering --------------------------------------------------------------
 // A podracer does not turn like a car. It turns like a thing dragged behind
