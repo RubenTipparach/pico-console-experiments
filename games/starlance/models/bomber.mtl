@@ -1,0 +1,8 @@
+newmtl hull
+Kd 0.470 0.400 0.240
+
+newmtl spine
+Kd 0.300 0.260 0.170
+
+newmtl pod
+Kd 0.620 0.330 0.150

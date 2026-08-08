@@ -18,6 +18,7 @@
 build:
   - dustrider
   - kingfisher
+  - starlance
 
 hold:
   - chicken

@@ -1,0 +1,115 @@
+# Enemy gunship: the small warship, 9 units long on the field.
+#
+# The first hull in the game with hardpoints, so its blocks are laid out to be
+# the places those hardpoints sit: two turret sponsons out on the beam, a
+# bridge on the spine carrying the shield generator, and an engine block at
+# the tail. Shooting at a part of this ship has to mean something, which it
+# only does if the parts are visible as parts.
+#
+# Seats, from k_gunship_subs in src/sim.cpp, divided by 100 and by the 9 unit
+# hull length: turrets (+/-0.167, 0.078, 0.122), shields (0, 0.156, -0.067),
+# engines (0, 0, -0.444).
+
+mtllib gunship.mtl
+
+# ---- main hull
+usemtl hull
+v  -0.130  -0.090  -0.400
+v   0.130  -0.090  -0.400
+v   0.130   0.090  -0.400
+v  -0.130   0.090  -0.400
+v  -0.085  -0.060   0.360
+v   0.085  -0.060   0.360
+v   0.085   0.075   0.360
+v  -0.085   0.075   0.360
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- prow
+usemtl hull
+v  -0.085  -0.060   0.360
+v   0.085  -0.060   0.360
+v   0.085   0.075   0.360
+v  -0.085   0.075   0.360
+v  -0.028  -0.022   0.500
+v   0.028  -0.022   0.500
+v   0.028   0.026   0.500
+v  -0.028   0.026   0.500
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- bridge: the shield generator lives on top of this
+usemtl bridge
+v  -0.070   0.085  -0.180
+v   0.070   0.085  -0.180
+v   0.070   0.200  -0.180
+v  -0.070   0.200  -0.180
+v  -0.048   0.070   0.060
+v   0.048   0.070   0.060
+v   0.048   0.170   0.060
+v  -0.048   0.170   0.060
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- left turret sponson. Tip is the low x corner: see models/README.md.
+usemtl turret
+v  -0.230   0.020  -0.010
+v  -0.120   0.000  -0.060
+v  -0.120   0.130  -0.060
+v  -0.230   0.125  -0.010
+v  -0.230   0.020   0.220
+v  -0.120   0.000   0.290
+v  -0.120   0.130   0.290
+v  -0.230   0.125   0.220
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- right turret sponson
+usemtl turret
+v   0.120   0.000  -0.060
+v   0.230   0.020  -0.010
+v   0.230   0.125  -0.010
+v   0.120   0.130  -0.060
+v   0.120   0.000   0.290
+v   0.230   0.020   0.220
+v   0.230   0.125   0.220
+v   0.120   0.130   0.290
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
+
+# ---- engine block
+usemtl engine
+v  -0.115  -0.080  -0.500
+v   0.115  -0.080  -0.500
+v   0.115   0.080  -0.500
+v  -0.115   0.080  -0.500
+v  -0.128  -0.088  -0.360
+v   0.128  -0.088  -0.360
+v   0.128   0.088  -0.360
+v  -0.128   0.088  -0.360
+f -8 -7 -6 -5
+f -4 -1 -2 -3
+f -7 -3 -2 -6
+f -8 -5 -1 -4
+f -5 -6 -2 -1
+f -8 -4 -3 -7
