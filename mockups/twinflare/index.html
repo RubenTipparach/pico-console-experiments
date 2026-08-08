@@ -1,0 +1,2778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Twin Flare // podracer demake bench</title>
+<style>
+  :root{
+    --ink:#e9edf6; --dim:#8a91a6; --line:#232839; --bg:#0a0c13; --panel:#11141e;
+    --panel2:#0d1018; --accent:#ff8a2b; --accent2:#4fd6ff; --bad:#ff4d5e;
+    --good:#5ee08a;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:26px 20px 80px;max-width:1180px;margin-inline:auto}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:.04em}
+  h1 span{color:var(--accent)}
+  p.lede{color:var(--dim);margin:0 0 26px;max-width:74ch}
+  h2{font-size:13px;margin:40px 0 12px;letter-spacing:.14em;color:var(--accent);
+     text-transform:uppercase;border-top:1px solid var(--line);padding-top:14px}
+  h3{font-size:13px;margin:20px 0 8px;letter-spacing:.05em}
+  p{color:var(--dim);max-width:78ch}
+  p b,li b{color:var(--ink);font-weight:400}
+  a{color:var(--accent2)}
+  code{color:var(--accent2);font-size:12.5px}
+  ul{color:var(--dim);font-size:13px;max-width:78ch;padding-left:18px}
+  li{margin:5px 0}
+
+  /* ---- the bench ---- */
+  .bench{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .screenwrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+              padding:14px}
+  canvas#screen{width:360px;height:360px;image-rendering:pixelated;display:block;
+          border:1px solid #000;background:#000;outline:none;touch-action:none}
+  canvas#screen:focus{outline:2px solid var(--accent);outline-offset:3px}
+  .focusnote{font-size:11.5px;color:var(--dim);margin-top:8px;text-align:center}
+  /* The screen steps DOWN in whole multiples, never to a fraction. It is a
+     120 pixel picture and image-rendering:pixelated only tells the truth at
+     an integer scale; 2.4x would soften exactly the pixels the page exists
+     to show. Same reasoning as web/shell.html pinning its canvas. */
+  @media (max-width:470px){
+    body{padding:20px 12px 60px}
+    canvas#screen{width:240px;height:240px}
+  }
+  @media (max-width:330px){ canvas#screen{width:120px;height:120px} }
+  .focusnote.on{color:var(--good)}
+
+  /* ---- gamepad, laid out like web/shell.html: X top, Y left, A right, B bottom ---- */
+  .pad{display:flex;gap:26px;align-items:center;margin-top:14px;justify-content:center}
+  .dpad,.face{position:relative;width:96px;height:96px}
+  .btn:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn{position:absolute;width:32px;height:32px;border-radius:7px;border:1px solid #2c3346;
+       background:#1a2030;color:#cfd6e6;font:600 12px/1 ui-monospace,monospace;
+       display:flex;align-items:center;justify-content:center;cursor:pointer;
+       user-select:none;-webkit-user-select:none}
+  .btn.on{background:var(--accent);color:#140a02;border-color:var(--accent)}
+  .dpad .btn[data-btn="up"]{left:32px;top:0}
+  .dpad .btn[data-btn="left"]{left:0;top:32px}
+  .dpad .btn[data-btn="right"]{left:64px;top:32px}
+  .dpad .btn[data-btn="down"]{left:32px;top:64px}
+  .face .btn[data-btn="x"]{left:32px;top:0}
+  .face .btn[data-btn="y"]{left:0;top:32px}
+  .face .btn[data-btn="a"]{left:64px;top:32px}
+  .face .btn[data-btn="b"]{left:32px;top:64px}
+  .face .btn[data-btn="a"]{background:#3a1024;border-color:#5d1636;color:#ffc8dc}
+  .face .btn[data-btn="b"]{background:#0d3328;border-color:#155543;color:#b6ffe8}
+  .face .btn[data-btn="a"].on,.face .btn[data-btn="b"].on{background:var(--accent);color:#140a02}
+
+  /* ---- side rail ---- */
+  .rail{flex:1;min-width:330px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card h4{margin:0 0 9px;font-size:11px;letter-spacing:.14em;color:var(--dim);
+           text-transform:uppercase;font-weight:400}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid #2c3346;background:#151a27;color:#aeb6c8;border-radius:6px;
+        padding:5px 9px;font:12px/1 ui-monospace,monospace;cursor:pointer}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#140a02}
+  .chip small{display:block;font-size:10px;opacity:.75;margin-top:3px}
+  .tele{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12px}
+  .tele dt{color:var(--dim)}
+  .tele dd{margin:0;color:var(--ink)}
+  .meter{height:7px;background:#1b2130;border-radius:4px;overflow:hidden;margin-top:3px}
+  .meter i{display:block;height:100%;background:var(--accent2);transition:width .08s linear}
+
+  /* ---- tables ----
+     Every design table is wrapped so IT scrolls rather than the page. A
+     three column table of engine constraints is wider than a phone and
+     the body must never scroll sideways. */
+  .tw{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;font-size:12.5px;margin:6px 0 4px}
+  th{text-align:left;color:var(--accent);font-weight:400;letter-spacing:.08em;
+     font-size:11px;text-transform:uppercase;padding:0 18px 6px 0;
+     border-bottom:1px solid var(--line)}
+  td{padding:4px 18px 4px 0;vertical-align:top;color:var(--dim)}
+  td:first-child{color:var(--ink);white-space:nowrap}
+  tbody tr:hover td{color:var(--ink)}
+
+  /* ---- roster / tracks ---- */
+  .grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);
+         border-radius:9px;padding:11px;width:230px}
+  figure canvas{width:208px;height:208px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  figcaption{margin-top:8px;font-size:12px;color:var(--dim)}
+  figcaption b{color:var(--ink);display:block;font-size:12.5px;margin-bottom:2px;
+               letter-spacing:.04em}
+  .stats{margin-top:7px;display:grid;grid-template-columns:auto 1fr;gap:2px 8px;
+         font-size:10.5px;align-items:center}
+  .stats span{color:var(--dim);letter-spacing:.06em}
+  .bar{height:5px;background:#1b2130;border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .swatches{display:flex;gap:3px;margin-top:7px}
+  .swatches b{width:15px;height:15px;border-radius:3px;border:1px solid #0006}
+
+  .screens{display:flex;flex-wrap:wrap;gap:14px}
+  .screens figure{width:198px}
+  .screens figure canvas{width:176px;height:176px}
+
+  .note{border-left:2px solid var(--accent);padding-left:12px;margin:14px 0;
+        color:var(--dim);font-size:12.5px;max-width:78ch}
+  .note b{color:var(--accent)}
+  .ask{border-left:2px solid var(--accent2)}
+  .ask b{color:var(--accent2)}
+</style>
+</head>
+<body>
+
+<h1>Twin <span>Flare</span> // podracer demake bench</h1>
+<p class="lede">A flyable design bench for a PicoSystem podracer, built before any
+game code exists, which is CLAUDE.md rule 10. Everything below the fold is a
+proposal; the thing at the top is real. The canvas is 120x120 with a one byte
+depth buffer, the engine's own lores render size and depth precision, drawn
+through a JavaScript mirror of <code>pse::Rasterizer</code> and
+<code>pse::Renderer3D</code> and squeezed to RGB565 at the end, so what is on
+screen is what the panel can show. Click it and fly.</p>
+
+<div class="bench">
+  <div class="screenwrap">
+    <canvas id="screen" width="120" height="120" tabindex="0"></canvas>
+    <div class="focusnote" id="focusnote">click the screen to take the controls</div>
+    <div class="pad">
+      <div class="dpad">
+        <button class="btn" data-btn="up">&#9650;</button>
+        <button class="btn" data-btn="left">&#9664;</button>
+        <button class="btn" data-btn="right">&#9654;</button>
+        <button class="btn" data-btn="down">&#9660;</button>
+      </div>
+      <div class="face">
+        <button class="btn" data-btn="x">X</button>
+        <button class="btn" data-btn="y">Y</button>
+        <button class="btn" data-btn="a">A</button>
+        <button class="btn" data-btn="b">B</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="rail">
+    <div class="card">
+      <h4>Pod</h4>
+      <div class="chips" id="racerchips"></div>
+    </div>
+    <div class="card">
+      <h4>Track</h4>
+      <div class="chips" id="trackchips"></div>
+    </div>
+    <div class="card">
+      <h4>Boost, the open question</h4>
+      <div class="chips" id="boostchips"></div>
+      <p style="font-size:11.5px;margin:9px 0 0;color:var(--dim)">
+        The brief puts the pause menu and the boost on the same button. Both
+        answers are here, switchable while flying, because this is the one
+        decision in the whole design that has to be made with thumbs rather
+        than in prose.</p>
+    </div>
+    <div class="card">
+      <h4>Telemetry</h4>
+      <dl class="tele">
+        <dt>speed</dt><dd id="t-speed">0</dd>
+        <dt>altitude</dt><dd id="t-alt">0</dd>
+        <dt>left engine</dt><dd id="t-el">100%</dd>
+        <dt>right engine</dt><dd id="t-er">100%</dd>
+        <dt>heat</dt><dd id="t-heat">0%</dd>
+        <dt>state</dt><dd id="t-state">grounded</dd>
+        <dt>triangles</dt><dd id="t-tris">0</dd>
+      </dl>
+      <div class="meter" style="margin-top:8px"><i id="m-heat" style="width:0%;background:var(--bad)"></i></div>
+    </div>
+  </div>
+</div>
+
+<h2>Controls</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>Button</th><th>Does</th><th>Why</th></tr></thead>
+  <tbody>
+  <tr><td>B</td><td>throttle</td><td>as asked</td></tr>
+  <tr><td>B, B</td><td>boost, once the arm light is green</td><td>the change, see below. The light is on speed, not on a charge</td></tr>
+  <tr><td>Y</td><td>air brake</td><td>as asked. Also the hairpin tool: it lifts the nose and nearly doubles the yaw authority</td></tr>
+  <tr><td>X</td><td>repair</td><td>as asked. Fixed rate to both engines, and it cuts thrust to a third while it runs</td></tr>
+  <tr><td>A</td><td>pause</td><td>as asked</td></tr>
+  <tr><td>left / right</td><td>steer</td><td></td></tr>
+  <tr><td>up / down</td><td>pitch the nose</td><td>hold up in the air to glide</td></tr>
+  </tbody>
+</table></div>
+
+<div class="note">
+<b>The one change from the brief, and it needs your call.</b> The brief puts
+<b>A</b> on the pause menu and also on the double tap boost. Those cannot both
+be true: a double tap ends with a finger on the button, and a pause menu that
+opens on the second tap of every boost is unusable. Two answers are built into
+the bench and you can switch between them while flying:
+<ul>
+<li><b>Double tap B</b> (recommended, and what the bench starts on). Boost
+lives on the throttle. Slamming the throttle twice is the reading that needs
+no thought at all mid corner, and A is left completely alone as pause.
+<b>It is also what the original game does</b>, which I did not know when I
+picked it: in Episode I Racer the Thrust Meter is a readout of your current
+speed rather than a bar you charge, and at the top of it you arm the boost by
+briefly releasing the accelerator and pressing it again. The resource you
+spend is heat. So the throttle double tap is not a compromise forced by the
+pause button, it is the mechanic.</li>
+<li><b>Double tap A</b>, with pause moved to <b>holding</b> A for a third of a
+second. This is the brief as literally written and it does work. The cost is
+that every single boost ends with your thumb resting on the pause button, and
+a hold that fires by accident during a fight for position is a lost race.</li>
+</ul>
+Fly both and tell me which. Everything else in the design is indifferent to
+the answer.
+</div>
+
+<h2>The flight model</h2>
+
+<p>Seven things, and each one is in the bench above rather than in this
+paragraph. Every constant named here is in <code>TUNE</code> in the page
+source and becomes <code>tuning.hpp</code> unchanged.</p>
+
+<h3>1. The hover field is a spring, not a floor</h3>
+<p>The brief says pods cannot collide with the ground because a force always
+keeps them above it. That force pushes <b>up and never down</b>, proportional
+to how far the pod has sunk below its rest height, damped so it does not
+bounce. Two things fall out of that one rule and neither had to be written
+separately: the pod breathes over a crest and slams into a dip instead of
+being glued to the road, and <b>above the rest height there is no field at
+all</b>, which is why the pod can fly. A ramp is not a special case. It is
+road that stopped being under you.</p>
+
+<h3>2. A gap is an absence, not an obstacle</h3>
+<p>Nodes flagged as a gap carry no surface. The hover field has nothing to
+push against, so you fall, and the only way across is to arrive with enough
+speed and enough nose-up to glide it. There is no trigger volume and no jump
+code.</p>
+
+<h3>3. Glide is lift, and lift costs speed</h3>
+<p>Nose up in the air gives lift proportional to speed times the angle, capped
+below gravity so it extends a jump and never cancels it. The same angle bleeds
+forward speed. Hold the nose up and you clear the gap slower; hold it too far
+up and you do not clear it at all. That is the whole of the glide skill.</p>
+
+<h3>4. The heading swings first and the velocity catches up</h3>
+<p>Steering commands a yaw <i>rate</i>, the pod's heading eases toward it, and
+then the part of the velocity that is sideways to the heading bleeds off at a
+grip rate. The gap between where the pod points and where it is going is the
+drift, and it is one number: <code>GRIP</code>. The ice track is that number
+halved and nothing else.</p>
+
+<h3>5. Two engines, and the asymmetry is not a special case</h3>
+<p>Thrust is applied per engine at its own offset from the pod's axis, scaled
+by that engine's health. With both healthy the torques cancel. As one takes
+damage it weakens, and the pod starts to pull toward it; when it dies the pull
+becomes permanent, and the only way to hold a line is to spend most of your
+steering authority on the correction. Nothing enforces the brief's "flying
+with one engine will inevitably cause the ship to crash": it falls out of that
+torque. On a straight you survive. The next corner is the question.</p>
+<p>The pull starting <b>before</b> the engine dies is the part worth having.
+It turns damage from a bar you have to remember to look at into something
+arriving through your thumb, and a pod that has started drifting left is a pod
+telling you to hold X. It is also what the original does.</p>
+
+<h3>6. The cockpit is a second mass, not a lean</h3>
+<p>This is the signature of the whole vehicle and the thing a rigid body with
+a tilt cannot fake. The engines answer the stick at once. The cockpit lags
+behind them on its cables as a real degree of freedom with its own rate, and
+then <b>its momentum feeds back into the engines</b>, so a pod flung wide
+keeps going wide for a beat after the stick has centred and can drag its own
+engines off line. Three constants and one feedback term, and it is most of
+what you feel in the bench above through a fast corner. Watch the cockpit: it
+is visibly off to one side of the line between the engines.</p>
+
+<h3>7. The camera is a character</h3>
+<p>It eases toward the pod's heading rather than being welded to it, so
+through a corner the pod visibly slides across the frame. It carries a third
+of the pod's bank, so the horizon tilts. It pulls back when the boost lights.
+Those three lines are most of what separates this from a flight sim with two
+engines drawn on it.</p>
+
+<h2>Damage, boost, repair</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>Mechanic</th><th>How it works</th></tr></thead>
+  <tbody>
+  <tr><td>Engine health</td><td>Tracked separately per engine, as asked. The two bars bottom left are the only place it is shown, because a combined bar would hide the exact state the whole model is about.</td></tr>
+  <tr><td>Boost</td><td>Double tap, and only above 62% of the pod's own top speed, which is what the green light beside the heat bar is for. 1.45 seconds, 1.62x thrust, and the drag ceiling moves with it so the top speed really rises rather than just the acceleration.</td></tr>
+  <tr><td>Heat</td><td>Rises while boosting, sheds otherwise at a rate set by the pod's cooling stat and the track's air. Past the white line on the gauge both engines cook, evenly, at a rate proportional to how far over it you are.</td></tr>
+  <tr><td>Redline</td><td>At full the boost locks out and the gauge flashes VENTING until it drops back under 0.42. This is the only hard stop in the game.</td></tr>
+  <tr><td>Repair</td><td>Fixed rate to both engines, as asked, and it cuts thrust to 34% while it runs. It also pulls the pod toward whichever engine is worse, because repair in the original is a handling penalty rather than a pause button. It cannot resurrect an engine that has already gone: a repair beam is not a spare part.</td></tr>
+  <tr><td>Explosion</td><td>At zero the engine is gone for the rest of the lap. The binder arc between the engines goes out, which is the clearest possible signal that the pod is now in trouble.</td></tr>
+  <tr><td>Both gone</td><td>A wreck. The pod tumbles, then rejoins at the last node with both engines back at half. A three lap race that ends on lap one is a race nobody runs twice.</td></tr>
+  <tr><td>Other damage</td><td>Grinding a wall, and landing harder than 26 u/s. A damaged engine smokes, so the state is readable without looking at the bars.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>The six pods</h2>
+
+<p>Twenty stat points each across six stats, so no pod is an upgrade on
+another and the choice is a shape rather than a ladder. All six run the same
+two engine meshes, slim or heavy, recoloured: six distinct pods for two meshes
+in flash, which is the only version of this that fits.</p>
+
+<div class="grid" id="roster"></div>
+
+<h2>The four tracks</h2>
+
+<p>A track is a ring of nodes and <b>four numbers</b>. The numbers are why
+these are four games rather than four palettes: gravity, grip, cooling and
+drag are multipliers the sim applies everywhere, so the moon is not a grey
+desert, it is a place where a jump goes three times as far, the air brake
+barely bites and the heat has nowhere to go.</p>
+
+<div class="grid" id="trackcards"></div>
+
+<p>Every track carries the same four features, placed differently: a
+<b>ramp</b> (road that rises, then stops), a <b>gap</b> (road that is not
+there), a <b>boost pad</b>, a <b>shortcut</b> (a wider, faster line that costs
+you the racing line to reach), and <b>walled</b> sections where leaving the
+road is a scrape rather than a fall. All of them are passable, and the cards prove it with numbers rather than
+claiming it: <b>worst case jump</b> is the slowest pod on the roster going off
+the end of the road with no nose-up at all, no glide and no skill, and it
+clears the widest gap on every track by three times or better. <b>Best case
+glide</b> is the fastest pod holding the nose up the whole way. The margin
+between the gap and the worst case is deliberately generous, because a gap
+that needs a perfect entry is a gap that ends runs rather than one that
+rewards them; if they play too easy, widening them is one number.</p>
+
+<h2>What the engine forced</h2>
+
+<p>Six things in this design are the shape they are because of what the engine
+actually does, not because anyone preferred them. They were found by reading
+<code>engine/</code> and the two nearest games before any of this was written,
+and the bench above is built on all six, so it fails in the same places the
+device would.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>The engine does this</th><th>So the design does this</th></tr></thead>
+  <tbody>
+  <tr><td><b>There is no clipping anywhere.</b> A triangle with one corner past the near plane is dropped whole, not cut.</td><td>The road is short strips, never long quads, and the nearest strip is anchored to the camera rather than to the road. Dust Rider learned this one already: its comment says the desert vanished.</td></tr>
+  <tr><td><b>The near plane is not the near plane.</b> <code>project()</code> rejects at NDC z 0, which is the harmonic mean of the two planes. <code>set_depth_range(0.25, 400)</code> really clips at 0.50.</td><td>The range is 2 to 170, so the real clip is at 3.95 units, which is where the road behind the pod is allowed to start.</td></tr>
+  <tr><td><b>The depth buffer is one byte, hyperbolic.</b> One step is about 0.66 units of view distance in that bracket.</td><td>The road edge stripes are coplanar strips cut across the road, not stripes floated on top of it. A stripe 0.02 above the tarmac is the same depth value as the tarmac, ties go to whoever drew first, and it simply never appears.</td></tr>
+  <tr><td><b>Projection precision decays with absolute world coordinates.</b> Measured: 2 px of error at 500 units, unusable by 5000.</td><td>A lap here is about 2,200 units around, so every draw is handed coordinates relative to the camera. Absolute coordinates would be fine at the start line and visibly wrong down the back straight, which is the worst kind of bug to chase.</td></tr>
+  <tr><td><b><code>ScreenTriangle</code> stores screen x and y as int16 with no clamp.</b> A wide ground quad near the near plane can project past 32767 and wrap to the other side of the screen.</td><td>Projected coordinates are clamped before they are stored.</td></tr>
+  <tr><td><b><code>run_split</code> splits at exactly half the screen height</b>, and a road game puts nearly all its fill in the bottom half.</td><td>Budget on the split buying much less than 2x. Core 1 does most of the work and core 0 waits. Keeping the horizon near the middle of the frame is the only lever, and it is one the camera pitch already pulls.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Screens</h2>
+
+<p>Six, and five of them are lists. The race is the game; everything else is
+the shortest path back to it.</p>
+
+<div class="screens" id="screens"></div>
+
+<h2>What it costs</h2>
+
+<p>Numbers, not adjectives. The RAM figures are the game's own state on top of
+what the engine already spends (a <code>Rasterizer</code> is 14,456 bytes and
+the shared <code>FrameQueue</code> is 21,766, and both are shared, not per
+game).</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Item</th><th>Cost</th><th>Working</th></tr></thead>
+  <tbody>
+  <tr><td>Track nodes, flash</td><td id="c-nodes">-</td><td>8 bytes a node, four tracks, at one node every 8 world units</td></tr>
+  <tr><td>Track worlds and palettes, flash</td><td>~400 B</td><td>4 tracks x (4 multipliers + 5 palette entries + laps + name)</td></tr>
+  <tr><td>Roster, flash</td><td>~220 B</td><td>6 pods x (6 stats + 3 colours + name + pilot + one line)</td></tr>
+  <tr><td>Engine and pod meshes, flash</td><td>~1.9 KB</td><td>two engine shapes at 30 triangles and one cockpit at 14, through obj2cpp at 12 bytes a face plus 6 a vertex</td></tr>
+  <tr><td>Sim state, RAM</td><td>~340 B</td><td>the pod, five rivals, and the lap bookkeeping. Star Dancer's whole world is 3,372 B for comparison</td></tr>
+  <tr><td>Scenery, RAM</td><td>0</td><td>hashed from the world grid, exactly as Dust Rider does it. A rock stays put without being stored</td></tr>
+  <tr><td>Save, flash</td><td>~64 B</td><td>best lap per track per pod is 24 entries, plus which are unlocked</td></tr>
+  <tr><td>Peak triangles a frame</td><td id="c-tris">-</td><td>measured in this bench across all four tracks with six pods on screen. The queue holds 640, but that is a RAM ceiling and a drop threshold, not a time budget, and nobody has ever measured the time budget on real hardware</td></tr>
+  </tbody>
+</table></div>
+
+<div class="note"><b>The honest caveat.</b> Triangle counts are the only
+performance number anyone in this repo can produce without a device, and
+<code>config.hpp</code> says so itself. This design is within the queue with
+room to spare, which proves it will not drop geometry. It does not prove it
+will hit 50 frames a second on a 133 MHz M0+ with no FPU, and the first
+build's real job is to find that out.</div>
+
+<div class="note"><b>What the bench already caught.</b> The first version of
+this drew 731 triangles into a queue that holds 640, with the whole pack
+inside forty units of each other, which is exactly the moment a race is won.
+The queue does not grow on overflow, it drops triangles and counts them, so a
+close finish would have shed pieces of pods and the cause would have been
+almost impossible to attribute. Three fixes, all measured rather than
+guessed: the engine mesh went from four rings to three (48 triangles to 36,
+same silhouette, the waist now comes from shading), far road segments dropped
+their shoulders and their surrounding ground where the horizon wall already
+covers them, and rivals got three levels of detail with a <b>rank</b> cap on
+top of the distance test, so only the nearest one is ever drawn in full
+however close the others get. That is the number in the table above.</div>
+
+<h2>How it would get built</h2>
+
+<p>Star Dancer's four layer split exactly, because it is the one in this repo
+that puts the HUD and the menus in <code>render.cpp</code> rather than in
+<code>game.cpp</code>. That matters more here than usual: CLAUDE.md warns that
+anything drawn with <code>screen.text</code> is unverified until the game is
+run on a desktop, and this game has a lot of HUD.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>File</th><th>Purpose</th><th>Rough</th></tr></thead>
+  <tbody>
+  <tr><td>games/twinflare/game.yml</td><td>gallery metadata, objective, controls</td><td>25</td></tr>
+  <tr><td>games/twinflare/metadata.yml</td><td>the SDK's on-device metadata</td><td>12</td></tr>
+  <tr><td>games/twinflare/CMakeLists.txt</td><td>one add_picosystem_game call</td><td>10</td></tr>
+  <tr><td>games/twinflare/models.cmake</td><td>the model list, named once</td><td>6</td></tr>
+  <tr><td>games/twinflare/models/*.obj</td><td>engine_slim, engine_heavy, cockpit, rock</td><td>-</td></tr>
+  <tr><td>src/tuning.hpp</td><td>every constant, no code</td><td>260</td></tr>
+  <tr><td>src/tracks.hpp / .cpp</td><td>the four track plans and the node walker</td><td>300</td></tr>
+  <tr><td>src/sim.hpp / .cpp</td><td>pure integer flight, damage, rivals, laps</td><td>750</td></tr>
+  <tr><td>src/render.hpp / .cpp</td><td>road, pods, horizon, HUD, every screen</td><td>1000</td></tr>
+  <tr><td>src/game.cpp</td><td>SDK only: buttons, the tick accumulator, sound, save</td><td>200</td></tr>
+  <tr><td>tests/CMakeLists.txt, test_sim.cpp, preview.cpp</td><td>host tests and the thumbnail harness</td><td>400</td></tr>
+  </tbody>
+</table></div>
+
+<p>Staged so every stage is playable:</p>
+<ul>
+<li><b>One.</b> One track, one pod, the flight model, the road, the chase camera. No damage, no rivals, no HUD. This is the stage that answers whether it feels like a podracer, and it is the only stage worth doing twice.</li>
+<li><b>Two.</b> Engines, heat, boost, repair, the HUD. The bench above is already this stage.</li>
+<li><b>Three.</b> The other three tracks and their four numbers each.</li>
+<li><b>Four.</b> Six pods, rivals, position, laps, the results screen, the save.</li>
+<li><b>Five.</b> Sound, the title and select screens, the thumbnail, the gallery entry.</li>
+</ul>
+
+<h2>What I need you to decide</h2>
+
+<div class="note ask">
+<b>1. The A button.</b> Double tap B with A as pause, or double tap A with
+pause on a hold? Fly both in the bench. This is the only one I cannot decide
+for you.
+</div>
+<div class="note ask">
+<b>2. The name.</b> <b>Twin Flare</b> is a placeholder that fits the console
+menu's 15 character limit and does not borrow anything trademarked. Say the
+word and it changes; it is one string in three files.
+</div>
+<div class="note ask">
+<b>3. Rivals.</b> They run the centreline at a pace of their own and they do
+not fly the flight model, because a rival that can crash can be lapped by its
+own physics and none of that is visible from behind you. If you want them
+racing properly rather than pacing, that is a real cost and a real decision.
+</div>
+<div class="note ask">
+<b>4. The wreck.</b> Right now a wreck rejoins at the last node with both
+engines at half. The alternative is that it ends the race. I picked rejoining
+because three laps is a long way to lose to one bad landing, but a racer with
+no failure state is a different game.
+</div>
+<div class="note ask">
+<b>5. Is HOARFROST right?</b> It was authored tighter and no autopilot could
+hold it at half grip, so the corners were opened out and the walled sections
+widened. It is now the track that slides rather than the track that is
+impossible. Drive it and say whether it went too far the other way.
+</div>
+
+<p style="margin-top:34px;color:var(--dim);font-size:12px">
+Nothing here is committed to the game yet. This page, its four tracks and its
+six pods are the proposal; say what changes and it changes before a line of
+C++ exists.</p>
+<script>
+const FONT57 = {" ":[0,0,0,0,0,0,0],"A":[14,17,17,31,17,17,17],"B":[15,17,17,15,17,17,15],"C":[14,17,1,1,1,17,14],"D":[15,17,17,17,17,17,15],"E":[31,1,1,15,1,1,31],"F":[31,1,1,15,1,1,1],"G":[14,17,1,29,17,17,14],"H":[17,17,17,31,17,17,17],"I":[14,4,4,4,4,4,14],"J":[28,8,8,8,8,9,6],"K":[17,9,5,3,5,9,17],"L":[1,1,1,1,1,1,31],"M":[17,27,21,21,17,17,17],"N":[17,19,21,25,17,17,17],"O":[14,17,17,17,17,17,14],"P":[15,17,17,15,1,1,1],"Q":[14,17,17,17,21,9,22],"R":[15,17,17,15,5,9,17],"S":[30,1,1,14,16,16,15],"T":[31,4,4,4,4,4,4],"U":[17,17,17,17,17,17,14],"V":[17,17,17,17,17,10,4],"W":[17,17,17,21,21,27,17],"X":[17,17,10,4,10,17,17],"Y":[17,17,10,4,4,4,4],"Z":[31,16,8,4,2,1,31],"0":[14,17,25,21,19,17,14],"1":[4,6,4,4,4,4,14],"2":[14,17,16,8,4,2,31],"3":[31,8,4,8,16,17,14],"4":[8,12,10,9,31,8,8],"5":[31,1,15,16,16,17,14],"6":[12,2,1,15,17,17,14],"7":[31,16,8,4,2,2,2],"8":[14,17,17,14,17,17,14],"9":[14,17,17,30,16,8,6],".":[0,0,0,0,0,6,6],",":[0,0,0,0,6,6,2],":":[0,6,6,0,6,6,0],"-":[0,0,0,31,0,0,0],"!":[4,4,4,4,4,0,4],"?":[14,17,16,8,4,0,4],"'":[4,4,0,0,0,0,0],"/":[16,16,8,4,2,1,1],"(":[8,4,2,2,2,4,8],")":[2,4,8,8,8,4,2],"+":[0,4,4,31,4,4,0],">":[1,3,7,15,7,3,1],"<":[16,24,28,30,28,24,16]};
+const W = 120, H = 120;
+
+class Raster {
+  constructor(w,h){
+    this.w=w; this.h=h;
+    this.img = new ImageData(w,h);
+    this.buf = this.img.data;
+    this.depth = new Uint8Array(w*h);
+    this.tris = 0;
+    this.dropped = 0;
+  }
+  clearGradient(tr,tg,tb,br,bg,bb){
+    const {w,h,buf}=this;
+    for(let y=0;y<h;y++){
+      const t=y/(h-1);
+      const r=(tr+(br-tr)*t)|0, g=(tg+(bg-tg)*t)|0, b=(tb+(bb-tb)*t)|0;
+      let i=y*w*4;
+      for(let x=0;x<w;x++){ buf[i]=r; buf[i+1]=g; buf[i+2]=b; buf[i+3]=255; i+=4; }
+    }
+    this.depth.fill(255);
+    this.tris=0; this.dropped=0;
+  }
+  /* z is 0..254, smaller is nearer, matching the engine's one byte depth.
+     Callers cull against the real world normal before getting here, so this
+     takes either winding and simply flips the one it does not like. */
+  tri(x0,y0,z0,x1,y1,z1,x2,y2,z2,r,g,b){
+    let area = (x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    if(area===0) return;
+    if(area<0){
+      let t;
+      t=x1;x1=x2;x2=t; t=y1;y1=y2;y2=t; t=z1;z1=z2;z2=t;
+      area=-area;
+    }
+    const {w,h,buf,depth}=this;
+    let minx=Math.max(0,Math.floor(Math.min(x0,x1,x2)));
+    let maxx=Math.min(w-1,Math.ceil (Math.max(x0,x1,x2)));
+    let miny=Math.max(0,Math.floor(Math.min(y0,y1,y2)));
+    let maxy=Math.min(h-1,Math.ceil (Math.max(y0,y1,y2)));
+    if(minx>maxx||miny>maxy) return;
+    this.tris++;
+    const inv = 1/area;
+    for(let y=miny;y<=maxy;y++){
+      const py=y+0.5;
+      for(let x=minx;x<=maxx;x++){
+        const px=x+0.5;
+        const w0=((x1-x0)*(py-y0)-(px-x0)*(y1-y0));
+        const w1=((x2-x1)*(py-y1)-(px-x1)*(y2-y1));
+        const w2=((x0-x2)*(py-y2)-(px-x2)*(y0-y2));
+        if(w0<0||w1<0||w2<0) continue;
+        const l1=w1*inv, l2=w2*inv, l0=w0*inv;
+        const z=(l1*z0+l2*z1+l0*z2)|0;
+        const o=y*w+x;
+        if(z>=depth[o]) continue;
+        depth[o]=z;
+        const i=o*4;
+        buf[i]=r; buf[i+1]=g; buf[i+2]=b; buf[i+3]=255;
+      }
+    }
+  }
+  /* Textured triangle, perspective correct.
+     Same rasterizer, same edge functions, same depth test. The only
+     difference from tri() is what goes in the colour slots: three
+     interpolants (r, g, b) become two (u/w, v/w) plus 1/w, and the per pixel
+     work becomes one divide and one texel fetch instead of three colour
+     lerps. `tex` is already shaded, so lighting costs nothing here: the face
+     picked its brightness level once, before the loop. */
+  triTex(x0,y0,z0,i0,u0,v0, x1,y1,z1,i1,u1,v1, x2,y2,z2,i2,u2,v2, tex){
+    let area = (x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    if(area===0) return;
+    if(area<0){
+      let t;
+      t=x1;x1=x2;x2=t; t=y1;y1=y2;y2=t; t=z1;z1=z2;z2=t;
+      t=i1;i1=i2;i2=t; t=u1;u1=u2;u2=t; t=v1;v1=v2;v2=t;
+      area=-area;
+    }
+    const {w,h,buf,depth}=this;
+    const minx=Math.max(0,Math.floor(Math.min(x0,x1,x2)));
+    const maxx=Math.min(w-1,Math.ceil (Math.max(x0,x1,x2)));
+    const miny=Math.max(0,Math.floor(Math.min(y0,y1,y2)));
+    const maxy=Math.min(h-1,Math.ceil (Math.max(y0,y1,y2)));
+    if(minx>maxx||miny>maxy) return;
+    this.tris++;
+    const inv=1/area;
+    for(let y=miny;y<=maxy;y++){
+      const py=y+0.5;
+      for(let x=minx;x<=maxx;x++){
+        const px=x+0.5;
+        const e0=((x1-x0)*(py-y0)-(px-x0)*(y1-y0));
+        const e1=((x2-x1)*(py-y1)-(px-x1)*(y2-y1));
+        const e2=((x0-x2)*(py-y2)-(px-x2)*(y0-y2));
+        if(e0<0||e1<0||e2<0) continue;
+        const l0=e1*inv, l1=e2*inv, l2=e0*inv;   // weights for v0, v1, v2
+        const z=(l0*z0+l1*z1+l2*z2)|0;
+        const o=y*w+x;
+        if(z>=depth[o]) continue;
+        const iw=l0*i0+l1*i1+l2*i2;
+        const ww=1/iw;
+        const u=((l0*u0+l1*u1+l2*u2)*ww)&15;
+        const v=((l0*v0+l1*v1+l2*v2)*ww)&15;
+        const t=((v<<4)|u)*3;
+        depth[o]=z;
+        const i=o*4;
+        buf[i]=tex[t]; buf[i+1]=tex[t+1]; buf[i+2]=tex[t+2]; buf[i+3]=255;
+      }
+    }
+  }
+
+  /* pse::plot, no depth test. */
+  plot(x,y,r,g,b){
+    if(x<0||y<0||x>=this.w||y>=this.h) return;
+    const i=(y*this.w+x)*4;
+    this.buf[i]=r; this.buf[i+1]=g; this.buf[i+2]=b; this.buf[i+3]=255;
+  }
+  rect(x,y,rw,rh,r,g,b){
+    for(let j=0;j<rh;j++) for(let i=0;i<rw;i++) this.plot(x+i,y+j,r,g,b);
+  }
+  /* A filled triangle in screen space, no depth and no projection. For HUD
+     furniture, which sits on top of the world by definition. */
+  fillTri2D(x0,y0,x1,y1,x2,y2,r,g,b){
+    let area=(x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    if(area===0) return;
+    if(area<0){ let t; t=x1;x1=x2;x2=t; t=y1;y1=y2;y2=t; area=-area; }
+    const minx=Math.max(0,Math.floor(Math.min(x0,x1,x2)));
+    const maxx=Math.min(this.w-1,Math.ceil(Math.max(x0,x1,x2)));
+    const miny=Math.max(0,Math.floor(Math.min(y0,y1,y2)));
+    const maxy=Math.min(this.h-1,Math.ceil(Math.max(y0,y1,y2)));
+    for(let y=miny;y<=maxy;y++){
+      const py=y+0.5;
+      for(let x=minx;x<=maxx;x++){
+        const px=x+0.5;
+        if(((x1-x0)*(py-y0)-(px-x0)*(y1-y0))<0) continue;
+        if(((x2-x1)*(py-y1)-(px-x1)*(y2-y1))<0) continue;
+        if(((x0-x2)*(py-y2)-(px-x2)*(y0-y2))<0) continue;
+        this.plot(x,y,r,g,b);
+      }
+    }
+  }
+  /* The real console5x7 glyphs, drawn like pse::draw_text. Uppercase only,
+     because that is the whole charset the font carries. */
+  text(s,x,y,r,g,b){
+    s=String(s).toUpperCase();
+    for(let c=0;c<s.length;c++){
+      const rows=FONT57[s[c]];
+      if(rows!==undefined){
+        for(let row=0;row<7;row++){
+          const bits=rows[row];
+          for(let col=0;col<5;col++)
+            if(bits>>col & 1) this.plot(x+col,y+row,r,g,b);
+        }
+      }
+      x+=6;
+    }
+  }
+  textW(s){ return String(s).length*6-1; }
+  textC(s,cx,y,r,g,b){ this.text(s, cx-(this.textW(s)>>1), y, r,g,b); }
+  /* The panel is 4 bits per channel and the SDK packs RGB565. Squeezing the
+     finished frame the same way is the difference between a mockup that
+     flatters the device and one that tells the truth. */
+  squeeze565(){
+    const b=this.buf;
+    for(let i=0;i<b.length;i+=4){
+      b[i]  = b[i]   & 0xF8;
+      b[i+1]= b[i+1] & 0xFC;
+      b[i+2]= b[i+2] & 0xF8;
+    }
+  }
+}
+/* ==================================================================
+   THE ROSTER
+
+   Six pods. The stats are the whole of what makes them different, so
+   they are written once, here, and everything else (the chips, the
+   cards, the bars, the sim) reads them.
+
+   Every pod totals 20 points across six stats, so no pod is a strict
+   upgrade on another and the choice is a shape rather than a ladder.
+   0..5 each; the sim maps them onto real units in TUNE.
+
+     TOP   top speed
+     ACC   acceleration
+     GRIP  how fast lateral velocity bleeds off, and yaw authority
+     COOL  how fast the boost heat sheds
+     FIX   repair rate on X
+     HULL  engine health, both engines
+
+   `hue` is the tint the one pod mesh is drawn with, which is the trick
+   that gets six pods out of one or two meshes in flash. `body` is the
+   engine shape, and only TWO shapes exist: a slim one and a heavy one.
+   That is deliberate and it is a flash decision, not an art one.
+   ================================================================== */
+const RACERS = [
+  { id:'scarab',  name:'SCARAB',   pilot:'Sebo Vane',
+    top:3, acc:3, grip:4, cool:4, fix:3, hull:3, body:'slim',
+    col:[[214,124,40],[150,78,26],[74,52,40]],
+    line:'Nothing it does is best and nothing it does is bad. Start here.' },
+  { id:'wisp',    name:'WISP',     pilot:"Tik Ma'ala",
+    top:2, acc:5, grip:5, cool:3, fix:3, hull:2, body:'slim',
+    col:[[96,214,206],[44,132,140],[226,232,238]],
+    line:'Off the line before anyone else and through the hairpins clean. It just runs out of road.' },
+  { id:'anvil',   name:'ANVIL',    pilot:'Groll Hexx',
+    top:3, acc:2, grip:2, cool:5, fix:3, hull:5, body:'heavy',
+    col:[[186,190,198],[96,102,116],[188,52,52]],
+    line:'Boost until the gauge screams and it barely notices. Ask it to turn and it thinks about it.' },
+  { id:'needle',  name:'NEEDLE',   pilot:'Cyrn Vast',
+    top:5, acc:4, grip:3, cool:1, fix:2, hull:1, body:'slim',
+    col:[[232,206,64],[150,126,20],[36,34,32]],
+    line:'The fastest thing on any of these four tracks, for about eleven seconds at a time.' },
+  { id:'nightjar',name:'NIGHTJAR', pilot:'Ombra Tal',
+    top:2, acc:3, grip:3, cool:3, fix:5, hull:4, body:'heavy',
+    col:[[142,106,196],[70,50,104],[40,38,52]],
+    line:'Wins the long ones. Repairs faster than anything else can break it.' },
+  { id:'fang',    name:'FANG',     pilot:'Kest Rho',
+    top:4, acc:4, grip:5, cool:2, fix:3, hull:2, body:'slim',
+    col:[[122,196,86],[58,110,48],[184,150,72]],
+    line:'Holds a drift through a whole corner. Holds a hit for about half of one.' },
+];
+
+/* ==================================================================
+   THE FOUR TRACKS
+
+   A track is TWO things: a ring of nodes, and a world.
+
+   The ring is the road. It is authored as a list of segments rather
+   than as 200 typed out coordinates, and the builder below walks it
+   into nodes at a fixed spacing, because a road authored as
+   "left 40 degrees over 120 units, then a ramp" is a road somebody can
+   edit and 200 coordinates is not.
+
+   The world is four numbers, and it is the reason four tracks are four
+   games rather than four skins. Gravity, grip, cooling and drag are
+   multipliers the sim applies everywhere, so the moon is not a grey
+   desert: it is a place where a jump goes three times as far, the air
+   brake barely bites, and the heat has nowhere to go.
+   ================================================================== */
+
+// segment flags
+const F_NONE = 0, F_RAMP = 1, F_GAP = 2, F_BOOST = 4, F_WALL = 8, F_SHORT = 16;
+
+const TRACKS = [
+  {
+    id:'dune', name:'DUNE SEA', laps:3,
+    sub:'Twin suns, no shade, and a canyon nobody mentions until it is under you.',
+    world:{ grav:1.00, grip:1.00, cool:1.00, drag:1.00 },
+    worldline:'Baseline. Everything else is measured against this.',
+    // The road must not be a shade of the ground. It was, on the first
+    // pass (198,170,124 of road against 206,178,128 of desert) and at 4
+    // bits a channel those are the SAME COLOUR: the bench rendered a
+    // beautiful dune sea with no visible track in it, and the only way to
+    // tell where the road went was to drive off it. Every palette here now
+    // separates road from ground by more than one 4-bit step in at least
+    // two channels, and the edge stripe below carries the rest.
+    sky:[[128,176,222],[226,206,170]],
+    ground:[[220,190,138],[190,160,112]],
+    road:[[160,132,94],[140,114,80]],
+    edge:[236,214,160],
+    wall:[196,166,120],
+    rock:[[122,94,66],[86,64,46]],
+    hazard:'Sand drifts across the road and drags one engine.',
+    // [turn deg, length, rise, flags]
+    // The turns sum to 360. They did not before, and the tail-bend that
+    // closes the ring had to drag the last eighth of the road back across
+    // half the map to make a lap of it: every track came out as a long
+    // thin hairpin rather than a circuit, and the minimap said so. A plan
+    // is a circuit when it turns all the way round; the bend at the end is
+    // for the last few degrees, not for the missing three hundred.
+    plan:[
+      [0,190,0,F_NONE],[ 62,150,0,F_NONE],[0,110,0,F_BOOST],
+      [ 40,170,6,F_RAMP],[0,90,-6,F_GAP],[0,140,0,F_NONE],
+      [ 58,190,0,F_WALL],[0,120,0,F_SHORT],[ 34,140,0,F_NONE],
+      [0,160,4,F_RAMP],[ 30,150,-4,F_NONE],[ 56,130,0,F_NONE],
+      [0,150,0,F_BOOST],[ 46,170,0,F_NONE],[ 34,120,0,F_NONE],
+    ],
+  },
+  {
+    id:'tide', name:'TIDEBREAK', laps:3,
+    sub:'A causeway above the water and a trench under it. The road goes through, not around.',
+    world:{ grav:0.72, grip:0.78, cool:1.35, drag:1.45 },
+    worldline:'Thick water: everything is slower to turn and slower to stop, but the heat vanishes and a jump hangs.',
+    sky:[[40,104,140],[126,196,206]],
+    ground:[[38,96,110],[20,60,78]],
+    road:[[132,196,190],[104,166,166]],
+    edge:[226,246,244],
+    wall:[86,146,150],
+    rock:[[52,92,96],[28,54,64]],
+    hazard:'Submerged half. Depth fade darkens everything below the surface.',
+    plan:[
+      [0,150,0,F_NONE],[ 54,160,0,F_NONE],[0,120,8,F_RAMP],
+      [0,100,-14,F_NONE],[ 66,180,0,F_WALL],[0,130,0,F_BOOST],
+      [ 40,150,0,F_SHORT],[0,110,-4,F_GAP],[ 52,170,0,F_NONE],
+      [0,140,10,F_RAMP],[ 44,150,-8,F_NONE],[0,130,0,F_NONE],
+      [ 62,160,0,F_NONE],[ 42,140,0,F_BOOST],
+    ],
+  },
+  {
+    id:'ash', name:'ASHFALL', laps:2,
+    sub:'A dead moon. No air to brake against and nowhere for the heat to go.',
+    world:{ grav:0.42, grip:1.20, cool:0.45, drag:0.55 },
+    worldline:'Two fifths of the desert gravity and half its air. Jumps go a long way, the air brake barely bites, and the boost gauge never really cools.',
+    sky:[[8,8,16],[34,32,44]],
+    ground:[[78,76,86],[52,50,60]],
+    road:[[158,156,168],[126,124,138]],
+    edge:[212,196,120],
+    wall:[126,124,136],
+    rock:[[86,84,94],[44,42,52]],
+    hazard:'No cooling. Overheat is the track, not an accident.',
+    plan:[
+      [0,200,0,F_BOOST],[ 58,180,0,F_NONE],[0,140,12,F_RAMP],
+      [0,160,-12,F_GAP],[ 64,190,0,F_WALL],[0,150,0,F_SHORT],
+      [ 44,160,0,F_NONE],[0,180,14,F_RAMP],[0,120,-14,F_GAP],
+      [ 56,170,0,F_NONE],[0,160,0,F_BOOST],[ 48,180,0,F_NONE],
+      [ 90,150,0,F_NONE],
+    ],
+  },
+  {
+    id:'frost', name:'HOARFROST', laps:3,
+    sub:'Narrow, walled, and the road does not hold on to you.',
+    world:{ grav:1.05, grip:0.52, cool:1.55, drag:1.05 },
+    worldline:'Half the grip of the desert. The pod goes where it was going, not where it is pointing, and the walls are close.',
+    sky:[[168,182,200],[220,230,240]],
+    ground:[[238,244,252],[214,226,240]],
+    road:[[150,174,204],[126,152,186]],
+    edge:[86,120,160],
+    wall:[222,234,248],
+    // Pale. Dark navy rock on a snow planet gave the whole frame to the
+    // scenery: the eye went to the black wedges and had to hunt for the
+    // road, which is exactly backwards on the track that is hardest to
+    // stay on.
+    rock:[[190,206,226],[152,172,200]],
+    hazard:'Crosswind. It pushes, and on ice a push is a lap.',
+    // Gentler than it was. The first draft turned 52 to 60 degrees inside
+    // 140 units at half the desert's grip, which is a corner that cannot be
+    // taken at any speed: the pod arrives sideways and the wall does the
+    // rest. Same shape, same wall count, longer arcs. The track is still
+    // the one that slides; it is no longer the one that is impossible.
+    plan:[
+      [0,150,0,F_NONE],[ 50,190,0,F_WALL],[0,110,0,F_BOOST],
+      [ 44,200,0,F_WALL],[0,130,6,F_RAMP],[0,100,-6,F_GAP],
+      [ 48,170,0,F_NONE],[0,120,0,F_SHORT],[ 52,190,0,F_WALL],
+      [0,140,0,F_NONE],[ 46,190,0,F_WALL],[0,130,4,F_RAMP],
+      [ 60,170,-4,F_NONE],[0,150,0,F_BOOST],[ 60,150,0,F_NONE],
+    ],
+  },
+];
+
+/* ------------------------------------------------------------------
+   Walking a plan into nodes.
+
+   NODE_SPACING is the only thing that decides how much flash a track
+   costs, so it is written down rather than tuned by feel: at 8 units a
+   2000 unit lap is 250 nodes, and a node is 8 bytes.
+   ------------------------------------------------------------------ */
+const NODE_SPACING = 8;
+
+function buildTrack(t) {
+  const nodes = [];
+  let x = 0, z = 0, y = 0, head = 0;
+  for (const [turn, len, rise, flags] of t.plan) {
+    const steps = Math.max(1, Math.round(len / NODE_SPACING));
+    const dTurn = (turn * Math.PI / 180) / steps;
+    const dRise = rise / steps;
+    for (let i = 0; i < steps; i++) {
+      head += dTurn;
+      x += Math.sin(head) * NODE_SPACING;
+      z += Math.cos(head) * NODE_SPACING;
+      y += dRise;
+      // A gap is a hole in the road, so it carries no surface at all and
+      // the hover field has nothing to push against. That is the whole
+      // implementation of "jump this or fall in".
+      // 8.5 and not 7.5 between walls. At 7.5 (a fifteen unit corridor)
+      // HOARFROST could not be held on the road by a damped autopilot at
+      // half grip, let alone by a thumb, and a track nobody can finish is
+      // not a hard track. The walls still narrow it; they no longer close
+      // it.
+      const hw = (flags & F_WALL) ? 8.5 : (flags & F_SHORT) ? 11 : 9.5;
+      // A feature is not the whole segment it was authored on. A boost
+      // pad written against a 150 unit stretch became a 150 unit stretch
+      // of glowing blue road, which is not a pad, it is a colour scheme.
+      // A pad is three nodes; a gap is four; a ramp is the rise itself and
+      // keeps the whole segment.
+      let f = flags;
+      if ((flags & F_BOOST) && i >= 3) f &= ~F_BOOST;
+      if ((flags & F_GAP) && (i < 2 || i > 7)) f &= ~F_GAP;
+      nodes.push({ x, z, y, hw, flags: f, head });
+    }
+  }
+  // Close the ring. The plan will not land exactly back on the start, so
+  // the last eighth of it is bent home. Authoring a closed loop by hand
+  // is a fool's errand; closing it here means a plan can be edited
+  // freely and still be a lap.
+  const n = nodes.length, tail = Math.floor(n / 8);
+  for (let i = 0; i < tail; i++) {
+    const k = n - tail + i, f = (i + 1) / tail;
+    const e = f * f * (3 - 2 * f);
+    nodes[k].x += (0 - nodes[n - 1].x) * e;
+    nodes[k].z += (0 - nodes[n - 1].z) * e;
+    nodes[k].y += (0 - nodes[n - 1].y) * e;
+  }
+  for (let i = 0; i < n; i++) {
+    const a = nodes[(i + n - 1) % n], b = nodes[(i + 1) % n];
+    nodes[i].head = Math.atan2(b.x - a.x, b.z - a.z);
+  }
+  t.nodes = nodes;
+  t.length = n * NODE_SPACING;
+  // Scenery. Deterministic from the index so the same track is the same
+  // track every time the page loads, which a mockup that is being argued
+  // about needs more than a game does.
+  t.props = [];
+  for (let i = 0; i < n; i += 7) {
+    const nd = nodes[i];
+    const side = (i % 14 === 0) ? 1 : -1;
+    // Well clear of the road. At `hw + 6` a nineteen unit spike stood
+    // close enough to fill the whole frame when the pod drifted wide, and
+    // a rock that big that close reads as a bug rather than as scenery.
+    const off = nd.hw + 16 + ((i * 37) % 22);
+    const h = 5 + ((i * 53) % 14);
+    t.props.push({
+      x: nd.x + Math.cos(nd.head) * off * side,
+      z: nd.z - Math.sin(nd.head) * off * side,
+      y: nd.y, h, r: 2.4 + ((i * 29) % 5) * 0.5,
+    });
+  }
+  return t;
+}
+TRACKS.forEach(buildTrack);
+/* ==================================================================
+   TUNING
+
+   Everything the flight model is made of, in one place, which is what
+   games/stardancer/src/tuning.hpp looks like and what this becomes.
+
+   Units are world units and seconds here; on the device they become
+   fp16 per tick at a fixed 100 Hz, exactly as Star Dancer does it, so
+   a slow frame costs frames and never physics.
+
+   The pod is about 3.4 units long. A number below only means anything
+   next to that.
+   ================================================================== */
+const TUNE = {
+  TICK: 1 / 100,            // the device's tick, and this bench's
+
+  // --- the hover field -------------------------------------------------
+  // The brief: pods cannot collide with the ground, a sci-fi force always
+  // keeps them above it. That force is a SPRING, not a constraint, and
+  // the difference is the whole feel: a constraint glues the pod to the
+  // road and a spring lets it breathe over a crest and slam into a dip.
+  //
+  // It only ever pushes UP. That one line is what lets the pod fly: above
+  // the hover height there is no field at all, just gravity.
+  HOVER_H: 2.2,             // rest height above the surface
+  HOVER_K: 210,             // spring, per unit of penetration
+  HOVER_D: 15.5,            // damping on the vertical rate inside the field
+  HOVER_REACH: 3.4,         // above this much clearance the field is gone
+
+  // --- gravity and lift ------------------------------------------------
+  GRAV: 26,                 // u/s^2, scaled per track by world.grav
+  // Glide. The brief asks for it by name: hold the pitch up and stay in the
+  // air longer. Lift is speed times angle of attack, which is the real
+  // relation and also the one that punishes you for pitching up so far
+  // that you stop.
+  LIFT: 0.62,               // per (u/s) per radian of nose-up
+  LIFT_MAX: 34,             // u/s^2, so glide extends a jump and never cancels it
+  INDUCED: 0.55,            // speed bled per radian of nose-up, per second
+
+  // --- thrust ----------------------------------------------------------
+  // Per ENGINE, because there are two of them and the whole damage model
+  // hangs off that. One engine is not half a pod: it is half the thrust
+  // and a permanent yaw torque toward the dead side.
+  THRUST: 21,               // u/s^2 per healthy engine at full throttle
+  THRUST_ARM: 1.35,         // lateral offset of an engine from the pod's axis
+  ASYM_YAW: 1.15,           // rad/s^2 of yaw per engine-thrust of asymmetry
+  ASYM_DRAG: 0.22,          // extra drag from the dead engine's dead weight
+
+  // Quadratic, and it is the number that SETS the top speed rather than a
+  // number tuned by feel: two healthy engines give 42 u/s^2, so a terminal
+  // velocity of 90 needs (42 - ROLL_DRAG) / 90^2. Ninety units a second
+  // with 8 unit track nodes is a node every 90 milliseconds, which is the
+  // rate the road has to arrive at for this to read as a podracer.
+  DRAG: 0.00495,
+  DRAG_BRAKE: 7.2,          // multiplier while the air brake is out
+  ROLL_DRAG: 1.9,           // linear drag, what stops a stationary pod creeping
+
+  // --- steering --------------------------------------------------------
+  // A podracer does not turn like a car. It turns like a thing being
+  // dragged behind two engines: the heading swings first and the velocity
+  // catches up, and the gap between those two is the drift.
+  YAW_ACC: 7.4,             // rad/s^2 toward the commanded rate
+  YAW_MAX: 1.62,            // rad/s at a standstill
+  YAW_SPEED_FALL: 0.46,     // fraction of YAW_MAX lost at top speed
+  YAW_DAMP: 4.1,
+  YAW_BRAKE_GAIN: 1.75,     // the air brake is the hairpin tool
+  YAW_AIR: 0.55,            // authority in the air: less, but never none
+
+  GRIP: 3.9,                // per second, how fast lateral velocity bleeds
+  GRIP_AIR: 0.30,           // almost none off the ground
+
+  PITCH_ACC: 4.4, PITCH_MAX: 0.62, PITCH_DAMP: 3.2,
+  PITCH_LEVEL: 2.6,         // the field levels the pod when it is close in
+
+  // --- boost, heat, damage ---------------------------------------------
+  // Double tap. The window is generous because the device's buttons are
+  // small and the tap is happening at 200 km/h with a thumb that is also
+  // steering.
+  DTAP_MS: 300,
+  BOOST_TIME: 1.45,         // seconds per tap
+  BOOST_THRUST: 1.62,       // multiplier while lit
+  BOOST_TOP: 1.30,          // and the drag ceiling moves with it
+
+  HEAT_RISE: 0.62,          // per second of boost
+  HEAT_FALL: 0.30,          // per second otherwise, scaled by world.cool
+  HEAT_WARN: 0.72,          // above here the engines start cooking
+  HEAT_BURN: 34,            // health per second lost per engine over HEAT_WARN
+  HEAT_LOCK: 0.42,          // after a redline, boost is out until heat drops here
+
+  // The speed gate on the boost, and it is the mechanic rather than a
+  // safety rail. In Episode I Racer the Thrust Meter is a READOUT OF
+  // CURRENT SPEED, not a charge bar: it fills as you go faster, and at the
+  // top you arm the boost by briefly releasing the accelerator and
+  // pressing it again. The resource you spend is heat, not a meter you
+  // filled. So "double tap the throttle" is not a compromise reached
+  // because the pause button was in the way, it is what the original
+  // actually does, and the gate is what stops it being a button you mash
+  // off the start line.
+  BOOST_GATE: 0.62,         // fraction of the pod's own top speed
+
+  ENG_MAX: 100,
+  REPAIR: 26,               // health per second, both engines, fixed rate
+  REPAIR_THRUST: 0.34,      // and this is what it costs you
+  // Repair is a HANDLING penalty, not a pause button. In the original,
+  // holding repair pulls the pod toward the engine being worked on while
+  // it bleeds speed. Repairing both evenly, as the brief asks, would pull
+  // nowhere at all, so the pull here goes toward whichever engine is worse,
+  // which is the same feel and the same tactical question: this straight,
+  // or the next one.
+  REPAIR_PULL: 0.5,         // rad/s^2 at a full health difference
+
+  SCRAPE: 46,               // health per second while grinding a wall
+  SLAM: 0.34,               // health per (u/s) of impact over SLAM_FLOOR
+  SLAM_FLOOR: 26,
+
+  // --- the cockpit on its cables ----------------------------------------
+  // The signature of the whole vehicle, and a genuine simulation cost
+  // rather than a lean applied in the renderer: the engines answer the
+  // stick at once, the cockpit lags behind them on its cables, and then
+  // the cockpit's momentum feeds BACK into the engines, so a pod swung
+  // wide drags its own engines off line. A single rigid body with a
+  // visual tilt does not reproduce it. This is the cheapest thing that
+  // does: one angle, one rate, one feedback term.
+  SWING_K: 15.0,            // how hard the cables pull the cockpit back
+  SWING_D: 4.4,             // damping, or it pendulums forever
+  SWING_FEED: 0.85,         // how much of the swing comes back as yaw
+  SWING_MAX: 0.60,
+
+  // --- the death spiral -------------------------------------------------
+  // "Flying with one engine will inevitably cause the ship to crash."
+  // Nothing here enforces that with a timer. It falls out of the thrust
+  // torque: the surviving engine pushes off the pod's centreline, and the
+  // only way to hold a line against it is to give up most of your steering
+  // authority to the correction. On a straight you survive. The next
+  // corner is the question.
+  //
+  // The same torque runs BEFORE an engine dies, in proportion to how
+  // damaged it is, because that is what the original does and because it
+  // turns damage from a number you glance at into something you can feel
+  // through the stick. A pod that pulls left is a pod telling you to hold X.
+  CRASH_FLOOR: -26,         // fall past this below the road and the run ends
+  RESPAWN_S: 1.6,
+};
+
+/* Stat 0..5 to a multiplier. 3 is neutral, so a middling pod flies the
+   numbers above exactly as written and the others read off it. */
+const stat = (v, spread) => 1 + (v - 3) * spread;
+const clampf = (v, a, b) => v < a ? a : v > b ? b : v;
+
+/* What the HUD shows. The sim works in world units a second, which is the
+   only honest number, and 90 of them is a top speed. Ninety is also a
+   number nobody reads as fast. The display scales it, exactly as every
+   racing game has always done, and the factor is written down here rather
+   than hidden in the HUD so the two can never disagree. */
+const SPEED_DISPLAY = 5;
+
+/* ==================================================================
+   THE SIM
+
+   Pure state and integers-in-spirit: no drawing, no input polling, no
+   knowledge of a canvas. This is what becomes sim.cpp, host tested, and
+   the reason it is written this way now is that the split is easier to
+   keep than to introduce.
+   ================================================================== */
+class Sim {
+  constructor(track, racer) { this.reset(track, racer); }
+
+  reset(track, racer) {
+    this.tr = track; this.rc = racer;
+    this.w = track.world;
+    const n = track.nodes[0];
+    this.x = n.x; this.y = n.y + TUNE.HOVER_H; this.z = n.z;
+    this.vx = 0; this.vy = 0; this.vz = 0;
+    this.yaw = n.head; this.yawV = 0;
+    this.pitch = 0; this.pitchV = 0;
+    this.swing = 0; this.swingV = 0;
+    this.roll = 0;
+    this.eng = [TUNE.ENG_MAX * stat(racer.hull, 0.24),
+                TUNE.ENG_MAX * stat(racer.hull, 0.24)];
+    this.engMax = this.eng[0];
+    this.dead = [false, false];
+    this.heat = 0; this.lock = false;
+    this.boost = 0; this.lastTapA = -9, this.lastTapB = -9;
+    this.node = 0; this.lap = 1; this.t = 0;
+    this.grounded = true; this.clear = 0;
+    this.dead_run = false; this.respawn = 0;
+    this.scraping = false; this.flash = 0;
+    this.blast = [0, 0];
+  }
+
+  /* Nearest centreline node, searched OUTWARD from the last one. On the
+     device this is the difference between a 250 entry scan every tick and
+     about six comparisons. */
+  findNode() {
+    const nd = this.tr.nodes, n = nd.length;
+    let best = this.node, bd = 1e9;
+    for (let k = -6; k <= 10; k++) {
+      const i = (this.node + k + n) % n;
+      const dx = nd[i].x - this.x, dz = nd[i].z - this.z;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best < this.node - 100) this.lap++;      // wrapped forward
+    this.node = best;
+    return nd[best];
+  }
+
+  /* Where the road is under a point, and how far off the middle it is.
+     One function, so the hover field, the wall test and the fall all read
+     the same surface. Returns null where there is no road at all, which
+     is what a GAP is. */
+  surfaceAt(x, z) {
+    const nd = this.tr.nodes, n = nd.length;
+    let bi = this.node, bd = 1e9;
+    for (let k = -8; k <= 12; k++) {
+      const i = (this.node + k + n) % n;
+      const dx = nd[i].x - x, dz = nd[i].z - z;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bi = i; }
+    }
+    const a = nd[bi];
+    // signed lateral offset, in the node's own frame
+    const off = (x - a.x) * Math.cos(a.head) - (z - a.z) * Math.sin(a.head);
+    if (a.flags & F_GAP) return { y: -1e4, off, node: a, road: false };
+    const over = Math.abs(off) - a.hw;
+    if (over > 0) {
+      // Off the road. Walls where the track is walled, otherwise the
+      // ground simply falls away, which is what makes a shortcut a risk
+      // rather than a corridor.
+      if (a.flags & F_WALL) return { y: a.y, off, node: a, road: false, wall: true };
+      return { y: a.y - Math.min(over * 0.9, 30), off, node: a, road: false };
+    }
+    // Banking: the road tilts into its own turn, which is free lift on a
+    // corner and the reason a track can be fast and tight at once.
+    const bank = -Math.sin(a.head - nd[(bi + 3) % n].head) * off * 1.9;
+    return { y: a.y + bank, off, node: a, road: true };
+  }
+
+  step(inp, dt) {
+    const T = TUNE, w = this.w, rc = this.rc;
+    this.t += dt;
+    if (this.flash > 0) this.flash -= dt;
+    for (let i = 0; i < 2; i++) if (this.blast[i] > 0) this.blast[i] -= dt;
+
+    if (this.dead_run) {
+      this.respawn -= dt;
+      this.vy -= T.GRAV * w.grav * dt;
+      this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
+      this.roll += dt * 4;
+      if (this.respawn <= 0) this.softRespawn();
+      return;
+    }
+
+    // ---- engines ------------------------------------------------------
+    const alive = (this.dead[0] ? 0 : 1) + (this.dead[1] ? 0 : 1);
+
+    // ---- boost --------------------------------------------------------
+    if (this.boost > 0) {
+      this.boost -= dt;
+      this.heat += T.HEAT_RISE * dt;
+    } else {
+      this.heat -= T.HEAT_FALL * w.cool * stat(rc.cool, 0.26) * dt;
+    }
+    if (this.heat < 0) this.heat = 0;
+    if (this.heat >= 1) { this.heat = 1; this.lock = true; this.boost = 0; }
+    if (this.lock && this.heat < T.HEAT_LOCK) this.lock = false;
+    // Over the warning line the engines cook. BOTH of them, evenly, which
+    // is why overheat is the one damage source you cannot nurse.
+    if (this.heat > T.HEAT_WARN) {
+      const over = (this.heat - T.HEAT_WARN) / (1 - T.HEAT_WARN);
+      this.hurt(0, T.HEAT_BURN * over * dt);
+      this.hurt(1, T.HEAT_BURN * over * dt);
+    }
+
+    // ---- repair -------------------------------------------------------
+    // Fixed rate, both engines, per the brief. It cannot resurrect an
+    // engine that has already gone: a repair beam is not a spare part.
+    const fixing = inp.x;
+    if (fixing) {
+      const r = T.REPAIR * stat(rc.fix, 0.30) * dt;
+      for (let i = 0; i < 2; i++)
+        if (!this.dead[i]) this.eng[i] = Math.min(this.engMax, this.eng[i] + r);
+    }
+
+    // ---- thrust -------------------------------------------------------
+    const throttle = inp.b ? 1 : 0;
+    const boosting = this.boost > 0 ? T.BOOST_THRUST : 1;
+    const cut = fixing ? T.REPAIR_THRUST : 1;
+    const per = T.THRUST * stat(rc.acc, 0.22) * throttle * boosting * cut;
+    const thrustL = this.dead[0] ? 0 : per;
+    const thrustR = this.dead[1] ? 0 : per;
+    const thrust = thrustL + thrustR;
+
+    // ---- attitude -----------------------------------------------------
+    const speed = Math.hypot(this.vx, this.vz);
+    // The pod's own terminal velocity, not a magic 58. It was 58 while the
+    // drag constant still settled at 295, so "fast" saturated at a third of
+    // the real top speed and the steering had already lost all of its
+    // speed falloff by the time the pod was properly moving.
+    const fast = Math.min(1, speed / this.topRef());
+    const brake = inp.y;
+
+    let yawMax = T.YAW_MAX * stat(rc.grip, 0.20) * (1 - T.YAW_SPEED_FALL * fast);
+    if (brake) yawMax *= T.YAW_BRAKE_GAIN * (w.drag * 0.5 + 0.5);
+    if (!this.grounded) yawMax *= T.YAW_AIR + (1 - T.YAW_AIR) * 0.4;
+    const steer = (inp.left ? -1 : 0) + (inp.right ? 1 : 0);
+    const wantYaw = steer * yawMax;
+    this.yawV += (wantYaw - this.yawV) * Math.min(1, T.YAW_ACC * dt);
+    // The asymmetry. Not a special case bolted on: it is the same torque
+    // equation the two engines always had, with one of them at zero.
+    this.yawV += (thrustR - thrustL) / T.THRUST_ARM * T.ASYM_YAW * 0.01 * dt;
+    this.yawV -= this.yawV * T.YAW_DAMP * dt * (1 - 0.72);
+    this.yaw += this.yawV * dt;
+
+    const pitchIn = (inp.up ? 1 : 0) + (inp.down ? -1 : 0);
+    const wantPitch = pitchIn * T.PITCH_MAX + (brake ? 0.22 : 0);
+    this.pitchV += (wantPitch - this.pitch) * T.PITCH_ACC * dt;
+    this.pitchV -= this.pitchV * T.PITCH_DAMP * dt;
+    this.pitch += this.pitchV * dt;
+    if (this.pitch > T.PITCH_MAX) this.pitch = T.PITCH_MAX;
+    if (this.pitch < -T.PITCH_MAX) this.pitch = -T.PITCH_MAX;
+
+    // The pod hangs off two cables, so it banks LATE and hard. Roll is
+    // presentation, not physics, but it is most of what sells the turn.
+    //
+    // Clamped, and the clamp is not cosmetic. The camera carries a third
+    // of this roll, and an unclamped bank in a long slide put the horizon
+    // at forty degrees and made the frame unreadable: the player could no
+    // longer tell which way was up, in a game whose entire skill is
+    // knowing where the road is.
+    // The cockpit on its cables. It is not a lean: `swing` is a real
+    // degree of freedom with its own rate, pulled back toward centre by
+    // the cables and damped, and it FEEDS BACK into the yaw two lines
+    // later. That feedback is why a pod flung wide keeps going wide for a
+    // beat after the stick has centred, and it is the one thing a rigid
+    // body with a tilt cannot do.
+    const swingWant = clampf(-this.yawV * 0.42 - (this.lat || 0) * 0.006,
+                             -TUNE.SWING_MAX, TUNE.SWING_MAX);
+    this.swingV += (swingWant - this.swing) * TUNE.SWING_K * dt;
+    this.swingV -= this.swingV * TUNE.SWING_D * dt;
+    this.swing = clampf(this.swing + this.swingV * dt, -TUNE.SWING_MAX, TUNE.SWING_MAX);
+    this.yawV += this.swing * TUNE.SWING_FEED * 0.35 * dt;
+
+    const wantRoll = clampf(-this.yawV * 0.44 + this.swing * 0.55, -0.52, 0.52);
+    this.roll += (wantRoll - this.roll) * Math.min(1, 5.2 * dt);
+
+    // ---- forces -------------------------------------------------------
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    this.vx += fx * thrust * dt;
+    this.vz += fz * thrust * dt;
+    this.vy += Math.sin(this.pitch) * thrust * 0.45 * dt;
+
+    // gravity
+    this.vy -= T.GRAV * w.grav * dt;
+
+    // lift, only worth anything with air moving over it
+    if (!this.grounded && this.pitch > 0) {
+      const lift = Math.min(T.LIFT_MAX, T.LIFT * speed * this.pitch) * w.drag;
+      this.vy += lift * dt;
+      const bleed = T.INDUCED * this.pitch * speed * dt;
+      this.vx -= fx * bleed; this.vz -= fz * bleed;
+    }
+
+    // drag
+    const dragK = T.DRAG * w.drag * (brake ? T.DRAG_BRAKE : 1)
+                * (1 + (alive === 1 ? T.ASYM_DRAG : 0))
+                / (this.boost > 0 ? T.BOOST_TOP : 1) / (stat(rc.top, 0.17) ** 2);
+    const v3 = Math.hypot(this.vx, this.vy, this.vz);
+    const dq = dragK * v3 * v3 + T.ROLL_DRAG;
+    if (v3 > 0.001) {
+      const f = Math.min(1, dq * dt / v3);
+      this.vx -= this.vx * f; this.vy -= this.vy * f * 0.35; this.vz -= this.vz * f;
+    }
+
+    // grip: bleed the part of the velocity that is across the heading.
+    // This is the drift, and the ice track is this number halved.
+    const lat = this.vx * fz - this.vz * fx;
+    this.lat = lat;
+    const gripK = (this.grounded ? T.GRIP : T.GRIP_AIR)
+                * w.grip * stat(rc.grip, 0.22) * (brake ? 1.4 : 1);
+    const bleed = lat * Math.min(1, gripK * dt);
+    this.vx -= fz * bleed; this.vz += fx * bleed;
+
+    // ---- integrate ----------------------------------------------------
+    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
+
+    // ---- the hover field ----------------------------------------------
+    const node = this.findNode();
+    const surf = this.surfaceAt(this.x, this.z);
+    this.surf = surf;
+    const rest = surf.y + T.HOVER_H;
+    this.clear = this.y - surf.y;
+    this.grounded = this.clear < T.HOVER_REACH;
+    if (this.grounded) {
+      const pen = rest - this.y;
+      // Only ever upward. Above the rest height there is no field, which
+      // is exactly why the pod can leave the ground at all.
+      if (pen > 0) {
+        const impact = -this.vy;
+        this.vy += (pen * T.HOVER_K - this.vy * T.HOVER_D) * dt;
+        if (impact > T.SLAM_FLOOR) {
+          const d = (impact - T.SLAM_FLOOR) * T.SLAM;
+          this.hurt(0, d); this.hurt(1, d); this.flash = 0.14;
+        }
+      } else {
+        this.vy -= (this.y - rest) * T.HOVER_K * 0.10 * dt;
+      }
+      // and the field levels the pod out while it holds it
+      this.pitch += (0 - this.pitch) * Math.min(1, T.PITCH_LEVEL * dt);
+    }
+
+    // ---- walls ---------------------------------------------------------
+    this.scraping = false;
+    if (surf.wall) {
+      const push = Math.abs(surf.off) - surf.node.hw;
+      const dir = surf.off > 0 ? -1 : 1;
+      const nx = Math.cos(surf.node.head) * dir, nz = -Math.sin(surf.node.head) * dir;
+      this.x += nx * push; this.z += nz * push;
+      const into = -(this.vx * nx + this.vz * nz);
+      if (into > 0) { this.vx += nx * into * 1.25; this.vz += nz * into * 1.25; }
+      this.scraping = true;
+      this.hurt(0, T.SCRAPE * dt * 0.5); this.hurt(1, T.SCRAPE * dt * 0.5);
+    }
+
+    // ---- boost pads -----------------------------------------------------
+    if ((node.flags & F_BOOST) && surf.road && this.grounded && this.boost <= 0)
+      this.boost = 0.35;
+
+    // ---- the floor -------------------------------------------------------
+    if (this.clear < TUNE.CRASH_FLOOR || this.y < node.y + TUNE.CRASH_FLOOR) this.die();
+  }
+
+  hurt(i, amount) {
+    if (this.dead[i] || amount <= 0) return;
+    this.eng[i] -= amount;
+    if (this.eng[i] <= 0) {
+      this.eng[i] = 0; this.dead[i] = true; this.blast[i] = 0.5;
+      // Both gone is not a limp home, it is a crash.
+      if (this.dead[0] && this.dead[1]) this.die();
+    }
+  }
+
+  die() {
+    if (this.dead_run) return;
+    this.dead_run = true; this.respawn = TUNE.RESPAWN_S;
+    this.vy = Math.max(this.vy, 6);
+  }
+
+  /* Back on the road, both engines lit at half, which is the only
+     forgiving thing in the whole model. A race is three laps and a run
+     that ends on lap one is a run nobody plays twice. */
+  softRespawn() {
+    const n = this.tr.nodes[this.node];
+    this.dead_run = false;
+    this.x = n.x; this.z = n.z; this.y = n.y + TUNE.HOVER_H;
+    this.vx = Math.sin(n.head) * 12; this.vz = Math.cos(n.head) * 12; this.vy = 0;
+    this.yaw = n.head; this.yawV = 0; this.pitch = 0; this.roll = 0;
+    this.dead = [false, false];
+    this.eng = [this.engMax * 0.5, this.engMax * 0.5];
+    this.heat = 0; this.lock = false; this.boost = 0;
+  }
+
+  /* The double tap, on whichever button the scheme puts it. Returns true
+     when a tap opened the boost, so the caller can make a noise. */
+  tap(which, nowMs) {
+    if (this.lock || this.dead_run) return false;
+    // The gate. Boost is armed by speed, which is what the Thrust Meter in
+    // the original is actually showing.
+    if (this.speed < this.topRef() * TUNE.BOOST_GATE) return false;
+    const key = which === 'a' ? 'lastTapA' : 'lastTapB';
+    const prev = this[key];
+    this[key] = nowMs;
+    if (nowMs - prev < TUNE.DTAP_MS) {
+      this[key] = -9;
+      this.boost = Math.max(this.boost, TUNE.BOOST_TIME);
+      return true;
+    }
+    return false;
+  }
+
+  get speed() { return Math.hypot(this.vx, this.vz); }
+  topRef() { return 90 * stat(this.rc.top, 0.17); }
+  /* 0..1, and it is what the HUD's boost light reads. */
+  get armed() { return Math.min(1, this.speed / (this.topRef() * TUNE.BOOST_GATE)); }
+}
+/* ==================================================================
+   THE POD, BUILT PARAMETRICALLY
+
+   A podracer is not one solid. It is two engines out in front, a
+   cockpit trailing behind them, and the cables that hold the three
+   together, and the parts MOVE relative to each other: the engines yaw
+   into a turn ahead of the pod, and the pod swings behind them. So it
+   is three draws with three transforms, and that decides the shape of
+   this builder.
+
+   Model space is the engine's: +Z is the nose, +Y up, +X right.
+   Renderer3D::draw_mesh says "positive pitch lifts the +Z nose".
+
+   Six sides, not eight. The silhouette that says podracer is the flare
+   at the back and the taper at the front, not how round it is. Eight
+   sides doubles the count for a roundness that is two pixels wide.
+   ================================================================== */
+const ENGINE_SHAPES = {
+  slim:  { len:3.5, noseR:0.30, bodyR:0.62, bellR:0.90, intake:0.30, bell:0.26, squash:0.86 },
+  heavy: { len:3.1, noseR:0.42, bodyR:0.86, bellR:1.16, intake:0.22, bell:0.30, squash:0.94 },
+};
+
+function ringPts(n, r, z, ys) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.PI / 6;
+    out.push([Math.cos(a) * r, Math.sin(a) * r * ys, z]);
+  }
+  return out;
+}
+
+/* 36 triangles: 6 intake, 12 body, 12 bell, 6 throat.
+
+   It was 48. There were FOUR rings, giving a separate waist band in the
+   trim colour, and the comment above it claimed 30 without anyone having
+   counted. Two engines at 48 is 96, a whole pod is 122, and six pods on
+   screen at once is 732 triangles before a metre of road is drawn, into a
+   queue that holds 640 and drops the overflow. The bench measured exactly
+   that. Three rings is the same silhouette at three quarters of the cost,
+   and the waist now comes from shading rather than from a band of its
+   own, which is what flat shading is for. */
+function buildEngine(p) {
+  const N = 6, tris = [];
+  const zN = p.len * 0.5, zB = -p.len * 0.5;
+  const zF = zN - p.len * p.intake, zR = zB + p.len * p.bell;
+  const a = ringPts(N, p.noseR + p.bodyR * 0.45, zF, p.squash);
+  const c = ringPts(N, p.bodyR, zR, p.squash);
+  const d = ringPts(N, p.bellR, zB, p.squash);
+  const tip = [0, 0, zN], throat = [0, 0, zB - p.len * 0.05];
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N;
+    tris.push([tip, a[i], a[j], 'intake']);
+    tris.push([a[i], c[i], c[j], 'hull'], [a[i], c[j], a[j], 'hull']);
+    tris.push([c[i], d[i], d[j], 'trim'], [c[i], d[j], c[j], 'trim']);
+    tris.push([d[j], d[i], throat, 'glow']);
+  }
+  return tris;
+}
+
+/* 14 triangles. */
+function buildPod() {
+  const w = 1.15, h = 0.80, l = 2.10, tris = [];
+  const q = (a, b, c, d, m) => { tris.push([a, b, c, m], [a, c, d, m]); };
+  const nose = [0, -h * 0.08, l * 0.60];
+  const fTL=[-w*.5,h*.5,l*.08], fTR=[w*.5,h*.5,l*.08];
+  const fBL=[-w*.42,-h*.5,l*.08], fBR=[w*.42,-h*.5,l*.08];
+  const bTL=[-w*.44,h*.42,-l*.5], bTR=[w*.44,h*.42,-l*.5];
+  const bBL=[-w*.36,-h*.42,-l*.5], bBR=[w*.36,-h*.42,-l*.5];
+  tris.push([nose,fBL,fBR,'hull'],[nose,fTR,fTL,'canopy'],
+            [nose,fBR,fTR,'hull'],[nose,fTL,fBL,'hull']);
+  q(fTL,fTR,bTR,bTL,'canopy'); q(fBR,fBL,bBL,bBR,'hull');
+  q(fTR,fBR,bBR,bTR,'trim');   q(fBL,fTL,bTL,bBL,'trim');
+  q(bTR,bBR,bBL,bTL,'glow');
+  return tris;
+}
+
+const POD_MESH = buildPod();
+const ENGINE_MESH = { slim: buildEngine(ENGINE_SHAPES.slim),
+                      heavy: buildEngine(ENGINE_SHAPES.heavy) };
+
+/* Where the parts sit, in the pod's own frame. The engines lead; the
+   cockpit trails. That gap is the podracer, and it is also why the
+   camera sits where it does. */
+const RIG = {
+  engY: 0.45, engX: 2.35, engZ: 3.30,   // engine centres, ahead and out
+  podZ: -1.55,                          // the cockpit, behind
+  engYawLead: 0.55,                     // engines turn into it before the pod does
+};
+
+/* ==================================================================
+   DRAWING
+   ================================================================== */
+function shade(base, nx, ny, nz, extra) {
+  // One directional light plus a floor of ambient, which is what
+  // Renderer3D::draw_mesh does with a baked normal.
+  const L = [0.36, 0.86, -0.36];
+  let d = nx * L[0] + ny * L[1] + nz * L[2];
+  // Ambient floor 0.55, not 0.46. At four bits a channel an unlit face at
+  // 0.46 of a pale colour lands in the same few steps as an unlit face of a
+  // dark one, so every wall on every track came out the same charcoal and
+  // the ice canyon read as a hole rather than as ice.
+  d = 0.55 + 0.45 * Math.max(0, d);
+  d *= (extra === undefined ? 1 : extra);
+  return [Math.min(255, base[0] * d) | 0, Math.min(255, base[1] * d) | 0,
+          Math.min(255, base[2] * d) | 0];
+}
+
+function normalOf(a, b, c) {
+  const ux=b[0]-a[0], uy=b[1]-a[1], uz=b[2]-a[2];
+  const vx=c[0]-a[0], vy=c[1]-a[1], vz=c[2]-a[2];
+  let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+  const m=Math.hypot(nx,ny,nz)||1;
+  return [nx/m, ny/m, nz/m];
+}
+
+function drawMesh(r, cam, mesh, pos, basis, scale, pal, glowCol, tintDown) {
+  const p0=[0,0,0,0], p1=[0,0,0,0], p2=[0,0,0,0];
+  const put = (v, out) => {
+    const x=v[0]*scale, y=v[1]*scale, z=v[2]*scale;
+    const wx = pos[0] + basis[0]*x + basis[1]*y + basis[2]*z;
+    const wy = pos[1] + basis[3]*x + basis[4]*y + basis[5]*z;
+    const wz = pos[2] + basis[6]*x + basis[7]*y + basis[8]*z;
+    return cam.project(wx, wy, wz, out) ? [wx, wy, wz] : null;
+  };
+  for (const [a, b, c, mat] of mesh) {
+    const wa = put(a, p0), wb = put(b, p1), wc = put(c, p2);
+    if (!wa || !wb || !wc) continue;
+    // backface cull in world space, as the engine does
+    const n = normalOf(wa, wb, wc);
+    const vx = wa[0]-cam.cx, vy = wa[1]-cam.cy, vz = wa[2]-cam.cz;
+    if (n[0]*vx + n[1]*vy + n[2]*vz > 0) continue;
+    let col;
+    if (mat === 'glow') col = glowCol;
+    else col = shade(pal[mat] || pal.hull, n[0], n[1], n[2], tintDown);
+    r.tri(p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], p2[0],p2[1],p2[2],
+          col[0], col[1], col[2]);
+  }
+}
+
+/* A whole pod: two engines, a cockpit, the cables and the binder arc.
+
+   The engines have already turned into the corner ahead of the cockpit.
+   It costs nothing and it is most of what makes this read as a podracer
+   rather than as a plane.
+
+   THREE LEVELS OF DETAIL, and they are not an optimisation anyone
+   reached for early. The bench measured a worst case of 731 triangles
+   against a queue that holds 640, with the whole pack inside forty
+   units of each other, which is exactly the moment a race is won. Over
+   the top the queue does not grow: it DROPS triangles and counts them,
+   so a close finish would have shed pieces of pods, which is the single
+   hardest failure in this engine to attribute to its cause.
+
+     near   everything. 86 triangles: 72 of engine, 14 of cockpit, plus
+            4 of cable and 8 of binder arc.
+     mid    engines only. 72, and at forty five units a cockpit is four
+            pixels hiding behind two engines anyway.
+     far    two flat quads where the engines are. 4 triangles, still in
+            the pod's own colour, so the pack still reads as a pack.
+
+   Distance picks the level, and then a RANK CAP overrides it: only the
+   nearest rival is ever allowed the full model, the next two are capped
+   at mid, and everything past that is far however close it gets. Without
+   the cap the budget holds right up until the one frame that matters. */
+function drawPod(r, cam, s, rc, throttleGlow, lod) {
+  if (lod === undefined) lod = 0;
+  const pal = {
+    hull:   rc.col[0],
+    trim:   rc.col[1],
+    intake: rc.col[2],
+    canopy: [70, 96, 120],
+  };
+  const hot = throttleGlow;
+  const glow = [255, 150 + 80 * hot | 0, 60 + 150 * hot | 0];
+  const B = rotM(s.yaw, s.pitch, s.roll);
+  const Beng = rotM(s.yaw + s.yawV * RIG.engYawLead * 0.25, s.pitch * 0.7, s.roll * 0.5);
+  const P = [s.x, s.y, s.z];
+
+  const local = (m, dx, dy, dz) => [
+    P[0] + m[0]*dx + m[1]*dy + m[2]*dz,
+    P[1] + m[3]*dx + m[4]*dy + m[5]*dz,
+    P[2] + m[6]*dx + m[7]*dy + m[8]*dz];
+
+  const shp = ENGINE_SHAPES[rc.body], msh = ENGINE_MESH[rc.body];
+  const eL = local(B, -RIG.engX, RIG.engY, RIG.engZ);
+  const eR = local(B,  RIG.engX, RIG.engY, RIG.engZ);
+  // The cockpit sits where the swing put it, not where the hull points.
+  // This is the only place the two mass model shows, and it is the whole
+  // reason for it: through a corner the cockpit is visibly off to one side
+  // of the line between the engines.
+  const sw = s.swing || 0;
+  const pod = local(B, sw * 2.6, -0.25, RIG.podZ - Math.abs(sw) * 0.5);
+
+  if (lod >= 2) {
+    // Two quads and nothing else. Far enough away that an engine is six
+    // pixels across, and six pixels of hexagonal prism is six pixels of
+    // rectangle.
+    const o = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    for (const c of [eL, eR]) {
+      const q = [[-0.9,0.7],[0.9,0.7],[0.9,-0.7],[-0.9,-0.7]];
+      let ok = true;
+      for (let k = 0; k < 4; k++) {
+        const p = [c[0] + cam.rgt[0]*q[k][0] + cam.up[0]*q[k][1],
+                   c[1] + cam.rgt[1]*q[k][0] + cam.up[1]*q[k][1],
+                   c[2] + cam.rgt[2]*q[k][0] + cam.up[2]*q[k][1]];
+        if (!cam.project(p[0], p[1], p[2], o[k])) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const cc = shade(rc.col[0], 0, 1, 0);
+      r.tri(o[0][0],o[0][1],o[0][2], o[1][0],o[1][1],o[1][2],
+            o[2][0],o[2][1],o[2][2], cc[0],cc[1],cc[2]);
+      r.tri(o[0][0],o[0][1],o[0][2], o[2][0],o[2][1],o[2][2],
+            o[3][0],o[3][1],o[3][2], cc[0],cc[1],cc[2]);
+    }
+    return;
+  }
+
+  // cockpit first, so the engines' bells win the depth tie in front of it
+  if (lod === 0) drawMesh(r, cam, POD_MESH, pod, B, 1, pal, [40,44,54]);
+
+  // the cables, and then the binder arc between the two engines
+  const camDir = cam.fwd;
+  const cable = (a, b, wdt, col) => {
+    const q = ribbon(a, b, camDir, wdt);
+    const o=[0,0,0,0], o2=[0,0,0,0], o3=[0,0,0,0], o4=[0,0,0,0];
+    if (!cam.project(q[0][0],q[0][1],q[0][2],o)) return;
+    if (!cam.project(q[1][0],q[1][1],q[1][2],o2)) return;
+    if (!cam.project(q[2][0],q[2][1],q[2][2],o3)) return;
+    if (!cam.project(q[3][0],q[3][1],q[3][2],o4)) return;
+    r.tri(o[0],o[1],o[2], o2[0],o2[1],o2[2], o3[0],o3[1],o3[2], col[0],col[1],col[2]);
+    r.tri(o[0],o[1],o[2], o3[0],o3[1],o3[2], o4[0],o4[1],o4[2], col[0],col[1],col[2]);
+  };
+  const podTop = local(B, 0, 0.30, RIG.podZ + 0.9);
+  if (lod === 0) {
+  if (!s.dead[0]) cable(podTop, local(Beng, -RIG.engX*0.75, RIG.engY-0.3, RIG.engZ-1.2), 0.09, [58,62,72]);
+  if (!s.dead[1]) cable(podTop, local(Beng,  RIG.engX*0.75, RIG.engY-0.3, RIG.engZ-1.2), 0.09, [58,62,72]);
+
+  // The energy binder: the arc of plasma strung between the two engines,
+  // and the one piece of a podracer everybody can draw from memory. It is
+  // out when either engine is out, which is the clearest possible signal
+  // that the pod is now in trouble.
+  if (!s.dead[0] && !s.dead[1]) {
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const t0 = i / n, t1 = (i + 1) / n;
+      const arc = (t) => local(Beng, (-1 + 2*t) * RIG.engX * 0.92,
+                               RIG.engY + Math.sin(t * Math.PI) * 0.55,
+                               RIG.engZ - 1.5);
+      const flick = 0.05 + 0.05 * Math.sin(s.t * 40 + i);
+      cable(arc(t0), arc(t1), flick, [236, 140 + 60*hot|0, 255]);
+    }
+  }
+  }
+
+  for (let i = 0; i < 2; i++) {
+    if (s.dead[i]) {
+      if (s.blast[i] > 0) drawBlast(r, cam, i ? eR : eL, s.blast[i]);
+      continue;
+    }
+    const wear = s.eng[i] / s.engMax;
+    drawMesh(r, cam, msh, i ? eR : eL, Beng, 1, pal, glow,
+             0.55 + 0.45 * wear);
+    // exhaust
+    if (hot > 0.02) drawFlame(r, cam, i ? eR : eL, Beng, shp, hot, s.t + i);
+    // a damaged engine smokes, which is the readout the HUD does not have
+    // to spend pixels on
+    if (wear < 0.45) drawSmoke(r, cam, i ? eR : eL, s.t + i * 1.7, 1 - wear / 0.45);
+  }
+}
+
+function ribbon(a, b, dir, wdt) {
+  const d=[b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+  let n=[d[1]*dir[2]-d[2]*dir[1], d[2]*dir[0]-d[0]*dir[2], d[0]*dir[1]-d[1]*dir[0]];
+  const m=Math.hypot(n[0],n[1],n[2])||1;
+  n=[n[0]/m*wdt, n[1]/m*wdt, n[2]/m*wdt];
+  return [[a[0]-n[0],a[1]-n[1],a[2]-n[2]],[a[0]+n[0],a[1]+n[1],a[2]+n[2]],
+          [b[0]+n[0],b[1]+n[1],b[2]+n[2]],[b[0]-n[0],b[1]-n[1],b[2]-n[2]]];
+}
+
+function rotM(yaw, pitch, roll) {
+  const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
+  const cr=Math.cos(roll), sr=Math.sin(roll);
+  return [ cy*cr+sy*sp*sr, -cy*sr+sy*sp*cr, sy*cp,
+           cp*sr,           cp*cr,          -sp,
+          -sy*cr+cy*sp*sr,  sy*sr+cy*sp*cr, cy*cp ];
+}
+
+function drawFlame(r, cam, pos, B, shp, hot, t) {
+  const back = -shp.len * 0.5 - 0.1;
+  const flick = 0.72 + 0.28 * Math.sin(t * 47);
+  const len = (0.9 + 2.4 * hot) * flick;
+  const o=[0,0,0,0];
+  for (let i = 0; i < 3; i++) {
+    const f = i / 3, w = shp.bellR * (0.86 - f * 0.7);
+    const z = back - len * f;
+    const pts = [];
+    let ok = true;
+    for (const [dx, dy] of [[-w,-w],[w,-w],[w,w],[-w,w]]) {
+      const wx = pos[0] + B[0]*dx + B[1]*dy + B[2]*z;
+      const wy = pos[1] + B[3]*dx + B[4]*dy + B[5]*z;
+      const wz = pos[2] + B[6]*dx + B[7]*dy + B[8]*z;
+      const q=[0,0,0,0];
+      if (!cam.project(wx, wy, wz, q)) { ok = false; break; }
+      pts.push(q);
+    }
+    if (!ok) continue;
+    const c = [255, 232 - f*130 | 0, 120 - f*90 | 0];
+    r.tri(pts[0][0],pts[0][1],pts[0][2], pts[1][0],pts[1][1],pts[1][2],
+          pts[2][0],pts[2][1],pts[2][2], c[0],c[1],c[2]);
+    r.tri(pts[0][0],pts[0][1],pts[0][2], pts[2][0],pts[2][1],pts[2][2],
+          pts[3][0],pts[3][1],pts[3][2], c[0],c[1],c[2]);
+  }
+}
+
+function drawBlast(r, cam, pos, life) {
+  const o=[0,0,0,0];
+  if (!cam.project(pos[0], pos[1], pos[2], o)) return;
+  const f = 1 - life / 0.5;
+  const rad = (4 + f * 22) * (60 / Math.max(6, distTo(cam, pos)));
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.4 + f * 3;
+    const d = rad * (0.4 + (i % 3) * 0.3);
+    r.rect((o[0] + Math.cos(a) * d) | 0, (o[1] + Math.sin(a) * d) | 0,
+           2, 2, 255, 200 - f * 150 | 0, 60);
+  }
+}
+
+function drawSmoke(r, cam, pos, t, amt) {
+  const o=[0,0,0,0];
+  for (let i = 0; i < 4; i++) {
+    const f = ((t * 0.7 + i * 0.25) % 1);
+    const p = [pos[0], pos[1] + f * 3.2, pos[2] - f * 5];
+    if (!cam.project(p[0], p[1], p[2], o)) continue;
+    const g = 60 + f * 70 | 0;
+    r.rect(o[0] | 0, o[1] | 0, 2, 2, g, g, g);
+  }
+}
+
+function distTo(cam, p) {
+  return Math.hypot(p[0]-cam.cx, p[1]-cam.cy, p[2]-cam.cz);
+}
+
+/* ------------------------------------------------------------------
+   The road.
+
+   Ten triangles a segment: the road itself, a shoulder each side, and
+   the ground falling away beyond. Twenty segments ahead is 200
+   triangles, which is the budget this design spends its ground on, and
+   it is spent on the one thing that tells the player where the track
+   goes.
+
+   A GAP node draws no road, and that is the entire implementation of
+   the jump: there is nothing under you because there is nothing there.
+   ------------------------------------------------------------------ */
+// Eighteen, down from twenty two. Each segment is ten triangles, so the
+// four that came off are forty, and at 8 units a node the eighteenth is
+// 144 units out, which is inside the 170 far plane but past where a
+// player is reading the road. The horizon wall covers what is left.
+const VIEW_SEGS = 18;
+
+function drawRoad(r, cam, sim) {
+  const t = sim.tr, nd = t.nodes, n = nd.length;
+  const p = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  const edge = (i, k) => {
+    const a = nd[i];
+    return [a.x + Math.cos(a.head) * a.hw * k, a.y, a.z - Math.sin(a.head) * a.hw * k];
+  };
+  const wide = (i, k, m) => {
+    const a = nd[i];
+    const drop = (a.flags & F_WALL) ? 4 : -Math.min(m * 0.55, 16);
+    return [a.x + Math.cos(a.head) * a.hw * k * m, a.y + drop,
+            a.z - Math.sin(a.head) * a.hw * k * m];
+  };
+  // back a little as well as forward, so the road does not vanish from
+  // under the pod on a hard turn
+  for (let s = -3; s < VIEW_SEGS; s++) {
+    const i = (sim.node + s + n) % n, j = (i + 1) % n;
+    const A = nd[i], Bn = nd[j];
+    const band = ((i >> 1) & 1);
+    const quad = (q0, q1, q2, q3, col) => {
+      const o = [p[0], p[1], p[2], p[3]];
+      const src = [q0, q1, q2, q3];
+      for (let k = 0; k < 4; k++)
+        if (!cam.project(src[k][0], src[k][1], src[k][2], o[k])) return;
+      const nrm = normalOf(q0, q1, q2);
+      const c = shade(col, nrm[0], nrm[1], nrm[2]);
+      r.tri(o[0][0],o[0][1],o[0][2], o[1][0],o[1][1],o[1][2],
+            o[2][0],o[2][1],o[2][2], c[0],c[1],c[2]);
+      r.tri(o[0][0],o[0][1],o[0][2], o[2][0],o[2][1],o[2][2],
+            o[3][0],o[3][1],o[3][2], c[0],c[1],c[2]);
+    };
+    // Ground and shoulders only where they can still be seen. Past about
+    // ninety units out the shoulder is under a pixel tall and the ground
+    // beyond it is the same few pixels as the horizon wall behind it, so
+    // six of a far segment's fourteen triangles were drawing the horizon
+    // a second time.
+    const near = s <= 11;
+    if (near) {
+      quad(wide(i,-1,4), wide(j,-1,4), wide(j,-1,1.35), wide(i,-1,1.35), t.ground[band]);
+      quad(wide(i, 1,1.35), wide(j, 1,1.35), wide(j, 1,4), wide(i, 1,4), t.ground[band]);
+    }
+    if (A.flags & F_GAP) continue;         // the jump: no road at all
+    // shoulders
+    // Walls get a colour of their own rather than borrowing the scenery's.
+    // A near vertical face takes the ambient floor and nothing else, so a
+    // wall painted in the same palette entry as a distant rock comes out
+    // three times darker than it, and the track that is MOSTLY wall came
+    // out as a black corridor.
+    const sideCol = (A.flags & F_WALL) ? (t.wall || t.rock[band]) : t.rock[band];
+    if (near || (A.flags & F_WALL)) {
+      quad(wide(i,-1,1.35), wide(j,-1,1.35), edge(j,-1), edge(i,-1), sideCol);
+      quad(edge(i, 1), edge(j, 1), wide(j, 1,1.35), wide(i, 1,1.35), sideCol);
+    }
+    // the road
+    let col = t.road[band];
+    if (A.flags & F_BOOST) col = [90, 190, 255];
+    if (A.flags & F_SHORT) col = [t.road[band][0], t.road[band][1] * 1.06 | 0, t.road[band][2] * 0.86 | 0];
+    // The road is cut into three strips ACROSS rather than drawn as one
+    // quad with a stripe laid on top of it, and that is forced by the
+    // engine rather than chosen.
+    //
+    // The depth buffer is one byte over the 2..170 bracket, so one depth
+    // step is about 0.66 units of view distance. A stripe floated 0.02
+    // above the tarmac is the same depth value as the tarmac, ties go to
+    // whoever drew first, and the road wins because it drew first: the
+    // stripe simply never appears. Raising it far enough to win would be a
+    // curb standing two thirds of a metre proud of the road.
+    //
+    // Coplanar strips that do not overlap have no tie to lose. Four extra
+    // triangles a segment, and it is the four that tell a player where the
+    // road ENDS, which is the only thing they are reading at an apex.
+    const at = (i2, k) => {
+      const a2 = nd[i2];
+      return [a2.x + Math.cos(a2.head) * a2.hw * k, a2.y, a2.z - Math.sin(a2.head) * a2.hw * k];
+    };
+    const LIP = 0.11;                       // fraction of the half width
+    const dash = ((i >> 1) & 1) === 1;
+    // Only the dashed segments pay for three strips. On the others the
+    // edge colour equals the road colour, so the two outer strips would
+    // draw the same pixels the middle one already covers: four triangles
+    // a segment to change nothing. Half the segments, half the road's
+    // edge cost, identical picture.
+    if (!dash || s > 11) {
+      quad(at(i,-1), at(j,-1), at(j,1), at(i,1), col);
+    } else {
+      const ec = t.edge || [240,240,240];
+      quad(at(i,-1), at(j,-1), at(j,-1+LIP*2), at(i,-1+LIP*2), ec);
+      quad(at(i,-1+LIP*2), at(j,-1+LIP*2), at(j,1-LIP*2), at(i,1-LIP*2), col);
+      quad(at(i,1-LIP*2), at(j,1-LIP*2), at(j,1), at(i,1), ec);
+    }
+  }
+}
+
+function drawProps(r, cam, sim) {
+  const t = sim.tr;
+  for (const pr of t.props) {
+    const dx = pr.x - sim.x, dz = pr.z - sim.z;
+    if (dx*dx + dz*dz > 150*150) continue;
+    // A three sided spike: six triangles, and at 120 pixels it reads as a
+    // rock, a pillar or an ice shard depending only on its colour.
+    const N = 3, base = [];
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      base.push([pr.x + Math.cos(a) * pr.r, pr.y - 2, pr.z + Math.sin(a) * pr.r]);
+    }
+    const tip = [pr.x, pr.y + pr.h, pr.z];
+    const o=[[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      if (!cam.project(base[i][0],base[i][1],base[i][2],o[0])) continue;
+      if (!cam.project(base[j][0],base[j][1],base[j][2],o[1])) continue;
+      if (!cam.project(tip[0],tip[1],tip[2],o[2])) continue;
+      const nr = normalOf(base[i], base[j], tip);
+      const vx = base[i][0]-cam.cx, vy = base[i][1]-cam.cy, vz = base[i][2]-cam.cz;
+      if (nr[0]*vx + nr[1]*vy + nr[2]*vz > 0) continue;
+      const c = shade(t.rock[i & 1], nr[0], nr[1], nr[2]);
+      r.tri(o[0][0],o[0][1],o[0][2], o[1][0],o[1][1],o[1][2],
+            o[2][0],o[2][1],o[2][2], c[0],c[1],c[2]);
+    }
+  }
+}
+/* ==================================================================
+   THE CAMERA
+
+   Chase, low and close, because that is what sells speed on a small
+   screen: a high camera turns a race into a diagram.
+
+   The depth range is not a taste decision and it is not the numbers a
+   reader expects. The engine's project() rejects a vertex once NDC z
+   hits 0, which is the HARMONIC MEAN of the near and far planes and
+   not the near plane: set_depth_range(0.25, 400) really clips at 0.50,
+   and set_depth_range(2, 170) really clips at 3.95. Since there is no
+   clipping anywhere in the engine, a triangle with one corner past
+   that line is dropped WHOLE, so the number decides where the road can
+   start, and the road has to start behind the pod.
+
+   170 out is the far plane because the depth buffer is one byte on a
+   hyperbolic curve: brackets much wider than the scene collapse
+   everything past about a quarter of the range into one depth step,
+   and then a rock ties with the ground it stands on and one of them
+   vanishes.
+   ================================================================== */
+const CAM = {
+  near: 2, far: 170,            // effective near = 2*n*f/(n+f) = 3.95
+  // Close and LOW. The first pass sat at 11.5 units back and 3.6 up, and
+  // it turned the race into a diagram: the pod was a thumbnail in the
+  // middle of a map. A podracer camera sits about a pod length behind the
+  // cockpit and barely above it, which puts the engines out at the edges
+  // of the frame and the road filling everything between them.
+  dist: 8.4, high: 2.4, lift: 1.2,
+  fov: 74,                      // wide. A long lens makes 90 u/s look like 30.
+  boostPull: 4.2,               // and it pulls back when the boost lights
+  rollShare: 0.30,              // how much of the pod's bank the horizon takes
+};
+const NEAR_REAL = 2 * CAM.near * CAM.far / (CAM.near + CAM.far);
+
+class Camera {
+  constructor() { this.yaw = 0; this.roll = 0; this.pitch = 0; this.shake = 0; }
+
+  follow(s, dt) {
+    // The camera eases toward the pod's heading rather than being welded
+    // to it. Welded, a twitchy pod makes an unreadable frame; eased, the
+    // pod visibly slides across the screen through a corner, which is
+    // the drift made visible and most of why this reads as a podracer.
+    const dyaw = wrapPi(s.yaw - this.yaw);
+    this.yaw += dyaw * Math.min(1, 5.0 * dt);
+    this.roll += (s.roll * CAM.rollShare - this.roll) * Math.min(1, 4.0 * dt);
+    const wantPitch = -0.10 + s.pitch * 0.30 + (s.clear > 6 ? -0.10 : 0);
+    this.pitch += (wantPitch - this.pitch) * Math.min(1, 3.4 * dt);
+    this.shake = Math.max(0, this.shake - dt * 3);
+
+    const pull = CAM.dist + (s.boost > 0 ? CAM.boostPull : 0)
+               + Math.min(6, s.speed * 0.045);
+    const cy = Math.cos(this.pitch), sy = Math.sin(this.pitch);
+    const sh = this.shake * 0.5;
+    this.tx = s.x; this.ty = s.y + CAM.lift; this.tz = s.z;
+    this.cx = s.x - Math.sin(this.yaw) * cy * pull + (Math.random()-0.5)*sh;
+    this.cy = s.y + CAM.high - sy * pull + (Math.random()-0.5)*sh;
+    this.cz = s.z - Math.cos(this.yaw) * cy * pull;
+    this.build();
+  }
+
+  build() {
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    const cr = Math.cos(this.roll), sr = Math.sin(this.roll);
+    // Roll is why this is a BASIS and not a yaw and a pitch: the engine's
+    // set_camera pins `right` to the world horizontal plane and so cannot
+    // roll at all. set_camera_basis takes exactly these three columns.
+    let f = [sy*cp, sp, cy*cp];
+    let rgt = [cy, 0, -sy];
+    let up = [ f[1]*rgt[2]-f[2]*rgt[1], f[2]*rgt[0]-f[0]*rgt[2], f[0]*rgt[1]-f[1]*rgt[0] ];
+    // apply roll about forward
+    const r2 = [rgt[0]*cr + up[0]*sr, rgt[1]*cr + up[1]*sr, rgt[2]*cr + up[2]*sr];
+    const u2 = [-rgt[0]*sr + up[0]*cr, -rgt[1]*sr + up[1]*cr, -rgt[2]*sr + up[2]*cr];
+    this.fwd = f; this.rgt = r2; this.up = u2;
+    this.f = (H * 0.5) / Math.tan(CAM.fov * Math.PI / 360);
+  }
+
+  project(x, y, z, out) {
+    // RECENTRED on the camera before anything else, which is not a
+    // micro-optimisation. The engine's projection is fixed point and its
+    // precision decays with the ABSOLUTE magnitude of a world coordinate:
+    // measured, 2 pixels and 46/1024 of depth error at 500 units out, and
+    // unusable by 5000. A lap here is about 2,000 units around, so a track
+    // laid out in absolute coordinates would be visibly wrong down the
+    // back straight and fine at the start line, which is the worst kind of
+    // bug to chase. Everything is handed to the projector relative to the
+    // camera, so the numbers it sees never leave +/-170.
+    const dx = x - this.cx, dy = y - this.cy, dz = z - this.cz;
+    const vz = dx*this.fwd[0] + dy*this.fwd[1] + dz*this.fwd[2];
+    if (vz < NEAR_REAL) return false;         // the REAL near plane
+    if (vz > CAM.far) return false;
+    const vx = dx*this.rgt[0] + dy*this.rgt[1] + dz*this.rgt[2];
+    const vy = dx*this.up [0] + dy*this.up [1] + dz*this.up [2];
+    const inv = this.f / vz;
+    // Clamped. ScreenTriangle stores x and y as int16 and renderer3d casts
+    // the projected int straight in with no clamp: a wide ground quad near
+    // the near plane can project past 32767, wrap negative, and draw
+    // itself on the opposite side of the screen. Verified in the engine at
+    // world x=400, depth 0.5.
+    out[0] = clamp(W*0.5 + vx*inv, -4000, 4000);
+    out[1] = clamp(H*0.5 - vy*inv, -4000, 4000);
+    const t = (vz - CAM.near) / (CAM.far - CAM.near);
+    out[2] = t < 0 ? 0 : t > 1 ? 254 : (t*254)|0;
+    out[3] = 1/vz;
+    return true;
+  }
+}
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const wrapPi = a => { while(a>Math.PI)a-=Math.PI*2; while(a<-Math.PI)a+=Math.PI*2; return a; };
+
+/* ==================================================================
+   RIVALS
+
+   Five of them, so POS on the HUD means something and so the bench can
+   answer whether a race reads at all at this size.
+
+   They run the centreline at a pace of their own with a lateral weave,
+   and they are NOT running the flight model: a rival that can crash is
+   a rival that can be lapped by its own physics, and none of that is
+   visible from behind. This is what the game should ship too.
+   ================================================================== */
+class Rival {
+  constructor(rc, i, track) {
+    this.rc = rc; this.i = i; this.tr = track;
+    this.s = -(i + 1) * 13;
+    this.off = ((i % 2) ? 1 : -1) * (2 + (i % 3) * 2.2);
+    this.pace = 40 + rc.top * 5.2 + rc.acc * 1.1;
+    this.phase = i * 1.9;
+    // Placed before the first tick runs. A rival with no position is a
+    // rival the very first frame tries to draw, and the frame that throws
+    // takes the whole requestAnimationFrame chain with it.
+    this.step(0, 0);
+  }
+  step(dt, t) {
+    const nd = this.tr.nodes, n = nd.length;
+    // pace wobbles, so the pack shuffles and the position number moves
+    const v = this.pace * (1 + 0.08 * Math.sin(t * 0.5 + this.phase));
+    this.s += v * dt;
+    const f = ((this.s / NODE_SPACING) % n + n) % n;
+    const i0 = Math.floor(f), i1 = (i0 + 1) % n, u = f - i0;
+    const a = nd[i0], b = nd[i1];
+    const head = a.head + wrapPi(b.head - a.head) * u;
+    const wob = this.off + Math.sin(t * 0.9 + this.phase) * 2.4;
+    this.x = a.x + (b.x - a.x) * u + Math.cos(head) * wob;
+    this.z = a.z + (b.z - a.z) * u - Math.sin(head) * wob;
+    this.y = a.y + (b.y - a.y) * u + TUNE.HOVER_H;
+    this.yaw = head;
+    this.yawV = wrapPi(b.head - a.head) * 6;
+    this.roll = -this.yawV * 0.5;
+    this.pitch = 0; this.t = t;
+    this.dead = [false, false]; this.blast = [0, 0];
+    this.eng = [100, 100]; this.engMax = 100; this.boost = 0;
+  }
+}
+
+/* ==================================================================
+   THE HUD
+
+   Rule 9: the minimum, measured rather than placed by eye, and nothing
+   names a button.
+
+   Laid out where a podracer HUD has always been, so a player who has
+   seen one reads it without being told: lap top left, position top
+   right, the two engine bars bottom left, speed bottom right. The
+   labels are gone because at 120 pixels a three letter caption under
+   every number costs a fifth of the screen to say what the number's
+   position already says.
+
+   Note what is NOT drawn: no boost prompt, no repair prompt, no
+   "PRESS B". The bars go red, and that is the instruction.
+   ================================================================== */
+function drawHud(r, s, place, laps, t) {
+  const W2 = 120;
+  // ---- lap, top left ------------------------------------------------
+  const lap = `${Math.min(s.lap, laps)}/${laps}`;
+  r.text(lap, 3, 3, 236, 240, 248);
+  // ---- position, top right ------------------------------------------
+  const pos = `${place}/6`;
+  r.text(pos, W2 - 3 - r.textW(pos), 3, 236, 240, 248);
+
+  // ---- the two engine bars, bottom left ------------------------------
+  // Two of them, side by side, because there are two engines and their
+  // health is the one thing in this game that is not shared. A single
+  // combined bar would hide the exact state the whole damage model is
+  // about.
+  for (let i = 0; i < 2; i++) {
+    const bx = 4 + i * 9, by = 120 - 32, bh = 28;
+    r.rect(bx, by, 7, bh, 22, 26, 34);
+    if (s.dead[i]) {
+      // a dead engine is a hollow box with a cross, not an empty bar: an
+      // empty bar reads as "nearly dead" and this one is not coming back
+      for (let k = 0; k < 7; k++) {
+        r.plot(bx + k, by + bh - 8 + (k % 7 > 3 ? 0 : 0), 120, 40, 48);
+      }
+      for (let k = 0; k < 8; k++) {
+        r.plot(bx + 1 + (k % 7), by + bh - 8 + (k % 7), 190, 60, 70);
+        r.plot(bx + 7 - (k % 7), by + bh - 8 + (k % 7), 190, 60, 70);
+      }
+      continue;
+    }
+    const f = s.eng[i] / s.engMax;
+    const fill = Math.round((bh - 2) * f);
+    const col = f > 0.6 ? [96, 224, 132] : f > 0.28 ? [236, 196, 72] : [232, 76, 84];
+    r.rect(bx + 1, by + 1 + (bh - 2 - fill), 5, fill, col[0], col[1], col[2]);
+  }
+
+  // ---- heat, above the speed ----------------------------------------
+  // A bar and not a dial. A dial at this size is nine pixels of arc and
+  // a lie about how much resolution the reader has.
+  const hx = W2 - 38, hy = 120 - 30;
+  r.rect(hx, hy, 34, 5, 22, 26, 34);
+  const hw2 = Math.round(32 * Math.min(1, s.heat));
+  const warnAt = Math.round(32 * TUNE.HEAT_WARN);
+  const hot = s.heat > TUNE.HEAT_WARN;
+  const hc = s.lock ? [255, 90, 90] : hot ? [255, 150, 60] : [96, 200, 240];
+  // flashing above the line, because the number a player must not miss is
+  // the one that is about to cost them an engine
+  if (!hot || ((t * 8) | 0) % 2 === 0)
+    r.rect(hx + 1, hy + 1, hw2, 3, hc[0], hc[1], hc[2]);
+  // the line itself, so the player can see where the trouble starts
+  r.rect(hx + 1 + warnAt, hy, 1, 5, 255, 255, 255);
+
+  // The arm light. Boost is gated on speed, so the player needs to know
+  // when a double tap will do anything, and this is the whole of telling
+  // them: three pixels that go green. It is the one addition to the HUD
+  // that the speed gate forces, and it is cheaper than the alternative,
+  // which is a player who taps twice, gets nothing, and concludes the
+  // boost is broken.
+  const armed = s.armed >= 1 && !s.lock && !s.dead_run;
+  r.rect(hx - 7, hy, 5, 5, 18, 22, 30);
+  if (armed) r.rect(hx - 6, hy + 1, 3, 3, 90, 235, 130);
+
+  // ---- speed, bottom right, drawn double ------------------------------
+  // The one number worth spending pixels on. Drawn at 2x by plotting the
+  // same glyphs into a 2x2 block, which is what the panel does to a lores
+  // frame anyway.
+  const sp = String(Math.round(s.speed * SPEED_DISPLAY));
+  const sw = r.textW(sp) * 2;
+  drawBig(r, sp, W2 - 3 - sw, 120 - 20, s.boost > 0 ? [255, 214, 96] : [232, 238, 248]);
+
+  // ---- boost chevrons -------------------------------------------------
+  if (s.boost > 0) {
+    for (let k = 0; k < 3; k++) {
+      const cx = W2 - 6 - sw - 7 - k * 5, cy = 120 - 13;
+      for (let j = 0; j < 5; j++) {
+        r.plot(cx + (j < 3 ? j : 4 - j), cy - 2 + j > cy + 2 ? cy : cy - 2 + j, 255, 200, 90);
+      }
+    }
+  }
+
+  // ---- the one line of state ------------------------------------------
+  // Only when there is something to say, and never a button name.
+  let msg = null, mc = [255, 255, 255];
+  if (s.dead_run) { msg = 'WRECKED'; mc = [255, 90, 90]; }
+  else if (s.lock) { msg = 'VENTING'; mc = [255, 150, 60]; }
+  else if (s.dead[0] || s.dead[1]) { msg = 'ONE ENGINE'; mc = [255, 190, 80]; }
+  if (msg) {
+    const w = r.textW(msg);
+    r.rect(60 - (w >> 1) - 3, 46, w + 6, 11, 10, 10, 16);
+    r.text(msg, 60 - (w >> 1), 48, mc[0], mc[1], mc[2]);
+  }
+}
+
+/* Double sized glyphs, straight out of the same 5x7 the engine has. */
+function drawBig(r, s, x, y, col) {
+  s = String(s).toUpperCase();
+  for (let c = 0; c < s.length; c++) {
+    const rows = FONT57[s[c]];
+    if (rows) for (let row = 0; row < 7; row++)
+      for (let cl = 0; cl < 5; cl++)
+        if (rows[row] >> cl & 1) r.rect(x + cl*2, y + row*2, 2, 2, col[0], col[1], col[2]);
+    x += 12;
+  }
+}
+
+/* Speed lines. There is no blending anywhere in the engine, so these are
+   sparse plot() calls and nothing else, which is also all they need to
+   be: what sells speed is the RATE they stream past, not their opacity. */
+function drawSpeedLines(r, s, t) {
+  const n = Math.min(14, Math.floor(s.speed / 6));
+  for (let i = 0; i < n; i++) {
+    const seed = (i * 2654435761) >>> 0;
+    const a = ((seed >>> 8) % 360) * Math.PI / 180;
+    const rad = 14 + ((seed >>> 16) % 46);
+    const f = ((t * (1.2 + s.speed * 0.02) + i * 0.137) % 1);
+    const rr = rad + f * 46;
+    const x = 60 + Math.cos(a) * rr, y = 62 + Math.sin(a) * rr * 0.8;
+    const g = s.boost > 0 ? 240 : 190;
+    const len = 1 + ((s.speed / 30) | 0);
+    for (let k = 0; k < len; k++)
+      r.plot((x + Math.cos(a)*k) | 0, (y + Math.sin(a)*0.8*k) | 0, g, g, g);
+  }
+}
+/* ==================================================================
+   THE HORIZON
+
+   Straight out of Dust Rider's draw_horizon, and the reason to copy it
+   rather than model terrain is that it is pinned to the CAMERA at a
+   fixed depth: it stays on the skyline however far the road wanders,
+   costs 28 triangles, and never has a corner cross the near plane.
+
+   Corner heights come from a hash of the column index, so a ridge is
+   in the same place every lap without a byte of it being stored.
+   ================================================================== */
+function drawHorizon(r, cam, track) {
+  const walls = [
+    { depth: 128, amp: 22, base: 7, phase: 11, col: track.rock[0] },
+    { depth: 92,  amp: 14, base: 3, phase: 0,  col: track.rock[1] },
+  ];
+  const o = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  for (const wl of walls) {
+    const cols = 16, span = 26;
+    const fx = cam.fwd[0], fz = cam.fwd[2];
+    const m = Math.hypot(fx, fz) || 1;
+    const dx = fx / m, dz = fz / m;
+    const rx = dz, rz = -dx;                       // flat right, ignore pitch
+    const ht = (k) => {
+      const h = Math.imul(k + wl.phase, 2654435761) >>> 0;
+      return wl.base + wl.amp * (((h >> 13) & 255) / 255);
+    };
+    const base = cam.cy - 26;
+    for (let i = 0; i < cols; i++) {
+      const t0 = (i - cols / 2) * span, t1 = t0 + span;
+      const k0 = Math.floor((cam.cx * 0.02 + i)), k1 = k0 + 1;
+      const p = (t, h) => [cam.cx + dx*wl.depth + rx*t, base + h, cam.cz + dz*wl.depth + rz*t];
+      const q = [p(t0, 0), p(t0, ht(k0)), p(t1, ht(k1)), p(t1, 0)];
+      let ok = true;
+      for (let k = 0; k < 4; k++) if (!cam.project(q[k][0], q[k][1], q[k][2], o[k])) { ok = false; break; }
+      if (!ok) continue;
+      r.tri(o[0][0],o[0][1],o[0][2], o[1][0],o[1][1],o[1][2], o[2][0],o[2][1],o[2][2],
+            wl.col[0], wl.col[1], wl.col[2]);
+      r.tri(o[0][0],o[0][1],o[0][2], o[2][0],o[2][1],o[2][2], o[3][0],o[3][1],o[3][2],
+            wl.col[0], wl.col[1], wl.col[2]);
+    }
+  }
+}
+
+/* ==================================================================
+   ONE FRAME
+   ================================================================== */
+function renderFrame(r, cam, sim, rivals, place, t) {
+  const tr = sim.tr;
+  r.clearGradient(tr.sky[0][0], tr.sky[0][1], tr.sky[0][2],
+                  tr.sky[1][0], tr.sky[1][1], tr.sky[1][2]);
+  drawHorizon(r, cam, tr);
+  drawRoad(r, cam, sim);
+  drawProps(r, cam, sim);
+  // Sorted near to far, so the rank cap below means what it says.
+  const seen = [];
+  for (const rv of rivals) {
+    const dx = rv.x - sim.x, dz = rv.z - sim.z;
+    const d2 = dx*dx + dz*dz;
+    if (d2 > 160*160) continue;
+    seen.push([d2, rv]);
+  }
+  seen.sort((a, b) => a[0] - b[0]);
+  seen.forEach(([d2, rv], rank) => {
+    const byDist = d2 > 90*90 ? 2 : d2 > 45*45 ? 1 : 0;
+    // The rank cap. Distance alone held the budget in every frame except
+    // the one where the whole pack is alongside you, which is the frame
+    // the player actually cares about.
+    const floor = rank === 0 ? 0 : rank < 3 ? 1 : 2;
+    drawPod(r, cam, rv, rv.rc, 0.55, Math.max(byDist, floor));
+  });
+  drawPod(r, cam, sim, sim.rc, sim.boost > 0 ? 1 : (sim.thr || 0));
+  if (sim.speed > 26) drawSpeedLines(r, sim, t);
+  drawHud(r, sim, place, tr.laps, t);
+  if (sim.flash > 0) {
+    for (let i = 0; i < 240; i++)
+      r.plot((Math.random()*120)|0, (Math.random()*120)|0, 255, 90, 90);
+  }
+  r.squeeze565();
+}
+
+/* ==================================================================
+   PAGE WIRING
+   ================================================================== */
+const cv = document.getElementById('screen');
+const ctx = cv.getContext('2d');
+const R = new Raster(W, H);
+const cam = new Camera();
+
+let racerIx = 0, trackIx = 0, scheme = 'tapB';
+let sim = new Sim(TRACKS[0], RACERS[0]);
+let rivals = [];
+let paused = false, pauseSel = 0;
+
+function newRace() {
+  sim = new Sim(TRACKS[trackIx], RACERS[racerIx]);
+  cam.yaw = sim.yaw; cam.roll = 0; cam.pitch = -0.1;
+  rivals = RACERS.filter((_, i) => i !== racerIx)
+                 .map((rc, i) => new Rival(rc, i, TRACKS[trackIx]));
+  paused = false;
+}
+
+const held = { a:0, b:0, x:0, y:0, up:0, down:0, left:0, right:0 };
+const KEYMAP = { KeyW:'x', KeyA:'y', KeyS:'b', KeyD:'a',
+                 KeyC:'x', KeyV:'y', KeyX:'b', KeyZ:'a',
+                 ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right' };
+
+function setBtn(n, on) {
+  if (!!held[n] === !!on) return;
+  held[n] = on ? 1 : 0;
+  document.querySelectorAll('.btn[data-btn="' + n + '"]').forEach(b => b.classList.toggle('on', !!on));
+  if (on) onPress(n);
+}
+
+/* The one decision this bench exists to settle.
+
+   The brief puts the pause menu and the double tap boost on the same
+   button, which cannot both be true, so both readings are built and
+   the toggle picks one:
+
+   tapB   double tap B (the throttle) boosts, A is only ever pause.
+          Slamming the throttle twice to boost is the reading that
+          needs no second thought while cornering, and it leaves A
+          completely alone.
+   tapA   double tap A boosts, and pause moves to HOLDING A for a
+          third of a second. This is the brief as written. It works,
+          and the cost is that every boost ends with a finger resting
+          on the pause button.
+*/
+let aHeldSince = 0;
+function onPress(n) {
+  const now = performance.now();
+  if (paused) {
+    if (n === 'up') pauseSel = (pauseSel + 2) % 3;
+    if (n === 'down') pauseSel = (pauseSel + 1) % 3;
+    if (n === 'a' || n === 'b') {
+      if (pauseSel === 0) paused = false;
+      else if (pauseSel === 1) { newRace(); }
+      else { newRace(); }
+    }
+    return;
+  }
+  if (n === 'b' && scheme === 'tapB') sim.tap('b', now);
+  if (n === 'a') {
+    if (scheme === 'tapA') { sim.tap('a', now); aHeldSince = now; }
+    else { paused = true; pauseSel = 0; }
+  }
+}
+
+document.addEventListener('keydown', e => {
+  const n = KEYMAP[e.code];
+  if (n && document.activeElement === cv) { e.preventDefault(); setBtn(n, true); }
+});
+document.addEventListener('keyup', e => {
+  const n = KEYMAP[e.code];
+  if (n) { e.preventDefault(); setBtn(n, false); }
+});
+cv.addEventListener('focus', () => { note(true); });
+cv.addEventListener('blur', () => { Object.keys(held).forEach(k => setBtn(k, false)); note(false); });
+cv.addEventListener('pointerdown', () => cv.focus());
+function note(on) {
+  const e = document.getElementById('focusnote');
+  e.classList.toggle('on', on);
+  e.textContent = on ? 'you have the controls  -  WASD or ZXCV on the face, arrows on the pad'
+                     : 'click the screen to take the controls';
+}
+document.querySelectorAll('.btn').forEach(b => {
+  const n = b.dataset.btn;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); cv.focus(); setBtn(n, true); });
+  b.addEventListener('pointerup', e => { e.preventDefault(); setBtn(n, false); });
+  b.addEventListener('pointerleave', () => setBtn(n, false));
+});
+
+/* ---- chips ---- */
+function chips(host, items, get, set) {
+  const el = document.getElementById(host);
+  el.innerHTML = '';
+  items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.innerHTML = it.label + (it.sub ? '<small>' + it.sub + '</small>' : '');
+    b.addEventListener('click', () => { set(i); sync(); cv.focus(); });
+    el.appendChild(b);
+  });
+  el._get = get;
+}
+function sync() {
+  for (const id of ['racerchips', 'trackchips', 'boostchips']) {
+    const el = document.getElementById(id);
+    const g = el._get();
+    [...el.children].forEach((c, i) => c.classList.toggle('on', i === g));
+  }
+}
+chips('racerchips', RACERS.map(r => ({ label: r.name, sub: r.pilot })),
+      () => racerIx, i => { racerIx = i; newRace(); });
+chips('trackchips', TRACKS.map(t => ({ label: t.name, sub: t.laps + ' laps' })),
+      () => trackIx, i => { trackIx = i; newRace(); });
+chips('boostchips', [
+  { label: 'double tap B', sub: 'A is pause' },
+  { label: 'double tap A', sub: 'hold A to pause' },
+], () => scheme === 'tapB' ? 0 : 1, i => { scheme = i ? 'tapA' : 'tapB'; });
+newRace(); sync(); note(false);
+
+/* ---- the loop ---- */
+let acc = 0, last = performance.now(), tSec = 0;
+function frame(now) {
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.25) dt = 0.25;
+  acc += dt;
+
+  // hold-A-to-pause, only in the scheme that needs it
+  if (scheme === 'tapA' && held.a && !paused && aHeldSince
+      && now - aHeldSince > 340) { paused = true; pauseSel = 0; aHeldSince = 0; }
+  if (!held.a) aHeldSince = 0;
+
+  const inp = { b: held.b, y: held.y, x: held.x,
+                up: held.up, down: held.down, left: held.left, right: held.right };
+  sim.thr = held.b ? 1 : 0;
+
+  // The device's tick, fixed at 100 Hz with an accumulator, exactly as
+  // Star Dancer does it: a slow frame costs frames and never physics.
+  let steps = 0;
+  while (acc >= TUNE.TICK && steps < 12) {
+    acc -= TUNE.TICK; steps++; tSec += TUNE.TICK;
+    if (!paused) {
+      sim.step(inp, TUNE.TICK);
+      for (const rv of rivals) rv.step(TUNE.TICK, tSec);
+    }
+  }
+  if (!paused) cam.follow(sim, Math.min(0.05, dt));
+  if (sim.flash > 0.001) cam.shake = 2.4;
+
+  // position: how many rivals are ahead of us on the same lap
+  const myS = sim.node * NODE_SPACING + sim.lap * sim.tr.length;
+  let place = 1;
+  for (const rv of rivals) if (rv.s > myS) place++;
+
+  renderFrame(R, cam, sim, rivals, place, tSec);
+  if (paused) drawPause(R, pauseSel, sim);
+  ctx.putImageData(R.img, 0, 0);
+
+  setTxt('t-speed', Math.round(sim.speed) + ' u/s');
+  setTxt('t-alt', sim.clear.toFixed(1) + ' clear');
+  setTxt('t-el', sim.dead[0] ? 'GONE' : Math.round(sim.eng[0] / sim.engMax * 100) + '%');
+  setTxt('t-er', sim.dead[1] ? 'GONE' : Math.round(sim.eng[1] / sim.engMax * 100) + '%');
+  setTxt('t-heat', Math.round(sim.heat * 100) + '%' + (sim.lock ? ' LOCKED' : ''));
+  setTxt('t-state', sim.dead_run ? 'wrecked' : sim.grounded ? 'hovering' : 'airborne');
+  setTxt('t-tris', R.tris + (R.dropped ? ' (+' + R.dropped + ' dropped)' : ''));
+  document.getElementById('m-heat').style.width = (sim.heat * 100) + '%';
+
+  requestAnimationFrame(frame);
+}
+function setTxt(id, v) { const e = document.getElementById(id); if (e) e.textContent = v; }
+
+/* The pause menu. Three rows, no explanation, because a pause menu that
+   needs explaining is a pause menu with too much in it. */
+function drawPause(r, sel, s) {
+  for (let y = 0; y < 120; y++)
+    for (let x = (y & 1); x < 120; x += 2) r.plot(x, y, 8, 9, 14);
+  const rows = ['RESUME', 'RESTART', 'QUIT'];
+  const top = 40;
+  // A solid panel behind the rows, not just the checkerboard. There is no
+  // blending in this engine, so a 50 percent dither over a bright desert
+  // is still half a bright desert, and three words of 5x7 text sitting on
+  // it were genuinely hard to read. The panel is measured off the widest
+  // row rather than guessed, per rule 9.
+  let wide = 0;
+  for (const row of rows) wide = Math.max(wide, r.textW(row));
+  r.rect(60 - (wide >> 1) - 8, top - 7, wide + 16, 3 * 14 + 8, 12, 13, 20);
+  for (let i = 0; i < 3; i++) {
+    const w = r.textW(rows[i]);
+    if (i === sel) r.rect(60 - (w >> 1) - 4, top + i*14 - 2, w + 8, 11, 232, 138, 43);
+    r.text(rows[i], 60 - (w >> 1), top + i*14, i === sel ? 20 : 210, i === sel ? 12 : 216,
+           i === sel ? 4 : 228);
+  }
+}
+requestAnimationFrame(frame);
+/* ==================================================================
+   THE CARDS
+
+   Every picture below this line is rendered by the same rasterizer the
+   bench uses, at the same 120x120, through the same RGB565 squeeze.
+   Nothing here is an illustration of the game: it is the game, drawn
+   with the simulation held still.
+   ================================================================== */
+const STAT_KEYS = [['top','TOP'],['acc','ACC'],['grip','GRIP'],
+                   ['cool','COOL'],['fix','FIX'],['hull','HULL']];
+
+function card(host, w, h) {
+  const fig = document.createElement('figure');
+  const c = document.createElement('canvas');
+  c.width = 120; c.height = 120;
+  fig.appendChild(c);
+  const cap = document.createElement('figcaption');
+  fig.appendChild(cap);
+  document.getElementById(host).appendChild(fig);
+  return { fig, c, cap };
+}
+
+/* ---- the roster ---------------------------------------------------- */
+(function roster() {
+  RACERS.forEach((rc, ix) => {
+    const { c, cap } = card('roster');
+    const r = new Raster(120, 120);
+    const cm = new Camera();
+    // A studio shot: no track, a plain gradient, and the pod turned three
+    // quarters on so both engines and the cockpit are all in frame.
+    const pose = {
+      x: 0, y: 0, z: 0, yaw: 0.42, pitch: 0.04, roll: 0.12,
+      yawV: 0.4, t: 1.4, boost: 0, dead: [false, false], blast: [0, 0],
+      eng: [100, 100], engMax: 100, speed: 0, clear: 3, swing: 0.16,
+    };
+    // In FRONT of the pod, three quarters on, and the throttle nearly
+    // shut. Twice this was wrong: first at 13.5 units back, which made a
+    // small pod behind a big orange flame, and then closer but still
+    // BEHIND it, where the nearest thing to the camera is an exhaust
+    // throat and all six cards were the same orange rectangle whatever
+    // the pod was painted. The engines are at +Z, so the camera has to be
+    // at +Z to see intake cones and hull instead of two bells. The whole
+    // point of six pictures is six colours.
+    cm.yaw = -2.7452; cm.pitch = -0.1595; cm.roll = 0; cm.shake = 0;
+    cm.tx = 0; cm.ty = 0; cm.tz = 0;
+    cm.cx = 3.60; cm.cy = 1.70; cm.cz = 8.60;
+    cm.build();
+    r.clearGradient(26, 30, 44, 12, 14, 22);
+    drawPod(r, cm, pose, rc, 0.12);
+    r.squeeze565();
+    c.getContext('2d').putImageData(r.img, 0, 0);
+
+    cap.innerHTML = '<b>' + rc.name + '</b>' + rc.pilot;
+    const st = document.createElement('div');
+    st.className = 'stats';
+    st.innerHTML = STAT_KEYS.map(([k, label]) =>
+      '<span>' + label + '</span><div class="bar"><i style="width:' +
+      (rc[k] / 5 * 100) + '%"></i></div>').join('');
+    cap.appendChild(st);
+    const sw = document.createElement('div');
+    sw.className = 'swatches';
+    sw.innerHTML = rc.col.map(c2 => '<b style="background:rgb(' + c2.join(',') + ')"></b>').join('');
+    cap.appendChild(sw);
+    const line = document.createElement('div');
+    line.style.cssText = 'margin-top:7px;font-size:11px;line-height:1.45';
+    line.textContent = rc.line;
+    cap.appendChild(line);
+  });
+})();
+
+/* ---- the tracks ----------------------------------------------------- */
+/* A minimap, drawn from the same node ring the sim drives on, with every
+   feature marked where it really is. Not a diagram of the track: a plot
+   of it. */
+function drawMap(r, t) {
+  r.clearGradient(18, 21, 32, 10, 12, 19);
+  const nd = t.nodes;
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  for (const n of nd) {
+    if (n.x < x0) x0 = n.x; if (n.x > x1) x1 = n.x;
+    if (n.z < z0) z0 = n.z; if (n.z > z1) z1 = n.z;
+  }
+  const pad = 12, span = Math.max(x1 - x0, z1 - z0) || 1;
+  const s = (120 - pad * 2) / span;
+  const px = n => pad + (n.x - x0) * s + (120 - pad*2 - (x1-x0)*s) / 2;
+  const pz = n => 120 - (pad + (n.z - z0) * s + (120 - pad*2 - (z1-z0)*s) / 2);
+  // the road, as a fat line
+  for (let i = 0; i < nd.length; i++) {
+    const a = nd[i], b = nd[(i + 1) % nd.length];
+    const ax = px(a), az = pz(a), bx = px(b), bz = pz(b);
+    const steps = Math.ceil(Math.hypot(bx-ax, bz-az)) + 1;
+    let col = t.road[0], wdt = 2;
+    if (a.flags & F_GAP)   { col = [30, 34, 46]; wdt = 1; }
+    if (a.flags & F_BOOST) { col = [90, 190, 255]; wdt = 3; }
+    if (a.flags & F_RAMP)  { col = [255, 190, 70]; wdt = 3; }
+    if (a.flags & F_SHORT) { col = [140, 240, 150]; wdt = 3; }
+    if (a.flags & F_WALL)  { col = t.wall; }
+    for (let k = 0; k <= steps; k++) {
+      const u = k / steps;
+      r.rect((ax + (bx-ax)*u - (wdt>>1)) | 0, (az + (bz-az)*u - (wdt>>1)) | 0,
+             wdt, wdt, col[0], col[1], col[2]);
+    }
+  }
+  // the start line
+  const st = nd[0];
+  r.rect(px(st) - 3 | 0, pz(st) - 3 | 0, 6, 6, 245, 245, 250);
+  r.squeeze565();
+}
+
+/* Two numbers that decide whether the brief's "make sure these obstacles
+   are passable" is actually true, measured rather than asserted.
+
+   The WORST case is the one that matters, so this flies the slowest pod
+   on the roster off the end of the road with NO nose-up at all: no glide,
+   no skill, just whatever speed the track allows and the fall. If that
+   clears the widest gap on the track, every pod clears it.
+
+   The best case flies the fastest pod nose-up the whole way, which is the
+   most road a glide can ever cover, and it is here to show the other end
+   of the range rather than to prove anything.
+
+   The lift is the sim's own, cap and all. It was not, and the version
+   that was not reported an 839 unit glide on ASHFALL because its lift
+   term had no ceiling: a number from a second copy of the physics is a
+   number about the second copy. */
+function glide(t, rc, pitch) {
+  const s = new Sim(t, rc);
+  const inp = { b: 1, y: 0, x: 0, up: 0, down: 0, left: 0, right: 0 };
+  // Steered, and it has to be. Held straight for twelve seconds the pod
+  // leaves a circuit that turns all the way round in 2,200 units, falls
+  // off the edge and wrecks, and the "top speed" this then reported for
+  // ASHFALL was 101 against the desert's 628. That is not a track that is
+  // slow, it is a measurement taken while falling.
+  for (let i = 0; i < 1600; i++) { steerToLine(s, inp); s.step(inp, TUNE.TICK); }
+  const v = s.speed;
+  const gHere = TUNE.GRAV * t.world.grav;
+  let y = 0, vy = v * 0.30, x = 0, vx = v;
+  for (let i = 0; i < 4000 && (i < 4 || y > 0); i++) {
+    const lift = pitch > 0
+      ? Math.min(TUNE.LIFT_MAX * t.world.drag, gHere * 0.82,
+                 TUNE.LIFT * vx * pitch * t.world.drag)
+      : 0;
+    vy += (-gHere + lift) * TUNE.TICK;
+    if (pitch > 0) vx -= TUNE.INDUCED * pitch * vx * TUNE.TICK;
+    y += vy * TUNE.TICK; x += vx * TUNE.TICK;
+  }
+  return { speed: Math.round(v * SPEED_DISPLAY), reach: Math.round(x) };
+}
+
+/* The damped correction a driver makes without thinking about it, and
+   the one every measurement on this page uses so they are all measuring
+   the same pod. */
+function steerToLine(s, inp) {
+  const nd = s.tr.nodes, n = nd.length;
+  const tgt = nd[(s.node + 7) % n];
+  let d = Math.atan2(tgt.x - s.x, tgt.z - s.z) - s.yaw;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const e = d - s.yawV * 0.42;
+  inp.left = e < -0.04 ? 1 : 0;
+  inp.right = e > 0.04 ? 1 : 0;
+}
+
+/* The widest hole in the road, in world units. */
+function widestGap(t) {
+  const nd = t.nodes; let best = 0, run = 0;
+  for (let i = 0; i < nd.length * 2; i++) {
+    if (nd[i % nd.length].flags & F_GAP) { run++; if (run > best) best = run; }
+    else run = 0;
+  }
+  return best * NODE_SPACING;
+}
+
+(function trackCards() {
+  const F = [[F_RAMP,'ramp','#ffbe46'],[F_GAP,'gap','#7a8296'],
+             [F_BOOST,'boost pad','#5abeff'],[F_SHORT,'shortcut','#8cf096'],
+             [F_WALL,'walled','#c8d2e6']];
+  TRACKS.forEach(t => {
+    const { c, cap } = card('trackcards');
+    const r = new Raster(120, 120);
+    drawMap(r, t);
+    c.getContext('2d').putImageData(r.img, 0, 0);
+
+    const flat = glide(t, RACERS[1], 0);            // slowest pod, no glide
+    const best = glide(t, RACERS[3], TUNE.PITCH_MAX); // fastest pod, nose up
+    const gap = widestGap(t);
+    const counts = F.map(([f]) => {
+      let n = 0, prev = 0;
+      for (const nd of t.nodes) { if ((nd.flags & f) && !prev) n++; prev = nd.flags & f; }
+      return n;
+    });
+    cap.innerHTML =
+      '<b>' + t.name + '</b>' +
+      '<div style="font-size:11px;line-height:1.45;margin-bottom:7px">' + t.sub + '</div>' +
+      '<table style="font-size:10.5px;margin:0"><tbody>' +
+      '<tr><td style="padding:1px 10px 1px 0">laps</td><td>' + t.laps + '</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">lap length</td><td>' + Math.round(t.length) + ' u</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">gravity</td><td>' + t.world.grav.toFixed(2) + 'x</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">grip</td><td>' + t.world.grip.toFixed(2) + 'x</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">cooling</td><td>' + t.world.cool.toFixed(2) + 'x</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">air</td><td>' + t.world.drag.toFixed(2) + 'x</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">top speed</td><td>' + best.speed + '</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">widest gap</td><td>' + gap + ' u</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">worst case jump</td><td style="color:' +
+        (flat.reach > gap * 1.4 ? '#5ee08a' : '#ff4d5e') + '">' + flat.reach + ' u</td></tr>' +
+      '<tr><td style="padding:1px 10px 1px 0">best case glide</td><td>' + best.reach + ' u</td></tr>' +
+      '</tbody></table>' +
+      '<div style="font-size:10.5px;margin-top:7px;line-height:1.7">' +
+      F.map(([f, name, col], i) => counts[i]
+        ? '<span style="color:' + col + '">&#9632;</span> ' + counts[i] + ' ' + name
+        : '').filter(Boolean).join(' &middot; ') +
+      '</div>' +
+      '<div style="font-size:11px;margin-top:7px;line-height:1.45">' + t.worldline + '</div>';
+  });
+})();
+
+/* ---- the six screens ------------------------------------------------ */
+(function screens() {
+  const shots = [
+    ['Title', 'One picture and one word. The list is one press away.', (r) => {
+      const t = TRACKS[0];
+      r.clearGradient(t.sky[0][0], t.sky[0][1], t.sky[0][2], 30, 22, 40);
+      const cm = new Camera();
+      cm.yaw = 0.5; cm.pitch = -0.08; cm.roll = 0.06;
+      cm.cx = 0; cm.cy = 1.2; cm.cz = -12; cm.build();
+      const pose = { x:0,y:0,z:0, yaw:0.9, pitch:0.05, roll:0.16, yawV:1.2, t:2,
+                     boost:1, dead:[false,false], blast:[0,0], eng:[100,100],
+                     engMax:100, speed:80, clear:3 };
+      drawPod(r, cm, pose, RACERS[3], 1);
+      drawBig(r, 'TWIN', 60 - 24, 20, [255, 220, 120]);
+      drawBig(r, 'FLARE', 60 - 30, 38, [255, 150, 50]);
+    }],
+    ['Pod select', 'Stats as bars, because a number nobody can compare is decoration.', (r) => {
+      r.clearGradient(18, 20, 32, 10, 11, 18);
+      const rc = RACERS[2];
+      const cm = new Camera();
+      cm.yaw = 0; cm.pitch = -0.12; cm.cx = 0; cm.cy = 1.6; cm.cz = -12.5; cm.build();
+      const pose = { x:0,y:0,z:0, yaw:-0.7, pitch:0, roll:0.06, yawV:0.4, t:1,
+                     boost:0, dead:[false,false], blast:[0,0], eng:[100,100],
+                     engMax:100, speed:0, clear:3 };
+      drawPod(r, cm, pose, rc, 0.5);
+      r.textC(rc.name, 60, 6, 240, 244, 250);
+      STAT_KEYS.forEach(([k, label], i) => {
+        const y = 84 + (i % 3) * 12, x = (i < 3) ? 4 : 62;
+        r.text(label, x, y, 130, 138, 156);
+        r.rect(x + 28, y + 1, 26, 5, 26, 30, 42);
+        r.rect(x + 28, y + 1, Math.round(26 * rc[k] / 5), 5, 232, 138, 43);
+      });
+      r.text('<', 3, 44, 200, 206, 220); r.text('>', 112, 44, 200, 206, 220);
+    }],
+    ['Track select', 'The map is the description. Four numbers under it are the rest.', (r) => {
+      const t = TRACKS[2];
+      drawMap(r, t);
+      r.rect(0, 0, 120, 11, 10, 12, 18);
+      r.textC(t.name, 60, 2, 240, 244, 250);
+      r.rect(0, 108, 120, 12, 10, 12, 18);
+      r.text('G ' + t.world.grav.toFixed(2), 3, 110, 160, 200, 240);
+      r.text('C ' + t.world.cool.toFixed(2), 62, 110, 255, 170, 90);
+      r.text('<', 3, 54, 200, 206, 220); r.text('>', 112, 54, 200, 206, 220);
+    }],
+    ['Racing', 'The whole game. Lap, position, two engine bars, heat, speed.', (r) => {
+      const s = new Sim(TRACKS[0], RACERS[0]);
+      const cm = new Camera();
+      const inp = { b:1, y:0, x:0, up:0, down:0, left:0, right:0 };
+      // Long enough to be at racing speed on a straight rather than still
+      // accelerating out of the pits, which is what the card is for.
+      for (let i = 0; i < 1500; i++) {
+        steerToLine(s, inp); s.step(inp, TUNE.TICK); cm.follow(s, TUNE.TICK);
+      }
+      s.eng[0] = s.engMax * 0.42; s.heat = 0.55; s.lap = 2; s.boost = 0.9;
+      cm.follow(s, 0.016);
+      const rv = RACERS.filter((_, i) => i !== 0).map((rc, i) => new Rival(rc, i, TRACKS[0]));
+      // Spread down the road ahead rather than piled on the player, so the
+      // card shows a race rather than a collision.
+      rv.forEach(v => { v.s = s.node * NODE_SPACING + 30 + v.i * 22; v.step(0.01, 3); });
+      renderFrame(r, cm, s, rv, 2, 3);
+    }],
+    ['Paused', 'Three rows. A pause menu that needs explaining has too much in it.', (r) => {
+      const s = new Sim(TRACKS[3], RACERS[5]);
+      const cm = new Camera(); cm.follow(s, 0.016);
+      renderFrame(r, cm, s, [], 3, 1);
+      drawPause(r, 0, s);
+      r.squeeze565();
+    }],
+    ['Results', 'Where you came, and the only number worth keeping.', (r) => {
+      r.clearGradient(20, 24, 38, 10, 12, 20);
+      drawBig(r, '2ND', 60 - 18, 12, [255, 214, 96]);
+      const rows = [['SCARAB', '1.42.6'], ['NEEDLE', '1.41.9'], ['FANG', '1.44.1'],
+                    ['WISP', '1.46.0'], ['ANVIL', '1.47.7'], ['NIGHTJAR', '1.49.2']];
+      rows.sort((a, b) => a[1].localeCompare(b[1]));
+      rows.forEach((row, i) => {
+        const y = 40 + i * 11;
+        const me = row[0] === 'SCARAB';
+        if (me) r.rect(2, y - 2, 116, 11, 232, 138, 43);
+        r.text(String(i + 1), 5, y, me ? 20 : 150, me ? 12 : 158, me ? 4 : 176);
+        r.text(row[0], 16, y, me ? 20 : 226, me ? 12 : 232, me ? 4 : 242);
+        r.text(row[1], 118 - r.textW(row[1]), y, me ? 20 : 190, me ? 12 : 196, me ? 4 : 210);
+      });
+    }],
+  ];
+  const i18 = k => k * 9;
+  shots.forEach(([name, why, draw]) => {
+    const { c, cap } = card('screens');
+    const r = new Raster(120, 120);
+    try { draw(r); } catch (e) { r.clearGradient(60,20,20,30,10,10); r.textC('ERR', 60, 56, 255,180,180); console.error(name, e); }
+    r.squeeze565();
+    c.getContext('2d').putImageData(r.img, 0, 0);
+    cap.innerHTML = '<b>' + name + '</b>' + why;
+  });
+})();
+
+/* ---- the budget numbers, filled from the real data ------------------- */
+(function budget() {
+  const nodes = TRACKS.reduce((a, t) => a + t.nodes.length, 0);
+  document.getElementById('c-nodes').textContent =
+    (nodes * 8 / 1024).toFixed(1) + ' KB  (' + nodes + ' nodes)';
+  // measured over a lap of every track, in this bench, with the pack close
+  let peak = 0;
+  for (const t of TRACKS) {
+    const s = new Sim(t, RACERS[0]);
+    const cm = new Camera();
+    const rv = RACERS.slice(1).map((rc, i) => new Rival(rc, i, t));
+    const probe = new Raster(120, 120);
+    const inp = { b:1, y:0, x:0, up:0, down:0, left:0, right:0 };
+    for (let i = 0; i < 1400; i++) {
+      steerToLine(s, inp);
+      s.step(inp, TUNE.TICK); cm.follow(s, TUNE.TICK);
+      for (const v of rv) { v.s = s.node * NODE_SPACING + (v.i - 2) * 11; v.step(TUNE.TICK, i * TUNE.TICK); }
+      if (i % 20 === 0) { renderFrame(probe, cm, s, rv, 1, i * TUNE.TICK); peak = Math.max(peak, probe.tris); }
+    }
+  }
+  document.getElementById('c-tris').textContent = peak + ' of 640';
+})();
+</script></body></html>
