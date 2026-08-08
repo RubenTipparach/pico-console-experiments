@@ -780,16 +780,17 @@
 
     // ---- opening and closing it ----
     //
-    // The panels live in a modal, so something has to open it. The bar button
-    // does, and so does the first load of a game: rule 12 wants the tutorial
-    // to be the first thing a player meets, and a button nobody presses is
-    // not that. After that the flag is remembered per game, keyed on the path,
-    // so learning one game does not silence the next one's panels.
+    // The panels live in a modal, and the HOW TO PLAY button is the only thing
+    // that opens it. It used to open by itself on a game's first load, on the
+    // reading that rule 12's "it is the first thing a player meets" required
+    // it. Removed on request: a panel in the way of a game nobody asked to be
+    // told about is a click between the player and playing. The tutorial still
+    // ships with every game and is one button away, which is the part of rule
+    // 12 that is actually load bearing. Do not put the auto open back without
+    // being asked for it.
     var guide = document.getElementById('guide');
     var openButton = document.getElementById('guide-open');
     if (!guide) return;
-
-    var SEEN_KEY = 'picosystem-guide-' + location.pathname;
 
     function setGuide(open) {
       guide.hidden = !open;
@@ -817,13 +818,6 @@
       event.stopImmediatePropagation();
       setGuide(false);
     }, true);
-
-    var seen = null;
-    try { seen = localStorage.getItem(SEEN_KEY); } catch (ignored) {}
-    if (!seen) {
-      setGuide(true);
-      try { localStorage.setItem(SEEN_KEY, '1'); } catch (ignored) {}
-    }
   })();
 
   // ---- pad visibility -----------------------------------------------------
