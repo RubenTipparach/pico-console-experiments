@@ -1,6 +1,6 @@
 #pragma once
 
-// Every number Starlance's flight and combat model runs on, in one file.
+// Every number Star Dancer's flight and combat model runs on, in one file.
 //
 // Units, and why they are what they are:
 //
@@ -23,7 +23,7 @@
 
 #include <cstdint>
 
-namespace sl {
+namespace sd {
 
 // ---- fixed point ----
 
@@ -183,4 +183,4 @@ constexpr uint16_t k_wave_gap = 220;
 // hull every this many ticks.
 constexpr uint16_t k_derelict_period = 45;
 
-}  // namespace sl
+}  // namespace sd

@@ -1,6 +1,6 @@
 #include "sim.hpp"
 
-namespace sl {
+namespace sd {
 namespace {
 
 constexpr int32_t k_q14 = pse::k_quat_one;   // 16384
@@ -1356,4 +1356,4 @@ void world_tick(World& world, const Input& input) {
     if (input.cycle_target) cycle(world);
 }
 
-}  // namespace sl
+}  // namespace sd

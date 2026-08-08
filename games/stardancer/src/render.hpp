@@ -6,7 +6,7 @@
 
 #include "sim.hpp"
 
-namespace slr {
+namespace sdr {
 
 // Which screen the shell is on. The renderer draws all four, including the
 // menus, through pse::draw_text into a RenderTarget rather than through the
@@ -15,7 +15,7 @@ namespace slr {
 // That is a deliberate departure from the other games here, and the reason is
 // in this repo's own notes: text drawn with the SDK does not exist in a host
 // build, so a change to a menu or a HUD is unverified until somebody runs the
-// game on hardware. Everything Starlance puts on screen is drawn by this file,
+// game on hardware. Everything Star Dancer puts on screen is drawn by this file,
 // so the preview harness renders the title, the pause menu and the whole
 // combat HUD as real frames, and a layout mistake is a picture rather than a
 // bug report.
@@ -54,14 +54,14 @@ struct Chrome {
     // what a padlock view is for: seeing the thing you are turning toward
     // before you have finished turning toward it.
     //
-    // Presentation, so it lives here rather than in sl::Input. The sim does
+    // Presentation, so it lives here rather than in sd::Input. The sim does
     // not have a camera and should not learn about one.
     bool look_at_target;
 };
 
 // Draw one frame. Pure presentation: never ticks the sim, and every line of it
 // runs on the host preview harness.
-void render_scene(const sl::World& world, const Chrome& chrome,
+void render_scene(const sd::World& world, const Chrome& chrome,
                   const pse::RenderTarget& target, uint32_t time_ms);
 
 // What the last frame cost.
@@ -105,4 +105,4 @@ struct CameraState {
 };
 CameraState last_camera();
 
-}  // namespace slr
+}  // namespace sdr
