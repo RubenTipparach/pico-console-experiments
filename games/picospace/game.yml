@@ -1,0 +1,26 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: picospace
+title: Pico Space Program
+blurb: Off the pad, into orbit, across to a moon, down on it.
+target: picospace
+sdk: 32blit
+web: true
+
+objective: "Fly a two stage rocket off Picopiter, into orbit, across to a moon and down onto it in one piece. Off the pad, hold the nose up until you are clear of the tower, then lean it over a little at a time: a rocket that goes straight up comes straight back down, and what puts you in orbit is going sideways fast, not going high. The bar top left is the tank of the stage that is burning, and when it empties, drop it. AP bottom right is the top of the arc you are on: raise it clear of the air, coast up to it, then burn sideways there until the map shows both ends of the orbit outside the atmosphere. That is the first mission done. After that the map is where the flying happens. It draws your orbit, the moon's, and the ring around the moon where you would be captured, and it lights BURN when the moon is far enough ahead that a push now arrives where it will be later. Push until your arc reaches the moon's orbit, then wait. Coming down on an airless moon is all engine: turn the nose onto the hollow marker, which is the way you came, and burn until the speed reads green. Green sets down, red is a crater. Time warp is what makes the waiting bearable, and it only works with the engine shut and the air behind you."
+
+controls:
+  - "up: throttle up"
+  - "down: throttle down, and hold it with the engine already shut to pause"
+  - "left/right: turn the nose"
+  - "A: drop the spent stage and light the next engine"
+  - "B: time warp, x1 to x200, engine shut and out of the air"
+  - "X: the map, and back"
+  - "Y: point the nose along the way you are going, or against it, or neither"
+  - "The two dots on the ring are where you are going and where you came from"
+
+models:
+  - booster.obj
+  - lander.obj
+  - legs.obj
+  - pad.obj
