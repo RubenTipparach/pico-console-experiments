@@ -168,13 +168,29 @@ int main(int argc, char** argv) {
     {
         sdr::Chrome chrome = playing();
         chrome.screen = sdr::Screen::Title;
-        chrome.item = sdr::kLaunch;
+        chrome.item = sdr::kFlyAssault;
         capture(world, chrome, out, "preview_1_title.ppm");
     }
 
     // 2: a fighter in the reticle, boxed, with the lead pip on it.
-    chase_until(world, 900, 9, 20, true);
-    capture(world, playing(), out, "preview_2_dogfight.ppm");
+    //
+    // Its own world, and closed on with the guns cold. Sharing the title's
+    // world and chasing with the trigger down used to work and stopped once
+    // the fighters learned to break off and run: the bot killed both of wave
+    // one on the way in and photographed an empty sky. Frame it first, then
+    // hold the trigger just long enough to put bolts in the air.
+    sd::World duel;
+    sd::world_init(duel, 0x0D0F16E7u);
+    jump_to_wave(duel, 2);
+    press_target(duel, 1);
+    chase_until(duel, 1600, 9, 22, false);
+    for (int i = 0; i < 30; i++) {
+        sd::Input in{};
+        in.fire = true;
+        sd::world_tick(duel, in);
+        g_clock += 10;
+    }
+    capture(duel, playing(), out, "preview_2_dogfight.ppm");
 
     // 3: bombers, which are the wave that tests telling one hull from another.
     sd::World bombers;

@@ -801,6 +801,60 @@ void test_killing_the_navigation_array_stops_the_jump_for_good() {
     CHECK(world.jump_stopped);
 }
 
+// Two sorties, and they are different jobs rather than two lengths of the
+// same one. Patrol is the half of the game that needs no explaining: nothing
+// in it carries a hardpoint, so nothing in it requires the player to have
+// worked out the targeting cycle first.
+void test_patrol_is_short_and_carries_no_capital_ships() {
+    sd::World world;
+    sd::world_init(world, 0x9001u, sd::Mission::Patrol);
+    CHECK(world.mission == sd::Mission::Patrol);
+    CHECK(sd::wave_count(sd::Mission::Patrol) == 3);
+
+    int seen = 0;
+    for (uint8_t wave = 1; wave <= sd::wave_count(sd::Mission::Patrol); wave++) {
+        jump_to_wave(world, wave);
+        for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+            const sd::Ship& ship = world.ships[i];
+            if (!ship.active) continue;
+            seen++;
+            CHECK(ship.cls == sd::Hull::Fighter || ship.cls == sd::Hull::Bomber);
+            CHECK(ship.sub_count == 0);
+        }
+        for (uint8_t i = 0; i < sd::k_max_ships; i++) {
+            world.ships[i].active = false;
+        }
+    }
+    CHECK(seen > 0);
+}
+
+// The assault is the one the game is about, so it has to actually contain the
+// thing the game is about.
+void test_the_assault_ends_with_the_frigate() {
+    sd::World world;
+    sd::world_init(world, 0x9002u, sd::Mission::Assault);
+    CHECK(sd::wave_count(sd::Mission::Assault) == 5);
+
+    jump_to_wave(world, sd::wave_count(sd::Mission::Assault));
+    CHECK(index_of(world, sd::Hull::Frigate) >= 0);
+    CHECK(sd::jump_ticks_left(world) > 0);
+}
+
+// A patrol ends after ITS last wave, not after the assault's. Getting this
+// wrong would leave the short mission asking for two engagements that were
+// never called in.
+void test_a_patrol_ends_after_its_own_last_wave() {
+    sd::World world;
+    sd::world_init(world, 0x9003u, sd::Mission::Patrol);
+    jump_to_wave(world, sd::wave_count(sd::Mission::Patrol));
+    for (uint8_t i = 0; i < sd::k_max_ships; i++) world.ships[i].active = false;
+    sd::world_tick(world, nothing());
+    CHECK(world.phase == sd::Phase::Won);
+
+    // And there is no frigate anywhere in it to lose to.
+    CHECK(world.loss == sd::Loss::None);
+}
+
 void test_clearing_a_wave_calls_in_the_next_one() {
     sd::World world;
     sd::world_init(world);
@@ -827,7 +881,7 @@ void test_clearing_a_wave_calls_in_the_next_one() {
 void test_clearing_the_last_wave_wins_the_sortie() {
     sd::World world;
     sd::world_init(world);
-    jump_to_wave(world, sd::k_wave_count);
+    jump_to_wave(world, sd::wave_count(world.mission));
     for (uint8_t i = 0; i < sd::k_max_ships; i++) {
         world.ships[i].active = false;
     }
@@ -997,6 +1051,9 @@ int main() {
 
     test_the_frigate_leaves_if_its_navigation_is_left_alone();
     test_killing_the_navigation_array_stops_the_jump_for_good();
+    test_patrol_is_short_and_carries_no_capital_ships();
+    test_the_assault_ends_with_the_frigate();
+    test_a_patrol_ends_after_its_own_last_wave();
     test_clearing_a_wave_calls_in_the_next_one();
     test_clearing_the_last_wave_wins_the_sortie();
 

@@ -2,12 +2,12 @@
 
 slug: stardancer
 title: Star Dancer
-blurb: Cut the frigate's nav before she jumps.
+blurb: Cut the frigate's nav before it jumps.
 target: stardancer
 sdk: 32blit
 web: true
 
-objective: "Fly five engagements against a raiding force, ending with a frigate charging a subspace jump. Fighters and bombers you simply kill. The gunship and the frigate are too big for that: they carry hardpoints you can target one at a time, and shooting one off changes what the ship can do. Take the engines and it stops. Take a turret and it stops shooting at you from that side. Take life support and the crew is gone and it comes apart on its own. Take the frigate's navigation array before the jump clock runs out and she is not going anywhere, which is the only thing in the sortie you cannot afford to miss. Your shields come back on their own and your hull does not, so break off and let them charge. Pull the throttle back to turn inside something rather than sail past it."
+objective: "Two sorties, picked from the title screen. PATROL is three engagements against fighters and bombers: fly, shoot, stay alive. ASSAULT is the real job. It opens the same way, then sends a gunship, and ends with a frigate charging a subspace jump. Those two are too big to simply kill: they carry hardpoints you target one at a time, and shooting one off changes what the ship can do. Take the engines and it stops. Take a turret and it stops shooting at you from that side. Take life support and the crew is gone and it comes apart on its own. Take the frigate's navigation array before its jump clock runs out and it is not going anywhere, which is the only thing in the sortie you cannot afford to miss. Your shields come back on their own and your hull does not, so break off and let them charge. Pull the throttle back to turn inside something rather than sail past it."
 
 controls:
   - "up/down: pitch the nose"

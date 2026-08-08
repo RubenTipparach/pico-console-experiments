@@ -233,8 +233,26 @@ struct WaveSpec {
     uint8_t count;
 };
 
-const WaveSpec k_waves[k_wave_count] = {
+// Each mission's engagements, written out rather than sliced off a shared
+// list. Patrol happens to be Assault's opening three today, and listing them
+// separately is what stops that from being an assumption: changing what the
+// patrol is should not mean discovering that the assault changed too.
+const WaveSpec k_patrol_waves[] = {
+    {k_wave1, 2}, {k_wave2, 3}, {k_wave3, 4},
+};
+
+const WaveSpec k_assault_waves[] = {
     {k_wave1, 2}, {k_wave2, 3}, {k_wave3, 4}, {k_wave4, 4}, {k_wave5, 4},
+};
+
+struct MissionSpec {
+    const WaveSpec* waves;
+    uint8_t count;
+};
+
+const MissionSpec k_missions[static_cast<int>(Mission::MissionCount)] = {
+    {k_patrol_waves, 3},
+    {k_assault_waves, 5},
 };
 
 // ---- helpers over the world ----
@@ -612,8 +630,9 @@ Ship* free_ship(World& world) {
 }
 
 void spawn_wave(World& world, uint8_t wave) {
-    if (wave == 0 || wave > k_wave_count) return;
-    const WaveSpec& spec = k_waves[wave - 1];
+    const MissionSpec& mission = k_missions[static_cast<int>(world.mission)];
+    if (wave == 0 || wave > mission.count) return;
+    const WaveSpec& spec = mission.waves[wave - 1];
 
     int32_t fwd[3], right[3], up[3];
     basis_of(world.q, fwd, right, up);
@@ -1193,7 +1212,7 @@ void tick_mission(World& world) {
 
     if (live_enemies(world) > 0) return;
 
-    if (world.wave >= k_wave_count) {
+    if (world.wave >= wave_count(world.mission)) {
         world.phase = Phase::Won;
         return;
     }
@@ -1218,6 +1237,19 @@ const char* sub_name(Sub kind) {
         case Sub::Engines:     return "ENGINES";
         case Sub::LifeSupport: return "LIFE SUP";
         default:               return "HULL";
+    }
+}
+
+uint8_t wave_count(Mission mission) {
+    if (mission >= Mission::MissionCount) return 0;
+    return k_missions[static_cast<int>(mission)].count;
+}
+
+const char* mission_name(Mission mission) {
+    switch (mission) {
+        case Mission::Patrol:  return "PATROL";
+        case Mission::Assault: return "ASSAULT";
+        default:               return "SORTIE";
     }
 }
 
@@ -1365,9 +1397,10 @@ uint32_t jump_ticks_left(const World& world) {
                                               : k_jump_charge - world.jump_charge;
 }
 
-void world_init(World& world, uint32_t seed) {
+void world_init(World& world, uint32_t seed, Mission mission) {
     world = World{};
     world.rng = seed == 0 ? 0x5A1CE001u : seed;
+    world.mission = mission;
     world.q = pse::quat_identity();
     // Launched at full ahead. The throttle is there to be pulled BACK, to
     // turn inside something: opening at a standstill would just be a game

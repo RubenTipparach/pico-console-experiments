@@ -195,8 +195,8 @@ void load_save() {
 
 // ---- the shell ----
 
-void launch() {
-    sd::world_init(g_world, 0x5A1CE001u ^ (now() * 2654435761u));
+void launch(sd::Mission mission) {
+    sd::world_init(g_world, 0x5A1CE001u ^ (now() * 2654435761u), mission);
     g_chrome.screen = sdr::Screen::Play;
     g_tick_accumulator = 0;
     sound_stop();
@@ -240,7 +240,8 @@ void update_title() {
     menu_move(g_chrome.item, sdr::kTitleItemCount);
     if (!tapped(k_any_face)) return;
     switch (g_chrome.item) {
-        case sdr::kLaunch:      launch(); break;
+        case sdr::kFlyPatrol:   launch(sd::Mission::Patrol); break;
+        case sdr::kFlyAssault:  launch(sd::Mission::Assault); break;
         case sdr::kTitleSound:  toggle_sound(); break;
         case sdr::kTitleInvert: toggle_pitch(); break;
         default: break;
@@ -333,7 +334,7 @@ void update_play(uint32_t elapsed) {
 void update_debrief() {
     if (tapped(k_any_face)) {
         g_chrome.screen = sdr::Screen::Title;
-        g_chrome.item = sdr::kLaunch;
+        g_chrome.item = sdr::kFlyPatrol;
     }
 }
 
@@ -344,7 +345,7 @@ void game_init() {
 
     g_chrome = sdr::Chrome{};
     g_chrome.screen = sdr::Screen::Title;
-    g_chrome.item = sdr::kLaunch;
+    g_chrome.item = sdr::kFlyPatrol;
     load_save();
 
     sound_init();
