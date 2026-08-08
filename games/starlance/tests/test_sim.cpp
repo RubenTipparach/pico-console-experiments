@@ -175,7 +175,7 @@ void test_the_ship_flies_where_its_nose_points() {
     run(world, 100, nothing());
     // Started at the origin looking down +z, so a hundred ticks of cruise is
     // a hundred ticks of +z and nothing else.
-    CHECK(world.z > sl::k_player_speed * 90);
+    CHECK(world.z > sl::k_player_speed_max * 90);
     CHECK(world.x == 0 && world.y == 0);
 
     sl::Input yaw = nothing();
@@ -183,6 +183,129 @@ void test_the_ship_flies_where_its_nose_points() {
     run(world, 200, yaw);
     // Yawing right has to take the ship to the right, which is +x.
     CHECK(world.x > 0);
+}
+
+// The lever is instant and the ship is not. Pulling all the way back stops
+// the ship, and it takes about a fifth of a second to notice, which is the
+// difference between a throttle and a brake.
+void test_the_throttle_commands_a_speed_the_ship_eases_onto() {
+    sl::World world;
+    sl::world_init(world);
+    world.wave_timer = 60000;              // an empty sky
+
+    // Launched at full ahead.
+    CHECK(world.throttle == sl::k_throttle_one);
+    CHECK(world.speed == sl::k_player_speed_max);
+
+    sl::Input back = nothing();
+    back.throttle = -1;
+
+    // One tick of lever is a lot of lever and almost no ship.
+    sl::world_tick(world, back);
+    CHECK(world.throttle < sl::k_throttle_one);
+    CHECK(world.speed > (sl::k_player_speed_max * 9) / 10);
+
+    // Held all the way back, the lever bottoms out and the ship follows.
+    run(world, 400, back);
+    CHECK(world.throttle == 0);
+    CHECK(world.speed < sl::k_player_speed_max / 50);
+
+    // And a stopped ship goes nowhere, however it is pointed.
+    const int32_t x = world.x, y = world.y, z = world.z;
+    sl::Input turn = nothing();
+    turn.yaw = 1;
+    run(world, 60, turn);
+    const int32_t moved = sl::distance(x, y, z, world.x, world.y, world.z);
+    CHECK(moved < sl::units(1));
+
+    // Forward again, and it comes back up to full and no further.
+    sl::Input ahead = nothing();
+    ahead.throttle = 1;
+    run(world, 600, ahead);
+    CHECK(world.throttle == sl::k_throttle_one);
+    CHECK(world.speed <= sl::k_player_speed_max);
+    CHECK(world.speed > (sl::k_player_speed_max * 9) / 10);
+}
+
+// A stationary player must not be led as though they were at full ahead, or
+// every shot is aimed in front of them and the enemies look like they cannot
+// shoot straight.
+//
+// Two worlds, identical in every respect including the enemy's position and
+// reload, differing only in the speed the player is making. The player is
+// pinned in place in both, so the only thing that can reach the lead
+// calculation is world.speed, and the measurement is the angle between the
+// bolt and the straight line to the player.
+void test_enemies_lead_the_speed_actually_being_made() {
+    sl::World fast, slow;
+    sl::world_init(fast, 0x1234u);
+    sl::world_init(slow, 0x1234u);
+    jump_to_wave(fast, 1);
+    jump_to_wave(slow, 1);
+
+    auto first_enemy_bolt = [](const sl::World& w, int32_t out[3]) {
+        for (uint8_t i = 0; i < sl::k_max_bolts; i++) {
+            const sl::Shot& shot = w.shots[i];
+            if (!shot.active || shot.kind == sl::Bolt::PlayerGun) continue;
+            out[0] = shot.vx; out[1] = shot.vy; out[2] = shot.vz;
+            return true;
+        }
+        return false;
+    };
+
+    // Fly both forward together until one of them is shot at, pinning the
+    // slow one to the fast one's position and attitude so the two worlds stay
+    // identical apart from the speed.
+    int32_t fast_bolt[3] = {0, 0, 0}, slow_bolt[3] = {0, 0, 0};
+    bool got = false;
+    for (int i = 0; i < 3000 && !got; i++) {
+        sl::world_tick(fast, nothing());
+
+        slow.x = fast.x; slow.y = fast.y; slow.z = fast.z;
+        slow.q = fast.q;
+        for (uint8_t k = 0; k < sl::k_max_ships; k++) slow.ships[k] = fast.ships[k];
+        for (uint8_t k = 0; k < sl::k_max_bolts; k++) slow.shots[k].active = false;
+        slow.speed = 0;
+        slow.throttle = 0;
+        sl::world_tick(slow, nothing());
+
+        got = first_enemy_bolt(fast, fast_bolt) &&
+              first_enemy_bolt(slow, slow_bolt);
+    }
+    CHECK(got);
+    if (!got) return;
+
+    // Both worlds hold the same ships, so the shooter is the same one.
+    const sl::Ship* shooter = first_of(fast, sl::Hull::Fighter);
+    CHECK(shooter != nullptr);
+    if (shooter == nullptr) return;
+
+    const int32_t straight[3] = {fast.x - shooter->x, fast.y - shooter->y,
+                                 fast.z - shooter->z};
+    auto miss_angle = [&](const int32_t bolt[3]) {
+        // Cross product magnitude over the product of the lengths is the sine
+        // of the angle between them, and a sine is all this needs to order two
+        // aims. No trigonometry and no normalising.
+        const int64_t cx = static_cast<int64_t>(straight[1]) * bolt[2] -
+                           static_cast<int64_t>(straight[2]) * bolt[1];
+        const int64_t cy = static_cast<int64_t>(straight[2]) * bolt[0] -
+                           static_cast<int64_t>(straight[0]) * bolt[2];
+        const int64_t cz = static_cast<int64_t>(straight[0]) * bolt[1] -
+                           static_cast<int64_t>(straight[1]) * bolt[0];
+        // Scaled down hard: these are fp16 products and the magnitude only has
+        // to be comparable with itself.
+        return (cx / 65536) * (cx / 65536) + (cy / 65536) * (cy / 65536) +
+               (cz / 65536) * (cz / 65536);
+    };
+
+    const int64_t moving_miss = miss_angle(fast_bolt);
+    const int64_t still_miss = miss_angle(slow_bolt);
+    std::printf("lead: moving aim off by %lld, stopped by %lld\n",
+                static_cast<long long>(moving_miss),
+                static_cast<long long>(still_miss));
+
+    // Shooting at a stopped ship is shooting straight at it.
+    CHECK(still_miss < moving_miss);
 }
 
 void test_a_flight_is_a_pure_function_of_its_inputs() {
@@ -701,6 +824,8 @@ void test_the_world_fits_its_ram_budget() {
 int main() {
     test_a_rolled_ship_still_pitches_about_its_own_nose();
     test_the_ship_flies_where_its_nose_points();
+    test_the_throttle_commands_a_speed_the_ship_eases_onto();
+    test_enemies_lead_the_speed_actually_being_made();
     test_a_flight_is_a_pure_function_of_its_inputs();
     test_the_arena_holds_the_player();
 

@@ -48,6 +48,15 @@ struct Chrome {
     bool sound_on;
     bool invert_pitch;
     uint32_t best_score;
+
+    // The target button is HELD. The camera swings off the ship's nose and
+    // onto whatever is targeted, and swings back when it is let go, which is
+    // what a padlock view is for: seeing the thing you are turning toward
+    // before you have finished turning toward it.
+    //
+    // Presentation, so it lives here rather than in sl::Input. The sim does
+    // not have a camera and should not learn about one.
+    bool look_at_target;
 };
 
 // Draw one frame. Pure presentation: never ticks the sim, and every line of it
@@ -79,5 +88,21 @@ struct FrameStats {
     uint8_t hulls_live;
 };
 FrameStats last_frame_stats();
+
+// Where the camera ended up this frame, and which way it was pointing.
+//
+// Exposed for the tests. The camera is eased toward the ship rather than
+// pinned to it, and the three axes are eased independently, which does not on
+// its own stay a rotation: lerp between two unit vectors and you get a shorter
+// one, and a basis that is no longer orthonormal skews and scales the entire
+// view. Nothing on a 120 pixel screen makes that obvious, so it is measured
+// instead of looked at.
+struct CameraState {
+    float x, y, z;
+    float right[3];
+    float up[3];
+    float forward[3];
+};
+CameraState last_camera();
 
 }  // namespace slr

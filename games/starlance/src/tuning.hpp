@@ -51,8 +51,21 @@ constexpr int32_t k_draw_range = units(320);
 
 // ---- the player ----
 
-// Cruise speed, fp16 per tick. 0.22 units a tick is 22 units a second.
-constexpr int32_t k_player_speed = centi(22);
+// ---- the throttle ----
+//
+// Speed is commanded, not fixed. The numbers come from the pico-8 space combat
+// prototype this game is descended from, converted from its 60 frames a second
+// to this sim's 100 ticks: it stepped the throttle by 0.03 of full per frame
+// (about half a second lever to lever) and eased the speed toward it at 0.08
+// per frame (a fifth of a second to settle).
+//
+// Full ahead is slightly faster than an enemy fighter, so a contact that runs
+// can be caught, and the bottom of the range is a dead stop, so a turning
+// fight is something you can choose to have.
+constexpr int32_t k_throttle_one = 1024;          // the lever, fully forward
+constexpr int32_t k_player_speed_max = centi(30); // fp16 per tick: 30 a second
+constexpr int32_t k_throttle_step = 18;           // lever travel per tick
+constexpr int32_t k_speed_gain = 12;              // toward commanded, over 256
 
 // How hard the stick turns the ship, and how fast that rate builds and
 // bleeds. Rates rather than angles: the ship has mass, and a craft that snaps

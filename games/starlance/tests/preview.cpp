@@ -58,6 +58,16 @@ void capture(const sl::World& world, const slr::Chrome& chrome,
                 stats.dropped ? "  DROPPED" : "");
 }
 
+
+// Render without writing anything, so a camera that eases over several frames
+// can be driven to where it settles before the frame that gets kept.
+void capture_quiet(const sl::World& world, const slr::Chrome& chrome) {
+    static std::vector<uint8_t> scratch(static_cast<size_t>(k_w) * k_h * 3);
+    pse::RenderTarget target{scratch.data(), k_w, k_h, k_w * 3,
+                             pse::PixelFormat::rgb888};
+    slr::render_scene(world, chrome, target, g_clock);
+}
+
 // Put the sortie straight into a named wave, with nothing else on the field.
 void jump_to_wave(sl::World& world, uint8_t wave) {
     world.wave = wave;
@@ -201,22 +211,39 @@ int main(int argc, char** argv) {
     chase_until(cap, 2000, 24, 60, true);
     capture(cap, playing(), out, "preview_6_nav_run.ppm");
 
-    // 7: the pause menu, over the battle it interrupts.
+    // 7: the padlock view. Turned away from the frigate, holding the target
+    // button, so the camera has swung off the nose and onto it: the ship is
+    // across the frame and the contact is in the middle of it.
+    {
+        sl::Input yaw{};
+        yaw.yaw = 1;
+        for (int i = 0; i < 70; i++) { sl::world_tick(cap, yaw); g_clock += 10; }
+        slr::Chrome chrome = playing();
+        chrome.look_at_target = true;
+        // Several frames, because the whole point is that it eases there.
+        for (int f = 0; f < 40; f++) {
+            g_clock += 16;
+            capture_quiet(cap, chrome);
+        }
+        capture(cap, chrome, out, "preview_7_padlock.ppm");
+    }
+
+    // 8: the pause menu, over the battle it interrupts.
     {
         slr::Chrome chrome = playing();
         chrome.screen = slr::Screen::Paused;
         chrome.item = slr::kPauseSound;
-        capture(cap, chrome, out, "preview_7_pause.ppm");
+        capture(cap, chrome, out, "preview_8_pause.ppm");
     }
 
-    // 8: the debrief.
+    // 9: the debrief.
     {
         sl::World done = cap;
         done.phase = sl::Phase::Won;
         slr::Chrome chrome = playing();
         chrome.screen = slr::Screen::Debrief;
         chrome.best_score = done.score;
-        capture(done, chrome, out, "preview_8_debrief.ppm");
+        capture(done, chrome, out, "preview_9_debrief.ppm");
     }
 
     std::printf("worst frame: %u triangles, %u dropped\n",

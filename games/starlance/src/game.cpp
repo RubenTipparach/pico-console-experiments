@@ -44,15 +44,26 @@ static_assert(sizeof(SaveData) <= 16, "save record grew");
 
 // ---- the control scheme ----
 //
-// The d-pad flies the ship and X is a modifier on it: held, left and right
-// roll instead of yawing. That is what puts three rotational axes on a four
-// way pad without spending a face button on each, and it is why X does nothing
-// on its own.
+// The d-pad flies the ship and X is a modifier on the whole of it: held, left
+// and right roll instead of yawing, and up and down work the throttle instead
+// of the nose. That is five axes of control on a four way pad and one shoulder
+// of a button, without spending a face button on any of them, and it is why X
+// does nothing at all on its own.
 //
-// X and Y together open the pause menu. The combination is checked before the
-// roll and before the target cycle, so the press that opens the menu is not
-// also a press that changes target.
+// Y is a press and a hold and they do different things. HELD, the camera
+// swings onto whatever is targeted and stays there. RELEASED, the target steps
+// to the next contact. Acting on the release rather than the press is what
+// makes both possible on one button: a press cannot know yet whether it is
+// going to be a hold.
+//
+// X and Y together open the pause menu. That press is marked as spent, so
+// letting go of Y afterwards does not also change target on the way into the
+// menu.
 constexpr uint32_t k_any_face = Button::A | Button::B | Button::X | Button::Y;
+
+// Y's state across frames, for the press/hold/release split above.
+bool g_target_down = false;
+bool g_target_spent = false;
 
 // `tapped`, not `pressed`, and the name is load bearing.
 //
@@ -77,27 +88,37 @@ sl::Input read_flight() {
     const int8_t across = static_cast<int8_t>(
         (held(Button::DPAD_RIGHT) ? 1 : 0) - (held(Button::DPAD_LEFT) ? 1 : 0));
 
+    const int8_t vertical = static_cast<int8_t>((held(Button::DPAD_UP) ? 1 : 0) -
+                                                (held(Button::DPAD_DOWN) ? 1 : 0));
+
     if (modifier) {
         in.roll = across;
+        in.throttle = vertical;
     } else {
         in.yaw = across;
+        // Up is nose up unless the pilot says otherwise. Both readings are
+        // defensible and neither is wrong, which is exactly why it is a
+        // setting rather than a decision: a stick pushed forward pitches down
+        // in every simulator, and a d-pad pressed up moves the crosshair up in
+        // every arcade game, and this is both at once.
+        //
+        // The throttle is deliberately NOT inverted with it. Pulling back on a
+        // stick to climb is a convention about a nose; no throttle anywhere
+        // goes backwards for more power.
+        in.pitch = g_chrome.invert_pitch ? static_cast<int8_t>(-vertical)
+                                         : vertical;
     }
-
-    int8_t pitch = static_cast<int8_t>((held(Button::DPAD_UP) ? 1 : 0) -
-                                       (held(Button::DPAD_DOWN) ? 1 : 0));
-    // Up is nose up unless the pilot says otherwise. Both readings are
-    // defensible and neither is wrong, which is exactly why it is a setting
-    // rather than a decision: a stick pushed forward pitches down in every
-    // simulator, and a d-pad pressed up moves the crosshair up in every
-    // arcade game, and this is both at once.
-    if (g_chrome.invert_pitch) pitch = static_cast<int8_t>(-pitch);
-    in.pitch = pitch;
 
     in.fire = held(Button::A);
     in.launch = held(Button::B);
-    // Y alone cycles. With X down it is the pause chord, handled by the
-    // caller, and must not also step the target.
-    in.cycle_target = !modifier && tapped(Button::Y);
+
+    // The target button, on release. See k_any_face above for why.
+    const bool target_now = held(Button::Y);
+    in.cycle_target = g_target_down && !target_now && !g_target_spent;
+    g_chrome.look_at_target = target_now && !g_target_spent;
+    if (!target_now) g_target_spent = false;
+    g_target_down = target_now;
+
     return in;
 }
 
@@ -293,16 +314,25 @@ void voice_the_frame() {
 }
 
 void update_play(uint32_t elapsed) {
-    // X and Y together pauses, and it is checked before anything reads either
-    // of them for flying, so the chord cannot also roll or change target.
-    if (held(Button::X) && tapped(Button::Y)) {
+    // X and Y together pauses. The press is marked spent BEFORE the flight
+    // controls are read, so the same press cannot also padlock the camera, and
+    // letting go of Y on the way into the menu cannot step the target.
+    const bool chord = held(Button::X) && tapped(Button::Y);
+    if (chord) g_target_spent = true;
+
+    // Read regardless of the chord, so the target button's press and release
+    // stay in step across the frame that opens the menu. Skipping it here left
+    // the button looking held, and the first release after resuming stepped
+    // the target for no reason the player could see.
+    const sl::Input in = read_flight();
+
+    if (chord) {
         g_chrome.screen = slr::Screen::Paused;
         g_chrome.item = slr::kResume;
+        g_chrome.look_at_target = false;
         sound_stop();
         return;
     }
-
-    const sl::Input in = read_flight();
 
     g_tick_accumulator += elapsed;
     // A cap, so a long stall (a flash write, a first frame) does not run the

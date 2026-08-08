@@ -1,5 +1,7 @@
 #include "render.hpp"
 
+#include <cmath>
+
 #include "pse/parallel.hpp"
 #include "pse/quat.hpp"
 #include "pse/raster.hpp"
@@ -63,6 +65,20 @@ constexpr float k_cam_back = 6.2f;
 // frigate dead ahead at sixty units disappeared behind your own tail, with
 // the target box round the place it should have been.
 constexpr float k_cam_lift = 2.15f;
+
+// How fast the camera catches up with the ship, per 60th of a second, which
+// is the rate the pico-8 prototype this game descends from used. Bolted
+// rigidly to the hull, a turn moves the whole sky at once and reads as the
+// universe rotating rather than as the ship turning; letting the camera trail
+// and settle is what puts the motion in the ship.
+constexpr float k_cam_lerp = 0.1f;
+constexpr float k_cam_frame_ms = 16.667f;
+
+// Further than this from where it should be and the camera jumps rather than
+// flies. A sortie restarting, or a wave arriving somewhere else, would
+// otherwise be a long swoop across the arena from wherever the camera used to
+// be, which looks like a bug in the level rather than a smooth camera.
+constexpr float k_cam_snap = 40.0f;
 
 // ---- the one byte depth buffer ----
 //
@@ -148,9 +164,71 @@ struct Camera {
     float forward[3];
 };
 Camera g_cam{};
+bool g_cam_seeded = false;
+uint32_t g_cam_last_ms = 0;
 
 inline float dot_cam(const float axis[3], float x, float y, float z) {
     return axis[0] * x + axis[1] * y + axis[2] * z;
+}
+
+inline float dot3(const float a[3], const float b[3]) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+void cross3(const float a[3], const float b[3], float out[3]) {
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
+bool normalize3(float v[3]) {
+    const float len2 = dot3(v, v);
+    if (len2 < 1e-9f) return false;
+    const float inv = 1.0f / sqrtf(len2);
+    v[0] *= inv; v[1] *= inv; v[2] *= inv;
+    return true;
+}
+
+// Make a lerped frame into a rotation again.
+//
+// The three axes are eased independently, and independent easing does not
+// preserve a basis: two unit vectors lerped halfway give something shorter
+// than either, and a frame that is no longer orthonormal skews and scales
+// everything drawn through it. The pico-8 game this camera is modelled on
+// simply lives with that, because its projection is a hand written dot
+// product per vertex and a slightly short axis only nudges the scale. Here the
+// basis goes straight into a view matrix, so it has to be a real one.
+//
+// Gram-Schmidt off the forward axis: forward is the direction that matters,
+// right is whatever is left of the eased right once forward is taken out of
+// it, and up follows from the other two.
+void orthonormalize(Camera& cam) {
+    if (!normalize3(cam.forward)) {
+        cam.forward[0] = 0.0f; cam.forward[1] = 0.0f; cam.forward[2] = 1.0f;
+    }
+
+    const float along_fwd = dot3(cam.right, cam.forward);
+    cam.right[0] -= cam.forward[0] * along_fwd;
+    cam.right[1] -= cam.forward[1] * along_fwd;
+    cam.right[2] -= cam.forward[2] * along_fwd;
+
+    if (!normalize3(cam.right)) {
+        // The eased right has collapsed onto forward, which takes a half turn
+        // of roll inside one frame to manage. Any perpendicular will do, so
+        // seed from the world axis forward leans on LEAST: crossing with the
+        // one it leans on most is crossing with something nearly parallel,
+        // which gives back another near zero vector and fixes nothing.
+        const float ax = cam.forward[0] < 0.0f ? -cam.forward[0] : cam.forward[0];
+        const float ay = cam.forward[1] < 0.0f ? -cam.forward[1] : cam.forward[1];
+        float seed[3] = {0.0f, 1.0f, 0.0f};
+        if (ax <= ay) { seed[0] = 1.0f; seed[1] = 0.0f; }
+        cross3(seed, cam.forward, cam.right);
+        normalize3(cam.right);
+    }
+
+    // up = forward x right, which is the handedness Renderer3D builds its view
+    // rows with. Crossing the other way round mirrors the picture.
+    cross3(cam.forward, cam.right, cam.up);
 }
 
 // ---- drawing primitives ----
@@ -411,23 +489,108 @@ float camera_distance(int32_t x, int32_t y, int32_t z) {
     return static_cast<float>(isqrt_int(static_cast<int>(d2)));
 }
 
-void set_up_camera(const World& world) {
+// Where the camera would sit if it kept up perfectly, and which way it would
+// be looking. The easing below chases this, it does not replace it.
+void ideal_camera(const World& world, const Chrome& chrome, Camera& out) {
     pse::Basis basis;
     sl::player_basis(world, basis);
 
-    g_cam.right[0] = basis.m[0]; g_cam.right[1] = basis.m[3];
-    g_cam.right[2] = basis.m[6];
-    g_cam.up[0] = basis.m[1]; g_cam.up[1] = basis.m[4];
-    g_cam.up[2] = basis.m[7];
-    g_cam.forward[0] = basis.m[2]; g_cam.forward[1] = basis.m[5];
-    g_cam.forward[2] = basis.m[8];
+    const float ship_right[3] = {basis.m[0], basis.m[3], basis.m[6]};
+    const float ship_up[3] = {basis.m[1], basis.m[4], basis.m[7]};
+    const float ship_fwd[3] = {basis.m[2], basis.m[5], basis.m[8]};
 
-    g_cam.x = fp_to_f(world.x) - g_cam.forward[0] * k_cam_back +
-              g_cam.up[0] * k_cam_lift;
-    g_cam.y = fp_to_f(world.y) - g_cam.forward[1] * k_cam_back +
-              g_cam.up[1] * k_cam_lift;
-    g_cam.z = fp_to_f(world.z) - g_cam.forward[2] * k_cam_back +
-              g_cam.up[2] * k_cam_lift;
+    // The seat is always behind and above the hull, whichever way the camera
+    // ends up looking. Padlock turns the head, it does not move the chair.
+    out.x = fp_to_f(world.x) - ship_fwd[0] * k_cam_back + ship_up[0] * k_cam_lift;
+    out.y = fp_to_f(world.y) - ship_fwd[1] * k_cam_back + ship_up[1] * k_cam_lift;
+    out.z = fp_to_f(world.z) - ship_fwd[2] * k_cam_back + ship_up[2] * k_cam_lift;
+
+    const sl::Ship* target = sl::target_ship(world);
+    if (chrome.look_at_target && target != nullptr) {
+        int32_t tx = target->x, ty = target->y, tz = target->z;
+        const sl::Subsystem* sub = sl::target_subsystem(world);
+        if (sub != nullptr) sl::sub_position(*target, *sub, tx, ty, tz);
+
+        float look[3] = {fp_to_f(tx) - out.x, fp_to_f(ty) - out.y,
+                         fp_to_f(tz) - out.z};
+        if (normalize3(look)) {
+            out.forward[0] = look[0];
+            out.forward[1] = look[1];
+            out.forward[2] = look[2];
+
+            // Rolled with the ship rather than levelled to the world: this is
+            // a pilot turning their head, and their head is attached to a hull
+            // that may well be inverted.
+            //
+            // The ship's UP is the reference, not its right, and that is not
+            // interchangeable. Taking right as the reference and squaring it
+            // against the look direction collapses when the two are parallel,
+            // which is to say whenever the target is directly abeam, which is
+            // exactly the case padlock exists for: the roll would flip to a
+            // world axis as the contact crossed the wingtip. Up only collapses
+            // when the target is straight overhead or underneath, and the
+            // ship's nose covers that.
+            float hint[3] = {ship_up[0], ship_up[1], ship_up[2]};
+            cross3(hint, out.forward, out.right);
+            if (!normalize3(out.right)) {
+                hint[0] = ship_fwd[0]; hint[1] = ship_fwd[1];
+                hint[2] = ship_fwd[2];
+                cross3(hint, out.forward, out.right);
+                normalize3(out.right);
+            }
+            cross3(out.forward, out.right, out.up);
+            return;
+        }
+    }
+
+    for (int i = 0; i < 3; i++) {
+        out.right[i] = ship_right[i];
+        out.up[i] = ship_up[i];
+        out.forward[i] = ship_fwd[i];
+    }
+}
+
+void set_up_camera(const World& world, const Chrome& chrome, uint32_t time_ms) {
+    Camera want{};
+    ideal_camera(world, chrome, want);
+
+    // Per frame in the pico-8 original, which ran at a fixed 60. This one does
+    // not, so the rate is scaled by how long the frame actually took. A fixed
+    // per frame factor would make the camera lag depend on the frame rate,
+    // which is the sort of thing that feels fine on a laptop and sluggish on
+    // the device.
+    const uint32_t dt_ms = time_ms > g_cam_last_ms ? time_ms - g_cam_last_ms : 0;
+    g_cam_last_ms = time_ms;
+    float f = k_cam_lerp * (static_cast<float>(dt_ms) / k_cam_frame_ms);
+    if (f > 1.0f) f = 1.0f;
+    if (f < 0.0f) f = 0.0f;
+
+    const float dx = want.x - g_cam.x, dy = want.y - g_cam.y;
+    const float dz = want.z - g_cam.z;
+    const bool jumped = dx * dx + dy * dy + dz * dz > k_cam_snap * k_cam_snap;
+
+    if (!g_cam_seeded || jumped) {
+        g_cam = want;
+        g_cam_seeded = true;
+    } else {
+        g_cam.x += dx * f;
+        g_cam.y += dy * f;
+        g_cam.z += dz * f;
+        for (int i = 0; i < 3; i++) {
+            g_cam.right[i] += (want.right[i] - g_cam.right[i]) * f;
+            g_cam.up[i] += (want.up[i] - g_cam.up[i]) * f;
+            g_cam.forward[i] += (want.forward[i] - g_cam.forward[i]) * f;
+        }
+        orthonormalize(g_cam);
+    }
+
+    pse::Basis basis;
+    basis.m[0] = g_cam.right[0]; basis.m[1] = g_cam.up[0];
+    basis.m[2] = g_cam.forward[0];
+    basis.m[3] = g_cam.right[1]; basis.m[4] = g_cam.up[1];
+    basis.m[5] = g_cam.forward[1];
+    basis.m[6] = g_cam.right[2]; basis.m[7] = g_cam.up[2];
+    basis.m[8] = g_cam.forward[2];
 
     g_renderer.set_fov(k_fov);
     g_renderer.set_camera_basis(g_cam.x, g_cam.y, g_cam.z, basis);
@@ -879,16 +1042,32 @@ void draw_target_hud(const World& world, const pse::RenderTarget& target) {
 }
 
 void draw_status(const World& world, const pse::RenderTarget& target) {
-    const int base = target.height - 12;
+    // Three bars, no labels: hull red, shields blue, throttle green. A label
+    // on a 120 pixel screen costs more room than the bar it names, and colour
+    // is enough when the same three sit in the same order every frame.
+    const int base = target.height - 17;
     bar(target, 2, base, 40, world.hull, sl::k_player_hull_max, 240, 90, 80);
     bar(target, 2, base + 5, 40, world.shield, sl::k_player_shield_max, 90, 170,
         250);
+    bar(target, 2, base + 10, 40, world.throttle, sl::k_throttle_one, 120, 220,
+        130);
+
+    // The speed actually being made, drawn as a notch on the throttle bar.
+    // The lever and the ship disagree for about a fifth of a second after a
+    // change, and that gap IS the feel of the throttle: without it the bar
+    // says the ship has already done what it has only been asked to do.
+    if (sl::k_player_speed_max > 0) {
+        const int notch = clamp_int(
+            static_cast<int>((static_cast<int64_t>(world.speed) * 40) /
+                             sl::k_player_speed_max), 0, 39);
+        pse::fill_rect(target, 2 + notch, base + 9, 1, 5, 230, 255, 210);
+    }
 
     // Missiles as pips rather than a number. A count needs a label to say what
     // it counts; six squares next to a launcher bar do not.
     for (int i = 0; i < sl::k_missiles_max; i++) {
         const bool have = i < world.missiles;
-        pse::fill_rect(target, 46 + i * 3, base + 1, 2, 6,
+        pse::fill_rect(target, 46 + i * 3, base + 4, 2, 6,
                        have ? 250 : 46, have ? 220 : 50, have ? 110 : 62);
     }
 }
@@ -1031,7 +1210,7 @@ void draw_debrief(const World& world, const Chrome& chrome,
 
 void render_scene(const World& world, const Chrome& chrome,
                   const pse::RenderTarget& target, uint32_t time_ms) {
-    set_up_camera(world);
+    set_up_camera(world, chrome, time_ms);
 
     // ---- the world, collected and split across both cores ----
     g_raster.begin_frame_collect(target, g_queue);
@@ -1076,5 +1255,16 @@ void render_scene(const World& world, const Chrome& chrome,
 }
 
 FrameStats last_frame_stats() { return g_stats; }
+
+CameraState last_camera() {
+    CameraState out{};
+    out.x = g_cam.x; out.y = g_cam.y; out.z = g_cam.z;
+    for (int i = 0; i < 3; i++) {
+        out.right[i] = g_cam.right[i];
+        out.up[i] = g_cam.up[i];
+        out.forward[i] = g_cam.forward[i];
+    }
+    return out;
+}
 
 }  // namespace slr
