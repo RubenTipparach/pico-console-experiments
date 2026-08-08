@@ -69,6 +69,29 @@ void capture(const tl::World& world, float yaw, const std::string& out,
                 stats.dropped ? ", DROPPED" : "");
 }
 
+// Ticks after which the explosion is over. Read from the render side rather
+// than repeated: if the burn is retuned this follows it.
+constexpr uint32_t k_boom_over = 200;
+
+// How many pixels of fire are on screen. The explosion is plotted after the
+// geometry and never enters the triangle queue, so the queue counter cannot
+// see it and neither could anything else in here.
+int count_hot_pixels(const tl::World& world, float yaw) {
+    static std::vector<uint8_t> buffer(static_cast<size_t>(k_w) * k_h * 3);
+    pse::RenderTarget target{buffer.data(), k_w, k_h, k_w * 3,
+                             pse::PixelFormat::rgb888};
+    tlr::render_scene(world, target, yaw, g_clock);
+    int hot = 0;
+    for (size_t i = 0; i < buffer.size(); i += 3) {
+        const int r = buffer[i], g = buffer[i + 1], b = buffer[i + 2];
+        // The fire ramp: red pinned at 255 with a warm green and a low blue.
+        // The Mars ground tops out at 206 red, so 255 is the explosion or the
+        // HUD, and the HUD is not drawn by render_scene.
+        if (r == 255 && g >= 60 && b <= 232) hot++;
+    }
+    return hot;
+}
+
 void run(tl::World& world, const tl::Input& input, int ticks) {
     for (int i = 0; i < ticks; i++) tl::world_tick(world, input);
 }
@@ -205,6 +228,25 @@ int main(int argc, char** argv) {
         }
         if (doomed.state != tl::Flight::Crashed) fail("a long fall must crash");
         capture(doomed, 0.0f, out, "preview_6_wreck.ppm");
+
+        // The explosion, at three ages: the flash, the ball at full spread,
+        // and the smoke going out. Driven purely off ticks_in_state, so this
+        // just winds that counter on rather than needing any sim state.
+        //
+        // Checked as well as looked at: a wreck has to put fire on the screen.
+        // The whole thing is drawn after the geometry with plot(), so it never
+        // reaches the triangle queue and nothing else in this harness would
+        // notice if it stopped drawing entirely.
+        const int lit_before = count_hot_pixels(doomed, 0.0f);
+        if (lit_before <= 0) fail("a fresh wreck must be on fire");
+        doomed.ticks_in_state = 22;
+        capture(doomed, 0.0f, out, "preview_6b_boom.ppm");
+        doomed.ticks_in_state = 70;
+        capture(doomed, 0.0f, out, "preview_6c_smoke.ppm");
+        doomed.ticks_in_state = k_boom_over;
+        if (count_hot_pixels(doomed, 0.0f) != 0) {
+            fail("a wreck must stop burning, not burn forever");
+        }
     }
 
     // 7 and 8: mission two, both halves of it. The crate sitting on the deck

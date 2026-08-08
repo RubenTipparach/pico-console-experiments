@@ -62,6 +62,30 @@ constexpr float k_pi = 3.14159265f;
 constexpr float k_cam_reach = 16.3f;
 constexpr float k_cam_fov = 58.0f;
 
+// ---- the explosion ----
+//
+// How long a wreck burns, in ticks: 1.2 seconds at 100 Hz, which outlasts the
+// 40 tick grace before a button can restart the flight, so the player sees it
+// whatever they do. It was 2.5 seconds first and that read as slower rather
+// than bigger: the sparks were off the screen inside a second and the rest of
+// the burn was one speck.
+constexpr uint32_t k_boom_ticks = 120;
+
+// How long the white flash over the hull lasts, and how wide it starts.
+constexpr uint32_t k_boom_flash = 14;
+constexpr float k_boom_flash_px = 11.0f;
+
+// Peak spark speed in world units per tick, and the pull on one.
+//
+// The sparks DECELERATE. Constant velocity threw them 19 units out and clean
+// off the screen, which read as a starburst wipe rather than a fireball: an
+// explosion is fast at the front and then it is over. Linear deceleration to a
+// stop at k_boom_ticks means the displacement is speed * t * (1 - t / 2T), so
+// the total throw is speed * T / 2, about 7 units, and the spread is widest
+// early where the eye is looking.
+constexpr float k_boom_speed = 0.12f;
+constexpr float k_boom_gravity = 0.00055f;
+
 // Bracketed to the scene rather than left at the engine default. The depth
 // buffer is one byte and a perspective curve spends nearly all of it near the
 // near plane, so a 0.25 to 400 range puts the ship and the ground it is
@@ -481,6 +505,120 @@ void draw_flames(const World& world, const pse::RenderTarget& target,
     }
 }
 
+
+// The wreck, as a ball of fire that throws itself apart and burns out.
+//
+// Driven entirely off world.ticks_in_state and the hull's own resting place,
+// so the sim carries NO explosion state: a crash already stops the ship and
+// starts that counter, and everything here is a pure function of the two. That
+// is what keeps a crash replayable and the sim's RAM budget where it was.
+//
+// Drawn after the geometry, like the flames, so it can depth test against the
+// scene without joining the triangle queue.
+void draw_explosion(const World& world, const pse::RenderTarget& target) {
+    if (world.state != tl::Flight::Crashed) return;
+    const uint32_t age = world.ticks_in_state;
+    if (age > k_boom_ticks) return;
+
+    // Where the sparks go. Directions, not geometry: rule 11's models are
+    // meshes, and this is a spray pattern. Biased upward, because debris off a
+    // wreck goes up before it comes down, and spread wide enough that the ball
+    // reads as a sphere rather than a ring.
+    static const float k_spark[][3] = {
+        { 1.00f,  0.30f,  0.00f}, {-1.00f,  0.30f,  0.00f},
+        { 0.00f,  0.30f,  1.00f}, { 0.00f,  0.30f, -1.00f},
+        { 0.70f,  0.70f,  0.70f}, {-0.70f,  0.70f,  0.70f},
+        { 0.70f,  0.70f, -0.70f}, {-0.70f,  0.70f, -0.70f},
+        { 0.50f,  1.00f,  0.20f}, {-0.50f,  1.00f, -0.20f},
+        { 0.20f,  1.20f, -0.50f}, {-0.20f,  1.20f,  0.50f},
+        { 0.90f,  0.10f,  0.45f}, {-0.90f,  0.10f, -0.45f},
+        { 0.45f,  0.10f, -0.90f}, {-0.45f,  0.10f,  0.90f},
+    };
+    constexpr int k_sparks = static_cast<int>(sizeof(k_spark) /
+                                              sizeof(k_spark[0]));
+
+    const float t = static_cast<float>(age);
+    const float life = t / static_cast<float>(k_boom_ticks);
+    // Out fast and slowing to a stop, then pulled back down. The same shape
+    // the hull's own fall has, so the debris belongs to the world it landed
+    // in, and the throw is widest early where the eye is looking.
+    const float thrown = k_boom_speed * t * (1.0f - life * 0.5f);
+    const float fall = k_boom_gravity * t * t;
+
+    // Debris settles ON the ground rather than sinking through it. The floor
+    // is the sim's own, so a spark that lands on a pad lands on the deck.
+    const float floor_y = to_f(tl::ground_at(world, world.x, world.z));
+
+    for (int i = 0; i < k_sparks; i++) {
+        // Alternate sparks run slower, so the ball has depth to it instead of
+        // every piece sitting on one expanding shell.
+        const float reach = thrown * ((i & 1) ? 0.62f : 1.0f);
+        const float wx = to_f(world.x) + k_spark[i][0] * reach;
+        float wy = to_f(world.y) + k_spark[i][1] * reach - fall;
+        const float wz = to_f(world.z) + k_spark[i][2] * reach;
+        if (wy < floor_y) wy = floor_y;
+
+        int px, py;
+        float scale;
+        uint8_t depth;
+        if (!g_renderer.project_billboard(wx, wy, wz, 1.0f, px, py, scale,
+                                          depth)) {
+            continue;
+        }
+
+        // White hot, then yellow, then orange, then red, then smoke. The same
+        // ramp the thruster plume runs, carried further: a wreck is a plume
+        // that got away.
+        uint8_t r, g, b;
+        if (life < 0.12f)      { r = 255; g = 255; b = 232; }
+        else if (life < 0.30f) { r = 255; g = 236; b =  39; }
+        else if (life < 0.55f) { r = 255; g = 163; b =   0; }
+        else if (life < 0.78f) { r = 255; g =  60; b =  20; }
+        else                   { r =  90; g =  82; b =  78; }
+
+        // Big at the flash, down to a speck as it burns out.
+        const int half = life < 0.18f ? 2 : (life < 0.5f ? 1 : 0);
+        for (int oy = -half; oy <= half; oy++) {
+            for (int ox = -half; ox <= half; ox++) {
+                const int x = px + ox, y = py + oy;
+                if (x < 0 || y < 0 || x >= target.width ||
+                    y >= target.height) {
+                    continue;
+                }
+                if (g_raster.test_and_set_depth(x, y, depth)) {
+                    g_raster.plot(x, y, r, g, b);
+                }
+            }
+        }
+    }
+
+    // And a flash over the wreck itself for the first few ticks, so the moment
+    // of the crash is an event rather than a card that appears.
+    if (age < k_boom_flash) {
+        int px, py;
+        float scale;
+        uint8_t depth;
+        if (g_renderer.project_billboard(to_f(world.x), to_f(world.y),
+                                         to_f(world.z), 1.0f, px, py, scale,
+                                         depth)) {
+            const int radius = static_cast<int>(
+                k_boom_flash_px * (1.0f - static_cast<float>(age) /
+                                          static_cast<float>(k_boom_flash)));
+            for (int oy = -radius; oy <= radius; oy++) {
+                for (int ox = -radius; ox <= radius; ox++) {
+                    if (ox * ox + oy * oy > radius * radius) continue;
+                    const int x = px + ox, y = py + oy;
+                    if (x < 0 || y < 0 || x >= target.width ||
+                        y >= target.height) {
+                        continue;
+                    }
+                    g_raster.plot(x, y, 255, 241, 232);
+                }
+            }
+        }
+    }
+}
+
 // An arrow at the edge of the screen for the deck you cannot see, and only
 // then: a marker stuck on top of something already in frame is the decorative
 // status line rule 9 exists to keep off this screen. With the pads no longer
@@ -624,6 +762,7 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     g_stats.dropped = g_queue.dropped;
 
     draw_flames(world, target, time_ms);
+    draw_explosion(world, target);
     draw_target_arrow(world, target, yaw);
 }
 

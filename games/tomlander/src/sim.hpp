@@ -43,7 +43,7 @@ enum class Flight : uint8_t {
 enum class Fault : uint8_t {
     None,
     TooFast,     // came down faster than a hull survives at all
-    TooSteep,
+    Tipped,      // touched down lying over on its side. See k_safe_tilt.
     Scraped,
     Ditched,
     Struck,      // flew into the side of a building hard enough to matter
@@ -331,5 +331,12 @@ inline int32_t tilt(const World& world) {
     const int32_t off = pse::k_quat_one - uy;
     return off < 0 ? 0 : off;
 }
+
+// The same thing in degrees, for the one place a player is shown it: the card
+// that says the hull tipped over. 1 - cos is the right measure to COMPARE
+// against a limit and a useless one to read, so the reading is a lookup rather
+// than an inverse cosine. Nineteen entries of fp14 at five degree steps, 38
+// bytes of flash, and no trigonometry on a chip with no FPU.
+int32_t tilt_degrees(int32_t off_level);
 
 }  // namespace tl

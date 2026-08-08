@@ -409,19 +409,115 @@ void test_arriving_too_fast_is_a_crash() {
     CHECK(world.fault == tl::Fault::TooFast);
 }
 
-void test_arriving_too_steep_is_a_crash() {
+void test_arriving_on_its_side_is_a_crash() {
     tl::World world;
     tl::world_init(world);
     world.x = world.pads[1].x;
     world.z = world.pads[1].z;
     world.y = tl::ground_at(world, world.x, world.z) + (1 << 16);
-    // Well past the 20 degree gate, as an attitude rather than an angle.
-    world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 0.7f);
+    // 69 degrees over, as an attitude rather than an angle. Well past the gate
+    // and unmistakable in the picture, which is the whole point of where the
+    // gate now sits.
+    world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, 1.2f);
     world.grounded = false;
     tl::Input none{};
     run(world, none, 200);
     CHECK(world.state == tl::Flight::Crashed);
-    CHECK(world.fault == tl::Fault::TooSteep);
+    CHECK(world.fault == tl::Fault::Tipped);
+}
+
+// The gate has to sit outside what ordinary flying reaches, or it is a rule
+// nobody can see. Two measurements pin it, and both were failures once.
+//
+// Hold a single pod off from a level hover, which is what a held direction key
+// does, and watch the hull lean over. The hull rotates faster than it
+// accelerates, so there is a window where it is well tilted and barely moving,
+// and that window is where a player sets down.
+//
+// One: at the moment the hull passes the OLD 20 degree gate, the slide is still
+// well inside k_safe_slide. Every other gate was happy and the touchdown failed
+// anyway, on an attitude that looks like flying. That is the report.
+//
+// Two: by the time it reaches the gate as it stands now, the slide is past what
+// a touchdown survives, so a hull this far over is caught as a SCRAPE on its
+// own. The tilt gate is left judging what it was added to judge, a hull lying
+// on its side, and nothing else.
+void test_where_the_tilt_gate_sits_against_ordinary_flying() {
+    tl::World world;
+    tl::world_init(world);
+    world.y = tl::ground_at(world, world.x, world.z) + (30 << 16);
+    world.grounded = false;
+    tl::Input in{};
+    for (int i = 0; i < tl::kPodCount; i++) in.pod[i] = true;
+    in.pod[tl::kPodFront] = false;
+
+    const int32_t k_old_gate = 988;       // what 20 degrees was, in fp14
+    int32_t slide_at_old = -1, slide_at_new = -1;
+    int32_t ticks_to_old = -1;
+    for (int i = 1; i <= 400 && world.state == tl::Flight::Flying; i++) {
+        tl::world_tick(world, in);
+        const int32_t sx = world.vx < 0 ? -world.vx : world.vx;
+        const int32_t sz = world.vz < 0 ? -world.vz : world.vz;
+        const int32_t slide = sx > sz ? sx : sz;
+        if (slide_at_old < 0 && tl::tilt(world) > k_old_gate) {
+            slide_at_old = slide;
+            ticks_to_old = i;
+        }
+        if (slide_at_new < 0 && tl::tilt(world) > tl::k_safe_tilt) {
+            slide_at_new = slide;
+            break;
+        }
+    }
+    CHECK(slide_at_old >= 0);
+    CHECK(slide_at_new >= 0);
+    // Under a second of a held key reached the old gate.
+    CHECK(ticks_to_old > 0 && ticks_to_old < 100);
+    // And nothing else would have stopped that landing.
+    CHECK(slide_at_old <= tl::k_safe_slide);
+    // Where the gate is now, the scrape has it first.
+    CHECK(slide_at_new > tl::k_safe_slide);
+}
+
+// The measure the gate reads is 1 - cos, which is unreadable, so the card
+// prints degrees. The two have to agree or the card explains a rule the sim is
+// not applying.
+void test_tilt_reads_out_in_degrees() {
+    CHECK(tl::tilt_degrees(0) == 0);
+    CHECK(tl::tilt_degrees(tl::k_safe_tilt) == 45);
+    CHECK(tl::tilt_degrees(16384) == 90);
+    CHECK(tl::tilt_degrees(32768) == 180);
+    // Monotone, and mirrored correctly past the quarter turn.
+    CHECK(tl::tilt_degrees(988) == 20);
+    CHECK(tl::tilt_degrees(8192) == 60);
+    CHECK(tl::tilt_degrees(32768 - 8192) == 120);
+    int32_t last = -1;
+    for (int32_t t = 0; t <= 32768; t += 97) {
+        const int32_t d = tl::tilt_degrees(t);
+        CHECK(d >= last);
+        CHECK(d >= 0 && d <= 180);
+        last = d;
+    }
+}
+
+// The report that started this: TOO STEEP over open water, on a mission whose
+// water is flat. Whatever the attitude, touching the sea is DITCHED. The only
+// place a tip over can be judged out there is the rocket section itself, which
+// is a deck, and the sea is simply what is drawn around it.
+void test_the_open_sea_is_always_a_ditching() {
+    for (int deg = 0; deg <= 80; deg += 20) {
+        tl::World world;
+        tl::world_init(world, tl::Mission::Salvage);
+        world.x = -160 * 65536;
+        world.z = 24 * 65536;
+        world.y = world.sea + (3 << 16);
+        world.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f,
+                                            deg * 3.14159265f / 180.0f);
+        world.grounded = false;
+        tl::Input none{};
+        run(world, none, 400);
+        CHECK(world.state == tl::Flight::Crashed);
+        CHECK(world.fault == tl::Fault::Ditched);
+    }
 }
 
 // Landing well anywhere that is NOT the target just parks the ship, and it
@@ -886,11 +982,15 @@ void test_running_dry_is_a_glide_before_it_is_a_fail() {
 
     // A tank that is not empty resets the clock, so a leg refuel wipes out a
     // grace period already half spent rather than carrying it forward.
+    // Half the grace, taken FROM the constant rather than written out: this
+    // said 100 when the grace was 500, and 100 is the whole of it now, so the
+    // flight had already ended by the time the test topped the tank up.
     tl::World topped;
     tl::world_init(topped);
     topped.fuel = 0;
-    for (int i = 0; i < 100; i++) tl::world_tick(topped, none);
-    CHECK(topped.dry_ticks == 100);
+    const int32_t half_grace = tl::k_dry_grace / 2;
+    for (int32_t i = 0; i < half_grace; i++) tl::world_tick(topped, none);
+    CHECK(topped.dry_ticks == half_grace);
     topped.fuel = tl::k_fuel_full;
     tl::world_tick(topped, none);
     CHECK(topped.dry_ticks == 0);
@@ -1317,8 +1417,8 @@ void test_a_menu_cursor_wraps_and_stays_in_range() {
 // The bug: ground_at returned a building's ROOF across its whole footprint, so
 // a hull crossing that footprint below roof height was instantly "below the
 // floor" and the touchdown gates judged it. Flying level into a tower at six
-// units a second, at the lean any translating hull carries, came out as
-// TOO STEEP: a landing verdict, on a flight that never touched the ground.
+// units a second came out as a TIPPED OVER landing, on a flight that never
+// touched the ground.
 void test_flying_into_a_building_is_not_a_landing() {
     int tested = 0;
     for (int b = 0; b < tl::k_building_count; b++) {
@@ -1343,14 +1443,15 @@ void test_flying_into_a_building_is_not_a_landing() {
         w.y = ground_out + under / 2;
         w.grounded = false;
         w.landed_on = 0xFF;
-        // The lean a hull carries while translating, which is what made this
-        // read as TOO STEEP.
-        w.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, -0.45f);
+        // Held past the tilt gate on purpose. A wall must not judge an
+        // attitude at all, so the case worth proving is the one where every
+        // landing gate WOULD have something to say.
+        w.q = pse::quat_from_axis_angle(0.0f, 0.0f, 1.0f, -1.0f);
         CHECK(tl::tilt(w) > tl::k_safe_tilt);
 
         // Pinned at its entry height across the tick, because gravity acts
         // INSIDE world_tick: without this the hull sinks, reaches the ground,
-        // and lands on it, which is a real TOO STEEP and not the thing under
+        // and lands on it, which is a real tip over and not the thing under
         // test. What is under test is the WALL.
         const int32_t flying_at = w.y;
         tl::Input none{};
@@ -1398,7 +1499,7 @@ void test_a_fast_side_impact_says_struck() {
     }
     CHECK(w.state == tl::Flight::Crashed);
     CHECK(w.fault == tl::Fault::Struck);
-    CHECK(w.fault != tl::Fault::TooSteep);    // never a landing's word
+    CHECK(w.fault != tl::Fault::Tipped);      // never a landing's word
 }
 
 // A roof is still a floor from ABOVE, which is what keeps a building something
@@ -1520,7 +1621,10 @@ int main() {
     test_ground_at_agrees_with_the_deck();
     test_a_gentle_touchdown_on_the_target_wins();
     test_arriving_too_fast_is_a_crash();
-    test_arriving_too_steep_is_a_crash();
+    test_arriving_on_its_side_is_a_crash();
+    test_where_the_tilt_gate_sits_against_ordinary_flying();
+    test_tilt_reads_out_in_degrees();
+    test_the_open_sea_is_always_a_ditching();
     test_landing_off_target_parks_rather_than_ends();
     test_fuel_burns_with_throttle_and_runs_out();
     test_a_flight_is_deterministic();
