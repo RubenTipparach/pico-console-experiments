@@ -38,7 +38,6 @@ enum class Flight : uint8_t {
     Flying,
     Landed,      // down safe on the target deck: the mission is over
     Crashed,
-    Tumbled,
 };
 
 enum class Fault : uint8_t {
@@ -47,6 +46,7 @@ enum class Fault : uint8_t {
     TooSteep,
     Scraped,
     Ditched,
+    Struck,      // flew into the side of a building hard enough to matter
     Broke,       // survivable landings, but one too many of them
     Dry,         // out of fuel with the mission still open
 };
@@ -322,7 +322,9 @@ void hull_up(const World& world, int32_t& ux, int32_t& uy, int32_t& uz);
 void up_in_hull(const World& world, int32_t& bx, int32_t& by, int32_t& bz);
 
 // How far off level, fp14, as 1 - cos of the angle. See k_safe_tilt for why
-// it is not an angle. Zero when level, k_tumble_tilt at a quarter turn.
+// it is not an angle. Zero when level, 16384 at a quarter turn, 32768 upside
+// down. Nothing ends a flight for being large: a hull can be inverted and fly
+// out of it, and the leveller can right it.
 inline int32_t tilt(const World& world) {
     int32_t ux, uy, uz;
     hull_up(world, ux, uy, uz);

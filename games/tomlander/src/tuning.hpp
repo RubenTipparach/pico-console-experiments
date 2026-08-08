@@ -97,6 +97,12 @@ constexpr int32_t k_pod_torque = 53;
 //   988   20 degrees
 //   16384 90 degrees, on its side
 //   32768 fully inverted
+//
+// A quarter turn used to END the flight, on the spot, while the hull was still
+// in the air and still under control. It does not any more: a tumble is a
+// situation to fly out of, not a verdict, and the leveller can right one. The
+// constant stays because it names the interesting attitude and the tests read
+// it, but nothing in the sim gates on it.
 constexpr int32_t k_tumble_tilt = 16384;
 
 // ---- landing ----
@@ -144,6 +150,22 @@ constexpr int32_t k_safe_tilt = 988;
 // Horizontal speed a touchdown survives, fp16 per tick. Sliding onto a deck
 // sideways is a scrape, and the original charges for it separately.
 constexpr int32_t k_safe_slide = 5200;
+
+// How far outside a building's footprint a wall strike leaves the hull, fp16.
+// building_at counts its boundary as inside, so a push to the edge exactly is
+// still inside it and the floor finds the roof. A sixteenth of a unit is under
+// a pixel at any range the game is looked at.
+constexpr int32_t k_wall_clear = 1 << 12;
+
+// How far UNDER a roof the hull has to be before it counts as having flown
+// into the side rather than settled onto the top.
+//
+// Without a margin, a hull descending onto a roof trips the wall the instant it
+// dips below it and gets shoved off sideways, so a building could not be landed
+// on at all. One unit is safe by a wide margin: terminal descent is 17.7 u/s,
+// which is 0.18 of a unit in a tick, so nothing can cross a whole unit in one
+// step and be mistaken for a side entry.
+constexpr int32_t k_wall_bite = 1 << 16;
 
 // ---- fuel ----
 
