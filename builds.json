@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,19 +67,19 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
-      "dir": "games/starlance",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
+      "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
-      "slug": "starlance",
-      "target": "starlance",
-      "title": "Starlance",
+      "slug": "stardancer",
+      "target": "stardancer",
+      "title": "Star Dancer",
       "web": true
     },
     {
-      "built_at": "2026-08-08T03:37:16Z",
-      "commit": "a66f272",
+      "built_at": "2026-08-08T09:28:24Z",
+      "commit": "9171302",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -89,6 +89,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-08T03:37:16Z",
+  "generated_at": "2026-08-08T09:28:24Z",
   "schema": 2
 }
