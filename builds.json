@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,8 +67,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-08T17:49:48Z",
-      "commit": "aeba216",
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -87,8 +87,19 @@
       "target": "tomlander",
       "title": "Tom Lander",
       "web": true
+    },
+    {
+      "built_at": "2026-08-08T21:01:18Z",
+      "commit": "9d2341e",
+      "dir": "games/twinflare",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "twinflare",
+      "target": "twinflare",
+      "title": "Twin Flare",
+      "web": true
     }
   ],
-  "generated_at": "2026-08-08T17:49:48Z",
+  "generated_at": "2026-08-08T21:01:18Z",
   "schema": 2
 }
