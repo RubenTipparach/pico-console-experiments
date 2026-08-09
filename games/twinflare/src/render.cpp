@@ -8,9 +8,18 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 #include "fixed.hpp"
-#include "twinflare/cockpit.hpp"
-#include "twinflare/engine_heavy.hpp"
-#include "twinflare/engine_slim.hpp"
+#include "twinflare/cockpit_anvil.hpp"
+#include "twinflare/cockpit_fang.hpp"
+#include "twinflare/cockpit_needle.hpp"
+#include "twinflare/cockpit_nightjar.hpp"
+#include "twinflare/cockpit_scarab.hpp"
+#include "twinflare/cockpit_wisp.hpp"
+#include "twinflare/engine_anvil.hpp"
+#include "twinflare/engine_fang.hpp"
+#include "twinflare/engine_needle.hpp"
+#include "twinflare/engine_nightjar.hpp"
+#include "twinflare/engine_scarab.hpp"
+#include "twinflare/engine_wisp.hpp"
 #include "twinflare/rock.hpp"
 
 namespace twinflare {
@@ -67,16 +76,23 @@ constexpr float k_pod_z = -1.55f;
 constexpr float k_cable_pod_x = 0.40f;
 constexpr float k_cable_pod_y = 0.30f;
 constexpr float k_cable_pod_z = -0.15f;
-constexpr float k_cable_eng_in = 0.42f;   // inboard, toward the cockpit
-constexpr float k_cable_eng_y = -0.10f;
+constexpr float k_cable_eng_in = 0.22f;   // inboard, toward the cockpit
+constexpr float k_cable_eng_y = -0.06f;
 constexpr float k_cable_eng_z = -0.85f;   // aft of the engine's middle
 
 // Half extents of each mesh, for measuring whether an anchor is really on the
 // part. A sphere was too generous to catch the front face mistake above: the
 // cockpit's half diagonal is 1.44, so a radius of 1.2 passed anchors that were
 // nowhere the camera could see them.
-constexpr float k_cockpit_half[3] = {0.58f, 0.40f, 1.05f};
-constexpr float k_engine_half[3] = {0.62f, 0.60f, 1.75f};
+// The TIGHTEST parts on the roster, not an average and not the ones the cables
+// were first drawn against. Six racers fly six different engines now, and
+// NEEDLE's tapers to a third of a unit across where the cable meets it while
+// ANVIL's is two and a half times that: an anchor checked against a box the
+// size of ANVIL is an anchor hanging in the air on two of the six. Measured off
+// the generated meshes, inradius rather than circumradius, because a hexagon is
+// narrowest across its flats.
+constexpr float k_cockpit_half[3] = {0.42f, 0.30f, 0.95f};
+constexpr float k_engine_half[3] = {0.30f, 0.22f, 1.40f};
 
 constexpr float k_engine_lead = 0.34f;
 constexpr float k_cockpit_trail = 0.80f;
@@ -137,6 +153,15 @@ Camera follow(const Pod& pod, float dt) {
     c.x = to_world(pod.x) - std::sin(g_cam.yaw) * cp * pull;
     c.y = to_world(pod.y) + k_cam_high - sp * pull;
     c.z = to_world(pod.z) - std::cos(g_cam.yaw) * cp * pull;
+    // Under a roof, stay under it. The camera rides two and a half units above
+    // the pod and further on a nose down attitude, which is over a tunnel's
+    // seven units of headroom whenever the sim has pressed the pod against the
+    // ceiling. Outside the tunnel that is a camera looking down at the roof of
+    // the thing it is supposed to be inside.
+    if (pod.roofed) {
+        const float roof = to_world(pod.y - pod.clearance + k_tunnel_height);
+        if (c.y > roof - 0.5f) c.y = roof - 0.5f;
+    }
     c.yaw = g_cam.yaw;
     c.pitch = g_cam.pitch;
     c.roll = g_cam.roll;
@@ -365,19 +390,221 @@ float ripple(int index, uint32_t tick) {
     return (up - 3) * 0.085f;                   // about a quarter unit either way
 }
 
-void edge_point(const Track& t, int index, float side, float out[3], float widen = 1.0f) {
-    const TrackNode& a = t.nodes[index];
-    const TrackNode& b = t.nodes[(index + 1) % t.node_count];
-    const float ax = to_world(node_x(a)), az = to_world(node_z(a));
-    const float bx = to_world(node_x(b)), bz = to_world(node_z(b));
-    float dx = bx - ax, dz = bz - az;
+// A point on the ground, `lateral` world units off the centreline at this
+// node, `dy` above the node's own height, camera relative on the way out.
+//
+// Absolute units and not multiples of the half width, which is what the old
+// one took. A multiple is fine for the road, whose whole geometry is a
+// fraction of its own width, and wrong for everything beyond it: the shoulder
+// falls over twelve UNITS whatever the road is doing, so expressing it as 1.35
+// half widths made it three units wide on a normal stretch and four on the
+// shortcut, and neither of those is twelve.
+// The direction a node's cross section is laid out along: the average of the
+// segment arriving and the segment leaving, not the one leaving.
+//
+// A MITRE, and without it no two strips in the game shared an edge. Every band
+// took its normal from its own outgoing segment, so at a bend node i's outer
+// edge and node i-1's outer edge landed in different places: a wedge of open
+// sky between consecutive strips on the outside of every corner, and a wedge
+// of overlap on the inside. The road had them too, a notch out of its own edge
+// at every corner node, about a unit and a half wide at nine and a half of
+// half width. Averaging the two makes the boundary of one strip literally the
+// same points as the boundary of the next, so there is nothing left to fall
+// between.
+void node_dir(const Track& t, int index, float& dx, float& dz) {
+    const int n = t.node_count;
+    const TrackNode& prev = t.nodes[(index + n - 1) % n];
+    const TrackNode& here = t.nodes[index];
+    const TrackNode& next = t.nodes[(index + 1) % n];
+    float ax = to_world(node_x(here) - node_x(prev));
+    float az = to_world(node_z(here) - node_z(prev));
+    float bx = to_world(node_x(next) - node_x(here));
+    float bz = to_world(node_z(next) - node_z(here));
+    const float ma = std::sqrt(ax * ax + az * az);
+    const float mb = std::sqrt(bx * bx + bz * bz);
+    if (ma > 0.0001f) { ax /= ma; az /= ma; }
+    if (mb > 0.0001f) { bx /= mb; bz /= mb; }
+    dx = ax + bx; dz = az + bz;
     const float m = std::sqrt(dx * dx + dz * dz);
-    if (m > 0.0001f) { dx /= m; dz /= m; }
-    const float half = to_world(node_half_width(a)) * widen;
-    // Camera relative on the way out, so nothing downstream has to remember.
-    out[0] = ax + dz * half * side - g_origin[0];
-    out[1] = to_world(node_y(a)) - g_origin[1];
-    out[2] = az - dx * half * side - g_origin[2];
+    if (m > 0.0001f) { dx /= m; dz /= m; } else { dx = bx; dz = bz; }
+}
+
+void edge_at(const Track& t, int index, float side, float lateral, float dy,
+             float out[3]) {
+    const TrackNode& a = t.nodes[index];
+    float dx, dz;
+    node_dir(t, index, dx, dz);
+    out[0] = to_world(node_x(a)) + dz * lateral * side - g_origin[0];
+    out[1] = to_world(node_y(a)) + dy - g_origin[1];
+    out[2] = to_world(node_z(a)) - dx * lateral * side - g_origin[2];
+}
+
+void edge_point(const Track& t, int index, float side, float out[3], float widen = 1.0f) {
+    const float half = to_world(node_half_width(t.nodes[index])) * widen;
+    edge_at(t, index, side < 0.0f ? -1.0f : 1.0f,
+            half * (side < 0.0f ? -side : side), 0.0f, out);
+}
+
+// How far out this node's ground may reach on this side before its strip folds
+// back over the road.
+//
+// Not a tidiness rule. The outward offsets of two consecutive nodes cross once
+// the offset passes the local turn radius, and past that a strip is drawn over
+// ground it does not own, at its OWN node's height. Measured on the desert,
+// the fourteen half width plain that used to be here put the drawn ground as
+// much as 7.5 units ABOVE the surface the pod was hovering on, at 38 of 197
+// sampled positions: the pod buried in scenery belonging to a corner it had
+// not reached yet. That is the "sinking into the ground off road" report, and
+// no amount of care in the sim could have fixed it, because the sim was right.
+//
+// Three quarters of the radius, so a strip stops well short of the fold rather
+// than at it. On a straight the radius is enormous and nothing is clamped,
+// which is most of a lap.
+float reach_limit(const Track& t, int index, float side) {
+    const int n = t.node_count;
+    const TrackNode& prev = t.nodes[(index + n - 1) % n];
+    const TrackNode& here = t.nodes[index];
+    const TrackNode& next = t.nodes[(index + 1) % n];
+    float ax = to_world(node_x(here) - node_x(prev));
+    float az = to_world(node_z(here) - node_z(prev));
+    float bx = to_world(node_x(next) - node_x(here));
+    float bz = to_world(node_z(next) - node_z(here));
+    const float ma = std::sqrt(ax * ax + az * az);
+    const float mb = std::sqrt(bx * bx + bz * bz);
+    if (ma < 0.0001f || mb < 0.0001f) return 1.0e9f;
+    ax /= ma; az /= ma; bx /= mb; bz /= mb;
+    // For unit directions the length of the difference is the heading change,
+    // so the radius is the arc length over it.
+    const float tx = bx - ax, tz = bz - az;
+    const float turn = std::sqrt(tx * tx + tz * tz);
+    if (turn < 0.0001f) return 1.0e9f;
+    // Which way this side points, in the frame edge_at offsets in.
+    float mx, mz;
+    node_dir(t, index, mx, mz);
+    const float nx = mz * side, nz = -mx * side;
+    if (tx * nx + tz * nz <= 0.0f) return 1.0e9f;   // the outside of the turn
+    return 0.9f * mb / turn;
+}
+
+// How far the drawn plain reaches past the road edge, before the fold clamp.
+constexpr float k_plain_reach = 46.0f;
+
+// One node's ground on one side, as the three boundary points the strips are
+// built between: the road edge, the foot of the shoulder, and the outer edge
+// of the plain. draw_road builds its quads from this and drawn_ground() probes
+// it, so a test cannot be measuring a different world from the one on screen.
+struct GroundBand { float base[3], lip[3], shoulder[3], plain[3]; float wall; };
+
+// Height of a flat-ish quad at a point in the XZ plane, or false if the point
+// is outside it. Only the ground probe uses this; the renderer projects.
+bool tri_height(const float a[3], const float b[3], const float c[3],
+                float x, float z, float& y) {
+    const float d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+    if (d > -1e-6f && d < 1e-6f) return false;
+    const float l0 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d;
+    const float l1 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d;
+    const float l2 = 1.0f - l0 - l1;
+    if (l0 < 0.0f || l1 < 0.0f || l2 < 0.0f) return false;
+    y = l0 * a[1] + l1 * b[1] + l2 * c[1];
+    return true;
+}
+
+bool quad_height(const float p0[3], const float p1[3], const float p2[3],
+                 const float p3[3], float x, float z, float& y) {
+    return tri_height(p0, p1, p2, x, z, y) || tri_height(p0, p2, p3, x, z, y);
+}
+
+// The waterline, camera relative, or nothing on a dry planet. Every band point
+// is raised to it, because surface_at is: the sea wins wherever the rock is
+// lower. The moving ripple goes on top of this in draw_road, so what is drawn
+// and what is driven differ by at most a quarter of a unit of swell.
+float sea_level(const Track& t) {
+    return has_water(t) ? to_world(water_level(t)) - g_origin[1] : -1.0e9f;
+}
+
+void ground_band(const Track& t, int index, float side, GroundBand& out) {
+    const float half = to_world(node_half_width(t.nodes[index]));
+    const float run = to_world(k_shoulder_run);
+    const float limit = reach_limit(t, index, side);
+    const float reach = k_plain_reach < limit ? k_plain_reach : limit;
+    const int32_t wall = node_wall(t.nodes[index]);
+    out.wall = to_world(wall);
+    // Every height comes out of ground_offset, which is the sim's own function.
+    // Nothing here decides what the ground does; it only decides where to put
+    // the corners, and the corners are at the profile's knees.
+    edge_at(t, index, side, half, 0.0f, out.base);
+    edge_at(t, index, side, half, out.wall, out.lip);
+    edge_at(t, index, side, half + run,
+            to_world(ground_offset(wall, k_shoulder_run)), out.shoulder);
+    edge_at(t, index, side, half + reach,
+            to_world(ground_offset(wall, static_cast<int32_t>(reach * 65536.0f))),
+            out.plain);
+    const float sea = sea_level(t);
+    float* points[4] = {out.base, out.lip, out.shoulder, out.plain};
+    for (float* p : points) if (p[1] < sea) p[1] = sea;
+}
+// And the lip that a canyon rim turns outward at the top, so a wall reads as
+// the edge of something rather than as a sheet standing on the desert.
+constexpr float k_rim = 9.0f;
+
+// A hole in the road, drawn as a hole. The sim has said for a long time that a
+// gap has no surface at ANY distance to the side, which makes it a canyon
+// across the world rather than a pit in the tarmac. Nothing drew that: the
+// plain was laid straight across it, so a player who went round the jump flew
+// over solid desert and fell through it, and a player who went at it saw the
+// road stop at nothing at all.
+//
+// Two cliff faces and a floor. The near lip is drawn only where the run of gap
+// nodes starts and the far lip only where it ends, so a fifty six unit chasm
+// costs two faces and not fourteen.
+void draw_chasm(const Track& t, int i, int band, float reach) {
+    const int n = t.node_count;
+    const int j = (i + 1) % n;
+    const Palette& pal = t.palette;
+    const float depth = to_world(k_chasm_depth);
+    const float half_i = to_world(node_half_width(t.nodes[i]));
+    const float half_j = to_world(node_half_width(t.nodes[j]));
+
+    // The floor, in the darkest thing the palette has. It is below the crash
+    // floor, so what the player is looking at is somewhere they have already
+    // died by reaching.
+    const uint8_t deep[3] = {
+        static_cast<uint8_t>(pal.rock[1][0] * 2 / 5),
+        static_cast<uint8_t>(pal.rock[1][1] * 2 / 5),
+        static_cast<uint8_t>(pal.rock[1][2] * 2 / 5),
+    };
+    float fl[3], fr[3], nl[3], nr[3];
+    edge_at(t, i, -1.0f, half_i + reach, -depth, nl);
+    edge_at(t, i, 1.0f, half_i + reach, -depth, nr);
+    edge_at(t, j, -1.0f, half_j + reach, -depth, fl);
+    edge_at(t, j, 1.0f, half_j + reach, -depth, fr);
+    quad(nl, fl, fr, nr, deep);
+
+    // A lip is a wall across the whole width, from the ground down to the
+    // floor. Only at the two ends of the run.
+    const bool near_lip = !(t.nodes[(i + n - 1) % n].flags & kGap);
+    const bool far_lip = !(t.nodes[j].flags & kGap);
+    for (int end = 0; end < 2; ++end) {
+        if (end == 0 ? !near_lip : !far_lip) continue;
+        const int at = end == 0 ? i : j;
+        const float half = end == 0 ? half_i : half_j;
+        float tl[3], tr[3], bl[3], br[3];
+        edge_at(t, at, -1.0f, half + reach, 0.0f, tl);
+        edge_at(t, at, 1.0f, half + reach, 0.0f, tr);
+        edge_at(t, at, -1.0f, half + reach, -depth, bl);
+        edge_at(t, at, 1.0f, half + reach, -depth, br);
+        // In SHADOW, and that is the whole legibility of a hole in the ground.
+        // A cliff face painted from pal.wall is a light tan wall across a light
+        // tan desert: the geometry was all there and the jump still read as a
+        // shallow dip in the road. The one face the player actually looks at is
+        // the far one, across the gap, and it has to be the darkest thing in
+        // the frame or there is nothing to tell them to pull up.
+        uint8_t face[3];
+        for (int c = 0; c < 3; ++c)
+            face[c] = static_cast<uint8_t>(pal.rock[1][c] * 3 / 5);
+        quad(tl, tr, br, bl, face);
+        ++g_stats.cliffs;
+    }
 }
 
 void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
@@ -387,19 +614,28 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
     // driven one cannot end up in different places.
     const bool wet = has_water(t);
     const float sea = wet ? to_world(water_level(t)) - g_origin[1] : 0.0f;
+    // The cross section, straight out of the sim's own constants. Anything
+    // here that measured the shoulder for itself is how the two came to
+    // disagree in the first place.
+    const float shoulder_run = to_world(k_shoulder_run);
+    const float shoulder_drop = to_world(k_shoulder_drop);
+    const float roof = to_world(k_tunnel_height);
 
     for (int s = -k_view_behind; s < k_view_segments; ++s) {
         const int i = ((pod.node + s) % t.node_count + t.node_count) % t.node_count;
         const int j = (i + 1) % t.node_count;
         const TrackNode& a = t.nodes[i];
+        const TrackNode& b_node = t.nodes[j];
         const int band = (i >> 1) & 1;
         const bool near = s <= 11;
+        const float half_i = to_world(node_half_width(a));
+        const float half_j = to_world(node_half_width(b_node));
 
         float li[3], lj[3], ri[3], rj[3];
-        edge_point(t, i, -1.0f, li);
-        edge_point(t, j, -1.0f, lj);
-        edge_point(t, i, 1.0f, ri);
-        edge_point(t, j, 1.0f, rj);
+        edge_at(t, i, -1.0f, half_i, 0.0f, li);
+        edge_at(t, j, -1.0f, half_j, 0.0f, lj);
+        edge_at(t, i, 1.0f, half_i, 0.0f, ri);
+        edge_at(t, j, 1.0f, half_j, 0.0f, rj);
 
         // Where this segment stands relative to the sea. Whole segment or
         // nothing, so a shoreline lands on a node boundary and the eight units
@@ -407,11 +643,35 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // would be more exact and would cost a clipper per segment for an edge
         // that is three pixels long.
         const float yi = to_world(node_y(a));
-        const float yj = to_world(node_y(t.nodes[j]));
+        const float yj = to_world(node_y(b_node));
         const bool road_wet = wet && yi < sea && yj < sea;
-        const bool plain_wet = wet && yi - 3.0f < sea && yj - 3.0f < sea;
+        const bool plain_wet = wet && yi - shoulder_drop < sea
+                                   && yj - shoulder_drop < sea;
         const float wave_i = wet ? sea + ripple(i, tick) : 0.0f;
         const float wave_j = wet ? sea + ripple(j, tick) : 0.0f;
+        // The road itself comes up to the waterline where it is under it, for
+        // the same reason and by the same rule as the shoulder does. Skipping
+        // this left a segment with one end above the sea and one below drawn
+        // at its true height while the field held the pod at sea level, so on
+        // the way into TIDEBREAK's trench the pod hovered up to seventeen
+        // units over the road it could see.
+        if (wet) {
+            if (wave_i > li[1]) li[1] = wave_i;
+            if (wave_i > ri[1]) ri[1] = wave_i;
+            if (wave_j > lj[1]) lj[1] = wave_j;
+            if (wave_j > rj[1]) rj[1] = wave_j;
+        }
+
+        const bool tunnel = (a.flags & kTunnel) != 0;
+        // A hole under water is not a hole, it is more water.
+        const bool chasm = (a.flags & kGap) != 0 && !road_wet;
+
+        if (chasm) {
+            const float reach = k_plain_reach < reach_limit(t, i, 1.0f)
+                              ? k_plain_reach : reach_limit(t, i, 1.0f);
+            draw_chasm(t, i, band, reach);
+            continue;
+        }
 
         // Ground and shoulders only where they can still be seen. Past about
         // ninety units out the shoulder is under a pixel tall and the ground
@@ -419,50 +679,83 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // six of a far segment's fourteen triangles were drawing the horizon a
         // second time.
         if (near) {
-            float wi[3], wj[3], fi[3], fj[3];
             for (int side = 0; side < 2; ++side) {
                 const float sgn = side ? 1.0f : -1.0f;
-                edge_point(t, i, sgn, wi, 1.35f);
-                edge_point(t, j, sgn, wj, 1.35f);
-                // Fourteen half widths, not four. The sim lets a pod drive off
-                // the road now instead of dropping it into the floor, so the
-                // ground has to be THERE when it does: at four the plain ran
-                // out about thirty eight units off the centreline and a pod
-                // that ran wide found itself flying over nothing, which read
-                // as the world having a hole in it. This costs no triangles at
-                // all, only bigger ones.
-                edge_point(t, i, sgn, fi, 14.0f);
-                edge_point(t, j, sgn, fj, 14.0f);
-                // Matched to surface_at: three units below the road and flat
-                // out to the horizon, so what is drawn is what is driven on.
-                // Under the waterline that becomes the sea instead, for the
-                // same reason and out of the same number.
-                const float drop = (a.flags & kWall) ? 4.0f : -3.0f;
-                fi[1] += drop; fj[1] += drop;
-                wi[1] += drop;
-                wj[1] += drop;
-                const uint8_t* plain_col = pal.ground[band];
-                if (plain_wet) {
-                    fi[1] = wave_i; fj[1] = wave_j;
-                    wi[1] = wave_i; wj[1] = wave_j;
-                    plain_col = pal.water[band];
-                    ++g_stats.sea;
+                const float* base_i = side ? ri : li;
+                const float* base_j = side ? rj : lj;
+
+                // The shoulder and the plain, at the offsets ground_offset has
+                // its knees at, so the drawn ground and the driven ground meet
+                // exactly rather than approximately.
+                GroundBand gi, gj;
+                ground_band(t, i, sgn, gi);
+                ground_band(t, j, sgn, gj);
+
+                // A CANYON WALL, and it is a vertical face standing on the
+                // road edge rather than the four unit kerb this used to be.
+                // The sim stops a pod dead at that line; a barrier the player
+                // can see over does not say so, and being bounced off
+                // something shorter than the vehicle reads as the game
+                // cheating rather than as a wall.
+                //
+                // Drawn whenever EITHER end of the segment has rock on it, so a
+                // canyon rises out of the desert over one node's spacing and
+                // sinks back into it the same way. The sim interpolates the
+                // same taper, so the mouth of a canyon is drivable rock at
+                // exactly the heights it is drawn at.
+                if (gi.wall > 0.0f || gj.wall > 0.0f) {
+                    // Banded, like the road is. A canyon wall in one flat
+                    // colour is a brown rectangle beside a brown rectangle:
+                    // nothing crosses the edge of vision, so a hundred and
+                    // eighty units of rock go past at three hundred and fifty
+                    // and read as standing still.
+                    uint8_t face[3];
+                    for (int c = 0; c < 3; ++c)
+                        face[c] = band ? pal.wall[c]
+                                       : static_cast<uint8_t>(pal.wall[c] * 3 / 4);
+                    quad(base_i, base_j, gj.lip, gi.lip, face);
+                    ++g_stats.cliffs;
                 }
-                if (side) quad(wi, wj, fj, fi, plain_col);
-                else      quad(fi, fj, wj, wi, plain_col);
-                // Walls get a colour of their own rather than borrowing the
-                // scenery's: a near vertical face takes the ambient floor and
-                // nothing else, so a wall painted from the same palette entry
-                // as a distant rock comes out three times darker than it, and
-                // the track that is mostly wall came out a black corridor.
-                const uint8_t* side_col = (a.flags & kWall) ? pal.wall : pal.rock[band];
-                // The bank between the road edge and the plain. Where the road
-                // is dry and the plain is not, this is the shoreline, and it
-                // wants the foam colour: a beach is the one edge in the frame
-                // the player uses to judge how much road is left.
-                if (plain_wet && !road_wet) side_col = pal.foam;
-                if (side) quad(ri, rj, wj, wi, side_col);
-                else      quad(wi, wj, lj, li, side_col);
+
+                float wi[3], wj[3], fi[3], fj[3];
+                for (int c = 0; c < 3; ++c) {
+                    wi[c] = gi.shoulder[c]; wj[c] = gj.shoulder[c];
+                    fi[c] = gi.plain[c];    fj[c] = gj.plain[c];
+                }
+
+                const uint8_t* plain_col = pal.ground[band];
+                const uint8_t* bank_col = pal.rock[band];
+                if (wet) {
+                    // PER VERTEX, and the rule is surface_at's own: the sea
+                    // wins wherever the rock is lower than it. Flipping a whole
+                    // band to sea level the moment its outer edge went under
+                    // drew water over a beach that was still a metre and a half
+                    // above the waterline, and a pod driving there hovered
+                    // sixteen units over the drawn surface.
+                    if (wave_i > wi[1]) wi[1] = wave_i;
+                    if (wave_j > wj[1]) wj[1] = wave_j;
+                    if (wave_i > fi[1]) fi[1] = wave_i;
+                    if (wave_j > fj[1]) fj[1] = wave_j;
+                    if (plain_wet) {
+                        plain_col = pal.water[band];
+                        // The bank between the road edge and the plain. Where
+                        // the road is dry and the plain is not, this is the
+                        // shoreline, and it wants the foam colour: a beach is
+                        // the one edge in the frame a player uses to judge how
+                        // much road is left.
+                        if (!road_wet) bank_col = pal.foam;
+                        ++g_stats.sea;
+                    }
+                }
+                // The rim and the plateau above a wall, or the bank and the
+                // plain beside open road: the same two quads either way,
+                // because ground_offset already said which one this is.
+                if (gi.wall > 0.0f || gj.wall > 0.0f) {
+                    bank_col = pal.rock[band];
+                    plain_col = pal.rock[band ^ 1];
+                }
+                quad(gi.lip, gj.lip, wj, wi, bank_col);
+                quad(wi, wj, fj, fi, plain_col);
             }
         }
 
@@ -470,29 +763,25 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // is. That is not a decoration: surface_at hands the hover field the
         // waterline out here, so the pod is skimming twelve units above the
         // road at the bottom of TIDEBREAK's trench, and drawing the road it is
-        // nowhere near would put the whole pod under the scenery. Ahead of the
-        // gap test below, because a hole in the road that is under water is
-        // not a hole, it is more water.
+        // nowhere near would put the whole pod under the scenery.
         if (road_wet) {
             // The lane, in the shallows colour with foam down both edges. The
-            // first version drew plain sea here and the racing line simply
-            // stopped existing for a third of the lap: a player cannot aim at
-            // a track that is not drawn, and "the road is under water" is not
-            // a reason to stop telling them where it is. Same three strips the
-            // dashed road uses, so a submerged straight and a dry one are laid
-            // out the same way and read the same way.
+            // first version drew plain sea here and the racing line stopped
+            // existing for a third of the lap: a player cannot aim at a track
+            // that is not drawn, and "the road is under water" is not a reason
+            // to stop telling them where it is. Same three strips the dashed
+            // road uses, so a submerged straight and a dry one are laid out
+            // the same way and read the same way.
             constexpr float k_surf = 0.12f;   // of a half width, each side
             float ai[3], aj[3], bi[3], bj[3];
-            edge_point(t, i, -1.0f + k_surf, ai);
-            edge_point(t, j, -1.0f + k_surf, aj);
-            edge_point(t, i, 1.0f - k_surf, bi);
-            edge_point(t, j, 1.0f - k_surf, bj);
+            edge_at(t, i, -1.0f, half_i * (1.0f - k_surf), 0.0f, ai);
+            edge_at(t, j, -1.0f, half_j * (1.0f - k_surf), 0.0f, aj);
+            edge_at(t, i, 1.0f, half_i * (1.0f - k_surf), 0.0f, bi);
+            edge_at(t, j, 1.0f, half_j * (1.0f - k_surf), 0.0f, bj);
             float li2[3], lj2[3], ri2[3], rj2[3];
             for (int c = 0; c < 3; ++c) {
                 li2[c] = li[c]; lj2[c] = lj[c]; ri2[c] = ri[c]; rj2[c] = rj[c];
             }
-            li2[1] = ai[1] = bi[1] = ri2[1] = wave_i;
-            lj2[1] = aj[1] = bj[1] = rj2[1] = wave_j;
             if (near) {
                 quad(li2, lj2, aj, ai, pal.foam);
                 quad(ai, aj, bj, bi, pal.shallow[band]);
@@ -504,11 +793,36 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
             continue;
         }
 
-        if (a.flags & kGap) continue;   // the jump: no road at all
-
         const uint8_t* col = pal.road[band];
         uint8_t boost_col[3] = {90, 190, 255};
         if (a.flags & kBoost) col = boost_col;
+        // Inside a tunnel everything is in shadow. There is no light model to
+        // ask, so the shadow is the colour: two thirds of it, on the road and
+        // on the roof, which at four bits a channel is two clear steps darker
+        // and reads as being under something.
+        uint8_t shade_col[3];
+        if (tunnel) {
+            for (int c = 0; c < 3; ++c)
+                shade_col[c] = static_cast<uint8_t>(col[c] * 2 / 3);
+            col = shade_col;
+        }
+
+        // The roof, drawn after the walls and before the road so a tunnel is
+        // closed. It is the one piece of geometry in the game that is above the
+        // pod, and the sim knows: race_tick clamps the pod under it, which is
+        // what makes a tunnel a place you cannot glide out of.
+        if (tunnel) {
+            float li3[3], lj3[3], ri3[3], rj3[3];
+            edge_at(t, i, -1.0f, half_i, roof, li3);
+            edge_at(t, j, -1.0f, half_j, roof, lj3);
+            edge_at(t, i, 1.0f, half_i, roof, ri3);
+            edge_at(t, j, 1.0f, half_j, roof, rj3);
+            uint8_t roof_col[3];
+            for (int c = 0; c < 3; ++c)
+                roof_col[c] = static_cast<uint8_t>(pal.rock[band][c] * 3 / 4);
+            quad(li3, lj3, rj3, ri3, roof_col);
+            ++g_stats.cliffs;
+        }
 
         // The road is cut into three strips ACROSS rather than drawn as one
         // quad with a stripe laid on top, and the engine forces that rather
@@ -523,13 +837,26 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         } else {
             constexpr float k_lip = 0.22f;
             float ai[3], aj[3], bi[3], bj[3];
-            edge_point(t, i, -1.0f + k_lip, ai);
-            edge_point(t, j, -1.0f + k_lip, aj);
-            edge_point(t, i, 1.0f - k_lip, bi);
-            edge_point(t, j, 1.0f - k_lip, bj);
-            quad(li, lj, aj, ai, pal.edge);
+            edge_at(t, i, -1.0f, half_i * (1.0f - k_lip), 0.0f, ai);
+            edge_at(t, j, -1.0f, half_j * (1.0f - k_lip), 0.0f, aj);
+            edge_at(t, i, 1.0f, half_i * (1.0f - k_lip), 0.0f, bi);
+            edge_at(t, j, 1.0f, half_j * (1.0f - k_lip), 0.0f, bj);
+            if (wet) {
+                if (wave_i > ai[1]) ai[1] = wave_i;
+                if (wave_i > bi[1]) bi[1] = wave_i;
+                if (wave_j > aj[1]) aj[1] = wave_j;
+                if (wave_j > bj[1]) bj[1] = wave_j;
+            }
+            const uint8_t* edge_col = pal.edge;
+            uint8_t edge_shade[3];
+            if (tunnel) {
+                for (int c = 0; c < 3; ++c)
+                    edge_shade[c] = static_cast<uint8_t>(pal.edge[c] * 2 / 3);
+                edge_col = edge_shade;
+            }
+            quad(li, lj, aj, ai, edge_col);
             quad(ai, aj, bj, bi, col);
-            quad(bi, bj, rj, ri, pal.edge);
+            quad(bi, bj, rj, ri, edge_col);
         }
     }
 }
@@ -612,18 +939,51 @@ struct PodPose {
     float surface;      // world y of that surface
 };
 
+// A unit vector across a strand, perpendicular to it and to the line of sight,
+// which is what makes a flat ribbon face the camera. False when there is no
+// strand at all.
+//
+// A strand pointing AT the camera has no camera facing width: the cross
+// product collapses, and just before it collapses it is a tiny vector whose
+// direction is all rounding. Normalising that swings the ribbon's width
+// through a right angle between one frame and the next, which is the cables
+// and the binder "jittering and randomly teleporting". It is worst exactly
+// where it is most visible, because a cable runs fore and aft and the chase
+// camera looks fore and aft.
+//
+// So near end on, take the width off the world's up instead. Any stable axis
+// will do; up is the one that keeps a nearly vertical ribbon looking like a
+// ribbon.
+bool ribbon_axis(const float a[3], const float b[3], float out[3]) {
+    const float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    // a is already camera relative, so the vector from the camera to it IS it.
+    const float vx = a[0], vy = a[1], vz = a[2];
+    out[0] = d[1] * vz - d[2] * vy;
+    out[1] = d[2] * vx - d[0] * vz;
+    out[2] = d[0] * vy - d[1] * vx;
+    float m = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    const float dl = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    const float vl = std::sqrt(vx * vx + vy * vy + vz * vz);
+    if (dl < 0.0001f || vl < 0.0001f) return false;
+    if (m < 0.15f * dl * vl) {
+        out[0] = -d[2];
+        out[1] = 0.0f;
+        out[2] = d[0];
+        m = std::sqrt(out[0] * out[0] + out[2] * out[2]);
+        if (m < 0.0001f) { out[0] = 1.0f; out[1] = 0.0f; out[2] = 0.0f; m = 1.0f; }
+    }
+    for (int i = 0; i < 3; ++i) out[i] /= m;
+    return true;
+}
+
 // A ribbon that always faces the camera, for the cables and the binder arc. A
 // tube this thin is one pixel wide, so a tube's worth of triangles buys
 // nothing.
 void ribbon(const float a[3], const float b[3], const Camera&, float width,
             const uint8_t col[3], bool lit = true) {
-    float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
-    // a is already camera relative, so the vector from the camera to it IS it.
-    const float vx = a[0], vy = a[1], vz = a[2];
-    float n[3] = {d[1] * vz - d[2] * vy, d[2] * vx - d[0] * vz, d[0] * vy - d[1] * vx};
-    const float m = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-    if (m < 0.0001f) return;
-    for (float& v : n) v = v / m * width;
+    float n[3];
+    if (!ribbon_axis(a, b, n)) return;
+    for (float& v : n) v *= width;
     const float p0[3] = {a[0] - n[0], a[1] - n[1], a[2] - n[2]};
     const float p1[3] = {a[0] + n[0], a[1] + n[1], a[2] + n[2]};
     const float p2[3] = {b[0] + n[0], b[1] + n[1], b[2] + n[2]};
@@ -705,6 +1065,62 @@ void offset_from(const float centre[3], float yaw, float pitch, float roll,
     out[2] = centre[2] + m[6] * dx + m[7] * dy + m[8] * dz;
 }
 
+// The back end of an engine mesh: how far aft the nozzle is and how wide it is
+// there. Read off the mesh rather than written down beside it, because six
+// racers fly six different engines and a table of their lengths is a table
+// that goes stale the first time one of them is reshaped. Twenty vertices,
+// twice a frame.
+struct Tail { float z, r; };
+
+Tail engine_tail(const pse::MeshData& m) {
+    int16_t lo = 0;
+    for (uint16_t i = 0; i < m.vertex_count; ++i)
+        if (m.vertices[i].z < lo) lo = m.vertices[i].z;
+    int16_t wide = 0;
+    const int16_t band = static_cast<int16_t>(m.scale / 12);
+    for (uint16_t i = 0; i < m.vertex_count; ++i) {
+        if (m.vertices[i].z > lo + band) continue;
+        const int16_t x = m.vertices[i].x < 0
+            ? static_cast<int16_t>(-m.vertices[i].x) : m.vertices[i].x;
+        if (x > wide) wide = x;
+    }
+    const float unit = m.scale > 0 ? 1.0f / m.scale : 0.0f;
+    return {lo * unit, wide * unit};
+}
+
+// The exhaust, and it is the other half of turning the engines round.
+//
+// They used to be rockets: pointed at the front, flaring to a wide bell at the
+// back. A podracer engine is a turbine, so the blunt intake is forward now and
+// the nozzle is aft. That is the right way round, and it puts the NARROW end
+// permanently on screen, because a chase camera only ever sees the back of
+// these. A dark taper is not what the back of a running engine looks like.
+//
+// A TAPER along the engine's own axis, not a square on the end of it: a flame
+// is read from its shape, wide where it leaves and thin where it runs out.
+// Unlit, in the racer's own binder colour, because it is light rather than
+// paint and has neither a livery nor an angle. Four triangles a nozzle, at
+// full detail only.
+void flare(const float at[3], float yaw, float pitch, float roll,
+           const Tail& tail, float scale, const uint8_t col[3]) {
+    const float wide = tail.r * 0.62f * scale;
+    const float thin = tail.r * 0.16f * scale;
+    float mouth[3], tip[3];
+    offset_from(at, yaw, pitch, roll, 0.0f, 0.0f, tail.z + tail.r * 0.25f, mouth);
+    offset_from(at, yaw, pitch, roll, 0.0f, 0.0f,
+                tail.z - tail.r * 2.4f * scale, tip);
+    float n[3];
+    if (!ribbon_axis(mouth, tip, n)) return;
+    const float q[4][3] = {
+        {mouth[0] - n[0] * wide, mouth[1] - n[1] * wide, mouth[2] - n[2] * wide},
+        {mouth[0] + n[0] * wide, mouth[1] + n[1] * wide, mouth[2] + n[2] * wide},
+        {tip[0] + n[0] * thin, tip[1] + n[1] * thin, tip[2] + n[2] * thin},
+        {tip[0] - n[0] * thin, tip[1] - n[1] * thin, tip[2] - n[2] * thin},
+    };
+    quad(q[0], q[1], q[2], q[3], col, false);
+    quad(q[3], q[2], q[1], q[0], col, false);   // a flame has no outside either
+}
+
 // How far a point in a part's own frame lies outside that part's box. Zero
 // means the anchor is inside the mesh.
 void note_anchor(float dx, float dy, float dz, const float half[3]) {
@@ -738,8 +1154,23 @@ void local_point(const PodPose& p, float dx, float dy, float dz, float out[3]) {
 // hardest failure in this engine to attribute to its cause.
 void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     const Racer& rc = racer(p.racer);
-    const pse::MeshData& engine_mesh = rc.heavy ? models::twinflare::engine_heavy
-                                                : models::twinflare::engine_slim;
+    // One pod per racer, indexed by the roster rather than chosen by a bit.
+    // Both tables are in the order sim.cpp lists the racers in, which is the
+    // order Racer::mesh counts in; a mismatch here is six pods wearing each
+    // other's engines, so it is worth the two lines that say so.
+    static const pse::MeshData* const k_engines[k_racer_count] = {
+        &models::twinflare::engine_scarab, &models::twinflare::engine_wisp,
+        &models::twinflare::engine_anvil, &models::twinflare::engine_needle,
+        &models::twinflare::engine_nightjar, &models::twinflare::engine_fang,
+    };
+    static const pse::MeshData* const k_cockpits[k_racer_count] = {
+        &models::twinflare::cockpit_scarab, &models::twinflare::cockpit_wisp,
+        &models::twinflare::cockpit_anvil, &models::twinflare::cockpit_needle,
+        &models::twinflare::cockpit_nightjar, &models::twinflare::cockpit_fang,
+    };
+    const int shape = rc.mesh % k_racer_count;
+    const pse::MeshData& engine_mesh = *k_engines[shape];
+    const pse::MeshData& cockpit_mesh = *k_cockpits[shape];
     // THE ENGINES LEAD AND THE COCKPIT TRAILS, and until now neither did:
     // every part was drawn at the pod's own yaw, so the whole thing rotated
     // as one rigid object and the two mass model the sim is running was
@@ -788,7 +1219,7 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     }
 
     if (lod == 0) {
-        g_renderer->draw_mesh(models::twinflare::cockpit, cockpit[0], cockpit[1],
+        g_renderer->draw_mesh(cockpit_mesh, cockpit[0], cockpit[1],
                               cockpit[2], cab.yaw, 1.0f,
                               rc.colour[0][0], rc.colour[0][1], rc.colour[0][2],
                               cab.pitch, 0, cab.roll);
@@ -846,8 +1277,17 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         // before they were nailed down. The middle is free to move; the two
         // ends are welded to the engines.
         if (p.dead == 0) {
-            const uint8_t hot[3] = {248, 206, 255};
-            const uint8_t glow[3] = {214, 120, 250};
+            // The racer's own binder colour, and a hotter core struck from
+            // it. Six pods in a pack were six identical violet arcs; the arc
+            // is the brightest thing on a pod and the only part of it visible
+            // from directly behind, so it is also the cheapest way to know who
+            // just went past.
+            const uint8_t glow[3] = {rc.arc[0], rc.arc[1], rc.arc[2]};
+            const uint8_t hot[3] = {
+                static_cast<uint8_t>(rc.arc[0] + (255 - rc.arc[0]) * 3 / 5),
+                static_cast<uint8_t>(rc.arc[1] + (255 - rc.arc[1]) * 3 / 5),
+                static_cast<uint8_t>(rc.arc[2] + (255 - rc.arc[2]) * 3 / 5),
+            };
             // Two strands one tick in four, so the arc crackles rather than
             // doubling. Cheap on average and the cost lands on the frames that
             // can afford it, since a second strand is never up two frames
@@ -861,11 +1301,27 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                     // the middle, and it costs a multiply instead of a
                     // software trig call on a chip with no FPU.
                     const float taper = 4.0f * u * (1.0f - u);
-                    const uint32_t h = (static_cast<uint32_t>(k) * 2654435761u)
-                                     ^ ((p.tick >> 1) + strand * 7919u) * 2246822519u;
-                    const float jx = (static_cast<int>((h >> 6) & 31) - 15) * taper * 0.030f;
-                    const float jy = (static_cast<int>((h >> 13) & 31) - 15) * taper * 0.036f;
-                    const float jz = (static_cast<int>((h >> 21) & 31) - 15) * taper * 0.026f;
+                    // The strand MOVES between shapes rather than jumping
+                    // between them. It used to pick a fresh random offset
+                    // every other tick and snap to it, which at sixty frames a
+                    // second is thirty teleports: not an arc, a fault. Two
+                    // hashes a quarter of a second apart, and the strand slides
+                    // from one to the other.
+                    const uint32_t step = p.tick / 6;
+                    const float mix = (p.tick % 6) * (1.0f / 6.0f);
+                    const uint32_t seed = (static_cast<uint32_t>(k) * 2654435761u)
+                                        ^ (strand * 7919u);
+                    const uint32_t h0 = (seed ^ step) * 2246822519u;
+                    const uint32_t h1 = (seed ^ (step + 1u)) * 2246822519u;
+                    const auto pick = [&](int shift, float amount) {
+                        const float from = static_cast<int>((h0 >> shift) & 31) - 15;
+                        const float to = static_cast<int>((h1 >> shift) & 31) - 15;
+                        return (from + (to - from) * mix) * taper * amount;
+                    };
+                    const float jx = pick(6, 0.034f);
+                    const float jy = pick(13, 0.040f);
+                    const float jz = pick(21, 0.028f);
+                    const uint32_t h = h0;
                     float arc[3];
                     // Reaching all the way to the engines rather than stopping
                     // short of them, for the same reason the cables now do.
@@ -893,6 +1349,18 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                               static_cast<uint8_t>(rc.colour[0][1] * tint / 255),
                               static_cast<uint8_t>(rc.colour[0][2] * tint / 255),
                               eng.pitch, p.boosting ? 90 : 0, eng.roll);
+        if (lod == 0) {
+            // Dimmer as the engine wears, so a burn losing its colour is the
+            // pod saying where the damage is without a second bar on the HUD.
+            const Tail tail = engine_tail(engine_mesh);
+            const uint8_t fire[3] = {
+                static_cast<uint8_t>(rc.arc[0] * (55.0f + 45.0f * wear) / 100.0f),
+                static_cast<uint8_t>(rc.arc[1] * (45.0f + 55.0f * wear) / 100.0f),
+                static_cast<uint8_t>(rc.arc[2] * (35.0f + 65.0f * wear) / 100.0f),
+            };
+            flare(at, eng.yaw, eng.pitch, eng.roll, tail,
+                  p.boosting ? 1.45f : 0.85f, fire);
+        }
     }
 
     // Spray last, so a plume sits in front of the hull that threw it rather
@@ -1077,8 +1545,69 @@ void draw_bar(const pse::RenderTarget& target, int x, int y, int w, int value, i
     pse::fill_rect(target, x, y, w * value / of, 5, 232, 138, 43);
 }
 
+// The pod on the pod select screen, turning.
+//
+// Six racers described by a name, a pilot and six bars, and nothing at all
+// about the thing you were choosing: two of the six fly a different engine
+// mesh, all six are a different colour, and none of that reached the one
+// screen where it matters. It is the same draw_pod the race uses, at the same
+// level of detail, so what turns here is exactly what you get.
+//
+// The camera sits above and behind, which is the angle the race is played
+// from: recognising your pod at speed from a picture taken from somewhere else
+// is a thing to have to learn.
+constexpr float k_show_dist = 9.4f;     // back from the pod
+constexpr float k_show_high = 3.0f;     // and above it
+constexpr float k_show_pitch = -0.44f;  // tilted down past it, so it sits high
+constexpr uint32_t k_show_turn_ms = 5200;   // one revolution
+// A podracer is not centred on its own origin: the engines reach five units
+// forward of it and the cockpit two and a half back. Spun about the origin it
+// swings round the screen like something on a string. Offsetting the pose by
+// the middle of that puts the turn where the eye expects it, and it also buys
+// a unit of near plane margin, which at ten units back is not spare.
+constexpr float k_show_centre = 1.2f;
+
+void draw_pod_showcase(const Chrome& chrome) {
+    PodPose p{};
+    p.yaw = (chrome.time_ms % k_show_turn_ms) * (6.2831853f / k_show_turn_ms);
+    p.x = -std::sin(p.yaw) * k_show_centre;
+    p.y = 0.0f;
+    p.z = -std::cos(p.yaw) * k_show_centre;
+    p.racer = chrome.pod;
+    p.engine[0] = p.engine[1] = 1000;
+    p.engine_max = 1000;
+    // The clock the binder arc crackles on. Slower than a race tick, because a
+    // pod standing still wants a hum rather than a fault.
+    p.tick = chrome.time_ms / 24;
+    Camera cam{};
+    cam.pitch = k_show_pitch;
+    draw_pod(p, 0, cam);
+
+    // Where it landed on screen, for the layout test. The corners of the pod's
+    // own box, turned with it and projected: eight projections on a menu, and
+    // the only way to say "it fits" as a number rather than as an opinion.
+    // Half extents match what draw_pod actually places: engines out to 3.3 and
+    // forward to 5.05, cockpit back to 2.6, the binder arc the highest thing on
+    // it.
+    g_stats.showcase_top = 32767;
+    g_stats.showcase_bottom = -32768;
+    const float box[3][2] = {{-3.3f, 3.3f}, {-0.7f, 1.4f}, {-2.6f, 5.05f}};
+    for (int corner = 0; corner < 8; ++corner) {
+        float at[3];
+        local_point(p, box[0][corner & 1], box[1][(corner >> 1) & 1],
+                    box[2][(corner >> 2) & 1], at);
+        int sx = 0, sy = 0, sz = 0;
+        if (!g_renderer->project(at[0], at[1], at[2], sx, sy, sz)) continue;
+        if (sy < g_stats.showcase_top) g_stats.showcase_top = static_cast<int16_t>(sy);
+        if (sy > g_stats.showcase_bottom) g_stats.showcase_bottom = static_cast<int16_t>(sy);
+    }
+}
+
 void draw_pod_select(const Chrome& chrome, const pse::RenderTarget& target) {
     const Racer& rc = racer(chrome.pod);
+    // A band behind the name, because the pod turns under it and four bright
+    // letters over an engine are unreadable exactly when the engine is closest.
+    pse::fill_rect(target, 0, 0, k_w, 25, 14, 16, 26);
     pse::draw_text_centred(target, rc.name, 60, 6, 240, 244, 250);
     pse::draw_text_centred(target, rc.pilot, 60, 16, 130, 138, 156);
     static const char* k_labels[6] = {"TOP", "ACC", "GRIP", "COOL", "FIX", "HULL"};
@@ -1203,12 +1732,38 @@ void render_frame(const Race& race, const Chrome& chrome,
     // Menus that are lists get a flat ground and no world at all. Drawing a
     // race behind a menu costs a full frame of geometry to be looked at
     // through a panel.
-    if (chrome.screen == Screen::PodSelect || chrome.screen == Screen::TrackSelect
-        || chrome.screen == Screen::Results) {
+    // Pod select draws a real pod, so it takes the 3D path: a camera, a depth
+    // buffer and the same draw_pod the race uses. Immediate mode rather than
+    // collect and split, because one pod is eighty six triangles and handing
+    // half of them to the other core costs more than it saves.
+    if (chrome.screen == Screen::PodSelect) {
+        g_stats = RenderStats{};
+        g_palette = &pal;
+        raster.begin_frame(target);
+        raster.clear_gradient(20, 23, 38, 9, 10, 17);
+        renderer.set_depth_range(k_near, k_far);
+        renderer.set_fov(k_fov);
+        // The camera is at the origin and the pod is placed relative to it, the
+        // same floating origin the race runs under, so nothing in draw_pod
+        // needs to know which screen it is on.
+        g_origin[0] = 0.0f;
+        g_origin[1] = k_show_high;
+        g_origin[2] = -k_show_dist;
+        g_forward[0] = 0.0f;
+        g_forward[1] = std::sin(k_show_pitch);
+        g_forward[2] = std::cos(k_show_pitch);
+        Camera show{};
+        show.pitch = k_show_pitch;
+        renderer.set_camera_basis(0.0f, 0.0f, 0.0f, camera_basis(show));
+        draw_pod_showcase(chrome);
+        draw_pod_select(chrome, target);
+        return;
+    }
+
+    if (chrome.screen == Screen::TrackSelect || chrome.screen == Screen::Results) {
         raster.begin_frame(target);
         raster.clear_gradient(18, 20, 32, 10, 11, 18);
-        if (chrome.screen == Screen::PodSelect) draw_pod_select(chrome, target);
-        else if (chrome.screen == Screen::TrackSelect) {
+        if (chrome.screen == Screen::TrackSelect) {
             draw_track_map(t, target, 12, 92);
             pse::fill_rect(target, 0, 0, k_w, 11, 10, 12, 18);
             pse::draw_text_centred(target, t.name, 60, 2, 240, 244, 250);
@@ -1294,5 +1849,58 @@ void render_frame(const Race& race, const Chrome& chrome,
 }
 
 const RenderStats& render_stats() { return g_stats; }
+
+bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y) {
+    // The probe runs in world space, so the floating origin is stood down for
+    // the duration. Legitimate here and nowhere else: this is called from the
+    // tests between frames, never while one is being drawn, and it restores
+    // what it found. The alternative is a second copy of the band arithmetic,
+    // which is exactly the thing that let the drawn ground and the driven
+    // ground drift apart in the first place.
+    float saved[3] = {g_origin[0], g_origin[1], g_origin[2]};
+    g_origin[0] = g_origin[1] = g_origin[2] = 0.0f;
+
+    const float px = to_world(x), pz = to_world(z);
+    const int n = t.node_count;
+    bool any = false;
+    // Wide enough to catch a strip from a node the point is not beside, which
+    // is the whole failure this exists to detect.
+    for (int k = -40; k <= 40; ++k) {
+        const int i = ((hint + k) % n + n) % n;
+        const int j = (i + 1) % n;
+        if (t.nodes[i].flags & kGap) continue;   // a hole draws no ground
+        const float half_i = to_world(node_half_width(t.nodes[i]));
+        const float half_j = to_world(node_half_width(t.nodes[j]));
+        float li[3], lj[3], ri[3], rj[3];
+        edge_at(t, i, -1.0f, half_i, 0.0f, li);
+        edge_at(t, j, -1.0f, half_j, 0.0f, lj);
+        edge_at(t, i, 1.0f, half_i, 0.0f, ri);
+        edge_at(t, j, 1.0f, half_j, 0.0f, rj);
+        const float sea = sea_level(t);
+        float* road[4] = {li, lj, ri, rj};
+        for (float* p : road) if (p[1] < sea) p[1] = sea;
+        float here;
+        if (quad_height(li, lj, rj, ri, px, pz, here)) {
+            if (!any || here > y) { y = here; any = true; }
+        }
+        for (int side = 0; side < 2; ++side) {
+            const float sgn = side ? 1.0f : -1.0f;
+            GroundBand gi, gj;
+            ground_band(t, i, sgn, gi);
+            ground_band(t, j, sgn, gj);
+            // The same two quads draw_road draws, whether that is a bank and a
+            // plain or a canyon rim and the plateau above it. One construction,
+            // so a test cannot be measuring a world the player never sees.
+            if (quad_height(gi.lip, gj.lip, gj.shoulder, gi.shoulder, px, pz, here)
+                || quad_height(gi.shoulder, gj.shoulder, gj.plain, gi.plain,
+                               px, pz, here)) {
+                if (!any || here > y) { y = here; any = true; }
+            }
+        }
+    }
+
+    g_origin[0] = saved[0]; g_origin[1] = saved[1]; g_origin[2] = saved[2];
+    return any;
+}
 
 }  // namespace twinflare

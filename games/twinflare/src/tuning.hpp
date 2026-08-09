@@ -61,6 +61,40 @@ constexpr int32_t k_hover_reach = fp(3, 400);  // above this clearance, no field
 // and then stops dead rather than passing through.
 constexpr int32_t k_hover_floor = fp(1, 100);
 
+// ---- the shape of the world beside the road --------------------------------
+// The cross section, and these four numbers are the ONLY description of it.
+// They were not, and that is the bug they exist to close: the sim dropped its
+// shoulder over twelve units of width while the renderer drew the same
+// shoulder over three and a bit, and a walled stretch was DRAWN four units
+// above the height the hover field actually held the pod at. Measured over a
+// lap of the desert, the pod was drawn inside the scenery at 17 of 198 sampled
+// positions off the racing line, by as much as four units. Off the road, the
+// game showed the player one world and drove them around a different one.
+//
+// sim.cpp's ground_offset() turns these into a height, and both the hover
+// field and the renderer's quads read that one function.
+constexpr int32_t k_shoulder_run = fp(12);    // how far out the shoulder falls
+constexpr int32_t k_shoulder_drop = fp(3);    // and how far down it has got
+// A canyon wall, and the height is a legibility decision twice over. The sim
+// stops a pod dead at the road edge on a walled stretch; four units of drawn
+// kerb did not say so, and a pod pushed back by something it could see over
+// reads as the game cheating.
+//
+// Eleven and not the eighteen it was first drawn at. Eighteen of rock either
+// side of a twenty unit canyon fills the whole frame above the road: the
+// screen goes brown, there is no sky to judge the corner against, and nothing
+// passes the edge of vision to say how fast you are going. Eleven still towers
+// over a pod that hovers two units up, and leaves the skyline in shot.
+constexpr int32_t k_wall_height = fp(11);
+// Headroom in a tunnel. The pod hovers 2.2 up and is about a unit tall, so
+// this is room to move and not room to fly: a tunnel takes the sky away, which
+// is the whole point of putting one on a track where the answer to everything
+// else is to pitch up and glide.
+constexpr int32_t k_tunnel_height = fp(7);
+// How deep a chasm is drawn. Below the crash floor on purpose, so what the
+// player sees under them is somewhere they have already died by reaching.
+constexpr int32_t k_chasm_depth = fp(34);
+
 // ---- gravity and lift ------------------------------------------------------
 constexpr int32_t k_gravity = per_s2(fp(26));
 // Glide, which the brief asks for by name: nose up and stay airborne longer.

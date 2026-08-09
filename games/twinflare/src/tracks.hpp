@@ -9,11 +9,12 @@ namespace twinflare {
 // Feature flags. These must match tools/gen_twinflare_tracks.py, which is the
 // only thing that writes them.
 enum : uint8_t {
-    kRamp  = 1,
-    kGap   = 2,
-    kBoost = 4,
-    kWall  = 8,
-    kShort = 16,
+    kRamp   = 1,
+    kGap    = 2,
+    kBoost  = 4,
+    kWall   = 8,
+    kShort  = 16,
+    kTunnel = 32,
 };
 
 // One node of the road's centreline. Eight bytes, in flash, never copied into

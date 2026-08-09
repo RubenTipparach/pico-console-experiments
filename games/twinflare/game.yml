@@ -19,7 +19,16 @@ controls:
   - "A: pause"
 
 models:
-  - engine_slim.obj
-  - engine_heavy.obj
-  - cockpit.obj
+  - engine_scarab.obj
+  - engine_wisp.obj
+  - engine_anvil.obj
+  - engine_needle.obj
+  - engine_nightjar.obj
+  - engine_fang.obj
+  - cockpit_scarab.obj
+  - cockpit_wisp.obj
+  - cockpit_anvil.obj
+  - cockpit_needle.obj
+  - cockpit_nightjar.obj
+  - cockpit_fang.obj
   - rock.obj
