@@ -352,6 +352,158 @@ void test_the_binder_arc_moves() {
     std::printf("  the arc redrew differently on %d of 5 consecutive ticks\n", moved);
 }
 
+void test_the_drawn_ground_is_the_driven_ground() {
+    // Reported from playing the desert: "the pod keeps sinking into the ground
+    // when I go off road." It was, and the sim was innocent. There were two
+    // descriptions of the world's cross section and they did not match.
+    //
+    //   The shoulder fell three units over TWELVE of width in surface_at and
+    //   over three and a bit in the renderer, so just off the tarmac the drawn
+    //   ground was up to two units under the surface the field held the pod on.
+    //
+    //   A walled stretch was drawn as a four unit kerb while surface_at
+    //   returned road level, so the pod hovered inside a ledge it could see.
+    //
+    //   Every band took its normal from its own outgoing segment, so no two
+    //   strips shared an edge: a wedge of open sky between them on the outside
+    //   of every corner and a wedge of overlap on the inside, the road included.
+    //
+    //   And the plain reached fourteen half widths, 133 units, on a circuit
+    //   whose tightest corner has a radius of 46. Past the radius consecutive
+    //   nodes' offsets cross and a strip folds back over the road, drawn at its
+    //   OWN node's height over ground belonging to a corner the pod has not
+    //   reached. Measured, that put the drawn ground 7.5 units above the pod at
+    //   38 of 197 sampled positions.
+    //
+    // ground_offset() is the single description now, the normals are mitred,
+    // the plain is clamped short of the fold, and this walks every track asking
+    // both halves the same question at the same point.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        float worst_high = -1e9f, worst_low = 1e9f;
+        int buried = 0, bare = 0, inside_rock = 0, samples = 0;
+        for (uint16_t i = 0; i < t.node_count; i += 3) {
+            const TrackNode& n = t.nodes[i];
+            if (n.flags & kGap) continue;          // a hole, checked below
+            const TrackNode& b = t.nodes[(i + 1) % t.node_count];
+            const int32_t head = fatan2(node_x(b) - node_x(n), node_z(b) - node_z(n));
+            const int32_t half = node_half_width(n);
+            // Half a node along the segment. A sample exactly on a node lands
+            // on the line where two cells meet, and which of them answers is
+            // then a rounding question rather than a geometry one.
+            const int32_t mx = (node_x(n) + node_x(b)) / 2;
+            const int32_t mz = (node_z(n) + node_z(b)) / 2;
+            for (int k = 0; k < 12; ++k) {
+                // Out to twenty four units past the edge. The shoulder is fully
+                // down at twelve, so this is the whole of the ground a pod that
+                // ran wide is on and a fair margin past it. Further out than
+                // this the answer stops being well defined at all: HOARFROST
+                // and TIDEBREAK both run back alongside themselves inside
+                // eighty units, so the ground between two carriageways belongs
+                // to both, while surface_at deliberately only searches a window
+                // of nodes around the pod and can only ever name one of them.
+                const int32_t over = fp(2) + fp(22) * (k / 2) / 5;
+                const int32_t off = (half + over) * ((k & 1) ? 1 : -1);
+                const int32_t x = mx + ftrig(off, fcos(head));
+                const int32_t z = mz - ftrig(off, fsin(head));
+                const Surface s = surface_at(t, i, x, z);
+                if (s.y < fp(-1000)) continue;
+                // Inside a canyon wall is not somewhere the pod can be: the sim
+                // pushes it out every tick it tries.
+                if (s.wall) { ++inside_rock; continue; }
+                float dy = 0.0f;
+                if (!drawn_ground(t, i, x, z, dy)) { ++bare; continue; }
+                const float gap = dy - s.y / 65536.0f;
+                if (gap > worst_high) worst_high = gap;
+                if (gap < worst_low) worst_low = gap;
+                // The pod floats k_hover_height above the surface, so anything
+                // drawn higher than that is scenery the pod is inside of.
+                if (gap > k_hover_height / 65536.0f) ++buried;
+                ++samples;
+            }
+        }
+        check(buried == 0, "the pod is never drawn inside the ground off the road");
+        check(bare == 0, "there is ground drawn everywhere the pod can hover");
+        // And the drawn ground must not sag under the driven one either, or the
+        // pod floats over a visible hole with its own shadow nowhere near it.
+        check(worst_low > -1.2f, "the drawn ground does not sag under the driven one");
+        check(samples > 500, "enough of the track was actually sampled");
+        std::printf("  %-10s off road, drawn minus driven: %+.2f to %+.2f over %d "
+                    "samples (%d inside rock), buried %d, no ground %d\n",
+                    t.name, worst_low, worst_high, samples, inside_rock, buried, bare);
+    }
+}
+
+void test_a_hole_in_the_road_is_drawn_as_a_hole() {
+    // The other half of the same report: "the gaps are missing geometry for the
+    // cliff walls." surface_at has always said a gap has no surface at ANY
+    // distance to the side, which makes it a canyon across the world rather
+    // than a pit in the tarmac. Nothing drew that. The plain was laid straight
+    // across, so going round the jump meant flying over solid desert and
+    // falling through it, and going at the jump meant watching the road stop at
+    // nothing at all.
+    int chasms = 0;
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        int checked = 0;
+        for (uint16_t i = 0; i < t.node_count; ++i) {
+            if (!(t.nodes[i].flags & kGap)) continue;
+            // Inside the run, not at its lips: the lip is where the road ends,
+            // and the road is allowed to reach it.
+            if (!(t.nodes[(i + 1) % t.node_count].flags & kGap)) continue;
+            if (!(t.nodes[(i + t.node_count - 1) % t.node_count].flags & kGap)) continue;
+            const TrackNode& n = t.nodes[i];
+            // A gap under water is not a gap, it is more water.
+            if (has_water(t) && node_y(n) < water_level(t)) continue;
+            const TrackNode& b = t.nodes[(i + 1) % t.node_count];
+            const int32_t head = fatan2(node_x(b) - node_x(n), node_z(b) - node_z(n));
+            const int32_t mx = (node_x(n) + node_x(b)) / 2;
+            const int32_t mz = (node_z(n) + node_z(b)) / 2;
+            static const int32_t k_offsets[4] = {fp(0), fp(9), fp(20), fp(38)};
+            for (int32_t off : k_offsets) {
+                const int32_t x = mx + ftrig(off, fcos(head));
+                const int32_t z = mz - ftrig(off, fsin(head));
+                float dy = 0.0f;
+                check(!drawn_ground(t, i, x, z, dy),
+                      "nothing solid is drawn over a hole in the road");
+                ++checked;
+            }
+        }
+        chasms += checked;
+        if (checked) std::printf("  %-10s %d points inside its chasms, none drawn "
+                                 "as ground\n", t.name, checked);
+    }
+    check(chasms > 0, "there are chasms to check");
+
+    // And the walls are actually emitted, on every frame where one is in view.
+    const Track& t = track(0);
+    Race race;
+    race_init(race, 0, 0);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    int gap_node = -1;
+    for (uint16_t i = 0; i < t.node_count; ++i)
+        if (t.nodes[i].flags & kGap) { gap_node = i; break; }
+    check(gap_node >= 0, "the desert has a jump");
+    if (gap_node < 0) return;
+    int with_cliffs = 0, frames = 0;
+    for (int i = 0; i < 5000; ++i) {
+        drive(race, t, in);
+        race_tick(race, in);
+        const int ahead = ((gap_node - race.pod.node) % t.node_count
+                           + t.node_count) % t.node_count;
+        if (ahead > 10 || race.pod.wreck_ticks) continue;
+        render_frame(race, chrome, target());
+        ++frames;
+        if (render_stats().cliffs > 0) ++with_cliffs;
+    }
+    check(frames > 0, "the drive reached the jump");
+    check(with_cliffs == frames, "every frame approaching the jump draws its walls");
+    std::printf("  %d of %d frames approaching the desert jump drew cliff faces\n",
+                with_cliffs, frames);
+}
+
 }  // namespace
 
 int main() {
@@ -362,6 +514,8 @@ int main() {
     test_the_cables_are_attached_to_something();
     test_the_sea_is_drawn_where_it_is_driven();
     test_the_binder_arc_moves();
+    test_the_drawn_ground_is_the_driven_ground();
+    test_a_hole_in_the_road_is_drawn_as_a_hole();
 
     if (g_failures) {
         std::printf("%d failure(s)\n", g_failures);

@@ -62,6 +62,7 @@ struct Pod {
     bool scraping;
     bool on_road;
     bool over_water;             // the surface under the field is the sea
+    bool roofed;                 // under a tunnel, so there is a ceiling
     int16_t wreck_ticks;
     int16_t flash_ticks;
     int16_t blast[2];
@@ -108,7 +109,33 @@ struct Surface {
     bool road;
     bool wall;
     bool water;     // the sea won: the field is pushing off water, not rock
+    bool roofed;    // a tunnel: there is a ceiling as well as a floor
+    int32_t roof;   // and this is where it is
 };
+
+// How high the rock stands at the road edge at a node: nothing on open desert,
+// a canyon wall on a walled one, a tunnel's own height on a roofed one.
+int32_t node_wall(const TrackNode& n);
+
+// How high the ground is `over` units past the road edge, relative to the
+// road's own height at that point, given the rock standing at that edge.
+//
+// THE ONE DESCRIPTION OF THE WORLD'S CROSS SECTION, and it is a public
+// function rather than four lines inside surface_at because the renderer has
+// to draw the same shape. There used to be two descriptions: the sim fell
+// three units over twelve of width, the renderer fell the same three over
+// three and a bit, and on a walled stretch the renderer drew a four unit kerb
+// where the sim held the pod at road level. A pod off the racing line was
+// drawn inside the scenery at one sample in twelve. Two answers for the same
+// piece of ground, and the eye believes the one it can see.
+//
+// A wall is TERRAIN here, not a special case: past the road edge the ground is
+// simply the top of the rock, so the same function describes a canyon rim and
+// a desert shoulder. That is what lets a canyon end without a seam. `wall_h`
+// is interpolated along the segment, so a wall rises out of the desert and
+// sinks back into it over eight units, and the pod can drive over the low ends
+// of that taper because the surface out there really is that low.
+int32_t ground_offset(int32_t wall_h, int32_t over);
 Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z);
 
 // Nearest centreline node, searched outward from a hint. On the device this is

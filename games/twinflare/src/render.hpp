@@ -64,7 +64,21 @@ struct RenderStats {
     // feature silently absent.
     uint16_t sea;
     uint16_t spray;
+    // Vertical faces: canyon walls, tunnel sides and roofs, and the two lips of
+    // a chasm. Counted because a hole in the road with no walls around it and a
+    // hole in the road with walls look the same from every angle except the one
+    // the player flies at it from.
+    uint16_t cliffs;
 };
 const RenderStats& render_stats();
+
+// The height of the ground the renderer DRAWS at a world point, or false where
+// it draws nothing. Exists for the host tests, because the drawn ground and
+// the driven ground disagreeing is invisible in a still frame and was the
+// worst thing about the desert: measured over a lap, the pod was drawn inside
+// the scenery at one sampled position in twelve off the racing line, by up to
+// four units, and beside a jump the plain was drawn straight across a hole the
+// sim would drop you through.
+bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y);
 
 }  // namespace twinflare

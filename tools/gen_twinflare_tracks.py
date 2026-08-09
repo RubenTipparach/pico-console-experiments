@@ -30,11 +30,33 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from trackshape import NODE_SPACING, measure, plot, relax, report, sample  # noqa: E402
 
 # Feature flags, and they must match games/twinflare/src/tracks.hpp.
-F_RAMP, F_GAP, F_BOOST, F_WALL, F_SHORT = 1, 2, 4, 8, 16
+F_RAMP, F_GAP, F_BOOST, F_WALL, F_SHORT, F_TUNNEL = 1, 2, 4, 8, 16, 32
 
-# Half widths, in world units. A walled section is narrower because the walls
-# are the point; a shortcut is wider because it has to be worth aiming at.
-HALF_WIDTH = {"default": 9.5, "wall": 8.5, "short": 11.0}
+# How high a ramp lifts the road above the elevation curve, and how far past
+# its own lip it stays lifted.
+#
+# A ramp used to be a FLAG AND NOTHING ELSE. Nothing in the sim read it and
+# nothing in the renderer drew it: it coloured two hundred and twenty four
+# units of the desert's minimap orange and changed not one thing about driving
+# there. The gap on the desert sits at 0.255 of the lap and the "ramp" at 0.20,
+# which is to say the launcher for the jump was flat ground, and the only
+# reason the jump worked at all is that a podracer is fast.
+#
+# So a ramp is elevation now, added on top of the track's own profile: up over
+# its first two thirds, held for the last third, and then nothing, so the road
+# drops away at the lip and the pod keeps going. That is a jump.
+RAMP_RISE = 5.0
+
+
+# Half widths, in world units. A shortcut is wider because it has to be worth
+# aiming at.
+#
+# A walled stretch is no longer NARROWER than open road. It was, on the theory
+# that the walls are the point, and with real canyon walls on it that made a
+# corridor seventeen units across between two cliffs: unreadable at 120 pixels
+# and unracable next to five rivals. The canyon is the widest thing on the
+# track now, and the walls do the work of making it feel tight.
+HALF_WIDTH = {"default": 9.5, "wall": 11.0, "short": 11.0}
 
 
 TRACKS = [
@@ -51,10 +73,25 @@ TRACKS = [
             (-200, -104), (-60, -130),
         ],
         elevation=[0, 0, 4, 10, 6, -2, -8, -4, 2, 6, 2, -2, 0],
+        # A lap with something happening on it. Seventy two percent of this
+        # circuit used to be bare road with a flag-only "ramp" on some of it,
+        # which measured out as one jump, one 208 unit walled stretch and
+        # nothing else in 2,408 units.
+        #
+        # The ramp now ENDS where the gap starts, node for node, because a
+        # launcher three nodes short of the hole is a launcher for nothing. The
+        # canyon runs long enough to be a place rather than a moment, the
+        # tunnel takes the sky away in the middle of the lap, and the second
+        # canyon closes it in again before the line.
         features=[
-            (0.06, 26, F_BOOST), (0.20, 110, F_RAMP), (0.255, 56, F_GAP),
-            (0.36, 210, F_WALL), (0.50, 140, F_SHORT), (0.63, 110, F_RAMP),
-            (0.78, 26, F_BOOST),
+            (0.06, 26, F_BOOST),
+            (0.155, 110, F_RAMP), (0.2027, 56, F_GAP),
+            (0.30, 250, F_WALL),
+            (0.45, 140, F_SHORT),
+            (0.56, 130, F_TUNNEL),
+            (0.66, 110, F_RAMP),
+            (0.80, 26, F_BOOST),
+            (0.86, 160, F_WALL),
         ],
     ),
     dict(
@@ -148,12 +185,31 @@ def build(track):
         for k in range(span):
             flags[(start + k) % count] |= flag
 
+    # Ramps, as real elevation. Each contiguous run of ramp nodes becomes a
+    # slope: up over its first two thirds, flat for the last third so the pod
+    # is level when it leaves, and then the road simply is not lifted any more,
+    # which is what makes the lip a lip.
+    lift = [0.0] * count
+    i = 0
+    while i < count:
+        if not (flags[i] & F_RAMP):
+            i += 1
+            continue
+        run = 0
+        while run < count and (flags[(i + run) % count] & F_RAMP):
+            run += 1
+        for k in range(run):
+            u = (k + 1) / run
+            lift[(i + k) % count] = RAMP_RISE * min(1.0, u / 0.67)
+        i += run
+
     nodes = []
     for i, (x, z) in enumerate(points):
         f = flags[i]
-        hw = (HALF_WIDTH["wall"] if f & F_WALL else
+        hw = (HALF_WIDTH["wall"] if f & (F_WALL | F_TUNNEL) else
               HALF_WIDTH["short"] if f & F_SHORT else HALF_WIDTH["default"])
-        nodes.append(dict(x=x, z=z, y=elevation_at(track["elevation"], i / count),
+        nodes.append(dict(x=x, z=z,
+                          y=elevation_at(track["elevation"], i / count) + lift[i],
                           hw=hw, flags=f))
     return control, nodes, total
 

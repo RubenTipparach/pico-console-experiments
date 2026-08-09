@@ -133,12 +133,43 @@ uint16_t nearest_node(const Track& t, uint16_t hint, int32_t x, int32_t z) {
     return static_cast<uint16_t>(best);
 }
 
+int32_t node_wall(const TrackNode& n) {
+    if (n.flags & kTunnel) return k_tunnel_height;
+    if (n.flags & kWall) return k_wall_height;
+    return 0;
+}
+
+int32_t ground_offset(int32_t wall_h, int32_t over) {
+    if (over <= 0) return 0;                       // on the road
+    // A wall is a vertical face at the road edge and a plateau beyond it, so
+    // past the edge the ground simply IS the top of the rock.
+    if (wall_h > 0) return wall_h;
+    if (over >= k_shoulder_run) return -k_shoulder_drop;
+    return -static_cast<int32_t>(
+        (static_cast<int64_t>(over) * k_shoulder_drop) / k_shoulder_run);
+}
+
 Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
-    const uint16_t i = nearest_node(t, near_node, x, z);
+    uint16_t i = nearest_node(t, near_node, x, z);
+    // WHICH SEGMENT, not which node. A point just behind the nearest node lies
+    // on the segment ARRIVING at it, and reading it off the segment leaving
+    // instead pins its height to that node's own rather than interpolating
+    // back. The surface then steps at every cell boundary: invisible on flat
+    // desert, and two and a half units of ground appearing out of nowhere at
+    // the lip of a ramp, where the road drops five units in one node.
+    int32_t heading = 0, dx = 0, dz = 0, along = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        const TrackNode& a = t.nodes[i];
+        const TrackNode& b = t.nodes[(i + 1) % t.node_count];
+        heading = fatan2(node_x(b) - node_x(a), node_z(b) - node_z(a));
+        dx = x - node_x(a);
+        dz = z - node_z(a);
+        along = ftrig(dx, fsin(heading)) + ftrig(dz, fcos(heading));
+        if (along >= 0 || pass == 1) break;
+        i = static_cast<uint16_t>((i + t.node_count - 1) % t.node_count);
+    }
     const TrackNode& a = t.nodes[i];
     const TrackNode& b = t.nodes[(i + 1) % t.node_count];
-    const int32_t heading = fatan2(node_x(b) - node_x(a), node_z(b) - node_z(a));
-    const int32_t dx = x - node_x(a), dz = z - node_z(a);
 
     Surface s{};
     s.node = i;
@@ -152,11 +183,15 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
     // pushes off disagreed by up to half a step, and the pod rode visibly sunk
     // into the road going downhill and floating over it going up. Two answers
     // for the same piece of road, and the eye believes the one it can see.
-    const int32_t along = ftrig(dx, fsin(heading)) + ftrig(dz, fcos(heading));
     const int32_t u = static_cast<int32_t>(
         (static_cast<int64_t>(clamp32(along, 0, k_node_spacing)) << k_fp)
         / k_node_spacing);
     const int32_t ground = node_y(a) + fmul(node_y(b) - node_y(a), u);
+    // The rock at the road edge, interpolated along the segment exactly as the
+    // renderer draws it. A canyon therefore rises out of the desert and sinks
+    // back into it over one node's spacing rather than appearing whole, and the
+    // sim and the renderer agree about every height in between.
+    const int32_t wall_h = node_wall(a) + fmul(node_wall(b) - node_wall(a), u);
 
     if (a.flags & kGap) {
         // A gap carries no surface at all. The hover field has nothing to push
@@ -168,28 +203,28 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
         const int32_t half = node_half_width(a);
         const int32_t over = (s.lateral < 0 ? -s.lateral : s.lateral) - half;
         if (over > 0) {
-            if (a.flags & kWall) {
-                s.y = ground;
-                s.wall = true;
-            } else {
-                // Off the road is a SHOULDER, not a cliff.
-                //
-                // It used to fall away by up to thirty units, and the crash
-                // floor is twenty six, so drifting wide did not cost you time,
-                // it killed you: the ground vanished downward, the pod
-                // followed it, and the run ended. That is not what going off
-                // line should mean in a racing game, and it is not what the
-                // hover field is for either, since a field that holds you over
-                // the road but drops you beside it is a trapdoor.
-                //
-                // Three units down and no further. The hover field still has
-                // something to push against out here, so the pod stays flyable
-                // and can be driven back on; what it costs is grip and speed,
-                // applied in race_tick. Falling is reserved for a GAP, where
-                // there is genuinely no road.
-                const int32_t drop = over > fp(12) ? fp(3) : fscale(over, 250);
-                s.y = ground - drop;
-            }
+            // Off the road is a SHOULDER, not a cliff, and its exact shape is
+            // ground_offset's, which the renderer draws from too.
+            //
+            // It used to fall away by up to thirty units, and the crash floor
+            // is twenty six, so drifting wide did not cost you time, it killed
+            // you: the ground vanished downward, the pod followed it, and the
+            // run ended. That is not what going off line should mean in a
+            // racing game, and it is not what the hover field is for either,
+            // since a field that holds you over the road but drops you beside
+            // it is a trapdoor.
+            //
+            // Three units down and no further. The hover field still has
+            // something to push against out here, so the pod stays flyable and
+            // can be driven back on; what it costs is grip and speed, applied
+            // in race_tick. Falling is reserved for a GAP, where there is
+            // genuinely no road.
+            s.y = ground + ground_offset(wall_h, over);
+            // Blocked only where the rock stands higher than the pod floats.
+            // Below that the taper at a canyon mouth is drivable rock, which
+            // is exactly what it looks like, and the pod is pushed out the
+            // moment the wall is tall enough to be a wall.
+            if (wall_h > k_hover_height) s.wall = true;
         } else {
             // Banking: the road tilts into its own turn, which is free grip on
             // a corner and the reason a circuit can be fast and tight at once.
@@ -199,6 +234,12 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
                 -fmul(ftrig(s.lateral, fsin(angle_diff(next, heading))), fp(1, 900));
             s.y = ground + bank;
             s.road = true;
+        }
+        // A roof, likewise interpolated, so a tunnel mouth closes over the pod
+        // rather than snapping shut on it.
+        if ((a.flags | b.flags) & kTunnel) {
+            s.roofed = true;
+            s.roof = ground + k_tunnel_height;
         }
     }
 
@@ -517,6 +558,7 @@ void race_tick(Race& race, const Input& in) {
     pod.node = surf.node;
     pod.on_road = surf.road;
     pod.over_water = surf.water;
+    pod.roofed = surf.roofed;
     pod.lateral = surf.lateral;
     pod.clearance = pod.y - surf.y;
     pod.grounded = pod.clearance < k_hover_reach;
@@ -591,6 +633,19 @@ void race_tick(Race& race, const Input& in) {
             if (pod.vy < 0) pod.vy = 0;
         }
         pod.pitch -= fscale(pod.pitch, k_pitch_level);
+    }
+
+    // ---- the roof ------------------------------------------------------------
+    // A tunnel takes the sky away, and that is the whole reason to put one on a
+    // track whose answer to every other problem is to pitch up and glide. The
+    // ceiling is the floor's mirror: the pod is placed, not pushed, and upward
+    // velocity is gone. It applies whether or not the field has hold of the
+    // pod, because a pod that entered the tunnel airborne is exactly the one
+    // that needs stopping.
+    if (surf.roofed && pod.y > surf.roof) {
+        pod.y = surf.roof;
+        pod.clearance = pod.y - surf.y;
+        if (pod.vy > 0) pod.vy = 0;
     }
 
     // ---- walls -------------------------------------------------------------

@@ -137,6 +137,15 @@ Camera follow(const Pod& pod, float dt) {
     c.x = to_world(pod.x) - std::sin(g_cam.yaw) * cp * pull;
     c.y = to_world(pod.y) + k_cam_high - sp * pull;
     c.z = to_world(pod.z) - std::cos(g_cam.yaw) * cp * pull;
+    // Under a roof, stay under it. The camera rides two and a half units above
+    // the pod and further on a nose down attitude, which is over a tunnel's
+    // seven units of headroom whenever the sim has pressed the pod against the
+    // ceiling. Outside the tunnel that is a camera looking down at the roof of
+    // the thing it is supposed to be inside.
+    if (pod.roofed) {
+        const float roof = to_world(pod.y - pod.clearance + k_tunnel_height);
+        if (c.y > roof - 0.5f) c.y = roof - 0.5f;
+    }
     c.yaw = g_cam.yaw;
     c.pitch = g_cam.pitch;
     c.roll = g_cam.roll;
@@ -365,19 +374,221 @@ float ripple(int index, uint32_t tick) {
     return (up - 3) * 0.085f;                   // about a quarter unit either way
 }
 
-void edge_point(const Track& t, int index, float side, float out[3], float widen = 1.0f) {
-    const TrackNode& a = t.nodes[index];
-    const TrackNode& b = t.nodes[(index + 1) % t.node_count];
-    const float ax = to_world(node_x(a)), az = to_world(node_z(a));
-    const float bx = to_world(node_x(b)), bz = to_world(node_z(b));
-    float dx = bx - ax, dz = bz - az;
+// A point on the ground, `lateral` world units off the centreline at this
+// node, `dy` above the node's own height, camera relative on the way out.
+//
+// Absolute units and not multiples of the half width, which is what the old
+// one took. A multiple is fine for the road, whose whole geometry is a
+// fraction of its own width, and wrong for everything beyond it: the shoulder
+// falls over twelve UNITS whatever the road is doing, so expressing it as 1.35
+// half widths made it three units wide on a normal stretch and four on the
+// shortcut, and neither of those is twelve.
+// The direction a node's cross section is laid out along: the average of the
+// segment arriving and the segment leaving, not the one leaving.
+//
+// A MITRE, and without it no two strips in the game shared an edge. Every band
+// took its normal from its own outgoing segment, so at a bend node i's outer
+// edge and node i-1's outer edge landed in different places: a wedge of open
+// sky between consecutive strips on the outside of every corner, and a wedge
+// of overlap on the inside. The road had them too, a notch out of its own edge
+// at every corner node, about a unit and a half wide at nine and a half of
+// half width. Averaging the two makes the boundary of one strip literally the
+// same points as the boundary of the next, so there is nothing left to fall
+// between.
+void node_dir(const Track& t, int index, float& dx, float& dz) {
+    const int n = t.node_count;
+    const TrackNode& prev = t.nodes[(index + n - 1) % n];
+    const TrackNode& here = t.nodes[index];
+    const TrackNode& next = t.nodes[(index + 1) % n];
+    float ax = to_world(node_x(here) - node_x(prev));
+    float az = to_world(node_z(here) - node_z(prev));
+    float bx = to_world(node_x(next) - node_x(here));
+    float bz = to_world(node_z(next) - node_z(here));
+    const float ma = std::sqrt(ax * ax + az * az);
+    const float mb = std::sqrt(bx * bx + bz * bz);
+    if (ma > 0.0001f) { ax /= ma; az /= ma; }
+    if (mb > 0.0001f) { bx /= mb; bz /= mb; }
+    dx = ax + bx; dz = az + bz;
     const float m = std::sqrt(dx * dx + dz * dz);
-    if (m > 0.0001f) { dx /= m; dz /= m; }
-    const float half = to_world(node_half_width(a)) * widen;
-    // Camera relative on the way out, so nothing downstream has to remember.
-    out[0] = ax + dz * half * side - g_origin[0];
-    out[1] = to_world(node_y(a)) - g_origin[1];
-    out[2] = az - dx * half * side - g_origin[2];
+    if (m > 0.0001f) { dx /= m; dz /= m; } else { dx = bx; dz = bz; }
+}
+
+void edge_at(const Track& t, int index, float side, float lateral, float dy,
+             float out[3]) {
+    const TrackNode& a = t.nodes[index];
+    float dx, dz;
+    node_dir(t, index, dx, dz);
+    out[0] = to_world(node_x(a)) + dz * lateral * side - g_origin[0];
+    out[1] = to_world(node_y(a)) + dy - g_origin[1];
+    out[2] = to_world(node_z(a)) - dx * lateral * side - g_origin[2];
+}
+
+void edge_point(const Track& t, int index, float side, float out[3], float widen = 1.0f) {
+    const float half = to_world(node_half_width(t.nodes[index])) * widen;
+    edge_at(t, index, side < 0.0f ? -1.0f : 1.0f,
+            half * (side < 0.0f ? -side : side), 0.0f, out);
+}
+
+// How far out this node's ground may reach on this side before its strip folds
+// back over the road.
+//
+// Not a tidiness rule. The outward offsets of two consecutive nodes cross once
+// the offset passes the local turn radius, and past that a strip is drawn over
+// ground it does not own, at its OWN node's height. Measured on the desert,
+// the fourteen half width plain that used to be here put the drawn ground as
+// much as 7.5 units ABOVE the surface the pod was hovering on, at 38 of 197
+// sampled positions: the pod buried in scenery belonging to a corner it had
+// not reached yet. That is the "sinking into the ground off road" report, and
+// no amount of care in the sim could have fixed it, because the sim was right.
+//
+// Three quarters of the radius, so a strip stops well short of the fold rather
+// than at it. On a straight the radius is enormous and nothing is clamped,
+// which is most of a lap.
+float reach_limit(const Track& t, int index, float side) {
+    const int n = t.node_count;
+    const TrackNode& prev = t.nodes[(index + n - 1) % n];
+    const TrackNode& here = t.nodes[index];
+    const TrackNode& next = t.nodes[(index + 1) % n];
+    float ax = to_world(node_x(here) - node_x(prev));
+    float az = to_world(node_z(here) - node_z(prev));
+    float bx = to_world(node_x(next) - node_x(here));
+    float bz = to_world(node_z(next) - node_z(here));
+    const float ma = std::sqrt(ax * ax + az * az);
+    const float mb = std::sqrt(bx * bx + bz * bz);
+    if (ma < 0.0001f || mb < 0.0001f) return 1.0e9f;
+    ax /= ma; az /= ma; bx /= mb; bz /= mb;
+    // For unit directions the length of the difference is the heading change,
+    // so the radius is the arc length over it.
+    const float tx = bx - ax, tz = bz - az;
+    const float turn = std::sqrt(tx * tx + tz * tz);
+    if (turn < 0.0001f) return 1.0e9f;
+    // Which way this side points, in the frame edge_at offsets in.
+    float mx, mz;
+    node_dir(t, index, mx, mz);
+    const float nx = mz * side, nz = -mx * side;
+    if (tx * nx + tz * nz <= 0.0f) return 1.0e9f;   // the outside of the turn
+    return 0.9f * mb / turn;
+}
+
+// How far the drawn plain reaches past the road edge, before the fold clamp.
+constexpr float k_plain_reach = 46.0f;
+
+// One node's ground on one side, as the three boundary points the strips are
+// built between: the road edge, the foot of the shoulder, and the outer edge
+// of the plain. draw_road builds its quads from this and drawn_ground() probes
+// it, so a test cannot be measuring a different world from the one on screen.
+struct GroundBand { float base[3], lip[3], shoulder[3], plain[3]; float wall; };
+
+// Height of a flat-ish quad at a point in the XZ plane, or false if the point
+// is outside it. Only the ground probe uses this; the renderer projects.
+bool tri_height(const float a[3], const float b[3], const float c[3],
+                float x, float z, float& y) {
+    const float d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+    if (d > -1e-6f && d < 1e-6f) return false;
+    const float l0 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d;
+    const float l1 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d;
+    const float l2 = 1.0f - l0 - l1;
+    if (l0 < 0.0f || l1 < 0.0f || l2 < 0.0f) return false;
+    y = l0 * a[1] + l1 * b[1] + l2 * c[1];
+    return true;
+}
+
+bool quad_height(const float p0[3], const float p1[3], const float p2[3],
+                 const float p3[3], float x, float z, float& y) {
+    return tri_height(p0, p1, p2, x, z, y) || tri_height(p0, p2, p3, x, z, y);
+}
+
+// The waterline, camera relative, or nothing on a dry planet. Every band point
+// is raised to it, because surface_at is: the sea wins wherever the rock is
+// lower. The moving ripple goes on top of this in draw_road, so what is drawn
+// and what is driven differ by at most a quarter of a unit of swell.
+float sea_level(const Track& t) {
+    return has_water(t) ? to_world(water_level(t)) - g_origin[1] : -1.0e9f;
+}
+
+void ground_band(const Track& t, int index, float side, GroundBand& out) {
+    const float half = to_world(node_half_width(t.nodes[index]));
+    const float run = to_world(k_shoulder_run);
+    const float limit = reach_limit(t, index, side);
+    const float reach = k_plain_reach < limit ? k_plain_reach : limit;
+    const int32_t wall = node_wall(t.nodes[index]);
+    out.wall = to_world(wall);
+    // Every height comes out of ground_offset, which is the sim's own function.
+    // Nothing here decides what the ground does; it only decides where to put
+    // the corners, and the corners are at the profile's knees.
+    edge_at(t, index, side, half, 0.0f, out.base);
+    edge_at(t, index, side, half, out.wall, out.lip);
+    edge_at(t, index, side, half + run,
+            to_world(ground_offset(wall, k_shoulder_run)), out.shoulder);
+    edge_at(t, index, side, half + reach,
+            to_world(ground_offset(wall, static_cast<int32_t>(reach * 65536.0f))),
+            out.plain);
+    const float sea = sea_level(t);
+    float* points[4] = {out.base, out.lip, out.shoulder, out.plain};
+    for (float* p : points) if (p[1] < sea) p[1] = sea;
+}
+// And the lip that a canyon rim turns outward at the top, so a wall reads as
+// the edge of something rather than as a sheet standing on the desert.
+constexpr float k_rim = 9.0f;
+
+// A hole in the road, drawn as a hole. The sim has said for a long time that a
+// gap has no surface at ANY distance to the side, which makes it a canyon
+// across the world rather than a pit in the tarmac. Nothing drew that: the
+// plain was laid straight across it, so a player who went round the jump flew
+// over solid desert and fell through it, and a player who went at it saw the
+// road stop at nothing at all.
+//
+// Two cliff faces and a floor. The near lip is drawn only where the run of gap
+// nodes starts and the far lip only where it ends, so a fifty six unit chasm
+// costs two faces and not fourteen.
+void draw_chasm(const Track& t, int i, int band, float reach) {
+    const int n = t.node_count;
+    const int j = (i + 1) % n;
+    const Palette& pal = t.palette;
+    const float depth = to_world(k_chasm_depth);
+    const float half_i = to_world(node_half_width(t.nodes[i]));
+    const float half_j = to_world(node_half_width(t.nodes[j]));
+
+    // The floor, in the darkest thing the palette has. It is below the crash
+    // floor, so what the player is looking at is somewhere they have already
+    // died by reaching.
+    const uint8_t deep[3] = {
+        static_cast<uint8_t>(pal.rock[1][0] * 2 / 5),
+        static_cast<uint8_t>(pal.rock[1][1] * 2 / 5),
+        static_cast<uint8_t>(pal.rock[1][2] * 2 / 5),
+    };
+    float fl[3], fr[3], nl[3], nr[3];
+    edge_at(t, i, -1.0f, half_i + reach, -depth, nl);
+    edge_at(t, i, 1.0f, half_i + reach, -depth, nr);
+    edge_at(t, j, -1.0f, half_j + reach, -depth, fl);
+    edge_at(t, j, 1.0f, half_j + reach, -depth, fr);
+    quad(nl, fl, fr, nr, deep);
+
+    // A lip is a wall across the whole width, from the ground down to the
+    // floor. Only at the two ends of the run.
+    const bool near_lip = !(t.nodes[(i + n - 1) % n].flags & kGap);
+    const bool far_lip = !(t.nodes[j].flags & kGap);
+    for (int end = 0; end < 2; ++end) {
+        if (end == 0 ? !near_lip : !far_lip) continue;
+        const int at = end == 0 ? i : j;
+        const float half = end == 0 ? half_i : half_j;
+        float tl[3], tr[3], bl[3], br[3];
+        edge_at(t, at, -1.0f, half + reach, 0.0f, tl);
+        edge_at(t, at, 1.0f, half + reach, 0.0f, tr);
+        edge_at(t, at, -1.0f, half + reach, -depth, bl);
+        edge_at(t, at, 1.0f, half + reach, -depth, br);
+        // In SHADOW, and that is the whole legibility of a hole in the ground.
+        // A cliff face painted from pal.wall is a light tan wall across a light
+        // tan desert: the geometry was all there and the jump still read as a
+        // shallow dip in the road. The one face the player actually looks at is
+        // the far one, across the gap, and it has to be the darkest thing in
+        // the frame or there is nothing to tell them to pull up.
+        uint8_t face[3];
+        for (int c = 0; c < 3; ++c)
+            face[c] = static_cast<uint8_t>(pal.rock[1][c] * 3 / 5);
+        quad(tl, tr, br, bl, face);
+        ++g_stats.cliffs;
+    }
 }
 
 void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
@@ -387,19 +598,28 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
     // driven one cannot end up in different places.
     const bool wet = has_water(t);
     const float sea = wet ? to_world(water_level(t)) - g_origin[1] : 0.0f;
+    // The cross section, straight out of the sim's own constants. Anything
+    // here that measured the shoulder for itself is how the two came to
+    // disagree in the first place.
+    const float shoulder_run = to_world(k_shoulder_run);
+    const float shoulder_drop = to_world(k_shoulder_drop);
+    const float roof = to_world(k_tunnel_height);
 
     for (int s = -k_view_behind; s < k_view_segments; ++s) {
         const int i = ((pod.node + s) % t.node_count + t.node_count) % t.node_count;
         const int j = (i + 1) % t.node_count;
         const TrackNode& a = t.nodes[i];
+        const TrackNode& b_node = t.nodes[j];
         const int band = (i >> 1) & 1;
         const bool near = s <= 11;
+        const float half_i = to_world(node_half_width(a));
+        const float half_j = to_world(node_half_width(b_node));
 
         float li[3], lj[3], ri[3], rj[3];
-        edge_point(t, i, -1.0f, li);
-        edge_point(t, j, -1.0f, lj);
-        edge_point(t, i, 1.0f, ri);
-        edge_point(t, j, 1.0f, rj);
+        edge_at(t, i, -1.0f, half_i, 0.0f, li);
+        edge_at(t, j, -1.0f, half_j, 0.0f, lj);
+        edge_at(t, i, 1.0f, half_i, 0.0f, ri);
+        edge_at(t, j, 1.0f, half_j, 0.0f, rj);
 
         // Where this segment stands relative to the sea. Whole segment or
         // nothing, so a shoreline lands on a node boundary and the eight units
@@ -407,11 +627,35 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // would be more exact and would cost a clipper per segment for an edge
         // that is three pixels long.
         const float yi = to_world(node_y(a));
-        const float yj = to_world(node_y(t.nodes[j]));
+        const float yj = to_world(node_y(b_node));
         const bool road_wet = wet && yi < sea && yj < sea;
-        const bool plain_wet = wet && yi - 3.0f < sea && yj - 3.0f < sea;
+        const bool plain_wet = wet && yi - shoulder_drop < sea
+                                   && yj - shoulder_drop < sea;
         const float wave_i = wet ? sea + ripple(i, tick) : 0.0f;
         const float wave_j = wet ? sea + ripple(j, tick) : 0.0f;
+        // The road itself comes up to the waterline where it is under it, for
+        // the same reason and by the same rule as the shoulder does. Skipping
+        // this left a segment with one end above the sea and one below drawn
+        // at its true height while the field held the pod at sea level, so on
+        // the way into TIDEBREAK's trench the pod hovered up to seventeen
+        // units over the road it could see.
+        if (wet) {
+            if (wave_i > li[1]) li[1] = wave_i;
+            if (wave_i > ri[1]) ri[1] = wave_i;
+            if (wave_j > lj[1]) lj[1] = wave_j;
+            if (wave_j > rj[1]) rj[1] = wave_j;
+        }
+
+        const bool tunnel = (a.flags & kTunnel) != 0;
+        // A hole under water is not a hole, it is more water.
+        const bool chasm = (a.flags & kGap) != 0 && !road_wet;
+
+        if (chasm) {
+            const float reach = k_plain_reach < reach_limit(t, i, 1.0f)
+                              ? k_plain_reach : reach_limit(t, i, 1.0f);
+            draw_chasm(t, i, band, reach);
+            continue;
+        }
 
         // Ground and shoulders only where they can still be seen. Past about
         // ninety units out the shoulder is under a pixel tall and the ground
@@ -419,50 +663,83 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // six of a far segment's fourteen triangles were drawing the horizon a
         // second time.
         if (near) {
-            float wi[3], wj[3], fi[3], fj[3];
             for (int side = 0; side < 2; ++side) {
                 const float sgn = side ? 1.0f : -1.0f;
-                edge_point(t, i, sgn, wi, 1.35f);
-                edge_point(t, j, sgn, wj, 1.35f);
-                // Fourteen half widths, not four. The sim lets a pod drive off
-                // the road now instead of dropping it into the floor, so the
-                // ground has to be THERE when it does: at four the plain ran
-                // out about thirty eight units off the centreline and a pod
-                // that ran wide found itself flying over nothing, which read
-                // as the world having a hole in it. This costs no triangles at
-                // all, only bigger ones.
-                edge_point(t, i, sgn, fi, 14.0f);
-                edge_point(t, j, sgn, fj, 14.0f);
-                // Matched to surface_at: three units below the road and flat
-                // out to the horizon, so what is drawn is what is driven on.
-                // Under the waterline that becomes the sea instead, for the
-                // same reason and out of the same number.
-                const float drop = (a.flags & kWall) ? 4.0f : -3.0f;
-                fi[1] += drop; fj[1] += drop;
-                wi[1] += drop;
-                wj[1] += drop;
-                const uint8_t* plain_col = pal.ground[band];
-                if (plain_wet) {
-                    fi[1] = wave_i; fj[1] = wave_j;
-                    wi[1] = wave_i; wj[1] = wave_j;
-                    plain_col = pal.water[band];
-                    ++g_stats.sea;
+                const float* base_i = side ? ri : li;
+                const float* base_j = side ? rj : lj;
+
+                // The shoulder and the plain, at the offsets ground_offset has
+                // its knees at, so the drawn ground and the driven ground meet
+                // exactly rather than approximately.
+                GroundBand gi, gj;
+                ground_band(t, i, sgn, gi);
+                ground_band(t, j, sgn, gj);
+
+                // A CANYON WALL, and it is a vertical face standing on the
+                // road edge rather than the four unit kerb this used to be.
+                // The sim stops a pod dead at that line; a barrier the player
+                // can see over does not say so, and being bounced off
+                // something shorter than the vehicle reads as the game
+                // cheating rather than as a wall.
+                //
+                // Drawn whenever EITHER end of the segment has rock on it, so a
+                // canyon rises out of the desert over one node's spacing and
+                // sinks back into it the same way. The sim interpolates the
+                // same taper, so the mouth of a canyon is drivable rock at
+                // exactly the heights it is drawn at.
+                if (gi.wall > 0.0f || gj.wall > 0.0f) {
+                    // Banded, like the road is. A canyon wall in one flat
+                    // colour is a brown rectangle beside a brown rectangle:
+                    // nothing crosses the edge of vision, so a hundred and
+                    // eighty units of rock go past at three hundred and fifty
+                    // and read as standing still.
+                    uint8_t face[3];
+                    for (int c = 0; c < 3; ++c)
+                        face[c] = band ? pal.wall[c]
+                                       : static_cast<uint8_t>(pal.wall[c] * 3 / 4);
+                    quad(base_i, base_j, gj.lip, gi.lip, face);
+                    ++g_stats.cliffs;
                 }
-                if (side) quad(wi, wj, fj, fi, plain_col);
-                else      quad(fi, fj, wj, wi, plain_col);
-                // Walls get a colour of their own rather than borrowing the
-                // scenery's: a near vertical face takes the ambient floor and
-                // nothing else, so a wall painted from the same palette entry
-                // as a distant rock comes out three times darker than it, and
-                // the track that is mostly wall came out a black corridor.
-                const uint8_t* side_col = (a.flags & kWall) ? pal.wall : pal.rock[band];
-                // The bank between the road edge and the plain. Where the road
-                // is dry and the plain is not, this is the shoreline, and it
-                // wants the foam colour: a beach is the one edge in the frame
-                // the player uses to judge how much road is left.
-                if (plain_wet && !road_wet) side_col = pal.foam;
-                if (side) quad(ri, rj, wj, wi, side_col);
-                else      quad(wi, wj, lj, li, side_col);
+
+                float wi[3], wj[3], fi[3], fj[3];
+                for (int c = 0; c < 3; ++c) {
+                    wi[c] = gi.shoulder[c]; wj[c] = gj.shoulder[c];
+                    fi[c] = gi.plain[c];    fj[c] = gj.plain[c];
+                }
+
+                const uint8_t* plain_col = pal.ground[band];
+                const uint8_t* bank_col = pal.rock[band];
+                if (wet) {
+                    // PER VERTEX, and the rule is surface_at's own: the sea
+                    // wins wherever the rock is lower than it. Flipping a whole
+                    // band to sea level the moment its outer edge went under
+                    // drew water over a beach that was still a metre and a half
+                    // above the waterline, and a pod driving there hovered
+                    // sixteen units over the drawn surface.
+                    if (wave_i > wi[1]) wi[1] = wave_i;
+                    if (wave_j > wj[1]) wj[1] = wave_j;
+                    if (wave_i > fi[1]) fi[1] = wave_i;
+                    if (wave_j > fj[1]) fj[1] = wave_j;
+                    if (plain_wet) {
+                        plain_col = pal.water[band];
+                        // The bank between the road edge and the plain. Where
+                        // the road is dry and the plain is not, this is the
+                        // shoreline, and it wants the foam colour: a beach is
+                        // the one edge in the frame a player uses to judge how
+                        // much road is left.
+                        if (!road_wet) bank_col = pal.foam;
+                        ++g_stats.sea;
+                    }
+                }
+                // The rim and the plateau above a wall, or the bank and the
+                // plain beside open road: the same two quads either way,
+                // because ground_offset already said which one this is.
+                if (gi.wall > 0.0f || gj.wall > 0.0f) {
+                    bank_col = pal.rock[band];
+                    plain_col = pal.rock[band ^ 1];
+                }
+                quad(gi.lip, gj.lip, wj, wi, bank_col);
+                quad(wi, wj, fj, fi, plain_col);
             }
         }
 
@@ -470,29 +747,25 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         // is. That is not a decoration: surface_at hands the hover field the
         // waterline out here, so the pod is skimming twelve units above the
         // road at the bottom of TIDEBREAK's trench, and drawing the road it is
-        // nowhere near would put the whole pod under the scenery. Ahead of the
-        // gap test below, because a hole in the road that is under water is
-        // not a hole, it is more water.
+        // nowhere near would put the whole pod under the scenery.
         if (road_wet) {
             // The lane, in the shallows colour with foam down both edges. The
-            // first version drew plain sea here and the racing line simply
-            // stopped existing for a third of the lap: a player cannot aim at
-            // a track that is not drawn, and "the road is under water" is not
-            // a reason to stop telling them where it is. Same three strips the
-            // dashed road uses, so a submerged straight and a dry one are laid
-            // out the same way and read the same way.
+            // first version drew plain sea here and the racing line stopped
+            // existing for a third of the lap: a player cannot aim at a track
+            // that is not drawn, and "the road is under water" is not a reason
+            // to stop telling them where it is. Same three strips the dashed
+            // road uses, so a submerged straight and a dry one are laid out
+            // the same way and read the same way.
             constexpr float k_surf = 0.12f;   // of a half width, each side
             float ai[3], aj[3], bi[3], bj[3];
-            edge_point(t, i, -1.0f + k_surf, ai);
-            edge_point(t, j, -1.0f + k_surf, aj);
-            edge_point(t, i, 1.0f - k_surf, bi);
-            edge_point(t, j, 1.0f - k_surf, bj);
+            edge_at(t, i, -1.0f, half_i * (1.0f - k_surf), 0.0f, ai);
+            edge_at(t, j, -1.0f, half_j * (1.0f - k_surf), 0.0f, aj);
+            edge_at(t, i, 1.0f, half_i * (1.0f - k_surf), 0.0f, bi);
+            edge_at(t, j, 1.0f, half_j * (1.0f - k_surf), 0.0f, bj);
             float li2[3], lj2[3], ri2[3], rj2[3];
             for (int c = 0; c < 3; ++c) {
                 li2[c] = li[c]; lj2[c] = lj[c]; ri2[c] = ri[c]; rj2[c] = rj[c];
             }
-            li2[1] = ai[1] = bi[1] = ri2[1] = wave_i;
-            lj2[1] = aj[1] = bj[1] = rj2[1] = wave_j;
             if (near) {
                 quad(li2, lj2, aj, ai, pal.foam);
                 quad(ai, aj, bj, bi, pal.shallow[band]);
@@ -504,11 +777,36 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
             continue;
         }
 
-        if (a.flags & kGap) continue;   // the jump: no road at all
-
         const uint8_t* col = pal.road[band];
         uint8_t boost_col[3] = {90, 190, 255};
         if (a.flags & kBoost) col = boost_col;
+        // Inside a tunnel everything is in shadow. There is no light model to
+        // ask, so the shadow is the colour: two thirds of it, on the road and
+        // on the roof, which at four bits a channel is two clear steps darker
+        // and reads as being under something.
+        uint8_t shade_col[3];
+        if (tunnel) {
+            for (int c = 0; c < 3; ++c)
+                shade_col[c] = static_cast<uint8_t>(col[c] * 2 / 3);
+            col = shade_col;
+        }
+
+        // The roof, drawn after the walls and before the road so a tunnel is
+        // closed. It is the one piece of geometry in the game that is above the
+        // pod, and the sim knows: race_tick clamps the pod under it, which is
+        // what makes a tunnel a place you cannot glide out of.
+        if (tunnel) {
+            float li3[3], lj3[3], ri3[3], rj3[3];
+            edge_at(t, i, -1.0f, half_i, roof, li3);
+            edge_at(t, j, -1.0f, half_j, roof, lj3);
+            edge_at(t, i, 1.0f, half_i, roof, ri3);
+            edge_at(t, j, 1.0f, half_j, roof, rj3);
+            uint8_t roof_col[3];
+            for (int c = 0; c < 3; ++c)
+                roof_col[c] = static_cast<uint8_t>(pal.rock[band][c] * 3 / 4);
+            quad(li3, lj3, rj3, ri3, roof_col);
+            ++g_stats.cliffs;
+        }
 
         // The road is cut into three strips ACROSS rather than drawn as one
         // quad with a stripe laid on top, and the engine forces that rather
@@ -523,13 +821,26 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
         } else {
             constexpr float k_lip = 0.22f;
             float ai[3], aj[3], bi[3], bj[3];
-            edge_point(t, i, -1.0f + k_lip, ai);
-            edge_point(t, j, -1.0f + k_lip, aj);
-            edge_point(t, i, 1.0f - k_lip, bi);
-            edge_point(t, j, 1.0f - k_lip, bj);
-            quad(li, lj, aj, ai, pal.edge);
+            edge_at(t, i, -1.0f, half_i * (1.0f - k_lip), 0.0f, ai);
+            edge_at(t, j, -1.0f, half_j * (1.0f - k_lip), 0.0f, aj);
+            edge_at(t, i, 1.0f, half_i * (1.0f - k_lip), 0.0f, bi);
+            edge_at(t, j, 1.0f, half_j * (1.0f - k_lip), 0.0f, bj);
+            if (wet) {
+                if (wave_i > ai[1]) ai[1] = wave_i;
+                if (wave_i > bi[1]) bi[1] = wave_i;
+                if (wave_j > aj[1]) aj[1] = wave_j;
+                if (wave_j > bj[1]) bj[1] = wave_j;
+            }
+            const uint8_t* edge_col = pal.edge;
+            uint8_t edge_shade[3];
+            if (tunnel) {
+                for (int c = 0; c < 3; ++c)
+                    edge_shade[c] = static_cast<uint8_t>(pal.edge[c] * 2 / 3);
+                edge_col = edge_shade;
+            }
+            quad(li, lj, aj, ai, edge_col);
             quad(ai, aj, bj, bi, col);
-            quad(bi, bj, rj, ri, pal.edge);
+            quad(bi, bj, rj, ri, edge_col);
         }
     }
 }
@@ -1294,5 +1605,58 @@ void render_frame(const Race& race, const Chrome& chrome,
 }
 
 const RenderStats& render_stats() { return g_stats; }
+
+bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y) {
+    // The probe runs in world space, so the floating origin is stood down for
+    // the duration. Legitimate here and nowhere else: this is called from the
+    // tests between frames, never while one is being drawn, and it restores
+    // what it found. The alternative is a second copy of the band arithmetic,
+    // which is exactly the thing that let the drawn ground and the driven
+    // ground drift apart in the first place.
+    float saved[3] = {g_origin[0], g_origin[1], g_origin[2]};
+    g_origin[0] = g_origin[1] = g_origin[2] = 0.0f;
+
+    const float px = to_world(x), pz = to_world(z);
+    const int n = t.node_count;
+    bool any = false;
+    // Wide enough to catch a strip from a node the point is not beside, which
+    // is the whole failure this exists to detect.
+    for (int k = -40; k <= 40; ++k) {
+        const int i = ((hint + k) % n + n) % n;
+        const int j = (i + 1) % n;
+        if (t.nodes[i].flags & kGap) continue;   // a hole draws no ground
+        const float half_i = to_world(node_half_width(t.nodes[i]));
+        const float half_j = to_world(node_half_width(t.nodes[j]));
+        float li[3], lj[3], ri[3], rj[3];
+        edge_at(t, i, -1.0f, half_i, 0.0f, li);
+        edge_at(t, j, -1.0f, half_j, 0.0f, lj);
+        edge_at(t, i, 1.0f, half_i, 0.0f, ri);
+        edge_at(t, j, 1.0f, half_j, 0.0f, rj);
+        const float sea = sea_level(t);
+        float* road[4] = {li, lj, ri, rj};
+        for (float* p : road) if (p[1] < sea) p[1] = sea;
+        float here;
+        if (quad_height(li, lj, rj, ri, px, pz, here)) {
+            if (!any || here > y) { y = here; any = true; }
+        }
+        for (int side = 0; side < 2; ++side) {
+            const float sgn = side ? 1.0f : -1.0f;
+            GroundBand gi, gj;
+            ground_band(t, i, sgn, gi);
+            ground_band(t, j, sgn, gj);
+            // The same two quads draw_road draws, whether that is a bank and a
+            // plain or a canyon rim and the plateau above it. One construction,
+            // so a test cannot be measuring a world the player never sees.
+            if (quad_height(gi.lip, gj.lip, gj.shoulder, gi.shoulder, px, pz, here)
+                || quad_height(gi.shoulder, gj.shoulder, gj.plain, gi.plain,
+                               px, pz, here)) {
+                if (!any || here > y) { y = here; any = true; }
+            }
+        }
+    }
+
+    g_origin[0] = saved[0]; g_origin[1] = saved[1]; g_origin[2] = saved[2];
+    return any;
+}
 
 }  // namespace twinflare
