@@ -69,6 +69,12 @@ struct RenderStats {
     // hole in the road with walls look the same from every angle except the one
     // the player flies at it from.
     uint16_t cliffs;
+    // Top and bottom rows the pod select screen's turning pod occupies. It
+    // shares a 120 pixel screen with a name, a pilot and six labelled bars, and
+    // rule 9 says measure a layout rather than placing it by eye. A pod is not
+    // text but it is the same problem: the one that fits at one angle of the
+    // turn is the one that reaches into the stat bars at another.
+    int16_t showcase_top, showcase_bottom;
 };
 const RenderStats& render_stats();
 

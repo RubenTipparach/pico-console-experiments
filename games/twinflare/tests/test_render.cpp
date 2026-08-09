@@ -504,6 +504,65 @@ void test_a_hole_in_the_road_is_drawn_as_a_hole() {
                 with_cliffs, frames);
 }
 
+void test_pod_select_shows_the_pod() {
+    // Six racers described by a name, a pilot and six bars, and nothing about
+    // the thing being chosen. Two of the six fly a different engine mesh and
+    // all six are a different colour, and none of that reached the one screen
+    // where the choice is made.
+    //
+    // Three claims, and all three are things a screenshot of one frame cannot
+    // settle: that a pod is drawn at all, that it TURNS, and that picking a
+    // different racer shows a different pod.
+    Race race;
+    race_init(race, 0, 0);
+    Chrome chrome;
+    chrome.screen = Screen::PodSelect;
+
+    // The band the pod has to live in: under the name plate, over the stats.
+    // Both of those are laid out in draw_pod_select and this is the number that
+    // says the third thing on the screen fits between them.
+    constexpr int k_name_plate = 25;
+    constexpr int k_stats_top = 84;
+
+    int highest = 120, lowest = 0;
+    uint32_t previous_hash = 0;
+    int moved = 0;
+    for (int step = 0; step < 12; ++step) {
+        chrome.time_ms = static_cast<uint32_t>(step) * 5200u / 12u;
+        render_frame(race, chrome, target());
+        check(render_stats().triangles > 20,
+              "the pod select screen draws a pod and not a picture of one");
+        if (render_stats().showcase_top < highest) highest = render_stats().showcase_top;
+        if (render_stats().showcase_bottom > lowest) lowest = render_stats().showcase_bottom;
+        uint32_t hash = 2166136261u;
+        for (size_t i = 0; i < sizeof(g_pixels); ++i)
+            hash = (hash ^ g_pixels[i]) * 16777619u;
+        if (step && hash != previous_hash) ++moved;
+        previous_hash = hash;
+    }
+    check(moved == 11, "it turns: every step of the revolution is a new frame");
+    check(highest >= k_name_plate, "the pod stays clear of the name plate");
+    check(lowest < k_stats_top, "and clear of the stat bars");
+    std::printf("  pod select: the turn sweeps rows %d to %d, inside %d..%d\n",
+                highest, lowest, k_name_plate, k_stats_top);
+
+    // And the six racers do not all look the same. Compared at a fixed angle,
+    // so what differs is the pod and not the moment.
+    uint32_t seen[k_racer_count];
+    for (int i = 0; i < k_racer_count; ++i) {
+        chrome.pod = static_cast<uint8_t>(i);
+        chrome.time_ms = 900;
+        render_frame(race, chrome, target());
+        uint32_t hash = 2166136261u;
+        for (size_t k = 0; k < sizeof(g_pixels); ++k)
+            hash = (hash ^ g_pixels[k]) * 16777619u;
+        seen[i] = hash;
+        for (int j = 0; j < i; ++j)
+            check(seen[j] != hash, "each racer's pod select screen is its own");
+    }
+    std::printf("  all %d racers render a distinct pod\n", k_racer_count);
+}
+
 }  // namespace
 
 int main() {
@@ -516,6 +575,7 @@ int main() {
     test_the_binder_arc_moves();
     test_the_drawn_ground_is_the_driven_ground();
     test_a_hole_in_the_road_is_drawn_as_a_hole();
+    test_pod_select_shows_the_pod();
 
     if (g_failures) {
         std::printf("%d failure(s)\n", g_failures);

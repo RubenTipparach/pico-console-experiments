@@ -1388,8 +1388,69 @@ void draw_bar(const pse::RenderTarget& target, int x, int y, int w, int value, i
     pse::fill_rect(target, x, y, w * value / of, 5, 232, 138, 43);
 }
 
+// The pod on the pod select screen, turning.
+//
+// Six racers described by a name, a pilot and six bars, and nothing at all
+// about the thing you were choosing: two of the six fly a different engine
+// mesh, all six are a different colour, and none of that reached the one
+// screen where it matters. It is the same draw_pod the race uses, at the same
+// level of detail, so what turns here is exactly what you get.
+//
+// The camera sits above and behind, which is the angle the race is played
+// from: recognising your pod at speed from a picture taken from somewhere else
+// is a thing to have to learn.
+constexpr float k_show_dist = 9.4f;     // back from the pod
+constexpr float k_show_high = 3.0f;     // and above it
+constexpr float k_show_pitch = -0.44f;  // tilted down past it, so it sits high
+constexpr uint32_t k_show_turn_ms = 5200;   // one revolution
+// A podracer is not centred on its own origin: the engines reach five units
+// forward of it and the cockpit two and a half back. Spun about the origin it
+// swings round the screen like something on a string. Offsetting the pose by
+// the middle of that puts the turn where the eye expects it, and it also buys
+// a unit of near plane margin, which at ten units back is not spare.
+constexpr float k_show_centre = 1.2f;
+
+void draw_pod_showcase(const Chrome& chrome) {
+    PodPose p{};
+    p.yaw = (chrome.time_ms % k_show_turn_ms) * (6.2831853f / k_show_turn_ms);
+    p.x = -std::sin(p.yaw) * k_show_centre;
+    p.y = 0.0f;
+    p.z = -std::cos(p.yaw) * k_show_centre;
+    p.racer = chrome.pod;
+    p.engine[0] = p.engine[1] = 1000;
+    p.engine_max = 1000;
+    // The clock the binder arc crackles on. Slower than a race tick, because a
+    // pod standing still wants a hum rather than a fault.
+    p.tick = chrome.time_ms / 24;
+    Camera cam{};
+    cam.pitch = k_show_pitch;
+    draw_pod(p, 0, cam);
+
+    // Where it landed on screen, for the layout test. The corners of the pod's
+    // own box, turned with it and projected: eight projections on a menu, and
+    // the only way to say "it fits" as a number rather than as an opinion.
+    // Half extents match what draw_pod actually places: engines out to 3.3 and
+    // forward to 5.05, cockpit back to 2.6, the binder arc the highest thing on
+    // it.
+    g_stats.showcase_top = 32767;
+    g_stats.showcase_bottom = -32768;
+    const float box[3][2] = {{-3.3f, 3.3f}, {-0.7f, 1.4f}, {-2.6f, 5.05f}};
+    for (int corner = 0; corner < 8; ++corner) {
+        float at[3];
+        local_point(p, box[0][corner & 1], box[1][(corner >> 1) & 1],
+                    box[2][(corner >> 2) & 1], at);
+        int sx = 0, sy = 0, sz = 0;
+        if (!g_renderer->project(at[0], at[1], at[2], sx, sy, sz)) continue;
+        if (sy < g_stats.showcase_top) g_stats.showcase_top = static_cast<int16_t>(sy);
+        if (sy > g_stats.showcase_bottom) g_stats.showcase_bottom = static_cast<int16_t>(sy);
+    }
+}
+
 void draw_pod_select(const Chrome& chrome, const pse::RenderTarget& target) {
     const Racer& rc = racer(chrome.pod);
+    // A band behind the name, because the pod turns under it and four bright
+    // letters over an engine are unreadable exactly when the engine is closest.
+    pse::fill_rect(target, 0, 0, k_w, 25, 14, 16, 26);
     pse::draw_text_centred(target, rc.name, 60, 6, 240, 244, 250);
     pse::draw_text_centred(target, rc.pilot, 60, 16, 130, 138, 156);
     static const char* k_labels[6] = {"TOP", "ACC", "GRIP", "COOL", "FIX", "HULL"};
@@ -1514,12 +1575,38 @@ void render_frame(const Race& race, const Chrome& chrome,
     // Menus that are lists get a flat ground and no world at all. Drawing a
     // race behind a menu costs a full frame of geometry to be looked at
     // through a panel.
-    if (chrome.screen == Screen::PodSelect || chrome.screen == Screen::TrackSelect
-        || chrome.screen == Screen::Results) {
+    // Pod select draws a real pod, so it takes the 3D path: a camera, a depth
+    // buffer and the same draw_pod the race uses. Immediate mode rather than
+    // collect and split, because one pod is eighty six triangles and handing
+    // half of them to the other core costs more than it saves.
+    if (chrome.screen == Screen::PodSelect) {
+        g_stats = RenderStats{};
+        g_palette = &pal;
+        raster.begin_frame(target);
+        raster.clear_gradient(20, 23, 38, 9, 10, 17);
+        renderer.set_depth_range(k_near, k_far);
+        renderer.set_fov(k_fov);
+        // The camera is at the origin and the pod is placed relative to it, the
+        // same floating origin the race runs under, so nothing in draw_pod
+        // needs to know which screen it is on.
+        g_origin[0] = 0.0f;
+        g_origin[1] = k_show_high;
+        g_origin[2] = -k_show_dist;
+        g_forward[0] = 0.0f;
+        g_forward[1] = std::sin(k_show_pitch);
+        g_forward[2] = std::cos(k_show_pitch);
+        Camera show{};
+        show.pitch = k_show_pitch;
+        renderer.set_camera_basis(0.0f, 0.0f, 0.0f, camera_basis(show));
+        draw_pod_showcase(chrome);
+        draw_pod_select(chrome, target);
+        return;
+    }
+
+    if (chrome.screen == Screen::TrackSelect || chrome.screen == Screen::Results) {
         raster.begin_frame(target);
         raster.clear_gradient(18, 20, 32, 10, 11, 18);
-        if (chrome.screen == Screen::PodSelect) draw_pod_select(chrome, target);
-        else if (chrome.screen == Screen::TrackSelect) {
+        if (chrome.screen == Screen::TrackSelect) {
             draw_track_map(t, target, 12, 92);
             pse::fill_rect(target, 0, 0, k_w, 11, 10, 12, 18);
             pse::draw_text_centred(target, t.name, 60, 2, 240, 244, 250);
