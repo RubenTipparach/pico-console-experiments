@@ -47,32 +47,53 @@ def ring(radius, z, squash, sides):
     return out
 
 
-def build_engine(length, nose_r, body_r, bell_r, intake, bell, squash, sides=6):
-    """Intake cone, body, exhaust bell, throat. Six triangles a side."""
-    m = Mesh()
-    z_nose, z_bell = length * 0.5, -length * 0.5
-    z_front = z_nose - length * intake
-    z_rear = z_bell + length * bell
+def build_engine(length, mouth_r, body_r, nozzle_r, body_at, scoop, throat,
+                 squash, sides=6):
+    """A turbine: blunt intake at the front, tapering to a nozzle at the back.
 
-    a = ring(nose_r + body_r * 0.45, z_front, squash, sides)
-    c = ring(body_r, z_rear, squash, sides)
-    d = ring(bell_r, z_bell, squash, sides)
-    tip = (0.0, 0.0, z_nose)
-    throat = (0.0, 0.0, z_bell - length * 0.05)
+    IT USED TO BE A ROCKET, pointed at the front and flaring to a wide bell at
+    the back, and that is backwards for the thing it is. A podracer engine is a
+    turbine: the front is an enormous intake and the back is where the exhaust
+    leaves, narrower than the mouth that fed it.
+
+    It also read badly, and for a reason worth writing down: the chase camera
+    only ever sees the BACK of these. With the flare aft, the widest part of
+    the engine was the only part on screen, so a pod was two fat hexagons with
+    no length to them and no direction. Tapering aft puts the narrow end in
+    shot with a lit throat down the middle of it, and the eye gets the
+    engine's axis for free.
+
+    Both ends are RECESSES rather than points: a cone whose apex sits inside
+    the hull, so the intake is a scoop you look into and the nozzle is a hole
+    that glows. Six triangles a side, the same as the rocket cost.
+    """
+    m = Mesh()
+    z_mouth, z_tail = length * 0.5, -length * 0.5
+    z_body = z_mouth - length * body_at
+
+    a = ring(mouth_r, z_mouth, squash, sides)          # the intake lip
+    b = ring(body_r, z_body, squash, sides)            # the waist
+    c = ring(nozzle_r, z_tail, squash, sides)          # the nozzle
+    intake = (0.0, 0.0, z_mouth - length * scoop)      # inside the mouth
+    burn = (0.0, 0.0, z_tail + length * throat)        # inside the nozzle
 
     # Wound counter clockwise seen from OUTSIDE, which is what Mesh.quad and
     # Mesh.tri take: they reverse on the way in, because this repo's models
     # come out at a negative signed volume and obj2cpp's face_normal takes
     # v x u to match. The ring runs anticlockwise in XY seen from +Z, so a
     # face on the outside of the hull reads rear ring first.
+    #
+    # The two cones read the other way round from the hull, because they face
+    # into the engine rather than out of it. Both recesses are shallow next to
+    # their own radius, which is what keeps their normals pointing away from
+    # the middle of the mesh and keeps inward_faces() quiet: a deep scoop is a
+    # concavity that check cannot reason about.
     for i in range(sides):
         j = (i + 1) % sides
-        m.tri("intake", tip, a[i], a[j])
-        m.quad("hull", c[i], c[j], a[j], a[i])
-        m.quad("trim", d[i], d[j], c[j], c[i])
-        # The throat faces backward, into the exhaust: it is the inside of the
-        # bell, not the outside, so it winds the other way from everything else.
-        m.tri("glow", throat, d[j], d[i])
+        m.tri("intake", intake, a[i], a[j])
+        m.quad("hull", b[i], b[j], a[j], a[i])
+        m.quad("trim", c[i], c[j], b[j], b[i])
+        m.tri("glow", burn, c[j], c[i])
     return m
 
 
@@ -162,36 +183,37 @@ COCKPIT_MATERIALS = [("hull", (200, 200, 200)), ("trim", (168, 168, 176)),
 # name: (engine args, cockpit args)
 RACERS = {
     # SCARAB, the balanced one. The reference shape everything else reads off.
-    "scarab": (dict(length=3.3, nose_r=0.34, body_r=0.70, bell_r=0.98,
-                    intake=0.28, bell=0.28, squash=0.88, sides=6),
+    "scarab": (dict(length=3.3, mouth_r=1.00, body_r=0.80, nozzle_r=0.54,
+                    body_at=0.30, scoop=0.13, throat=0.11, squash=0.88, sides=6),
                dict(w=1.15, h=0.80, length=2.10)),
     # WISP, five for acceleration and grip and two for top speed. A blade:
     # long, flat and narrow, the least metal on the grid.
-    "wisp": (dict(length=4.0, nose_r=0.20, body_r=0.46, bell_r=0.74,
-                  intake=0.44, bell=0.20, squash=0.62, sides=5),
+    "wisp": (dict(length=4.0, mouth_r=0.76, body_r=0.56, nozzle_r=0.36,
+                  body_at=0.26, scoop=0.15, throat=0.10, squash=0.62, sides=5),
              dict(w=0.95, h=0.60, length=2.35, nose_out=0.68, taper=0.34)),
     # ANVIL, five for hull and cooling and two for acceleration and grip. A
-    # drum: short, wide and round, with the biggest bells on the roster.
-    "anvil": (dict(length=2.8, nose_r=0.50, body_r=0.96, bell_r=1.24,
-                   intake=0.16, bell=0.34, squash=1.00, sides=7),
+    # drum: short, wide and round, the biggest intakes on the roster.
+    "anvil": (dict(length=2.8, mouth_r=1.30, body_r=1.06, nozzle_r=0.76,
+                   body_at=0.34, scoop=0.11, throat=0.13, squash=1.00, sides=7),
               dict(w=1.45, h=0.95, length=1.90, nose_out=0.46, taper=0.48,
                    rake=0.46)),
     # NEEDLE, five for top speed and one for cooling and hull. A spike: the
-    # longest engines and the smallest bells, which is where the heat goes.
-    "needle": (dict(length=4.7, nose_r=0.16, body_r=0.44, bell_r=0.62,
-                    intake=0.52, bell=0.14, squash=0.84, sides=5),
+    # longest engines and the tightest nozzles, which is where the heat goes.
+    "needle": (dict(length=4.7, mouth_r=0.66, body_r=0.50, nozzle_r=0.30,
+                    body_at=0.22, scoop=0.17, throat=0.09, squash=0.84, sides=5),
                dict(w=0.85, h=0.66, length=2.55, nose_out=0.74, taper=0.30,
                     rake=0.44)),
     # NIGHTJAR, five for repair and four for hull. Built to be fixed: short
-    # body, enormous flared bell, everything reachable.
-    "nightjar": (dict(length=3.1, nose_r=0.44, body_r=0.78, bell_r=1.34,
-                      intake=0.20, bell=0.42, squash=0.92, sides=7),
+    # body, an intake you could climb into, everything reachable.
+    "nightjar": (dict(length=3.1, mouth_r=1.38, body_r=0.96, nozzle_r=0.62,
+                      body_at=0.38, scoop=0.10, throat=0.14, squash=0.92,
+                      sides=7),
                  dict(w=1.30, h=0.72, length=2.00, nose_out=0.52, taper=0.46,
                       rake=0.54)),
     # FANG, five for grip. Tall and narrow rather than wide and flat, which is
     # the one profile on the roster that stands UP.
-    "fang": (dict(length=3.6, nose_r=0.26, body_r=0.62, bell_r=0.80,
-                  intake=0.34, bell=0.22, squash=1.32, sides=6),
+    "fang": (dict(length=3.6, mouth_r=0.82, body_r=0.68, nozzle_r=0.44,
+                  body_at=0.28, scoop=0.13, throat=0.11, squash=1.32, sides=6),
              dict(w=1.00, h=1.00, length=2.05, nose_out=0.58, taper=0.40,
                   rake=0.52)),
 }

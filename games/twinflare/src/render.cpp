@@ -76,16 +76,23 @@ constexpr float k_pod_z = -1.55f;
 constexpr float k_cable_pod_x = 0.40f;
 constexpr float k_cable_pod_y = 0.30f;
 constexpr float k_cable_pod_z = -0.15f;
-constexpr float k_cable_eng_in = 0.42f;   // inboard, toward the cockpit
-constexpr float k_cable_eng_y = -0.10f;
+constexpr float k_cable_eng_in = 0.22f;   // inboard, toward the cockpit
+constexpr float k_cable_eng_y = -0.06f;
 constexpr float k_cable_eng_z = -0.85f;   // aft of the engine's middle
 
 // Half extents of each mesh, for measuring whether an anchor is really on the
 // part. A sphere was too generous to catch the front face mistake above: the
 // cockpit's half diagonal is 1.44, so a radius of 1.2 passed anchors that were
 // nowhere the camera could see them.
-constexpr float k_cockpit_half[3] = {0.58f, 0.40f, 1.05f};
-constexpr float k_engine_half[3] = {0.62f, 0.60f, 1.75f};
+// The TIGHTEST parts on the roster, not an average and not the ones the cables
+// were first drawn against. Six racers fly six different engines now, and
+// NEEDLE's tapers to a third of a unit across where the cable meets it while
+// ANVIL's is two and a half times that: an anchor checked against a box the
+// size of ANVIL is an anchor hanging in the air on two of the six. Measured off
+// the generated meshes, inradius rather than circumradius, because a hexagon is
+// narrowest across its flats.
+constexpr float k_cockpit_half[3] = {0.42f, 0.30f, 0.95f};
+constexpr float k_engine_half[3] = {0.30f, 0.22f, 1.40f};
 
 constexpr float k_engine_lead = 0.34f;
 constexpr float k_cockpit_trail = 0.80f;
@@ -932,39 +939,51 @@ struct PodPose {
     float surface;      // world y of that surface
 };
 
+// A unit vector across a strand, perpendicular to it and to the line of sight,
+// which is what makes a flat ribbon face the camera. False when there is no
+// strand at all.
+//
+// A strand pointing AT the camera has no camera facing width: the cross
+// product collapses, and just before it collapses it is a tiny vector whose
+// direction is all rounding. Normalising that swings the ribbon's width
+// through a right angle between one frame and the next, which is the cables
+// and the binder "jittering and randomly teleporting". It is worst exactly
+// where it is most visible, because a cable runs fore and aft and the chase
+// camera looks fore and aft.
+//
+// So near end on, take the width off the world's up instead. Any stable axis
+// will do; up is the one that keeps a nearly vertical ribbon looking like a
+// ribbon.
+bool ribbon_axis(const float a[3], const float b[3], float out[3]) {
+    const float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    // a is already camera relative, so the vector from the camera to it IS it.
+    const float vx = a[0], vy = a[1], vz = a[2];
+    out[0] = d[1] * vz - d[2] * vy;
+    out[1] = d[2] * vx - d[0] * vz;
+    out[2] = d[0] * vy - d[1] * vx;
+    float m = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    const float dl = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    const float vl = std::sqrt(vx * vx + vy * vy + vz * vz);
+    if (dl < 0.0001f || vl < 0.0001f) return false;
+    if (m < 0.15f * dl * vl) {
+        out[0] = -d[2];
+        out[1] = 0.0f;
+        out[2] = d[0];
+        m = std::sqrt(out[0] * out[0] + out[2] * out[2]);
+        if (m < 0.0001f) { out[0] = 1.0f; out[1] = 0.0f; out[2] = 0.0f; m = 1.0f; }
+    }
+    for (int i = 0; i < 3; ++i) out[i] /= m;
+    return true;
+}
+
 // A ribbon that always faces the camera, for the cables and the binder arc. A
 // tube this thin is one pixel wide, so a tube's worth of triangles buys
 // nothing.
 void ribbon(const float a[3], const float b[3], const Camera&, float width,
             const uint8_t col[3], bool lit = true) {
-    float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
-    // a is already camera relative, so the vector from the camera to it IS it.
-    const float vx = a[0], vy = a[1], vz = a[2];
-    float n[3] = {d[1] * vz - d[2] * vy, d[2] * vx - d[0] * vz, d[0] * vy - d[1] * vx};
-    float m = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-
-    // A strand pointing AT the camera has no camera facing width: the cross
-    // product collapses, and just before it collapses it is a tiny vector whose
-    // direction is all rounding. Normalising that swings the ribbon's width
-    // through a right angle between one frame and the next, which is the
-    // cables and the binder "jittering and randomly teleporting". It is worst
-    // exactly where it is most visible, because a cable runs fore and aft and
-    // the chase camera looks fore and aft.
-    //
-    // So near end on, take the width off the world's up instead. Any stable
-    // axis will do; up is the one that keeps a nearly vertical ribbon looking
-    // like a ribbon.
-    const float dl = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-    const float vl = std::sqrt(vx * vx + vy * vy + vz * vz);
-    if (dl < 0.0001f || vl < 0.0001f) return;
-    if (m < 0.15f * dl * vl) {
-        n[0] = d[1] * 0.0f - d[2] * 1.0f;
-        n[1] = 0.0f;
-        n[2] = d[0] * 1.0f - d[1] * 0.0f;
-        m = std::sqrt(n[0] * n[0] + n[2] * n[2]);
-        if (m < 0.0001f) { n[0] = 1.0f; n[1] = 0.0f; n[2] = 0.0f; m = 1.0f; }
-    }
-    for (float& v : n) v = v / m * width;
+    float n[3];
+    if (!ribbon_axis(a, b, n)) return;
+    for (float& v : n) v *= width;
     const float p0[3] = {a[0] - n[0], a[1] - n[1], a[2] - n[2]};
     const float p1[3] = {a[0] + n[0], a[1] + n[1], a[2] + n[2]};
     const float p2[3] = {b[0] + n[0], b[1] + n[1], b[2] + n[2]};
@@ -1044,6 +1063,62 @@ void offset_from(const float centre[3], float yaw, float pitch, float roll,
     out[0] = centre[0] + m[0] * dx + m[1] * dy + m[2] * dz;
     out[1] = centre[1] + m[3] * dx + m[4] * dy + m[5] * dz;
     out[2] = centre[2] + m[6] * dx + m[7] * dy + m[8] * dz;
+}
+
+// The back end of an engine mesh: how far aft the nozzle is and how wide it is
+// there. Read off the mesh rather than written down beside it, because six
+// racers fly six different engines and a table of their lengths is a table
+// that goes stale the first time one of them is reshaped. Twenty vertices,
+// twice a frame.
+struct Tail { float z, r; };
+
+Tail engine_tail(const pse::MeshData& m) {
+    int16_t lo = 0;
+    for (uint16_t i = 0; i < m.vertex_count; ++i)
+        if (m.vertices[i].z < lo) lo = m.vertices[i].z;
+    int16_t wide = 0;
+    const int16_t band = static_cast<int16_t>(m.scale / 12);
+    for (uint16_t i = 0; i < m.vertex_count; ++i) {
+        if (m.vertices[i].z > lo + band) continue;
+        const int16_t x = m.vertices[i].x < 0
+            ? static_cast<int16_t>(-m.vertices[i].x) : m.vertices[i].x;
+        if (x > wide) wide = x;
+    }
+    const float unit = m.scale > 0 ? 1.0f / m.scale : 0.0f;
+    return {lo * unit, wide * unit};
+}
+
+// The exhaust, and it is the other half of turning the engines round.
+//
+// They used to be rockets: pointed at the front, flaring to a wide bell at the
+// back. A podracer engine is a turbine, so the blunt intake is forward now and
+// the nozzle is aft. That is the right way round, and it puts the NARROW end
+// permanently on screen, because a chase camera only ever sees the back of
+// these. A dark taper is not what the back of a running engine looks like.
+//
+// A TAPER along the engine's own axis, not a square on the end of it: a flame
+// is read from its shape, wide where it leaves and thin where it runs out.
+// Unlit, in the racer's own binder colour, because it is light rather than
+// paint and has neither a livery nor an angle. Four triangles a nozzle, at
+// full detail only.
+void flare(const float at[3], float yaw, float pitch, float roll,
+           const Tail& tail, float scale, const uint8_t col[3]) {
+    const float wide = tail.r * 0.62f * scale;
+    const float thin = tail.r * 0.16f * scale;
+    float mouth[3], tip[3];
+    offset_from(at, yaw, pitch, roll, 0.0f, 0.0f, tail.z + tail.r * 0.25f, mouth);
+    offset_from(at, yaw, pitch, roll, 0.0f, 0.0f,
+                tail.z - tail.r * 2.4f * scale, tip);
+    float n[3];
+    if (!ribbon_axis(mouth, tip, n)) return;
+    const float q[4][3] = {
+        {mouth[0] - n[0] * wide, mouth[1] - n[1] * wide, mouth[2] - n[2] * wide},
+        {mouth[0] + n[0] * wide, mouth[1] + n[1] * wide, mouth[2] + n[2] * wide},
+        {tip[0] + n[0] * thin, tip[1] + n[1] * thin, tip[2] + n[2] * thin},
+        {tip[0] - n[0] * thin, tip[1] - n[1] * thin, tip[2] - n[2] * thin},
+    };
+    quad(q[0], q[1], q[2], q[3], col, false);
+    quad(q[3], q[2], q[1], q[0], col, false);   // a flame has no outside either
 }
 
 // How far a point in a part's own frame lies outside that part's box. Zero
@@ -1274,6 +1349,18 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                               static_cast<uint8_t>(rc.colour[0][1] * tint / 255),
                               static_cast<uint8_t>(rc.colour[0][2] * tint / 255),
                               eng.pitch, p.boosting ? 90 : 0, eng.roll);
+        if (lod == 0) {
+            // Dimmer as the engine wears, so a burn losing its colour is the
+            // pod saying where the damage is without a second bar on the HUD.
+            const Tail tail = engine_tail(engine_mesh);
+            const uint8_t fire[3] = {
+                static_cast<uint8_t>(rc.arc[0] * (55.0f + 45.0f * wear) / 100.0f),
+                static_cast<uint8_t>(rc.arc[1] * (45.0f + 55.0f * wear) / 100.0f),
+                static_cast<uint8_t>(rc.arc[2] * (35.0f + 65.0f * wear) / 100.0f),
+            };
+            flare(at, eng.yaw, eng.pitch, eng.roll, tail,
+                  p.boosting ? 1.45f : 0.85f, fire);
+        }
     }
 
     // Spray last, so a plume sits in front of the hull that threw it rather
