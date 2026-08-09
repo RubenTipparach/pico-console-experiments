@@ -57,6 +57,13 @@ struct RenderStats {
     // were on neither the engines nor the cockpit, so they met in the middle
     // and connected to nothing.
     float cable_gap;
+    // Sea and spray drawn last frame. Counted rather than eyeballed because
+    // both are invisible in exactly the case that matters: a shoreline that
+    // never gets drawn and a track with no water look identical in a still
+    // frame of open sea, and a spray count of zero over water is the whole
+    // feature silently absent.
+    uint16_t sea;
+    uint16_t spray;
 };
 const RenderStats& render_stats();
 

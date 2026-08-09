@@ -253,6 +253,105 @@ void test_the_cables_are_attached_to_something() {
                 worst, peak_swing * 360.0 / 65536.0);
 }
 
+void test_the_sea_is_drawn_where_it_is_driven() {
+    // The sim's waterline and the renderer's are the same number out of the
+    // same header, and this is what says so from the outside: over a submerged
+    // stretch there has to BE sea in the frame, and the pod has to be sitting
+    // on top of what is drawn rather than beside it.
+    //
+    // Worth a test of its own because the failure is silent. A shoreline that
+    // never gets drawn and a planet with no water look identical in a still
+    // frame of open blue, and the first version of this drew plain sea over
+    // the submerged road: the racing line simply stopped existing for a third
+    // of the lap and every frame still looked like a seascape.
+    int tide = -1;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+    check(tide >= 0, "a track has a sea to draw");
+    if (tide < 0) return;
+    const Track& t = track(tide);
+
+    Race race;
+    race_init(race, tide, 0);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    int wet_frames = 0, sprayed = 0, sampled = 0;
+    int peak_sea = 0, peak_spray = 0;
+    for (int i = 0; i < 6000; ++i) {
+        drive(race, t, in);
+        race_tick(race, in);
+        if (i % 60 || i < 200) continue;
+        render_frame(race, chrome, target());
+        ++sampled;
+        if (render_stats().sea > 0) ++wet_frames;
+        if (render_stats().spray > 0) ++sprayed;
+        if (render_stats().sea > peak_sea) peak_sea = render_stats().sea;
+        if (render_stats().spray > peak_spray) peak_spray = render_stats().spray;
+        // Whenever the pod is over water it must be throwing some, because
+        // that is the one cue that says the surface under it is not road.
+        if (race.pod.over_water && race.pod.grounded) {
+            check(render_stats().spray > 0, "a pod over water throws spray");
+        }
+    }
+    check(wet_frames * 4 > sampled, "a good part of the lap has sea in frame");
+    check(sprayed > 0, "the pod runs over water often enough to throw spray");
+    std::printf("  %s: sea in %d of %d sampled frames (peak %d quads), "
+                "spray in %d (peak %d)\n",
+                t.name, wet_frames, sampled, peak_sea, sprayed, peak_spray);
+
+    // And a dry planet draws none of it, which is what the sentinel is for.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        if (ti == tide) continue;
+        Race dry;
+        race_init(dry, ti, 0);
+        Input drive_in{};
+        for (int i = 0; i < 900; ++i) { drive(dry, track(ti), drive_in); race_tick(dry, drive_in); }
+        render_frame(dry, chrome, target());
+        check(render_stats().sea == 0 && render_stats().spray == 0,
+              "a track with no water draws no water");
+    }
+}
+
+void test_the_binder_arc_moves() {
+    // Reported from playing it: the arc between the engines needed to be more
+    // animated. It was a fixed parabola redrawn identically every frame, which
+    // is a picture of lightning rather than lightning.
+    //
+    // Checked by rendering two frames one tick apart with the pod held still,
+    // so the ONLY thing that can differ is the arc itself. A frame difference
+    // proves it moved; the second half proves it moved and stayed attached,
+    // since a strand whose ends wander is a strand joined to nothing, which is
+    // the mistake the cables already made once.
+    const Track& t = track(0);
+    Race race;
+    race_init(race, 0, 0);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    for (int i = 0; i < 600; ++i) { drive(race, t, in); race_tick(race, in); }
+
+    // Frozen: same pod, same camera, consecutive ticks.
+    uint8_t first[120 * 120 * 3];
+    int moved = 0;
+    float worst_gap = 0.0f;
+    for (int k = 0; k < 6; ++k) {
+        race.ticks = 4000 + k;
+        render_frame(race, chrome, target());
+        if (render_stats().cable_gap > worst_gap) worst_gap = render_stats().cable_gap;
+        if (k == 0) {
+            std::memcpy(first, g_pixels, sizeof(first));
+        } else {
+            int diff = 0;
+            for (size_t i = 0; i < sizeof(first); ++i)
+                if (first[i] != g_pixels[i]) ++diff;
+            if (diff > 0) ++moved;
+        }
+    }
+    check(moved >= 4, "the arc looks different from tick to tick");
+    check(worst_gap <= 0.0f, "and the pod is still welded together while it does");
+    std::printf("  the arc redrew differently on %d of 5 consecutive ticks\n", moved);
+}
+
 }  // namespace
 
 int main() {
@@ -261,6 +360,8 @@ int main() {
     test_there_is_ground_when_the_pod_runs_wide();
     test_the_parts_of_the_pod_disagree_in_a_corner();
     test_the_cables_are_attached_to_something();
+    test_the_sea_is_drawn_where_it_is_driven();
+    test_the_binder_arc_moves();
 
     if (g_failures) {
         std::printf("%d failure(s)\n", g_failures);

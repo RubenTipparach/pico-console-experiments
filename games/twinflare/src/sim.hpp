@@ -61,6 +61,7 @@ struct Pod {
     bool grounded;
     bool scraping;
     bool on_road;
+    bool over_water;             // the surface under the field is the sea
     int16_t wreck_ticks;
     int16_t flash_ticks;
     int16_t blast[2];
@@ -106,6 +107,7 @@ struct Surface {
     uint16_t node;
     bool road;
     bool wall;
+    bool water;     // the sea won: the field is pushing off water, not rock
 };
 Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z);
 

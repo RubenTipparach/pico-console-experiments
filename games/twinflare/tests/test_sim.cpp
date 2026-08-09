@@ -487,6 +487,204 @@ void test_only_a_gap_is_fatal() {
     check(died, "a pod parked over a gap falls and wrecks");
 }
 
+void test_the_pod_never_gets_below_the_surface() {
+    // Reported from playing it: "I should never sink below the ground
+    // whatsoever." The hover field was a spring and only a spring, so a hard
+    // arrival pushed through the surface for a few ticks while the spring
+    // caught up, which is exactly the thing a force field that always holds
+    // you above the ground is supposed to make impossible.
+    //
+    // Every track, both engine shapes, a whole lap each, and the number this
+    // asserts is the floor itself: while the field has hold of the pod, the
+    // clearance may not go under it, ever, on any tick.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        for (int ri = 0; ri < 2; ++ri) {
+            Race race;
+            race_init(race, ti, ri * 2);
+            Input in{};
+            int32_t worst = INT32_MAX;
+            for (int i = 0; i < 6000; ++i) {
+                drive(race, t, in);
+                race_tick(race, in);
+                if (race.pod.grounded && race.pod.wreck_ticks == 0
+                    && race.pod.clearance < worst) {
+                    worst = race.pod.clearance;
+                }
+            }
+            check(worst >= k_hover_floor,
+                  "the field never lets the pod under its own floor");
+            if (ri == 0) {
+                std::printf("  %-10s closest the pod came to the surface: "
+                            "%.2f units (floor %.2f)\n", t.name,
+                            worst / 65536.0, k_hover_floor / 65536.0);
+            }
+        }
+    }
+}
+
+void test_a_hard_landing_costs_engines_and_not_the_run() {
+    // The other half of the same report: "pod should instead take damage if it
+    // hits the ground too hard." Instead of what it used to do, which was sink
+    // through the road and wreck.
+    //
+    // Dropped from sixty units up onto the middle of the start straight, which
+    // is a worse arrival than any ramp on any of the four tracks produces.
+    const Track& t = track(0);
+    Race race;
+    race_init(race, 0, 0);
+    Input in{};
+    for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+
+    const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+    race.pod.y = s.y + fp(60);
+    race.pod.vy = 0;
+    const int16_t before = race.pod.engine[0];
+
+    int32_t worst = INT32_MAX;
+    int32_t fastest_fall = 0;
+    Input coast{};
+    for (int i = 0; i < 240; ++i) {
+        race_tick(race, coast);
+        if (-race.pod.vy > fastest_fall) fastest_fall = -race.pod.vy;
+        if (race.pod.grounded && race.pod.clearance < worst) worst = race.pod.clearance;
+    }
+    check(race.pod.wreck_ticks == 0, "a hard landing does not wreck the pod");
+    check(worst >= k_hover_floor, "and it does not go through the surface");
+    check(race.pod.engine[0] < before, "it costs the left engine health");
+    check(race.pod.engine[1] < before, "and the right engine equally");
+    check(race.pod.engine[0] == race.pod.engine[1],
+          "a slam is symmetric: both engines hit the ground together");
+    // Enough to be worth avoiding and not enough to end a race outright, which
+    // is the whole point of moving the penalty from the run to the engines.
+    const int lost = before - race.pod.engine[0];
+    check(lost > 40, "the damage is felt");
+    check(lost < race.pod.engine_max / 2, "and one bad landing is survivable");
+    std::printf("  sixty unit drop: fell at %d u/s, cost %d of %d health an "
+                "engine, closest to the road %.2f units\n",
+                fastest_fall * k_tick_hz / k_one, lost, race.pod.engine_max,
+                worst / 65536.0);
+}
+
+void test_the_sea_is_a_surface_and_not_a_hazard() {
+    // TIDEBREAK's road runs from eighteen units under the waterline to twelve
+    // above it, which is the track the brief asked for and is undrivable
+    // unless water holds the pod up. It does: surface_at hands the hover field
+    // the waterline whenever the rock is lower, so the pod skims the sea in
+    // exactly the way it skims a road.
+    int tide = -1;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+    check(tide >= 0, "one track has a sea");
+    if (tide < 0) return;
+    const Track& t = track(tide);
+    const int32_t sea = water_level(t);
+
+    // Only one, and the sentinel really is a sentinel: three dry planets must
+    // not quietly acquire a sea at y = -32768.
+    int wet = 0;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) ++wet;
+    check(wet == 1, "exactly one track has a sea");
+
+    // The deepest node on the circuit, which is where the difference between
+    // a sea and a hole in the ground is thirteen units of drop.
+    int deepest = 0;
+    for (uint16_t i = 0; i < t.node_count; ++i)
+        if (node_y(t.nodes[i]) < node_y(t.nodes[deepest])) deepest = i;
+    check(node_y(t.nodes[deepest]) < sea - fp(8),
+          "the deepest part of the circuit is well under the waterline");
+
+    Race race;
+    race_init(race, tide, 0);
+    const TrackNode& n = t.nodes[deepest];
+    race.pod.node = static_cast<uint16_t>(deepest);
+    race.pod.x = node_x(n);
+    race.pod.z = node_z(n);
+    race.pod.y = sea + fp(14);      // dropped in from above
+    race.pod.vx = race.pod.vz = race.pod.vy = 0;
+
+    Input in{};
+    int32_t lowest = INT32_MAX;
+    for (int i = 0; i < 400; ++i) {
+        race_tick(race, in);
+        if (race.pod.y < lowest) lowest = race.pod.y;
+    }
+    check(race.pod.wreck_ticks == 0, "the sea does not drown a pod");
+    check(race.pod.over_water, "and the pod knows it is over water");
+    check(lowest >= sea, "the pod never gets below the waterline");
+    check(race.pod.y < sea + k_hover_height + fp(1),
+          "it settles ON the sea rather than hovering somewhere above it");
+    std::printf("  %s: sea at %.1f, deepest road %.1f, pod settled at %.2f "
+                "(lowest %.2f)\n", t.name, sea / 65536.0,
+                node_y(t.nodes[deepest]) / 65536.0, race.pod.y / 65536.0,
+                lowest / 65536.0);
+
+    // And the same for a gap. A hole in the road with the sea underneath is a
+    // splash, not a grave, and that follows from the one clamp in surface_at
+    // rather than from a case anywhere else.
+    int gap = -1;
+    for (uint16_t i = 0; i < t.node_count; ++i)
+        if ((t.nodes[i].flags & kGap) && node_y(t.nodes[i]) < sea) { gap = i; break; }
+    if (gap >= 0) {
+        Race fall;
+        race_init(fall, tide, 0);
+        fall.pod.node = static_cast<uint16_t>(gap);
+        fall.pod.x = node_x(t.nodes[gap]);
+        fall.pod.z = node_z(t.nodes[gap]);
+        fall.pod.y = node_y(t.nodes[gap]) + fp(2);
+        Input none{};
+        for (int i = 0; i < 400; ++i) race_tick(fall, none);
+        check(fall.pod.wreck_ticks == 0, "a gap over the sea is survivable");
+        check(fall.pod.y >= sea, "and it lands you on the surface");
+    }
+}
+
+void test_the_sea_costs_time() {
+    // Water has to be a stretch of the circuit rather than a free one, or a
+    // third of TIDEBREAK's lap is a rest. Two pods on the same track, one
+    // running the submerged section and one the dry, coasting from the same
+    // speed.
+    int tide = -1;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+    if (tide < 0) return;
+    const Track& t = track(tide);
+    const int32_t sea = water_level(t);
+
+    int wet_node = -1, dry_node = -1;
+    for (uint16_t i = 0; i < t.node_count; ++i) {
+        const bool gap = (t.nodes[i].flags & (kGap | kWall)) != 0;
+        if (gap) continue;
+        if (wet_node < 0 && node_y(t.nodes[i]) < sea - fp(6)) wet_node = i;
+        if (dry_node < 0 && node_y(t.nodes[i]) > sea + fp(8)) dry_node = i;
+    }
+    check(wet_node >= 0 && dry_node >= 0, "the circuit has both a sea and a causeway");
+    if (wet_node < 0 || dry_node < 0) return;
+
+    int32_t speed[2] = {0, 0};
+    const int nodes[2] = {dry_node, wet_node};
+    for (int k = 0; k < 2; ++k) {
+        Race race;
+        race_init(race, tide, 0);
+        const TrackNode& n = t.nodes[nodes[k]];
+        const TrackNode& ahead = t.nodes[(nodes[k] + 1) % t.node_count];
+        const int32_t head = fatan2(node_x(ahead) - node_x(n), node_z(ahead) - node_z(n));
+        race.pod.node = static_cast<uint16_t>(nodes[k]);
+        race.pod.x = node_x(n);
+        race.pod.z = node_z(n);
+        race.pod.yaw = head;
+        const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+        race.pod.y = s.y + k_hover_height;
+        race.pod.vx = ftrig(per_s(fp(60)), fsin(head));
+        race.pod.vz = ftrig(per_s(fp(60)), fcos(head));
+        Input coast{};
+        for (int i = 0; i < 60; ++i) race_tick(race, coast);
+        speed[k] = pod_speed(race.pod);
+        check(race.pod.over_water == (k == 1), "each pod is on the surface it was put on");
+    }
+    check(speed[1] < speed[0], "coasting over the sea is slower than the causeway");
+    std::printf("  coasting: %d u/s on the causeway against %d u/s over the sea\n",
+                speed[0] * k_tick_hz / k_one, speed[1] * k_tick_hz / k_one);
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -527,6 +725,10 @@ int main() {
     test_every_gap_is_passable();
     test_running_wide_costs_time_and_not_the_run();
     test_only_a_gap_is_fatal();
+    test_the_pod_never_gets_below_the_surface();
+    test_a_hard_landing_costs_engines_and_not_the_run();
+    test_the_sea_is_a_surface_and_not_a_hazard();
+    test_the_sea_costs_time();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 

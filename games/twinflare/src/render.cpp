@@ -86,6 +86,10 @@ constexpr float k_cockpit_trail = 0.80f;
 // like it was cornering hard.
 constexpr float k_swing_throw = 2.1f;
 
+// Segments in the binder arc. Six and not four, because a jittered strand is
+// only as ragged as it has joints, and four reads as a bent stick.
+constexpr int k_arc_steps = 6;
+
 constexpr float k_brad = 6.2831853f / 65536.0f;
 
 float to_rad(int32_t brads) { return brads * k_brad; }
@@ -212,6 +216,10 @@ pse::Renderer3D* g_renderer = nullptr;
 // jitters and one that does not.
 float g_origin[3] = {0.0f, 0.0f, 0.0f};
 float g_forward[3] = {0.0f, 0.0f, 1.0f};
+// The palette this frame is being drawn in. Frame state alongside the origin,
+// for the two things that need a colour a long way from where the track is in
+// scope: the spray a pod throws, and nothing else yet.
+const Palette* g_palette = nullptr;
 RenderStats g_stats{};
 
 void note_coordinate(const float p[3]) {
@@ -247,7 +255,15 @@ float view_z(const float p[3]) {
 // from under the pod the moment the camera got low or the pod pitched down. The
 // road did not need to be dropped; it needed to be CUT, and cutting it is nine
 // lines of Sutherland-Hodgman against one plane.
-void poly(const float (*pts)[3], int count, const uint8_t colour[3]) {
+// `lit` is what tells a surface from a light. Everything in the world is
+// lambert shaded off its own normal, which is right for road and rock and
+// wrong for the two things here that emit: the plasma binder and the spray off
+// the engines. Both are drawn as billboards, so their normals are horizontal,
+// so the shader gave them the ambient floor and nothing else and they came out
+// at 55 percent: white foam rendered as grey gravel and a plasma arc as a dull
+// purple wire. An unlit polygon takes the colour it was authored in.
+void poly(const float (*pts)[3], int count, const uint8_t colour[3],
+          bool lit = true) {
     float clipped[10][3];
     int n = 0;
     for (int i = 0; i < count && n < 9; ++i) {
@@ -288,9 +304,12 @@ void poly(const float (*pts)[3], int count, const uint8_t colour[3]) {
         sy[i] = sy[i] < -4000 ? -4000 : (sy[i] > 4000 ? 4000 : sy[i]);
     }
 
-    float nrm[3];
-    normal_of(clipped[0], clipped[1], clipped[2], nrm);
-    const Rgb c = shade(colour, nrm[0], nrm[1], nrm[2]);
+    Rgb c{colour[0], colour[1], colour[2]};
+    if (lit) {
+        float nrm[3];
+        normal_of(clipped[0], clipped[1], clipped[2], nrm);
+        c = shade(colour, nrm[0], nrm[1], nrm[2]);
+    }
     pse::ScreenTriangle tri{};
     tri.r0 = tri.r1 = tri.r2 = c.r;
     tri.g0 = tri.g1 = tri.g2 = c.g;
@@ -318,12 +337,12 @@ void poly(const float (*pts)[3], int count, const uint8_t colour[3]) {
 }
 
 void quad(const float p0[3], const float p1[3], const float p2[3],
-          const float p3[3], const uint8_t colour[3]) {
+          const float p3[3], const uint8_t colour[3], bool lit = true) {
     const float pts[4][3] = {
         {p0[0], p0[1], p0[2]}, {p1[0], p1[1], p1[2]},
         {p2[0], p2[1], p2[2]}, {p3[0], p3[1], p3[2]},
     };
-    poly(pts, 4, colour);
+    poly(pts, 4, colour, lit);
 }
 
 // ---- the road ---------------------------------------------------------------
@@ -333,6 +352,18 @@ void quad(const float p0[3], const float p1[3], const float p2[3],
 // thing that tells the player where the track goes.
 constexpr int k_view_segments = 18;
 constexpr int k_view_behind = 3;
+
+// The swell, as a TRIANGLE wave and not a sine. A sine here is one software
+// float call per segment end per frame on a chip with no FPU, spent on a
+// displacement a quarter of a unit tall that is two pixels at the near end and
+// none at all at the far end. The shape of a wave at 120 pixels is carried by
+// the fact that it MOVES, not by whether its crest is round.
+float ripple(int index, uint32_t tick) {
+    const int p = index * 5 + static_cast<int>(tick / 3);
+    const int q = ((p % 12) + 12) % 12;
+    const int up = q < 6 ? q : 12 - q;          // 0..6..0
+    return (up - 3) * 0.085f;                   // about a quarter unit either way
+}
 
 void edge_point(const Track& t, int index, float side, float out[3], float widen = 1.0f) {
     const TrackNode& a = t.nodes[index];
@@ -349,8 +380,14 @@ void edge_point(const Track& t, int index, float side, float out[3], float widen
     out[2] = az - dx * half * side - g_origin[2];
 }
 
-void draw_road(const Track& t, const Pod& pod) {
+void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
     const Palette& pal = t.palette;
+    // The sea, camera relative, exactly as surface_at reads it. One number
+    // shared by the whole of this function so the drawn shoreline and the
+    // driven one cannot end up in different places.
+    const bool wet = has_water(t);
+    const float sea = wet ? to_world(water_level(t)) - g_origin[1] : 0.0f;
+
     for (int s = -k_view_behind; s < k_view_segments; ++s) {
         const int i = ((pod.node + s) % t.node_count + t.node_count) % t.node_count;
         const int j = (i + 1) % t.node_count;
@@ -363,6 +400,18 @@ void draw_road(const Track& t, const Pod& pod) {
         edge_point(t, j, -1.0f, lj);
         edge_point(t, i, 1.0f, ri);
         edge_point(t, j, 1.0f, rj);
+
+        // Where this segment stands relative to the sea. Whole segment or
+        // nothing, so a shoreline lands on a node boundary and the eight units
+        // of a segment become the beach. Cutting a quad along the waterline
+        // would be more exact and would cost a clipper per segment for an edge
+        // that is three pixels long.
+        const float yi = to_world(node_y(a));
+        const float yj = to_world(node_y(t.nodes[j]));
+        const bool road_wet = wet && yi < sea && yj < sea;
+        const bool plain_wet = wet && yi - 3.0f < sea && yj - 3.0f < sea;
+        const float wave_i = wet ? sea + ripple(i, tick) : 0.0f;
+        const float wave_j = wet ? sea + ripple(j, tick) : 0.0f;
 
         // Ground and shoulders only where they can still be seen. Past about
         // ninety units out the shoulder is under a pixel tall and the ground
@@ -386,21 +435,73 @@ void draw_road(const Track& t, const Pod& pod) {
                 edge_point(t, j, sgn, fj, 14.0f);
                 // Matched to surface_at: three units below the road and flat
                 // out to the horizon, so what is drawn is what is driven on.
+                // Under the waterline that becomes the sea instead, for the
+                // same reason and out of the same number.
                 const float drop = (a.flags & kWall) ? 4.0f : -3.0f;
                 fi[1] += drop; fj[1] += drop;
-                wi[1] += (a.flags & kWall) ? 4.0f : -3.0f;
-                wj[1] += (a.flags & kWall) ? 4.0f : -3.0f;
-                if (side) quad(wi, wj, fj, fi, pal.ground[band]);
-                else      quad(fi, fj, wj, wi, pal.ground[band]);
+                wi[1] += drop;
+                wj[1] += drop;
+                const uint8_t* plain_col = pal.ground[band];
+                if (plain_wet) {
+                    fi[1] = wave_i; fj[1] = wave_j;
+                    wi[1] = wave_i; wj[1] = wave_j;
+                    plain_col = pal.water[band];
+                    ++g_stats.sea;
+                }
+                if (side) quad(wi, wj, fj, fi, plain_col);
+                else      quad(fi, fj, wj, wi, plain_col);
                 // Walls get a colour of their own rather than borrowing the
                 // scenery's: a near vertical face takes the ambient floor and
                 // nothing else, so a wall painted from the same palette entry
                 // as a distant rock comes out three times darker than it, and
                 // the track that is mostly wall came out a black corridor.
                 const uint8_t* side_col = (a.flags & kWall) ? pal.wall : pal.rock[band];
+                // The bank between the road edge and the plain. Where the road
+                // is dry and the plain is not, this is the shoreline, and it
+                // wants the foam colour: a beach is the one edge in the frame
+                // the player uses to judge how much road is left.
+                if (plain_wet && !road_wet) side_col = pal.foam;
                 if (side) quad(ri, rj, wj, wi, side_col);
                 else      quad(wi, wj, lj, li, side_col);
             }
+        }
+
+        // Submerged road is SEA, drawn at sea level and not where the tarmac
+        // is. That is not a decoration: surface_at hands the hover field the
+        // waterline out here, so the pod is skimming twelve units above the
+        // road at the bottom of TIDEBREAK's trench, and drawing the road it is
+        // nowhere near would put the whole pod under the scenery. Ahead of the
+        // gap test below, because a hole in the road that is under water is
+        // not a hole, it is more water.
+        if (road_wet) {
+            // The lane, in the shallows colour with foam down both edges. The
+            // first version drew plain sea here and the racing line simply
+            // stopped existing for a third of the lap: a player cannot aim at
+            // a track that is not drawn, and "the road is under water" is not
+            // a reason to stop telling them where it is. Same three strips the
+            // dashed road uses, so a submerged straight and a dry one are laid
+            // out the same way and read the same way.
+            constexpr float k_surf = 0.12f;   // of a half width, each side
+            float ai[3], aj[3], bi[3], bj[3];
+            edge_point(t, i, -1.0f + k_surf, ai);
+            edge_point(t, j, -1.0f + k_surf, aj);
+            edge_point(t, i, 1.0f - k_surf, bi);
+            edge_point(t, j, 1.0f - k_surf, bj);
+            float li2[3], lj2[3], ri2[3], rj2[3];
+            for (int c = 0; c < 3; ++c) {
+                li2[c] = li[c]; lj2[c] = lj[c]; ri2[c] = ri[c]; rj2[c] = rj[c];
+            }
+            li2[1] = ai[1] = bi[1] = ri2[1] = wave_i;
+            lj2[1] = aj[1] = bj[1] = rj2[1] = wave_j;
+            if (near) {
+                quad(li2, lj2, aj, ai, pal.foam);
+                quad(ai, aj, bj, bi, pal.shallow[band]);
+                quad(bi, bj, rj2, ri2, pal.foam);
+            } else {
+                quad(li2, lj2, rj2, ri2, pal.shallow[band]);
+            }
+            ++g_stats.sea;
+            continue;
         }
 
         if (a.flags & kGap) continue;   // the jump: no road at all
@@ -506,13 +607,16 @@ struct PodPose {
     int32_t engine_max;
     bool boosting;
     float throttle;
+    uint32_t tick;      // the race clock, for anything that has to move
+    bool spray;         // the surface under this pod is water
+    float surface;      // world y of that surface
 };
 
 // A ribbon that always faces the camera, for the cables and the binder arc. A
 // tube this thin is one pixel wide, so a tube's worth of triangles buys
 // nothing.
 void ribbon(const float a[3], const float b[3], const Camera&, float width,
-            const uint8_t col[3]) {
+            const uint8_t col[3], bool lit = true) {
     float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
     // a is already camera relative, so the vector from the camera to it IS it.
     const float vx = a[0], vy = a[1], vz = a[2];
@@ -524,8 +628,62 @@ void ribbon(const float a[3], const float b[3], const Camera&, float width,
     const float p1[3] = {a[0] + n[0], a[1] + n[1], a[2] + n[2]};
     const float p2[3] = {b[0] + n[0], b[1] + n[1], b[2] + n[2]};
     const float p3[3] = {b[0] - n[0], b[1] - n[1], b[2] - n[2]};
-    quad(p0, p1, p2, p3, col);
-    quad(p3, p2, p1, p0, col);   // both faces: a ribbon has no outside
+    quad(p0, p1, p2, p3, col, lit);
+    quad(p3, p2, p1, p0, col, lit);   // both faces: a ribbon has no outside
+}
+
+// White water, thrown up where the engines meet the sea.
+//
+// Billboards rather than geometry, and upright rather than fully camera
+// facing: a plume of spray has a definite up, so pinning the quad's vertical
+// axis to the world's and only turning it about that axis is both cheaper and
+// more like the thing. Eight of them, one quad each, and only on a pod drawn
+// at full detail over water, so a dry track pays nothing and a distant rival
+// pays nothing.
+constexpr int k_spray_count = 8;
+
+void spray(const PodPose& p, const float left[3], const float right[3],
+           const uint8_t foam[3]) {
+    const float ground = p.surface - g_origin[1];
+    const float fx = std::sin(p.yaw), fz = std::cos(p.yaw);
+    for (int k = 0; k < k_spray_count; ++k) {
+        // Each plume runs its own loop of the same length, offset so they do
+        // not all fire together, and the phase is the RACE CLOCK rather than a
+        // stored particle: nothing here is remembered between frames, which is
+        // what lets this cost no RAM at all.
+        const uint32_t seed = static_cast<uint32_t>(k) * 2654435761u;
+        const int period = 22 + (seed >> 28);
+        const float age = ((p.tick + k * 7) % period) / static_cast<float>(period);
+        const float* from = (k & 1) ? right : left;
+        // Out to the side, and further back the older it is.
+        const float side = ((static_cast<int>(seed >> 8) & 15) - 7) * 0.16f;
+        const float back = 1.1f + age * 4.6f;
+        const float rise = 4.0f * age * (1.0f - age) * 1.5f;
+        float at[3] = {
+            from[0] - fx * back + fz * side,
+            ground + rise,
+            from[2] - fz * back - fx * side,
+        };
+        // Wider as it breaks up, which is what turns eight squares into a
+        // plume rather than eight squares. Small: these sit between the pod
+        // and the camera, so a droplet a unit across is fifteen pixels of the
+        // hundred and twenty and it hides the vehicle it is coming off.
+        const float sz = 0.09f + age * 0.17f;
+        // Upright, and turned about the vertical to face the camera. `at` is
+        // already camera relative, so it is also the direction to look along.
+        float rx = at[2], rz = -at[0];
+        const float m = std::sqrt(rx * rx + rz * rz);
+        if (m < 0.0001f) continue;
+        rx = rx / m * sz; rz = rz / m * sz;
+        const float q[4][3] = {
+            {at[0] - rx, at[1] + sz, at[2] - rz},
+            {at[0] + rx, at[1] + sz, at[2] + rz},
+            {at[0] + rx, at[1] - sz, at[2] + rz},
+            {at[0] - rx, at[1] - sz, at[2] - rz},
+        };
+        quad(q[0], q[1], q[2], q[3], foam, false);
+        ++g_stats.spray;
+    }
 }
 
 // An offset in a PART's own frame, from a centre that is already camera
@@ -675,19 +833,52 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         // the one piece of a podracer everybody can draw from memory. It goes
         // out the moment either engine does, which is the clearest possible
         // signal that the pod is in trouble.
+        //
+        // And it ARCS. It used to be a fixed parabola redrawn identically
+        // every frame, which is a painted-on decal of an arc: the one thing
+        // lightning does is not stay still. Every other tick it takes a new
+        // path, its brightness crawls along it, and now and then a second
+        // strand jumps beside the first and is gone again.
+        //
+        // The jitter is TAPERED to zero at both ends, and that is the same
+        // rule the cables are under: a strand whose endpoints wander is a
+        // strand attached to nothing, which is exactly how the cables read
+        // before they were nailed down. The middle is free to move; the two
+        // ends are welded to the engines.
         if (p.dead == 0) {
-            const uint8_t glow[3] = {236, 150, 255};
-            float prev[3];
-            for (int k = 0; k <= 4; ++k) {
-                const float u = k / 4.0f;
-                float arc[3];
-                // Reaching all the way to the engines rather than stopping
-                // short of them, for the same reason the cables now do.
-                local_point(eng, (-1.0f + 2.0f * u) * (k_engine_x - 0.3f),
-                            k_engine_y + std::sin(u * 3.14159f) * 0.55f,
-                            k_engine_z - 1.5f, arc);
-                if (k) ribbon(prev, arc, cam, 0.07f, glow);
-                for (int c = 0; c < 3; ++c) prev[c] = arc[c];
+            const uint8_t hot[3] = {248, 206, 255};
+            const uint8_t glow[3] = {214, 120, 250};
+            // Two strands one tick in four, so the arc crackles rather than
+            // doubling. Cheap on average and the cost lands on the frames that
+            // can afford it, since a second strand is never up two frames
+            // running.
+            const int strands = ((p.tick >> 1) & 3) == 0 ? 2 : 1;
+            for (int strand = 0; strand < strands; ++strand) {
+                float prev[3];
+                for (int k = 0; k <= k_arc_steps; ++k) {
+                    const float u = k / static_cast<float>(k_arc_steps);
+                    // A parabola, not a sine: it is zero at both ends, one in
+                    // the middle, and it costs a multiply instead of a
+                    // software trig call on a chip with no FPU.
+                    const float taper = 4.0f * u * (1.0f - u);
+                    const uint32_t h = (static_cast<uint32_t>(k) * 2654435761u)
+                                     ^ ((p.tick >> 1) + strand * 7919u) * 2246822519u;
+                    const float jx = (static_cast<int>((h >> 6) & 31) - 15) * taper * 0.030f;
+                    const float jy = (static_cast<int>((h >> 13) & 31) - 15) * taper * 0.036f;
+                    const float jz = (static_cast<int>((h >> 21) & 31) - 15) * taper * 0.026f;
+                    float arc[3];
+                    // Reaching all the way to the engines rather than stopping
+                    // short of them, for the same reason the cables now do.
+                    local_point(eng, (-1.0f + 2.0f * u) * (k_engine_x - 0.3f) + jx,
+                                k_engine_y + taper * 0.55f + jy,
+                                k_engine_z - 1.5f + jz, arc);
+                    // Brightness crawls along the strand instead of the whole
+                    // thing flashing, which at 120 pixels is the difference
+                    // between plasma and a blinking wire.
+                    if (k) ribbon(prev, arc, cam, strand ? 0.05f : 0.075f,
+                                  ((h >> 3) & 3) ? glow : hot, false);
+                    for (int c = 0; c < 3; ++c) prev[c] = arc[c];
+                }
             }
         }
     }
@@ -703,9 +894,15 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                               static_cast<uint8_t>(rc.colour[0][2] * tint / 255),
                               eng.pitch, p.boosting ? 90 : 0, eng.roll);
     }
+
+    // Spray last, so a plume sits in front of the hull that threw it rather
+    // than behind it: everything here shares one depth buffer and a billboard
+    // at the same distance as the engine it came off would otherwise lose the
+    // tie.
+    if (p.spray && lod == 0 && g_palette) spray(p, left, right, g_palette->foam);
 }
 
-PodPose pose_of(const Pod& pod) {
+PodPose pose_of(const Pod& pod, uint32_t tick) {
     PodPose p{};
     p.x = to_world(pod.x); p.y = to_world(pod.y); p.z = to_world(pod.z);
     p.yaw = to_rad(pod.yaw); p.pitch = to_rad(pod.pitch); p.roll = to_rad(pod.roll);
@@ -716,10 +913,15 @@ PodPose pose_of(const Pod& pod) {
     p.engine[0] = pod.engine[0]; p.engine[1] = pod.engine[1];
     p.engine_max = pod.engine_max;
     p.boosting = pod.boost_ticks > 0;
+    p.tick = tick;
+    // Only while the field has something to push off. Spray thrown by a pod
+    // sailing over a gap is spray coming off nothing.
+    p.spray = pod.over_water && pod.grounded;
+    p.surface = to_world(pod.y - pod.clearance);
     return p;
 }
 
-PodPose pose_of(const Rival& r) {
+PodPose pose_of(const Rival& r, const Track& t, uint32_t tick) {
     PodPose p{};
     p.x = to_world(r.x); p.y = to_world(r.y); p.z = to_world(r.z);
     p.yaw = to_rad(r.yaw); p.roll = to_rad(r.roll);
@@ -727,6 +929,13 @@ PodPose pose_of(const Rival& r) {
     p.racer = r.racer_index;
     p.engine[0] = p.engine[1] = 1000;
     p.engine_max = 1000;
+    p.tick = tick;
+    // A rival flies the centreline at a fixed hover height, so its surface is
+    // that height below it and no query is needed. It throws spray for the
+    // same reason the player does: a pack running over water where only one
+    // pod marks it would read as the others being on rails.
+    p.surface = to_world(r.y - k_hover_height);
+    p.spray = has_water(t) && r.y - k_hover_height <= water_level(t) + fp(0, 500);
     return p;
 }
 
@@ -911,6 +1120,20 @@ void draw_track_map(const Track& t, const pse::RenderTarget& target,
         if (n.flags & kRamp)  { r = 255; g = 190; b = 70; }
         if (n.flags & kBoost) { r = 90;  g = 190; b = 255; }
         if (n.flags & kGap)   { r = 40;  g = 44;  b = 56; }
+        // Under the waterline last, because on a track with a sea that is the
+        // thing about a stretch of road that most changes how it drives, and
+        // because a "gap" over water is not a gap. A third of TIDEBREAK is
+        // sea, and the map is where a player finds that out before committing
+        // to a three lap race on it.
+        // The DEEP colour rather than the shallows, and the difference is
+        // legibility rather than accuracy: a shallows blue next to a road that
+        // is already teal is two cyans four steps apart, which a pixel counter
+        // can separate and an eye at two dots per node cannot.
+        if (has_water(t) && node_y(n) < water_level(t)) {
+            r = t.palette.water[0][0];
+            g = t.palette.water[0][1];
+            b = t.palette.water[0][2];
+        }
         pse::fill_rect(target, px - 1, pz - 1, 2, 2, r, g, b);
     }
     const TrackNode& start = t.nodes[0];
@@ -1011,8 +1234,9 @@ void render_frame(const Race& race, const Chrome& chrome,
     g_forward[2] = std::cos(cam.yaw) * std::cos(cam.pitch);
     renderer.set_camera_basis(0.0f, 0.0f, 0.0f, camera_basis(cam));
 
+    g_palette = &pal;
     draw_horizon(t, cam);
-    draw_road(t, race.pod);
+    draw_road(t, race.pod, race.ticks);
     draw_props(t, race.pod);
 
     // Sorted near to far so the rank cap below means what it says: only the
@@ -1040,10 +1264,10 @@ void render_frame(const Race& race, const Chrome& chrome,
         int lod = d2 > 90.0f * 90.0f ? 2 : (d2 > 45.0f * 45.0f ? 1 : 0);
         const int floor_lod = rank == 0 ? 0 : (rank < 3 ? 1 : 2);
         if (lod < floor_lod) lod = floor_lod;
-        draw_pod(pose_of(r), lod, cam);
+        draw_pod(pose_of(r, t, race.ticks), lod, cam);
     }
 
-    PodPose mine = pose_of(race.pod);
+    PodPose mine = pose_of(race.pod, race.ticks);
     draw_pod(mine, 0, cam);
 
     const pse::SkyGradient sky{pal.sky_top[0], pal.sky_top[1], pal.sky_top[2],

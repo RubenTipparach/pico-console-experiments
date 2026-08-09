@@ -149,3 +149,47 @@ class Mesh:
 
     def triangles(self):
         return sum(len(idx) - 2 for _, idx, _tex in self.faces)
+
+    def face_normal(self, face_index):
+        """The normal obj2cpp will bake for a face, in obj2cpp's own order.
+
+        `v x u` and not `u x v`, copied from tools/obj2cpp.py deliberately
+        rather than derived again: a check written from first principles can
+        agree with itself and disagree with what actually reaches the device.
+        """
+        p = [self.verts[i - 1] for i in self.faces[face_index][1]]
+        u = tuple(p[1][k] - p[0][k] for k in range(3))
+        v = tuple(p[2][k] - p[0][k] for k in range(3))
+        return (v[1] * u[2] - v[2] * u[1],
+                v[2] * u[0] - v[0] * u[2],
+                v[0] * u[1] - v[1] * u[0])
+
+    def inward_faces(self):
+        """Faces whose baked normal points back toward the middle of the mesh.
+
+        signed_volume() is not enough and a cockpit proved it. Its roof and its
+        floor were both wound inside out, the two errors very nearly cancelled
+        in the volume sum, the generator reported nothing, and the model shipped
+        with no top: from the one angle a chase camera is always at, the player
+        was looking through the roof into an empty shell. A per FACE test finds
+        that; a total cannot, because a total is one number and a mesh has as
+        many chances to be wrong as it has faces.
+
+        Assumes a roughly convex, closed solid, which every mesh this module
+        generates is. An open shell or a deep concavity would report false
+        positives, and the answer then is to check the reported faces rather
+        than to widen the test.
+        """
+        if not self.verts:
+            return []
+        middle = [sum(v[k] for v in self.verts) / len(self.verts)
+                  for k in range(3)]
+        bad = []
+        for f, (material, idx, _tex) in enumerate(self.faces):
+            p = [self.verts[i - 1] for i in idx]
+            centre = [sum(q[k] for q in p) / len(p) for k in range(3)]
+            out = [centre[k] - middle[k] for k in range(3)]
+            normal = self.face_normal(f)
+            if sum(out[k] * normal[k] for k in range(3)) <= 0:
+                bad.append((f, material, tuple(round(c, 3) for c in centre)))
+        return bad
