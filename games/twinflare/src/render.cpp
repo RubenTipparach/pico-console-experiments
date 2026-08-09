@@ -8,9 +8,18 @@
 #include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 #include "fixed.hpp"
-#include "twinflare/cockpit.hpp"
-#include "twinflare/engine_heavy.hpp"
-#include "twinflare/engine_slim.hpp"
+#include "twinflare/cockpit_anvil.hpp"
+#include "twinflare/cockpit_fang.hpp"
+#include "twinflare/cockpit_needle.hpp"
+#include "twinflare/cockpit_nightjar.hpp"
+#include "twinflare/cockpit_scarab.hpp"
+#include "twinflare/cockpit_wisp.hpp"
+#include "twinflare/engine_anvil.hpp"
+#include "twinflare/engine_fang.hpp"
+#include "twinflare/engine_needle.hpp"
+#include "twinflare/engine_nightjar.hpp"
+#include "twinflare/engine_scarab.hpp"
+#include "twinflare/engine_wisp.hpp"
 #include "twinflare/rock.hpp"
 
 namespace twinflare {
@@ -932,8 +941,29 @@ void ribbon(const float a[3], const float b[3], const Camera&, float width,
     // a is already camera relative, so the vector from the camera to it IS it.
     const float vx = a[0], vy = a[1], vz = a[2];
     float n[3] = {d[1] * vz - d[2] * vy, d[2] * vx - d[0] * vz, d[0] * vy - d[1] * vx};
-    const float m = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-    if (m < 0.0001f) return;
+    float m = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
+    // A strand pointing AT the camera has no camera facing width: the cross
+    // product collapses, and just before it collapses it is a tiny vector whose
+    // direction is all rounding. Normalising that swings the ribbon's width
+    // through a right angle between one frame and the next, which is the
+    // cables and the binder "jittering and randomly teleporting". It is worst
+    // exactly where it is most visible, because a cable runs fore and aft and
+    // the chase camera looks fore and aft.
+    //
+    // So near end on, take the width off the world's up instead. Any stable
+    // axis will do; up is the one that keeps a nearly vertical ribbon looking
+    // like a ribbon.
+    const float dl = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    const float vl = std::sqrt(vx * vx + vy * vy + vz * vz);
+    if (dl < 0.0001f || vl < 0.0001f) return;
+    if (m < 0.15f * dl * vl) {
+        n[0] = d[1] * 0.0f - d[2] * 1.0f;
+        n[1] = 0.0f;
+        n[2] = d[0] * 1.0f - d[1] * 0.0f;
+        m = std::sqrt(n[0] * n[0] + n[2] * n[2]);
+        if (m < 0.0001f) { n[0] = 1.0f; n[1] = 0.0f; n[2] = 0.0f; m = 1.0f; }
+    }
     for (float& v : n) v = v / m * width;
     const float p0[3] = {a[0] - n[0], a[1] - n[1], a[2] - n[2]};
     const float p1[3] = {a[0] + n[0], a[1] + n[1], a[2] + n[2]};
@@ -1049,8 +1079,23 @@ void local_point(const PodPose& p, float dx, float dy, float dz, float out[3]) {
 // hardest failure in this engine to attribute to its cause.
 void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     const Racer& rc = racer(p.racer);
-    const pse::MeshData& engine_mesh = rc.heavy ? models::twinflare::engine_heavy
-                                                : models::twinflare::engine_slim;
+    // One pod per racer, indexed by the roster rather than chosen by a bit.
+    // Both tables are in the order sim.cpp lists the racers in, which is the
+    // order Racer::mesh counts in; a mismatch here is six pods wearing each
+    // other's engines, so it is worth the two lines that say so.
+    static const pse::MeshData* const k_engines[k_racer_count] = {
+        &models::twinflare::engine_scarab, &models::twinflare::engine_wisp,
+        &models::twinflare::engine_anvil, &models::twinflare::engine_needle,
+        &models::twinflare::engine_nightjar, &models::twinflare::engine_fang,
+    };
+    static const pse::MeshData* const k_cockpits[k_racer_count] = {
+        &models::twinflare::cockpit_scarab, &models::twinflare::cockpit_wisp,
+        &models::twinflare::cockpit_anvil, &models::twinflare::cockpit_needle,
+        &models::twinflare::cockpit_nightjar, &models::twinflare::cockpit_fang,
+    };
+    const int shape = rc.mesh % k_racer_count;
+    const pse::MeshData& engine_mesh = *k_engines[shape];
+    const pse::MeshData& cockpit_mesh = *k_cockpits[shape];
     // THE ENGINES LEAD AND THE COCKPIT TRAILS, and until now neither did:
     // every part was drawn at the pod's own yaw, so the whole thing rotated
     // as one rigid object and the two mass model the sim is running was
@@ -1099,7 +1144,7 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     }
 
     if (lod == 0) {
-        g_renderer->draw_mesh(models::twinflare::cockpit, cockpit[0], cockpit[1],
+        g_renderer->draw_mesh(cockpit_mesh, cockpit[0], cockpit[1],
                               cockpit[2], cab.yaw, 1.0f,
                               rc.colour[0][0], rc.colour[0][1], rc.colour[0][2],
                               cab.pitch, 0, cab.roll);
@@ -1157,8 +1202,17 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         // before they were nailed down. The middle is free to move; the two
         // ends are welded to the engines.
         if (p.dead == 0) {
-            const uint8_t hot[3] = {248, 206, 255};
-            const uint8_t glow[3] = {214, 120, 250};
+            // The racer's own binder colour, and a hotter core struck from
+            // it. Six pods in a pack were six identical violet arcs; the arc
+            // is the brightest thing on a pod and the only part of it visible
+            // from directly behind, so it is also the cheapest way to know who
+            // just went past.
+            const uint8_t glow[3] = {rc.arc[0], rc.arc[1], rc.arc[2]};
+            const uint8_t hot[3] = {
+                static_cast<uint8_t>(rc.arc[0] + (255 - rc.arc[0]) * 3 / 5),
+                static_cast<uint8_t>(rc.arc[1] + (255 - rc.arc[1]) * 3 / 5),
+                static_cast<uint8_t>(rc.arc[2] + (255 - rc.arc[2]) * 3 / 5),
+            };
             // Two strands one tick in four, so the arc crackles rather than
             // doubling. Cheap on average and the cost lands on the frames that
             // can afford it, since a second strand is never up two frames
@@ -1172,11 +1226,27 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
                     // the middle, and it costs a multiply instead of a
                     // software trig call on a chip with no FPU.
                     const float taper = 4.0f * u * (1.0f - u);
-                    const uint32_t h = (static_cast<uint32_t>(k) * 2654435761u)
-                                     ^ ((p.tick >> 1) + strand * 7919u) * 2246822519u;
-                    const float jx = (static_cast<int>((h >> 6) & 31) - 15) * taper * 0.030f;
-                    const float jy = (static_cast<int>((h >> 13) & 31) - 15) * taper * 0.036f;
-                    const float jz = (static_cast<int>((h >> 21) & 31) - 15) * taper * 0.026f;
+                    // The strand MOVES between shapes rather than jumping
+                    // between them. It used to pick a fresh random offset
+                    // every other tick and snap to it, which at sixty frames a
+                    // second is thirty teleports: not an arc, a fault. Two
+                    // hashes a quarter of a second apart, and the strand slides
+                    // from one to the other.
+                    const uint32_t step = p.tick / 6;
+                    const float mix = (p.tick % 6) * (1.0f / 6.0f);
+                    const uint32_t seed = (static_cast<uint32_t>(k) * 2654435761u)
+                                        ^ (strand * 7919u);
+                    const uint32_t h0 = (seed ^ step) * 2246822519u;
+                    const uint32_t h1 = (seed ^ (step + 1u)) * 2246822519u;
+                    const auto pick = [&](int shift, float amount) {
+                        const float from = static_cast<int>((h0 >> shift) & 31) - 15;
+                        const float to = static_cast<int>((h1 >> shift) & 31) - 15;
+                        return (from + (to - from) * mix) * taper * amount;
+                    };
+                    const float jx = pick(6, 0.034f);
+                    const float jy = pick(13, 0.040f);
+                    const float jz = pick(21, 0.028f);
+                    const uint32_t h = h0;
                     float arc[3];
                     // Reaching all the way to the engines rather than stopping
                     // short of them, for the same reason the cables now do.

@@ -685,6 +685,60 @@ void test_the_sea_costs_time() {
                 speed[0] * k_tick_hz / k_one, speed[1] * k_tick_hz / k_one);
 }
 
+void test_rivals_move_smoothly() {
+    // Reported from playing it: "the enemy racers are stuttering in their
+    // movement, like a different update rate with no interpolation." They are
+    // on the same 100 Hz tick as everything else, and they were still doing it.
+    //
+    // A rival's yaw was the heading of the SEGMENT it was on: a step function
+    // that jumped at every node, once every eight units, five times a second at
+    // racing speed. The yaw snapped, and because the lateral weave is measured
+    // off that heading, the rival's POSITION jumped sideways with it.
+    //
+    // Measured as jerk: the change in a rival's per tick displacement. A rival
+    // running a smooth line changes its step by a tiny fraction of the step
+    // itself; one that teleports sideways shows a spike. Same for the yaw.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        Race race;
+        race_init(race, ti, 0);
+        Input in{};
+        int32_t worst_jerk = 0, worst_step = 0, worst_yaw_jerk = 0;
+        int32_t last_dx = 0, last_dz = 0, last_turn = 0;
+        int32_t px = race.rivals[0].x, pz = race.rivals[0].z;
+        int32_t pyaw = race.rivals[0].yaw;
+        for (int i = 0; i < 4000; ++i) {
+            race_tick(race, in);
+            const Rival& r = race.rivals[0];
+            const int32_t dx = r.x - px, dz = r.z - pz;
+            const int32_t turn = angle_diff(r.yaw, pyaw);
+            if (i > 2) {
+                const int32_t jerk = flength(dx - last_dx, dz - last_dz);
+                if (jerk > worst_jerk) worst_jerk = jerk;
+                const int32_t step = flength(dx, dz);
+                if (step > worst_step) worst_step = step;
+                const int32_t yj = turn - last_turn < 0 ? last_turn - turn : turn - last_turn;
+                if (yj > worst_yaw_jerk) worst_yaw_jerk = yj;
+            }
+            last_dx = dx; last_dz = dz; last_turn = turn;
+            px = r.x; pz = r.z; pyaw = r.yaw;
+        }
+        // A tenth of the step it takes each tick. A rival that snapped sideways
+        // at a node boundary measured well over half of it.
+        check(worst_jerk * 10 < worst_step,
+              "a rival never jumps a large fraction of its own step in one tick");
+        // And its heading turns rather than switching: a fiftieth of a turn in
+        // one tick is five radians a second, which nothing on the track does.
+        check(worst_yaw_jerk < k_turn / 50,
+              "a rival's heading never snaps");
+        std::printf("  %-10s rival step %.3f u/tick, worst jerk %.4f (%d%% of a "
+                    "step), worst heading snap %.2f degrees\n",
+                    t.name, worst_step / 65536.0, worst_jerk / 65536.0,
+                    worst_step ? worst_jerk * 100 / worst_step : 0,
+                    worst_yaw_jerk * 360.0 / 65536.0);
+    }
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -729,6 +783,7 @@ int main() {
     test_a_hard_landing_costs_engines_and_not_the_run();
     test_the_sea_is_a_surface_and_not_a_hazard();
     test_the_sea_costs_time();
+    test_rivals_move_smoothly();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 

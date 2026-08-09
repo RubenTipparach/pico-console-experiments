@@ -19,8 +19,14 @@ struct Racer {
     const char* name;
     const char* pilot;
     uint8_t top, acc, grip, cool, fix, hull;
-    uint8_t heavy;              // which of the two engine meshes
+    // Which pod. Every racer has its own engine and its own cockpit now, and
+    // the shapes read off the stats: the fast one is a spike, the tough one is
+    // a drum, the nimble one is a flat blade. It used to be a single bit
+    // choosing between two engine meshes, so the stat bars said the six pods
+    // differed and the only thing a player could see was paint.
+    uint8_t mesh;
     uint8_t colour[3][3];       // hull, trim, intake
+    uint8_t arc[3];             // the binder between the engines
 };
 
 constexpr int k_racer_count = 6;

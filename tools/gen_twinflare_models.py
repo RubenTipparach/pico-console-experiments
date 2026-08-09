@@ -35,30 +35,28 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from objmesh import Mesh, mtl  # noqa: E402
 
-SIDES = 6
-
 # Model space is the engine's: +Z is the nose, +Y is up, +X is right.
 # Renderer3D::draw_mesh says "positive pitch lifts the +Z nose".
 
 
-def ring(radius, z, squash, sides=SIDES):
+def ring(radius, z, squash, sides):
     out = []
     for i in range(sides):
-        a = (i / sides) * math.tau + math.pi / 6
+        a = (i / sides) * math.tau + math.pi / sides
         out.append((math.cos(a) * radius, math.sin(a) * radius * squash, z))
     return out
 
 
-def build_engine(length, nose_r, body_r, bell_r, intake, bell, squash):
-    """Intake cone, body, exhaust bell, throat. 36 triangles."""
+def build_engine(length, nose_r, body_r, bell_r, intake, bell, squash, sides=6):
+    """Intake cone, body, exhaust bell, throat. Six triangles a side."""
     m = Mesh()
     z_nose, z_bell = length * 0.5, -length * 0.5
     z_front = z_nose - length * intake
     z_rear = z_bell + length * bell
 
-    a = ring(nose_r + body_r * 0.45, z_front, squash)
-    c = ring(body_r, z_rear, squash)
-    d = ring(bell_r, z_bell, squash)
+    a = ring(nose_r + body_r * 0.45, z_front, squash, sides)
+    c = ring(body_r, z_rear, squash, sides)
+    d = ring(bell_r, z_bell, squash, sides)
     tip = (0.0, 0.0, z_nose)
     throat = (0.0, 0.0, z_bell - length * 0.05)
 
@@ -67,8 +65,8 @@ def build_engine(length, nose_r, body_r, bell_r, intake, bell, squash):
     # come out at a negative signed volume and obj2cpp's face_normal takes
     # v x u to match. The ring runs anticlockwise in XY seen from +Z, so a
     # face on the outside of the hull reads rear ring first.
-    for i in range(SIDES):
-        j = (i + 1) % SIDES
+    for i in range(sides):
+        j = (i + 1) % sides
         m.tri("intake", tip, a[i], a[j])
         m.quad("hull", c[i], c[j], a[j], a[i])
         m.quad("trim", d[i], d[j], c[j], c[i])
@@ -78,20 +76,26 @@ def build_engine(length, nose_r, body_r, bell_r, intake, bell, squash):
     return m
 
 
-def build_cockpit():
+def build_cockpit(w=1.15, h=0.80, length=2.10, nose_out=0.60, nose_drop=0.08,
+                  taper=0.42, rake=0.50):
     """A wedge with a canopy. 14 triangles, and it is the part the camera sits
-    closest to and the part the player is looking past."""
-    w, h, length = 1.15, 0.80, 2.10
+    closest to and the part the player is looking past.
+
+    Every proportion is an argument because there are six of these now, one per
+    racer, and the difference between them has to be visible at 120 pixels from
+    behind. `rake` is how far back the canopy's leading edge sits, `taper` how
+    much the tail pinches in.
+    """
     m = Mesh()
-    nose = (0.0, -h * 0.08, length * 0.60)
-    f_tl = (-w * .5, h * .5, length * .08)
-    f_tr = (w * .5, h * .5, length * .08)
-    f_bl = (-w * .42, -h * .5, length * .08)
-    f_br = (w * .42, -h * .5, length * .08)
-    b_tl = (-w * .44, h * .42, -length * .5)
-    b_tr = (w * .44, h * .42, -length * .5)
-    b_bl = (-w * .36, -h * .42, -length * .5)
-    b_br = (w * .36, -h * .42, -length * .5)
+    nose = (0.0, -h * nose_drop, length * nose_out)
+    f_tl = (-w * rake, h * .5, length * .08)
+    f_tr = (w * rake, h * .5, length * .08)
+    f_bl = (-w * (rake - .08), -h * .5, length * .08)
+    f_br = (w * (rake - .08), -h * .5, length * .08)
+    b_tl = (-w * taper, h * .42, -length * .5)
+    b_tr = (w * taper, h * .42, -length * .5)
+    b_bl = (-w * (taper - .08), -h * .42, -length * .5)
+    b_br = (w * (taper - .08), -h * .42, -length * .5)
 
     m.tri("hull", nose, f_bl, f_br)
     m.tri("canopy", nose, f_tr, f_tl)
@@ -136,20 +140,75 @@ def build_rock():
     return m
 
 
-MODELS = {
-    # Slim: the shape four of the six pods run. Long, narrow, a wide bell.
-    "engine_slim": (lambda: build_engine(3.5, 0.30, 0.62, 0.90, 0.30, 0.26, 0.86),
-                    [("intake", (120, 120, 130)), ("hull", (200, 200, 200)),
-                     ("trim", (150, 150, 158)), ("glow", (255, 170, 90))]),
-    # Heavy: shorter and fatter, for the two pods built like a fist.
-    "engine_heavy": (lambda: build_engine(3.1, 0.42, 0.86, 1.16, 0.22, 0.30, 0.94),
-                     [("intake", (120, 120, 130)), ("hull", (200, 200, 200)),
-                      ("trim", (150, 150, 158)), ("glow", (255, 170, 90))]),
-    "cockpit": (build_cockpit,
-                [("hull", (200, 200, 200)), ("trim", (168, 168, 176)),
-                 ("canopy", (70, 96, 120)), ("glow", (90, 90, 100))]),
-    "rock": (build_rock, [("stone", (170, 170, 170))]),
+# One engine and one cockpit PER RACER, and the shapes are the roster.
+#
+# There used to be two engine meshes and one cockpit between the six, recoloured
+# and nothing else, which made the pod select screen a colour swatch: the stat
+# bars said the pods were different and the only thing you could see was paint.
+# A silhouette is what a player recognises at 120 pixels, so the silhouettes
+# differ, and they differ ALONG THE STATS: the fast one is a spike, the tough
+# one is a drum, the nimble one is a flat blade.
+#
+# The side count varies too, and it is not free geometry: five sides is thirty
+# triangles an engine and seven is forty two, so the slim pods pay less than
+# the heavy ones and the average across the roster is the thirty six a single
+# shared mesh used to cost. Six pods on screen is the budget, and it has not
+# moved.
+ENGINE_MATERIALS = [("intake", (120, 120, 130)), ("hull", (200, 200, 200)),
+                    ("trim", (150, 150, 158)), ("glow", (255, 170, 90))]
+COCKPIT_MATERIALS = [("hull", (200, 200, 200)), ("trim", (168, 168, 176)),
+                     ("canopy", (70, 96, 120)), ("glow", (90, 90, 100))]
+
+# name: (engine args, cockpit args)
+RACERS = {
+    # SCARAB, the balanced one. The reference shape everything else reads off.
+    "scarab": (dict(length=3.3, nose_r=0.34, body_r=0.70, bell_r=0.98,
+                    intake=0.28, bell=0.28, squash=0.88, sides=6),
+               dict(w=1.15, h=0.80, length=2.10)),
+    # WISP, five for acceleration and grip and two for top speed. A blade:
+    # long, flat and narrow, the least metal on the grid.
+    "wisp": (dict(length=4.0, nose_r=0.20, body_r=0.46, bell_r=0.74,
+                  intake=0.44, bell=0.20, squash=0.62, sides=5),
+             dict(w=0.95, h=0.60, length=2.35, nose_out=0.68, taper=0.34)),
+    # ANVIL, five for hull and cooling and two for acceleration and grip. A
+    # drum: short, wide and round, with the biggest bells on the roster.
+    "anvil": (dict(length=2.8, nose_r=0.50, body_r=0.96, bell_r=1.24,
+                   intake=0.16, bell=0.34, squash=1.00, sides=7),
+              dict(w=1.45, h=0.95, length=1.90, nose_out=0.46, taper=0.48,
+                   rake=0.46)),
+    # NEEDLE, five for top speed and one for cooling and hull. A spike: the
+    # longest engines and the smallest bells, which is where the heat goes.
+    "needle": (dict(length=4.7, nose_r=0.16, body_r=0.44, bell_r=0.62,
+                    intake=0.52, bell=0.14, squash=0.84, sides=5),
+               dict(w=0.85, h=0.66, length=2.55, nose_out=0.74, taper=0.30,
+                    rake=0.44)),
+    # NIGHTJAR, five for repair and four for hull. Built to be fixed: short
+    # body, enormous flared bell, everything reachable.
+    "nightjar": (dict(length=3.1, nose_r=0.44, body_r=0.78, bell_r=1.34,
+                      intake=0.20, bell=0.42, squash=0.92, sides=7),
+                 dict(w=1.30, h=0.72, length=2.00, nose_out=0.52, taper=0.46,
+                      rake=0.54)),
+    # FANG, five for grip. Tall and narrow rather than wide and flat, which is
+    # the one profile on the roster that stands UP.
+    "fang": (dict(length=3.6, nose_r=0.26, body_r=0.62, bell_r=0.80,
+                  intake=0.34, bell=0.22, squash=1.32, sides=6),
+             dict(w=1.00, h=1.00, length=2.05, nose_out=0.58, taper=0.40,
+                  rake=0.52)),
 }
+
+
+def _models():
+    out = {}
+    for name, (engine, cockpit) in RACERS.items():
+        out[f"engine_{name}"] = (lambda e=engine: build_engine(**e),
+                                 ENGINE_MATERIALS)
+        out[f"cockpit_{name}"] = (lambda c=cockpit: build_cockpit(**c),
+                                  COCKPIT_MATERIALS)
+    out["rock"] = (build_rock, [("stone", (170, 170, 170))])
+    return out
+
+
+MODELS = _models()
 
 HEADER = """Generated by tools/gen_twinflare_models.py. Committed and editable:
 edit this file for a one off tweak, edit the generator when the shape changes.

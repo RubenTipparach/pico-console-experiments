@@ -7,19 +7,24 @@ namespace {
 
 // The roster. Every pod totals 20 points, so the choice is a shape rather than
 // a ladder, and only two engine meshes exist between the six.
+// The arc colour is per racer and it is not the livery. The binder is the one
+// part of a podracer that is not painted, so it reads as the machine's own
+// energy rather than as a stripe: a pale core of whatever the reactor is
+// burning. It is also the fastest way to tell six pods apart in a pack, since
+// it is the brightest thing on any of them and it is visible from behind.
 constexpr Racer k_racers[k_racer_count] = {
     {"SCARAB", "SEBO VANE",  3, 3, 4, 4, 3, 3, 0,
-     {{214, 124, 40}, {150, 78, 26}, {74, 52, 40}}},
-    {"WISP", "TIK MA'ALA",   2, 5, 5, 3, 3, 2, 0,
-     {{96, 214, 206}, {44, 132, 140}, {226, 232, 238}}},
-    {"ANVIL", "GROLL HEXX",  3, 2, 2, 5, 3, 5, 1,
-     {{186, 190, 198}, {96, 102, 116}, {188, 52, 52}}},
-    {"NEEDLE", "CYRN VAST",  5, 4, 3, 1, 2, 1, 0,
-     {{232, 206, 64}, {150, 126, 20}, {36, 34, 32}}},
-    {"NIGHTJAR", "OMBRA TAL", 2, 3, 3, 3, 5, 4, 1,
-     {{142, 106, 196}, {70, 50, 104}, {40, 38, 52}}},
-    {"FANG", "KEST RHO",     4, 4, 5, 2, 3, 2, 0,
-     {{122, 196, 86}, {58, 110, 48}, {184, 150, 72}}},
+     {{214, 124, 40}, {150, 78, 26}, {74, 52, 40}}, {255, 186, 120}},
+    {"WISP", "TIK MA'ALA",   2, 5, 5, 3, 3, 2, 1,
+     {{96, 214, 206}, {44, 132, 140}, {226, 232, 238}}, {150, 255, 244}},
+    {"ANVIL", "GROLL HEXX",  3, 2, 2, 5, 3, 5, 2,
+     {{186, 190, 198}, {96, 102, 116}, {188, 52, 52}}, {255, 128, 128}},
+    {"NEEDLE", "CYRN VAST",  5, 4, 3, 1, 2, 1, 3,
+     {{232, 206, 64}, {150, 126, 20}, {36, 34, 32}}, {255, 244, 140}},
+    {"NIGHTJAR", "OMBRA TAL", 2, 3, 3, 3, 5, 4, 4,
+     {{142, 106, 196}, {70, 50, 104}, {40, 38, 52}}, {214, 150, 255}},
+    {"FANG", "KEST RHO",     4, 4, 5, 2, 3, 2, 5,
+     {{122, 196, 86}, {58, 110, 48}, {184, 150, 72}}, {176, 255, 140}},
 };
 
 // Damage, which is the one thing two engines do not share.
@@ -76,11 +81,43 @@ void rival_place(Rival& r, const Track& t) {
     const int32_t frac = d - index * k_node_spacing;
     const TrackNode& a = t.nodes[index % count];
     const TrackNode& b = t.nodes[(index + 1) % count];
-    const int32_t u = (frac << k_fp) / k_node_spacing;
+    // IN 64 BITS. `frac` runs to a whole node spacing, which is fp(8) =
+    // 524,288, and 524,288 << 16 is 3.4e10: past the top of an int32 by a
+    // factor of sixteen. Only the first six percent of a segment fitted, so a
+    // rival's position along the segment it was on was correct for half a unit
+    // and aliased rubbish for the remaining seven and a half. What that looked
+    // like was a rival sitting at a node and then jumping the whole eight units
+    // to the next one, five times a second: "a different update rate with no
+    // interpolation", which is exactly what it was, and it had been there since
+    // the rivals were written.
+    const int32_t u = static_cast<int32_t>(
+        (static_cast<int64_t>(frac) << k_fp) / k_node_spacing);
 
     const int32_t ax = node_x(a), az = node_z(a), ay = node_y(a);
-    const int32_t bx = node_x(b), bz = node_z(b), by = node_z(b) * 0 + node_y(b);
-    const int32_t heading = fatan2(bx - ax, bz - az);
+    const int32_t bx = node_x(b), bz = node_z(b), by = node_y(b);
+
+    // THE HEADING IS INTERPOLATED, and that is the whole of the rivals'
+    // stutter. It used to be the heading of the segment the rival was on: a
+    // step function that jumped at every node, once every eight units, five
+    // times a second at racing speed. The yaw visibly snapped, and worse, the
+    // lateral weave below is measured off it, so the rival's POSITION jumped
+    // sideways by up to a unit at every one of those steps. It looked exactly
+    // like something being updated at a slower rate than the frame and never
+    // interpolated, because that is what it was.
+    //
+    // Mitred at each node, the same average of arriving and leaving segments
+    // the renderer offsets its ground bands along, then lerped across the
+    // segment. Three arctangents a rival a tick.
+    const TrackNode& before = t.nodes[(index + count - 1) % count];
+    const TrackNode& after = t.nodes[(index + 2) % count];
+    const int32_t h_prev = fatan2(ax - node_x(before), az - node_z(before));
+    const int32_t h_here = fatan2(bx - ax, bz - az);
+    const int32_t h_next = fatan2(node_x(after) - bx, node_z(after) - bz);
+    const int32_t turn_a = angle_diff(h_here, h_prev);
+    const int32_t turn_b = angle_diff(h_next, h_here);
+    const int32_t head_a = h_prev + turn_a / 2;
+    const int32_t head_b = h_here + turn_b / 2;
+    const int32_t heading = head_a + fmul(angle_diff(head_b, head_a), u);
 
     // A weave, so the pack is not a line of pods nose to tail. Deterministic
     // from the tick and the rival's own phase, which is what makes a replay of
@@ -88,14 +125,28 @@ void rival_place(Rival& r, const Track& t) {
     const int32_t wob = ftrig(fp(2, 400), fsin((r.phase << 8) + (r.distance >> 7)));
     const int32_t off = ftrig(fp(3), fsin(r.phase << 9)) + wob;
 
-    r.x = ax + fmul(bx - ax, u) + ftrig(off, fcos(heading));
-    r.z = az + fmul(bz - az, u) - ftrig(off, fsin(heading));
+    // AND THE LINE IS A CURVE. Straight between two nodes, the position is
+    // continuous and its DIRECTION is not: the velocity turns a corner at every
+    // node, so a rival visibly kinks five times a second even with a smooth
+    // heading. Catmull-Rom through the four nodes around it, written as offsets
+    // from the one it is on so no coefficient ever gets near the top of an
+    // int32, and Horner so it is three multiplies an axis.
+    const int32_t p0x = node_x(before) - ax, p2x = bx - ax, p3x = node_x(after) - ax;
+    const int32_t p0z = node_z(before) - az, p2z = bz - az, p3z = node_z(after) - az;
+    const auto spline = [u](int32_t p0, int32_t p2, int32_t p3) {
+        int32_t v = -p0 - 3 * p2 + p3;
+        v = fmul(v, u) + (2 * p0 + 4 * p2 - p3);
+        v = fmul(v, u) + (p2 - p0);
+        return fmul(v, u) / 2;
+    };
+    r.x = ax + spline(p0x, p2x, p3x) + ftrig(off, fcos(heading));
+    r.z = az + spline(p0z, p2z, p3z) - ftrig(off, fsin(heading));
     r.y = ay + fmul(by - ay, u) + k_hover_height;
-    const int32_t turn = angle_diff(fatan2(node_x(t.nodes[(index + 4) % count]) - bx,
-                                           node_z(t.nodes[(index + 4) % count]) - bz),
-                                    heading);
     r.yaw = heading;
-    r.roll = clamp32(-turn * 3, -k_swing_max, k_swing_max);
+    // Banked off the curvature, lerped across the segment for the same reason
+    // the heading is: a roll that changes in steps reads as a twitch.
+    const int32_t turn = turn_a + fmul(turn_b - turn_a, u);
+    r.roll = clamp32(-turn * 14, -k_swing_max, k_swing_max);
 }
 
 }  // namespace
