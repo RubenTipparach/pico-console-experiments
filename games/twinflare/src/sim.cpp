@@ -138,11 +138,25 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
     const TrackNode& a = t.nodes[i];
     const TrackNode& b = t.nodes[(i + 1) % t.node_count];
     const int32_t heading = fatan2(node_x(b) - node_x(a), node_z(b) - node_z(a));
+    const int32_t dx = x - node_x(a), dz = z - node_z(a);
 
     Surface s{};
     s.node = i;
     // Signed lateral offset, in the node's own frame.
-    s.lateral = ftrig(x - node_x(a), fcos(heading)) - ftrig(z - node_z(a), fsin(heading));
+    s.lateral = ftrig(dx, fcos(heading)) - ftrig(dz, fsin(heading));
+
+    // Height INTERPOLATED along the segment rather than read off the nearest
+    // node. The nearest node is a step function eight units wide, and the road
+    // the renderer draws is not: a quad runs from node i's height to node
+    // j's, so on a slope the drawn surface and the surface the hover field
+    // pushes off disagreed by up to half a step, and the pod rode visibly sunk
+    // into the road going downhill and floating over it going up. Two answers
+    // for the same piece of road, and the eye believes the one it can see.
+    const int32_t along = ftrig(dx, fsin(heading)) + ftrig(dz, fcos(heading));
+    const int32_t u = static_cast<int32_t>(
+        (static_cast<int64_t>(clamp32(along, 0, k_node_spacing)) << k_fp)
+        / k_node_spacing);
+    const int32_t ground = node_y(a) + fmul(node_y(b) - node_y(a), u);
 
     if (a.flags & kGap) {
         // A gap carries no surface at all. The hover field has nothing to push
@@ -150,41 +164,60 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
         // "jump this or fall in": no trigger volume and no jump code.
         s.y = fp(-10000);
         s.road = false;
-        return s;
+    } else {
+        const int32_t half = node_half_width(a);
+        const int32_t over = (s.lateral < 0 ? -s.lateral : s.lateral) - half;
+        if (over > 0) {
+            if (a.flags & kWall) {
+                s.y = ground;
+                s.wall = true;
+            } else {
+                // Off the road is a SHOULDER, not a cliff.
+                //
+                // It used to fall away by up to thirty units, and the crash
+                // floor is twenty six, so drifting wide did not cost you time,
+                // it killed you: the ground vanished downward, the pod
+                // followed it, and the run ended. That is not what going off
+                // line should mean in a racing game, and it is not what the
+                // hover field is for either, since a field that holds you over
+                // the road but drops you beside it is a trapdoor.
+                //
+                // Three units down and no further. The hover field still has
+                // something to push against out here, so the pod stays flyable
+                // and can be driven back on; what it costs is grip and speed,
+                // applied in race_tick. Falling is reserved for a GAP, where
+                // there is genuinely no road.
+                const int32_t drop = over > fp(12) ? fp(3) : fscale(over, 250);
+                s.y = ground - drop;
+            }
+        } else {
+            // Banking: the road tilts into its own turn, which is free grip on
+            // a corner and the reason a circuit can be fast and tight at once.
+            const TrackNode& c = t.nodes[(i + 3) % t.node_count];
+            const int32_t next = fatan2(node_x(c) - node_x(b), node_z(c) - node_z(b));
+            const int32_t bank =
+                -fmul(ftrig(s.lateral, fsin(angle_diff(next, heading))), fp(1, 900));
+            s.y = ground + bank;
+            s.road = true;
+        }
     }
 
-    const int32_t half = node_half_width(a);
-    const int32_t over = (s.lateral < 0 ? -s.lateral : s.lateral) - half;
-    if (over > 0) {
-        if (a.flags & kWall) {
-            s.y = node_y(a);
-            s.wall = true;
-            return s;
+    // THE SEA, and it is the last word on where the ground is rather than a
+    // case inside each branch above. Water is a surface: whatever the rock
+    // under it is doing, the hover field has the waves to push off, so a pod
+    // skims them and cannot be dropped through them. A submerged stretch of
+    // road is therefore drivable at sea level, a gap over water is a splash
+    // rather than a grave, and running wide into the shallows is slow rather
+    // than fatal. One test, in the one function the whole sim asks where the
+    // ground is, which is why nothing downstream needs a water case.
+    if (has_water(t)) {
+        const int32_t sea = water_level(t);
+        if (s.y < sea) {
+            s.y = sea;
+            s.water = true;
+            s.wall = false;   // there is nothing to grind against out at sea
         }
-        // Off the road is a SHOULDER, not a cliff.
-        //
-        // It used to fall away by up to thirty units, and the crash floor is
-        // twenty six, so drifting wide did not cost you time, it killed you:
-        // the ground vanished downward, the pod followed it, and the run
-        // ended. That is not what going off line should mean in a racing game,
-        // and it is not what the hover field is for either, since a field that
-        // holds you over the road but drops you beside it is a trapdoor.
-        //
-        // Three units down and no further. The hover field still has something
-        // to push against out here, so the pod stays flyable and can be driven
-        // back on; what it costs is grip and speed, applied in race_tick.
-        // Falling is reserved for a GAP, where there is genuinely no road.
-        const int32_t drop = over > fp(12) ? fp(3) : fscale(over, 250);
-        s.y = node_y(a) - drop;
-        return s;
     }
-    // Banking: the road tilts into its own turn, which is free grip on a
-    // corner and the reason a circuit can be fast and tight at once.
-    const TrackNode& c = t.nodes[(i + 3) % t.node_count];
-    const int32_t next = fatan2(node_x(c) - node_x(b), node_z(c) - node_z(b));
-    const int32_t bank = -fmul(ftrig(s.lateral, fsin(angle_diff(next, heading))), fp(1, 900));
-    s.y = node_y(a) + bank;
-    s.road = true;
     return s;
 }
 
@@ -425,11 +458,18 @@ void race_tick(Race& race, const Input& in) {
         // that points at arithmetic.
         int64_t k = static_cast<int64_t>(324) * w.air / 1000;
         if (in.brake) k = k * k_drag_brake / 1000;
-        // Off the road is slow. This is the whole penalty for leaving the
-        // track now that the ground beside it no longer kills, and it wants to
-        // be felt rather than survived: a pod that runs wide loses the corner,
-        // and a pod that cuts across the scenery loses more than it saved.
-        if (!pod.on_road && pod.grounded) k = k * k_offroad_drag / 1000;
+        // Off the road is slow, and so is the sea. This is the whole penalty
+        // for leaving the track now that the ground beside it no longer kills,
+        // and it wants to be felt rather than survived: a pod that runs wide
+        // loses the corner, and a pod that cuts across the scenery loses more
+        // than it saved. Whichever surface is worse wins, so the shallows at
+        // the edge of the causeway are as rough as the rocks are.
+        if (pod.grounded) {
+            int64_t rough = 1000;
+            if (!pod.on_road) rough = k_offroad_drag;
+            if (pod.over_water && rough < k_water_drag) rough = k_water_drag;
+            k = k * rough / 1000;
+        }
         if (alive == 1) k = k * (1000 + k_asym_drag) / 1000;
         if (pod.boost_ticks > 0) k = k * 1000 / k_boost_top;
         const int64_t top_scale = stat_scale(rc.top, k_spread_top);
@@ -476,6 +516,7 @@ void race_tick(Race& race, const Input& in) {
     const Surface surf = surface_at(t, pod.node, pod.x, pod.z);
     pod.node = surf.node;
     pod.on_road = surf.road;
+    pod.over_water = surf.water;
     pod.lateral = surf.lateral;
     pod.clearance = pod.y - surf.y;
     pod.grounded = pod.clearance < k_hover_reach;
@@ -511,6 +552,11 @@ void race_tick(Race& race, const Input& in) {
                 (static_cast<int64_t>(pen) * k_hover_spring)
                 / (k_tick_hz * k_tick_hz));
             pod.vy -= fscale(pod.vy, k_hover_damp);
+            // Hitting the ground hard costs ENGINE HEALTH, on both engines,
+            // and that is the whole price of a bad landing now: the pod cannot
+            // be driven into the floor, so a slam has to be paid for somewhere
+            // or a ramp is free. Measured on the velocity the pod arrived
+            // with, before the spring and the floor below have had it.
             if (impact > k_slam_floor) {
                 const int32_t d = fscale((impact - k_slam_floor) * k_tick_hz / k_one,
                                          k_slam);
@@ -525,6 +571,24 @@ void race_tick(Race& race, const Input& in) {
             pod.vy -= static_cast<int32_t>(
                 (static_cast<int64_t>(-pen) * k_hover_spring / 10)
                 / (k_tick_hz * k_tick_hz));
+        }
+
+        // AND A FLOOR UNDER THE SPRING. The spring on its own is a spring: hit
+        // it hard enough, or land on a rising slope, and the pod goes through
+        // the surface for a few ticks while the spring catches up. It looked
+        // exactly like the thing the hover field exists to prevent, because it
+        // was: the pod sank into the road.
+        //
+        // The field is a floor as well, and this is the line that says so.
+        // Below it the pod is placed, not pushed, and any downward velocity is
+        // gone. Not a bounce: a bounce off a force field reads as a mistake.
+        // The spring above still does all the feel, breathing over a crest and
+        // compressing into a dip; this only catches what the spring cannot.
+        const int32_t floor_y = surf.y + k_hover_floor;
+        if (pod.y < floor_y) {
+            pod.y = floor_y;
+            pod.clearance = k_hover_floor;
+            if (pod.vy < 0) pod.vy = 0;
         }
         pod.pitch -= fscale(pod.pitch, k_pitch_level);
     }

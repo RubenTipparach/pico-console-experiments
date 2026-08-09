@@ -54,6 +54,12 @@ constexpr int32_t k_hover_height = fp(2, 200);
 constexpr int32_t k_hover_spring = 210;        // per unit of penetration, per tick^2
 constexpr int32_t k_hover_damp = 155;          // tenths, on the vertical rate
 constexpr int32_t k_hover_reach = fp(3, 400);  // above this clearance, no field
+// And a hard floor under all of it. A spring alone lets a heavy landing push
+// through the surface for a few ticks while it catches up, which is precisely
+// the thing the field is supposed to make impossible: the pod sank into its
+// own road. Half the rest height, so the field visibly compresses under a slam
+// and then stops dead rather than passing through.
+constexpr int32_t k_hover_floor = fp(1, 100);
 
 // ---- gravity and lift ------------------------------------------------------
 constexpr int32_t k_gravity = per_s2(fp(26));
@@ -81,6 +87,11 @@ constexpr int32_t k_roll_drag = per_s2(fp(1, 900));
 // Rough ground, in thousandths of the normal drag. Leaving the road costs
 // time; it does not cost the run.
 constexpr int32_t k_offroad_drag = 2600;
+// Water, likewise. Well short of the rough ground: a third of TIDEBREAK's lap
+// is run over the sea, so this is a stretch of the circuit rather than a
+// punishment, and it has to be a cost you race against rather than one you
+// avoid. Off the road AND over water takes whichever is worse.
+constexpr int32_t k_water_drag = 1550;
 
 // ---- steering --------------------------------------------------------------
 // A podracer does not turn like a car. It turns like a thing dragged behind

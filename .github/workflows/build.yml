@@ -77,7 +77,11 @@ jobs:
       # rather than failing, and a v flip samples the sheet upside down and
       # picks plausible wrong colours. It also guards the assumption the whole
       # thing rests on, that every committed model is wound the other way,
-      # which is what obj2cpp.face_normal compensates for.
+      # which is what obj2cpp.face_normal compensates for. objmesh is the same
+      # failure from the other end: a face a GENERATOR wound the wrong way
+      # round is not drawn dark, it is not drawn at all, and a whole mesh's
+      # signed volume cannot see it because two opposite faces flipped together
+      # very nearly cancel. Twin Flare's cockpit shipped with no roof that way.
       - name: Test the build tooling
         run: |
           python3 tools/tests/test_game_meta.py
@@ -90,6 +94,7 @@ jobs:
           python3 tools/tests/test_picomon_sprites.py
           python3 tools/tests/test_picomon_trees.py
           python3 tools/tests/test_trackshape.py
+          python3 tools/tests/test_objmesh.py
 
   # Reads build.yaml and turns it into the build matrix. Every enabled game is
   # built, every run: what gets built is a decision written down in the repo,

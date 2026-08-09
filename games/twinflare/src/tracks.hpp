@@ -49,13 +49,38 @@ struct Palette {
     uint8_t edge[3];
     uint8_t wall[3];
     uint8_t rock[2][3];
+    // Two bands of sea and one of foam. Two bands rather than one because a
+    // flat plate of a single colour reads as a floor however you shade it, and
+    // the cheapest thing that reads as water is a banding that MOVES: the
+    // renderer walks the phase with the clock, so the sea slides under the pod
+    // for no triangles at all. Dry tracks carry a sea colour they never draw,
+    // which costs nine bytes of flash apiece and means a track that grows a
+    // water level later cannot ship a black one.
+    uint8_t water[2][3];
+    // The shallows, which is where the road went. A submerged stretch of
+    // TIDEBREAK is drawn at sea level, not down where its tarmac is, and the
+    // first version simply drew sea there: a third of the lap with no visible
+    // racing line at all, which is not a hazard, it is the track being taken
+    // away. The lane is a lighter band with foam at its edges, so the causeway
+    // reads as continuing under the surface.
+    uint8_t shallow[2][3];
+    uint8_t foam[3];
 };
+
+// The sea level, in fp4 like a node's own y, and it is a SURFACE rather than a
+// hazard volume. The hover field pushes off water exactly as it pushes off
+// rock, so a pod skims the waves and cannot be dropped through them, which is
+// what the whole force field premise says should happen and what a track
+// described as "under and over the water" needs in order to be drivable at
+// all. A dry planet says so with the sentinel and pays nothing for it.
+constexpr int16_t k_no_water = INT16_MIN;
 
 struct Track {
     const char* name;
     const TrackNode* nodes;
     uint16_t node_count;
     uint8_t laps;
+    int16_t water;             // fp4, or k_no_water
     World world;
     Palette palette;
 };
@@ -73,6 +98,11 @@ inline int32_t node_z(const TrackNode& n) { return static_cast<int32_t>(n.z) << 
 inline int32_t node_y(const TrackNode& n) { return static_cast<int32_t>(n.y) << 12; }
 inline int32_t node_half_width(const TrackNode& n) {
     return static_cast<int32_t>(n.half_width) << 12;
+}
+
+inline bool has_water(const Track& t) { return t.water != k_no_water; }
+inline int32_t water_level(const Track& t) {
+    return static_cast<int32_t>(t.water) << 12;
 }
 
 }  // namespace twinflare

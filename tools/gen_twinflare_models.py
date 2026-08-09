@@ -97,8 +97,20 @@ def build_cockpit():
     m.tri("canopy", nose, f_tr, f_tl)
     m.tri("hull", nose, f_br, f_tr)
     m.tri("hull", nose, f_tl, f_bl)
-    m.quad("canopy", b_tl, b_tr, f_tr, f_tl)
-    m.quad("hull", f_bl, f_br, b_br, b_bl)
+    # The roof and the floor, and both were wound the wrong way round for the
+    # whole of the game's first release. The chase camera sits behind and
+    # above, so the roof is the largest face it ever looks at, and it was
+    # back facing: the player was looking THROUGH the cockpit into an empty
+    # shell, which is why the pod read as a small dark box hanging under the
+    # engines rather than as a cockpit.
+    #
+    # Nothing caught it. signed_volume() is one number for the whole mesh and
+    # the two flipped faces very nearly cancelled inside it; the host tests
+    # measure where the cables attach, not which way a face points; and at
+    # 120x120 a missing roof looks like a shading choice. inward_faces() is
+    # the check that finds this, and main() below treats it as an error.
+    m.quad("canopy", f_tl, f_tr, b_tr, b_tl)
+    m.quad("hull", b_bl, b_br, f_br, f_bl)
     m.quad("trim", f_br, b_br, b_tr, f_tr)
     m.quad("trim", b_bl, f_bl, f_tl, b_tl)
     # The tail is 'trim' and not 'glow'. Glow is a dark grey meant as an
@@ -155,6 +167,7 @@ def main():
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    failures = 0
     for name, (build, materials) in MODELS.items():
         mesh = build()
         volume = mesh.signed_volume()
@@ -164,12 +177,19 @@ def main():
         # vanishes from one side and nothing else.
         if volume >= 0:
             print(f"  WARNING {name}: signed volume {volume:.2f}, expected negative")
+        # And checked FACE BY FACE, which is the check that would have caught
+        # the cockpit's missing roof. An error and not a warning: a warning is
+        # something a build scrolls past.
+        for index, material, centre in mesh.inward_faces():
+            print(f"  ERROR {name}: face {index} ({material}) at {centre} "
+                  f"points inward")
+            failures += 1
         (out / f"{name}.mtl").write_text(mtl(materials))
         mesh.write(out / f"{name}.obj", name, HEADER, f"{name}.mtl")
         print(f"{name:<14} {len(mesh.verts):>3} verts  "
               f"{sum(len(f[1]) - 2 for f in mesh.faces):>3} triangles  "
               f"volume {volume:>8.2f}")
-    return 0
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
