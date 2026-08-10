@@ -104,10 +104,26 @@ TRACKS = [
             (-230, 150), (-350, 210), (-470, 130), (-450, -20), (-390, -120),
         ],
         elevation=[6, 10, 12, 8, 2, -6, -14, -18, -12, -4, 2, 6],
+        # Brought up to the desert's density, which the browser viewer is what
+        # measured: TIDEBREAK was 72% bare road against DUNE SEA's 58%, with
+        # one canyon, no tunnel, and a gap 15 nodes downstream of the ramp
+        # meant to launch it.
+        #
+        # The tunnel is on the high ground before the line and NOT in the
+        # trench, which is where it wants to go and where it cannot: the trench
+        # bottoms out fourteen units under the waterline, a roof seven units
+        # over that road is still six units under the sea, and the sea is drawn
+        # over everything. A tunnel here is a tunnel with the ocean inside it.
         features=[
-            (0.10, 110, F_RAMP), (0.24, 210, F_WALL), (0.36, 26, F_BOOST),
-            (0.46, 140, F_SHORT), (0.565, 56, F_GAP), (0.70, 110, F_RAMP),
-            (0.88, 26, F_BOOST),
+            (0.06, 26, F_BOOST),
+            (0.10, 110, F_RAMP), (0.1447, 56, F_GAP),
+            (0.24, 250, F_WALL),
+            (0.36, 26, F_BOOST),
+            (0.46, 140, F_SHORT),
+            (0.70, 110, F_RAMP),
+            (0.78, 160, F_WALL),
+            (0.86, 130, F_TUNNEL),
+            (0.94, 26, F_BOOST),
         ],
     ),
     dict(
@@ -120,10 +136,18 @@ TRACKS = [
             (30, 190), (-140, 208), (-300, 128), (-430, 190), (-540, 90),
         ],
         elevation=[0, 8, 18, 10, -4, -14, -8, 2, 10, 14, 8, -4, -6],
+        # Same treatment as TIDEBREAK, and the same two faults: 73% bare road,
+        # and both gaps opening five nodes after their ramp had already put the
+        # road back down, so both launchers launched nothing.
         features=[
-            (0.02, 26, F_BOOST), (0.17, 110, F_RAMP), (0.225, 56, F_GAP),
-            (0.34, 210, F_WALL), (0.47, 140, F_SHORT), (0.60, 110, F_RAMP),
-            (0.655, 56, F_GAP), (0.82, 26, F_BOOST),
+            (0.02, 26, F_BOOST),
+            (0.17, 110, F_RAMP), (0.2116, 56, F_GAP),
+            (0.34, 250, F_WALL),
+            (0.47, 140, F_SHORT),
+            (0.53, 130, F_TUNNEL),
+            (0.60, 110, F_RAMP), (0.6406, 56, F_GAP),
+            (0.72, 170, F_WALL),
+            (0.82, 26, F_BOOST),
         ],
     ),
     dict(
@@ -145,7 +169,7 @@ TRACKS = [
             # jump you make by not making a mistake rather than a jump you
             # make. The gap is a thing in metres precisely so it can differ
             # per track when the track's physics differ.
-            (0.40, 110, F_RAMP), (0.45, 32, F_GAP), (0.545, 140, F_SHORT),
+            (0.40, 110, F_RAMP), (0.4535, 32, F_GAP), (0.545, 140, F_SHORT),
             (0.64, 210, F_WALL), (0.80, 110, F_RAMP), (0.90, 26, F_BOOST),
         ],
     ),

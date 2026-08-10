@@ -394,15 +394,17 @@ void test_the_drawn_ground_is_the_driven_ground() {
             const int32_t mx = (node_x(n) + node_x(b)) / 2;
             const int32_t mz = (node_z(n) + node_z(b)) / 2;
             for (int k = 0; k < 12; ++k) {
-                // Out to twenty four units past the edge. The shoulder is fully
-                // down at twelve, so this is the whole of the ground a pod that
-                // ran wide is on and a fair margin past it. Further out than
-                // this the answer stops being well defined at all: HOARFROST
-                // and TIDEBREAK both run back alongside themselves inside
-                // eighty units, so the ground between two carriageways belongs
-                // to both, while surface_at deliberately only searches a window
-                // of nodes around the pod and can only ever name one of them.
-                const int32_t over = fp(2) + fp(22) * (k / 2) / 5;
+                // Out to the railing and no further, because the railing is
+                // where the pod stops: sixteen units past the edge, against a
+                // barrier at eighteen. The shoulder is fully down at twelve, so
+                // this is the whole of the ground a pod that ran wide is on.
+                //
+                // Further out the answer stops being well defined anyway:
+                // HOARFROST and TIDEBREAK both run back alongside themselves
+                // inside eighty units, so the ground between two carriageways
+                // belongs to both, while surface_at deliberately only searches
+                // a window of nodes around the pod and can only name one.
+                const int32_t over = fp(2) + fp(14) * (k / 2) / 5;
                 const int32_t off = (half + over) * ((k & 1) ? 1 : -1);
                 const int32_t x = mx + ftrig(off, fcos(head));
                 const int32_t z = mz - ftrig(off, fsin(head));
@@ -563,6 +565,174 @@ void test_pod_select_shows_the_pod() {
     std::printf("  all %d racers render a distinct pod\n", k_racer_count);
 }
 
+void test_the_rocks_belong_to_the_track() {
+    // Reported from playing it: "spikes on the side of the track don't seem to
+    // be stable in position, that thing pops around the screen every frame."
+    //
+    // They were picked at fixed offsets AHEAD OF THE POD, `pod.node + 0, 7,
+    // 14`, so the three rocks in view were pinned to the pod rather than to the
+    // ground. Every time the pod crossed a node boundary, five times a second,
+    // all three jumped to different nodes and were rebuilt from a different
+    // hash: a different side, a different distance out, a different size. They
+    // did not move, they teleported.
+    //
+    // A rock belongs to a node now, and the test is exactly that: whatever the
+    // pod is doing, every rock drawn stands on a node the TRACK chose.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        Race race;
+        race_init(race, ti, 0);
+        Input in{};
+        Chrome chrome;
+        chrome.screen = Screen::Race;
+        int frames = 0, drawn = 0;
+        for (int i = 0; i < 1400; ++i) {
+            drive(race, t, in);
+            race_tick(race, in);
+            if (i % 17 || i < 100) continue;
+            render_frame(race, chrome, target());
+            ++frames;
+            drawn += render_stats().props;
+            for (int k = 0; k < render_stats().props; ++k) {
+                check(render_stats().prop_node[k] % 7 == 0,
+                      "every rock stands on a node the track chose, not one the "
+                      "pod chose");
+            }
+        }
+        check(drawn > frames, "there are rocks out there to check");
+        std::printf("  %-10s %d rocks over %d frames, all on track nodes\n",
+                    t.name, drawn, frames);
+    }
+}
+
+void test_scraping_a_wall_throws_sparks() {
+    // Reported from playing it: crashing into a wall popped the pod up over
+    // the wall, and nothing on screen said the pod was grinding along it. The
+    // sim has always charged for the scrape, so a player on a walled circuit
+    // could shed a hundred health a second with no cue but a bar in the corner.
+    //
+    // Three things to prove, and none of them is "the code ran". The first
+    // version of this test counted the quads the renderer submitted, which was
+    // eight every scraping frame and told us nothing: at a tenth of a unit
+    // across they projected to under a pixel from the chase camera, so the
+    // rasterizer painted NONE of them and the test was green over an effect
+    // that was invisible. So: count pixels the sparks actually landed, check
+    // they come off the side against the rock, and check the pod stayed down
+    // at the foot of the wall instead of riding up over it.
+    const Track& t = track(3);   // HOARFROST, 624 units of canyon
+    Race race;
+    race_init(race, 3, 0);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+
+    // The two spark colours, which are nobody's livery and nothing else on a
+    // frozen circuit is anywhere near.
+    const auto spark_pixels = []() {
+        const int hot[3] = {255, 236, 176}, cool[3] = {255, 150, 70};
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) {
+            const uint8_t* px = g_pixels + i * 3;
+            int dh = 0, dc = 0;
+            for (int k = 0; k < 3; ++k) {
+                dh += std::abs(px[k] - hot[k]);
+                dc += std::abs(px[k] - cool[k]);
+            }
+            if (dh < 70 || dc < 70) ++n;
+        }
+        return n;
+    };
+
+    int scraped = 0, sparked = 0, wrong_side = 0, high = 0, peak = 0;
+    for (int i = 0; i < 3000; ++i) {
+        drive(race, t, in);
+        // Steer into whichever wall is nearer once there is a wall to hit.
+        const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+        if (node_wall(t.nodes[s.node]) > 0) {
+            in.left = s.lateral < 0;
+            in.right = !in.left;
+        }
+        race_tick(race, in);
+        if (i % 3) continue;
+        render_frame(race, chrome, target());
+        if (!race.pod.scraping) continue;
+        ++scraped;
+        check(render_stats().sparks > 0, "a scrape submits sparks to draw");
+        const int lit = spark_pixels();
+        if (lit > 0) ++sparked;
+        if (lit > peak) peak = lit;
+        // The side the sim says is grinding has to be the side the pod ran out
+        // of road on, which is the sign of its offset from the centreline.
+        if ((race.pod.scrape > 0) != (s.lateral > 0)) ++wrong_side;
+        // And the pod stays down at the foot of the wall rather than riding up
+        // over it. The wall is eleven units; half of it is the report.
+        const float over = (race.pod.y - s.y) / 65536.0f;
+        if (over > k_wall_height / 65536.0f * 0.5f) ++high;
+    }
+    check(scraped > 20, "the pod really did grind along a wall");
+    check(sparked * 10 >= scraped * 9, "a scrape puts sparks on the screen");
+    check(peak >= 8, "the sparks are big enough to see, not sub pixel");
+    check(wrong_side == 0, "the sparks come off the side against the rock");
+    check(high == 0, "scraping a wall does not lift the pod over it");
+    std::printf("  HOARFROST  %d scraping frames, %d lit sparks (peak %d px), "
+                "%d on the wrong side, %d rode up the wall\n",
+                scraped, sparked, peak, wrong_side, high);
+}
+
+void test_no_band_of_ground_runs_backwards() {
+    // A strip of ground is a quad between one node's boundary point and the
+    // next node's. If the outer point advances the OTHER way to the road, the
+    // two ends have crossed and the quad is a bowtie: it folds through itself,
+    // draws over ground it does not own at the wrong height, and leaves a
+    // wedge of nothing beside it. From a pod that has wandered off the road
+    // that reads as a hole in the world, which is exactly how it was reported.
+    //
+    // The clamp meant to prevent this measured the reach PAST THE ROAD EDGE
+    // against a radius measured from the CENTRELINE, so the road's own half
+    // width was spent twice, and it only ever looked at one node when a strip
+    // has two ends. 33 folds across the four circuits, and on HOARFROST one
+    // band ran back along itself almost exactly.
+    //
+    // The check is the definition: every boundary point on both sides of every
+    // node has to advance with the road, not against it.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        float worst = 1.0f;
+        int worst_node = 0;
+        for (int i = 0; i < t.node_count; ++i) {
+            const int j = (i + 1) % t.node_count;
+            const float cx =
+                (node_x(t.nodes[j]) - node_x(t.nodes[i])) / 65536.0f;
+            const float cz =
+                (node_z(t.nodes[j]) - node_z(t.nodes[i])) / 65536.0f;
+            const float cl = std::sqrt(cx * cx + cz * cz);
+            if (cl < 0.0001f) continue;
+            for (int s = 0; s < 2; ++s) {
+                const float side = s ? 1.0f : -1.0f;
+                GroundSlice a, b;
+                ground_slice(t, i, side, a);
+                ground_slice(t, j, side, b);
+                const float* pa[6] = {a.base, a.lip, a.shoulder, a.verge,
+                                      a.rail, a.plain};
+                const float* pb[6] = {b.base, b.lip, b.shoulder, b.verge,
+                                      b.rail, b.plain};
+                for (int k = 0; k < 6; ++k) {
+                    const float dx = pb[k][0] - pa[k][0];
+                    const float dz = pb[k][2] - pa[k][2];
+                    const float dl = std::sqrt(dx * dx + dz * dz);
+                    if (dl < 0.0001f) continue;
+                    const float dot = (cx * dx + cz * dz) / (cl * dl);
+                    if (dot < worst) { worst = dot; worst_node = i; }
+                }
+            }
+        }
+        check(worst > 0.0f,
+              "no band of ground runs backwards against the road it borders");
+        std::printf("  %-10s worst band heads %+.2f with the road, at node %d\n",
+                    t.name, worst, worst_node);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -576,6 +746,9 @@ int main() {
     test_the_drawn_ground_is_the_driven_ground();
     test_a_hole_in_the_road_is_drawn_as_a_hole();
     test_pod_select_shows_the_pod();
+    test_the_rocks_belong_to_the_track();
+    test_scraping_a_wall_throws_sparks();
+    test_no_band_of_ground_runs_backwards();
 
     if (g_failures) {
         std::printf("%d failure(s)\n", g_failures);

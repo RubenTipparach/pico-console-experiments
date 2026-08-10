@@ -457,10 +457,10 @@ void edge_point(const Track& t, int index, float side, float out[3], float widen
 // not reached yet. That is the "sinking into the ground off road" report, and
 // no amount of care in the sim could have fixed it, because the sim was right.
 //
-// Three quarters of the radius, so a strip stops well short of the fold rather
+// Four fifths of the radius, so a strip stops well short of the fold rather
 // than at it. On a straight the radius is enormous and nothing is clamped,
 // which is most of a lap.
-float reach_limit(const Track& t, int index, float side) {
+float node_reach(const Track& t, int index, float side) {
     const int n = t.node_count;
     const TrackNode& prev = t.nodes[(index + n - 1) % n];
     const TrackNode& here = t.nodes[index];
@@ -483,7 +483,32 @@ float reach_limit(const Track& t, int index, float side) {
     node_dir(t, index, mx, mz);
     const float nx = mz * side, nz = -mx * side;
     if (tx * nx + tz * nz <= 0.0f) return 1.0e9f;   // the outside of the turn
-    return 0.9f * mb / turn;
+    // The offsets cross once they pass the radius, and an offset is measured
+    // from the CENTRELINE while everything here counts from the road edge, so
+    // the road's own half width comes off the budget first. It did not, and
+    // that put the plain's outer edge at 46.3 units on a corner of radius 46.2
+    // on HOARFROST: a band that had stalled dead and gone backwards.
+    const float radius = 0.8f * mb / turn - to_world(node_half_width(here));
+    return radius > 0.0f ? radius : 0.0f;
+}
+
+// The reach a node may use, which is its own and its neighbours' tightest.
+//
+// A strip is built between TWO nodes, so it folds if either end reaches past
+// the corner they share, and a per node clamp cannot see that: a straight node
+// is unclamped, the corner node beside it is clamped hard, and the quad
+// between them still crosses. The browser viewer found 33 of these across the
+// four circuits, worst on HOARFROST where the outer band ran back along itself
+// almost exactly (the direction it advanced in agreed with the road's by
+// -0.997). That is the bowtie in the drawn plain that reads, from a pod that
+// has wandered off the road, as a hole in the world.
+float reach_limit(const Track& t, int index, float side) {
+    const int n = t.node_count;
+    const float here = node_reach(t, index, side);
+    const float back = node_reach(t, (index + n - 1) % n, side);
+    const float fwd = node_reach(t, (index + 1) % n, side);
+    float least = here < back ? here : back;
+    return fwd < least ? fwd : least;
 }
 
 // How far the drawn plain reaches past the road edge, before the fold clamp.
@@ -493,7 +518,11 @@ constexpr float k_plain_reach = 46.0f;
 // built between: the road edge, the foot of the shoulder, and the outer edge
 // of the plain. draw_road builds its quads from this and drawn_ground() probes
 // it, so a test cannot be measuring a different world from the one on screen.
-struct GroundBand { float base[3], lip[3], shoulder[3], plain[3]; float wall; };
+struct GroundBand {
+    float base[3], lip[3], shoulder[3], verge[3], rail[3], plain[3];
+    float wall;
+    bool railed;
+};
 
 // Height of a flat-ish quad at a point in the XZ plane, or false if the point
 // is outside it. Only the ground probe uses this; the renderer projects.
@@ -536,12 +565,26 @@ void ground_band(const Track& t, int index, float side, GroundBand& out) {
     edge_at(t, index, side, half, out.wall, out.lip);
     edge_at(t, index, side, half + run,
             to_world(ground_offset(wall, k_shoulder_run)), out.shoulder);
+    // The railing, eighteen units past the road edge, standing on whatever the
+    // ground is doing there. Not on a canyon segment: the wall is already the
+    // bound, and a rail on top of a cliff is geometry nobody can reach.
+    out.railed = wall == 0 && reach > to_world(k_verge) + 0.5f;
+    const float verge = to_world(k_verge);
+    edge_at(t, index, side, half + verge,
+            to_world(ground_offset(wall, k_verge)), out.verge);
+    edge_at(t, index, side, half + verge,
+            to_world(ground_offset(wall, k_verge) + k_rail_height), out.rail);
     edge_at(t, index, side, half + reach,
             to_world(ground_offset(wall, static_cast<int32_t>(reach * 65536.0f))),
             out.plain);
     const float sea = sea_level(t);
-    float* points[4] = {out.base, out.lip, out.shoulder, out.plain};
+    float* points[6] = {out.base, out.lip, out.shoulder,
+                        out.verge, out.rail, out.plain};
     for (float* p : points) if (p[1] < sea) p[1] = sea;
+    // The rail stands ON the sea where the sea won, rather than being drowned
+    // by it: a barrier the pod is stopped at and cannot see is worse than none.
+    if (out.railed && out.rail[1] < out.verge[1] + to_world(k_rail_height))
+        out.rail[1] = out.verge[1] + to_world(k_rail_height);
 }
 // And the lip that a canyon rim turns outward at the top, so a wall reads as
 // the edge of something rather than as a sheet standing on the desert.
@@ -755,7 +798,18 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
                     plain_col = pal.rock[band ^ 1];
                 }
                 quad(gi.lip, gj.lip, wj, wi, bank_col);
-                quad(wi, wj, fj, fi, plain_col);
+                // Between the shoulder and the railing, then the railing
+                // itself: a vertical face the pod is stopped at and a strip of
+                // ground behind it, so the barrier reads as standing on the
+                // world rather than floating in it. Off a canyon segment only,
+                // and only near, where a four unit rail is more than a pixel.
+                if (gi.railed && gj.railed && s <= 9) {
+                    quad(wi, wj, gj.verge, gi.verge, plain_col);
+                    quad(gi.verge, gj.verge, gj.rail, gi.rail, pal.edge);
+                    quad(gi.rail, gj.rail, fj, fi, pal.rock[band]);
+                } else {
+                    quad(wi, wj, fj, fi, plain_col);
+                }
             }
         }
 
@@ -906,16 +960,40 @@ void draw_horizon(const Track& t, const Camera& cam) {
 // rock stays put while the camera moves over it and not one byte of RAM holds
 // where any of them are.
 void draw_props(const Track& t, const Pod& pod) {
-    for (int s = 0; s < k_view_segments; s += 7) {
-        const int i = ((pod.node + s) % t.node_count + t.node_count) % t.node_count;
-        const TrackNode& n = t.nodes[i];
+    // A rock belongs to a NODE, not to a distance ahead of the pod.
+    //
+    // This used to step through `pod.node + s` for s in 0, 7, 14, so the three
+    // rocks in view were pinned to the pod rather than to the ground: every
+    // time the pod crossed a node boundary, five times a second, all three
+    // jumped to different nodes and were rebuilt from a different hash. They
+    // did not move, they TELEPORTED, and every eight units of track.
+    //
+    // Every seventh node carries a rock, and which nodes those are is a
+    // property of the track. Walking the view window and taking the ones that
+    // qualify costs the same three draws and they stay where they are put.
+    const int n = t.node_count;
+    for (int s = -k_view_behind; s < k_view_segments; ++s) {
+        const int i = ((pod.node + s) % n + n) % n;
+        if (i % 7 != 0) continue;
+        const TrackNode& node = t.nodes[i];
+        // Not inside a canyon or a tunnel: there is rock there already, and a
+        // spike standing in the middle of a wall is a spike inside a wall.
+        if (node.flags & (kWall | kTunnel | kGap)) continue;
         const uint32_t h = static_cast<uint32_t>(i) * 2654435761u;
         const float side = (h & 1) ? 1.0f : -1.0f;
-        const float off = to_world(node_half_width(n)) + 16.0f + ((h >> 8) & 31);
+        // Beyond the railing, where the pod cannot reach and the rock cannot be
+        // driven through.
+        const float half = to_world(node_half_width(node));
+        const float out = to_world(k_verge) + 6.0f + ((h >> 8) & 31);
         const float scale = 2.0f + ((h >> 16) & 7) * 0.6f;
         float p[3];
-        edge_point(t, i, side, p, 1.0f + off / to_world(node_half_width(n)));
+        // Standing on the ground it is actually beside, not at road height.
+        edge_at(t, i, side, half + out,
+                to_world(ground_offset(node_wall(node),
+                                       static_cast<int32_t>(out * 65536.0f))), p);
         const uint8_t* col = t.palette.rock[(h >> 3) & 1];
+        if (g_stats.props < 4) g_stats.prop_node[g_stats.props++] =
+            static_cast<uint16_t>(i);
         note_coordinate(p);
         g_renderer->draw_mesh(models::twinflare::rock, p[0], p[1] + 1.0f, p[2],
                               static_cast<float>(h & 255) * 0.024f, scale,
@@ -937,6 +1015,7 @@ struct PodPose {
     uint32_t tick;      // the race clock, for anything that has to move
     bool spray;         // the surface under this pod is water
     float surface;      // world y of that surface
+    int8_t scrape;      // grinding a wall on this side: -1 left, +1 right
 };
 
 // A unit vector across a strand, perpendicular to it and to the line of sight,
@@ -1063,6 +1142,76 @@ void offset_from(const float centre[3], float yaw, float pitch, float roll,
     out[0] = centre[0] + m[0] * dx + m[1] * dy + m[2] * dz;
     out[1] = centre[1] + m[3] * dx + m[4] * dy + m[5] * dz;
     out[2] = centre[2] + m[6] * dx + m[7] * dy + m[8] * dz;
+}
+
+// Sparks, off the engine that is grinding a wall.
+//
+// The sim has always known which side is scraping and how much it costs: the
+// pod loses engine health the whole time it is against the rock. Nothing said
+// so. On a walled circuit a player could be shedding a hundred health a second
+// with no cue but a bar in the corner going down.
+//
+// Struck outward and backward off the outboard flank, in a hot white that is
+// nobody's livery, because a spark is what the wall is doing to the pod rather
+// than something the pod is painted. Unlit: eight one-quad specks, and the
+// whole effect is that they stream.
+//
+// The size is MEASURED, not chosen to look right in a comment. The first
+// version made them a tenth of a unit, which reads as "a spark is small" and
+// on a 120 pixel screen at chase camera distance projected to under one pixel:
+// eight quads went into the queue every frame, the stats counted eight sparks,
+// and the rasterizer painted nothing at all. A quarter unit is the smallest
+// that reliably lands pixels from behind the pod, and the test now counts
+// PIXELS rather than draw calls, because a draw call proved nothing.
+constexpr int k_spark_count = 8;
+constexpr float k_spark_size = 0.19f;
+
+void sparks(const PodPose& p, const float at[3], float side, uint32_t tick) {
+    const uint8_t hot[3] = {255, 236, 176};
+    const uint8_t cool[3] = {255, 150, 70};
+    const float fx = std::sin(p.yaw), fz = std::cos(p.yaw);
+    // Outboard, in the pod's own frame: across the heading, away from the road.
+    const float ox = std::cos(p.yaw) * side, oz = -std::sin(p.yaw) * side;
+    for (int k = 0; k < k_spark_count; ++k) {
+        const uint32_t seed = static_cast<uint32_t>(k) * 2654435761u;
+        const int period = 9 + (seed >> 29);
+        const float age = ((tick + k * 5) % period) / static_cast<float>(period);
+        // A short trail that arcs UP over the engine, not a long one that
+        // streams back past the camera. Backward is toward the viewer here, so
+        // a five unit tail spends most of its life either behind the near
+        // plane or hidden by the pod's own hull, and what reached the screen
+        // was one stray speck beside the HUD. Two units of trail keeps the
+        // whole plume in front of the pod's silhouette, and the arc lifts it
+        // clear of the engine that is throwing it.
+        const float back = age * 2.2f;
+        const float rise = 0.18f + age * 1.5f - age * age * 0.8f;
+        // They stream ALONG the wall and drift back off it, not out through
+        // it. Thrown outboard, which is the intuitive thing and what this did
+        // first, every spark spawns on the far side of the rock the pod is
+        // grinding, the depth buffer hides all eight, and a frame that
+        // submitted a full plume drew nothing. The contact is the outboard
+        // flank, so that is where they start and inward is the only way out.
+        const float out = 0.33f - age * 0.30f;
+        const float wob = ((static_cast<int>(seed >> 7) & 7) - 3.5f) * 0.16f;
+        const float sz = k_spark_size * (1.0f - age * 0.55f);
+        const float base[3] = {
+            at[0] - fx * back + ox * out,
+            at[1] + rise + wob * 0.4f,
+            at[2] - fz * back + oz * out,
+        };
+        float rx = base[2], rz = -base[0];
+        const float m = std::sqrt(rx * rx + rz * rz);
+        if (m < 0.0001f) continue;
+        rx = rx / m * sz; rz = rz / m * sz;
+        const float q[4][3] = {
+            {base[0] - rx, base[1] + sz, base[2] - rz},
+            {base[0] + rx, base[1] + sz, base[2] + rz},
+            {base[0] + rx, base[1] - sz, base[2] + rz},
+            {base[0] - rx, base[1] - sz, base[2] - rz},
+        };
+        quad(q[0], q[1], q[2], q[3], age < 0.45f ? hot : cool, false);
+        ++g_stats.sparks;
+    }
 }
 
 // The back end of an engine mesh: how far aft the nozzle is and how wide it is
@@ -1360,6 +1509,9 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
             };
             flare(at, eng.yaw, eng.pitch, eng.roll, tail,
                   p.boosting ? 1.45f : 0.85f, fire);
+            // And sparks, off whichever engine is against the rock.
+            if (p.scrape != 0 && (i == 0) == (p.scrape < 0))
+                sparks(p, at, p.scrape > 0 ? 1.0f : -1.0f, p.tick);
         }
     }
 
@@ -1386,6 +1538,7 @@ PodPose pose_of(const Pod& pod, uint32_t tick) {
     // sailing over a gap is spray coming off nothing.
     p.spray = pod.over_water && pod.grounded;
     p.surface = to_world(pod.y - pod.clearance);
+    p.scrape = pod.scraping ? pod.scrape : 0;
     return p;
 }
 
@@ -1850,6 +2003,26 @@ void render_frame(const Race& race, const Chrome& chrome,
 
 const RenderStats& render_stats() { return g_stats; }
 
+void ground_slice(const Track& t, int node, float side, GroundSlice& out) {
+    // World space, so the floating origin is stood down for the duration, the
+    // same way drawn_ground does it and for the same reason: one copy of the
+    // band arithmetic, not two.
+    const float saved[3] = {g_origin[0], g_origin[1], g_origin[2]};
+    g_origin[0] = g_origin[1] = g_origin[2] = 0.0f;
+    GroundBand b;
+    ground_band(t, node, side, b);
+    for (int i = 0; i < 3; ++i) {
+        out.base[i] = b.base[i];
+        out.lip[i] = b.lip[i];
+        out.shoulder[i] = b.shoulder[i];
+        out.verge[i] = b.verge[i];
+        out.rail[i] = b.rail[i];
+        out.plain[i] = b.plain[i];
+    }
+    out.railed = b.railed;
+    g_origin[0] = saved[0]; g_origin[1] = saved[1]; g_origin[2] = saved[2];
+}
+
 bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y) {
     // The probe runs in world space, so the floating origin is stood down for
     // the duration. Legitimate here and nowhere else: this is called from the
@@ -1891,11 +2064,16 @@ bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y)
             // The same two quads draw_road draws, whether that is a bank and a
             // plain or a canyon rim and the plateau above it. One construction,
             // so a test cannot be measuring a world the player never sees.
+            const bool railed = gi.railed && gj.railed;
             if (quad_height(gi.lip, gj.lip, gj.shoulder, gi.shoulder, px, pz, here)
-                || quad_height(gi.shoulder, gj.shoulder, gj.plain, gi.plain,
-                               px, pz, here)) {
+                || quad_height(gi.shoulder, gj.shoulder,
+                               railed ? gj.verge : gj.plain,
+                               railed ? gi.verge : gi.plain, px, pz, here)) {
                 if (!any || here > y) { y = here; any = true; }
             }
+            // Past the railing is a place the pod cannot reach, so what is
+            // drawn there is not compared against anything: the probe reports
+            // the ground under the rail rather than the strip behind it.
         }
     }
 

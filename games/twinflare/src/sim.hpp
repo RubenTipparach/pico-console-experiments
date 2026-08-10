@@ -69,6 +69,7 @@ struct Pod {
     bool on_road;
     bool over_water;             // the surface under the field is the sea
     bool roofed;                 // under a tunnel, so there is a ceiling
+    int8_t scrape;               // which side is grinding: -1 left, +1 right
     int16_t wreck_ticks;
     int16_t flash_ticks;
     int16_t blast[2];
@@ -117,6 +118,10 @@ struct Surface {
     bool water;     // the sea won: the field is pushing off water, not rock
     bool roofed;    // a tunnel: there is a ceiling as well as a floor
     int32_t roof;   // and this is where it is
+    // How far from the centreline the pod is allowed to get: the road edge on
+    // a canyon, the railing everywhere else. The push in race_tick reads this
+    // rather than the half width, because those are not the same line.
+    int32_t limit;
 };
 
 // How high the rock stands at the road edge at a node: nothing on open desert,

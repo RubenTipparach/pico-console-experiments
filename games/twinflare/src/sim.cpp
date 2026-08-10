@@ -252,7 +252,13 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
         s.road = false;
     } else {
         const int32_t half = node_half_width(a);
-        const int32_t over = (s.lateral < 0 ? -s.lateral : s.lateral) - half;
+        const int32_t away = s.lateral < 0 ? -s.lateral : s.lateral;
+        const int32_t over = away - half;
+        // Where the pod runs out of road. A canyon stops it at the road edge; a
+        // railing stops it eighteen units past one. Reported, because the push
+        // in race_tick has to know which line it is pushing back to and those
+        // are not the same line.
+        s.limit = (wall_h > k_hover_height) ? half : half + k_verge;
         if (over > 0) {
             // Off the road is a SHOULDER, not a cliff, and its exact shape is
             // ground_offset's, which the renderer draws from too.
@@ -270,12 +276,21 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
             // can be driven back on; what it costs is grip and speed, applied
             // in race_tick. Falling is reserved for a GAP, where there is
             // genuinely no road.
-            s.y = ground + ground_offset(wall_h, over);
-            // Blocked only where the rock stands higher than the pod floats.
+            // THE SURFACE UNDER THE BARRIER, not the top of it. A canyon wall
+            // used to be terrain all the way up, so hitting one lifted the pod
+            // eleven units onto the plateau: the hover field found the rock
+            // above it, the hard floor placed the pod on top, and you popped
+            // over the wall you had just crashed into. Clamping the profile to
+            // the blocking line means the field is pushing off the ground the
+            // pod is actually standing on, which is the road at the foot of the
+            // wall. The push a few lines down does the rest.
+            const int32_t reach = s.limit - half;
+            s.y = ground + ground_offset(wall_h, over < reach ? over : reach);
+            // Blocked only where something stands higher than the pod floats.
             // Below that the taper at a canyon mouth is drivable rock, which
             // is exactly what it looks like, and the pod is pushed out the
-            // moment the wall is tall enough to be a wall.
-            if (wall_h > k_hover_height) s.wall = true;
+            // moment the rock is tall enough to be a wall.
+            if (away >= s.limit) s.wall = true;
         } else {
             // Banking: the road tilts into its own turn, which is free grip on
             // a corner and the reason a circuit can be fast and tight at once.
@@ -701,12 +716,15 @@ void race_tick(Race& race, const Input& in) {
 
     // ---- walls -------------------------------------------------------------
     pod.scraping = false;
+    pod.scrape = 0;
     if (surf.wall) {
         const TrackNode& a = t.nodes[surf.node];
         const TrackNode& b = t.nodes[(surf.node + 1) % t.node_count];
         const int32_t heading = fatan2(node_x(b) - node_x(a), node_z(b) - node_z(a));
-        const int32_t half = node_half_width(a);
-        const int32_t mag = (surf.lateral < 0 ? -surf.lateral : surf.lateral) - half;
+        // Back to the line the surface said stops the pod, which is the road
+        // edge inside a canyon and the railing out on the open desert.
+        const int32_t mag = (surf.lateral < 0 ? -surf.lateral : surf.lateral)
+                          - surf.limit;
         const int32_t dir = surf.lateral > 0 ? -1 : 1;
         const int32_t nx = ftrig(dir * k_one, fcos(heading));
         const int32_t nz = -ftrig(dir * k_one, fsin(heading));
@@ -725,6 +743,10 @@ void race_tick(Race& race, const Input& in) {
             pod.vz += fmul(nz, fscale(into, 1250));
         }
         pod.scraping = true;
+        // Which side is grinding, so the renderer knows where to put the
+        // sparks. The sign of the lateral offset is the side of the road the
+        // pod ran out on, which is the side the wall is on.
+        pod.scrape = surf.lateral > 0 ? 1 : -1;
         hurt(pod, 0, k_scrape / k_tick_hz / 2);
         hurt(pod, 1, k_scrape / k_tick_hz / 2);
     }

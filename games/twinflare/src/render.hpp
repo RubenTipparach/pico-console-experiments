@@ -64,6 +64,11 @@ struct RenderStats {
     // feature silently absent.
     uint16_t sea;
     uint16_t spray;
+    // Sparks off the engine grinding a wall, counted separately from spray so
+    // that one cannot stand in for the other. They are both unlit billboard
+    // quads thrown off the pod and they were briefly the same counter, which
+    // would have let a scrape satisfy a test asking whether water was drawn.
+    uint16_t sparks;
     // Vertical faces: canyon walls, tunnel sides and roofs, and the two lips of
     // a chasm. Counted because a hole in the road with no walls around it and a
     // hole in the road with walls look the same from every angle except the one
@@ -75,6 +80,13 @@ struct RenderStats {
     // text but it is the same problem: the one that fits at one angle of the
     // turn is the one that reaches into the stat bars at another.
     int16_t showcase_top, showcase_bottom;
+    // Which nodes drew a rock last frame. The rocks used to be picked at fixed
+    // offsets AHEAD OF THE POD, so every time it crossed a node boundary all
+    // of them jumped to different nodes and were rebuilt from a different
+    // hash: they did not move, they teleported, five times a second. A rock
+    // belongs to a node, and this is how a test says so.
+    uint8_t props;
+    uint16_t prop_node[4];
 };
 const RenderStats& render_stats();
 
@@ -86,5 +98,19 @@ const RenderStats& render_stats();
 // four units, and beside a jump the plain was drawn straight across a hole the
 // sim would drop you through.
 bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y);
+
+// One node's ground on one side, in WORLD space, as the boundary points the
+// renderer builds its strips between: the road edge, the top of any rock
+// standing on it, the foot of the shoulder, the railing's foot and top, and the
+// outer edge of the plain.
+//
+// Exists so tools/gen_twinflare_viewer.py can export exactly what the game draws
+// rather than a second opinion about it. Every geometry decision, the mitred
+// normal, the fold clamp, ground_offset, the waterline, stays in one place.
+struct GroundSlice {
+    float base[3], lip[3], shoulder[3], verge[3], rail[3], plain[3];
+    bool railed;
+};
+void ground_slice(const Track& t, int node, float side, GroundSlice& out);
 
 }  // namespace twinflare

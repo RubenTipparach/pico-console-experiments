@@ -739,6 +739,105 @@ void test_rivals_move_smoothly() {
     }
 }
 
+void test_a_wall_stops_the_pod_rather_than_lifting_it() {
+    // Reported from playing it: "when I crash into a wall I'm popping up above
+    // the wall." Exactly what happened, and it followed from making a canyon
+    // wall TERRAIN: past the road edge the ground was the top of the rock, so
+    // the hover field found eleven units of it above the pod, the hard floor
+    // placed the pod on top, and one tick after touching a canyon you were
+    // standing on it.
+    //
+    // The profile is clamped to the blocking line now, so the field pushes off
+    // the road at the foot of the wall and the lateral push does the rest.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        int wall_node = -1;
+        for (uint16_t i = 0; i < t.node_count; ++i)
+            if (t.nodes[i].flags & kWall) { wall_node = i + 4; break; }
+        if (wall_node < 0) continue;
+
+        Race race;
+        race_init(race, ti, 0);
+        const TrackNode& n = t.nodes[wall_node % t.node_count];
+        const TrackNode& b = t.nodes[(wall_node + 1) % t.node_count];
+        const int32_t head = fatan2(node_x(b) - node_x(n), node_z(b) - node_z(n));
+        race.pod.node = static_cast<uint16_t>(wall_node % t.node_count);
+        race.pod.x = node_x(n);
+        race.pod.z = node_z(n);
+        race.pod.y = node_y(n) + k_hover_height;
+        race.pod.yaw = head;
+        // Straight at the wall at racing speed, sixty degrees off the road.
+        const int32_t into = head + k_turn / 6;
+        race.pod.vx = ftrig(per_s(fp(70)), fsin(into));
+        race.pod.vz = ftrig(per_s(fp(70)), fcos(into));
+
+        Input in{};
+        in.throttle = true;
+        in.right = true;
+        int32_t highest = INT32_MIN;
+        int32_t widest = 0;
+        bool scraped = false;
+        for (int i = 0; i < 200; ++i) {
+            race_tick(race, in);
+            if (race.pod.wreck_ticks) break;
+            const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+            const int32_t above = race.pod.y - node_y(t.nodes[s.node]);
+            if (above > highest) highest = above;
+            const int32_t away = s.lateral < 0 ? -s.lateral : s.lateral;
+            if (away > widest) widest = away;
+            if (race.pod.scraping) scraped = true;
+        }
+        check(scraped, "the pod actually reached the wall");
+        // The pod may hover and it may bounce, but it may not climb: anything
+        // over the field's own reach is the pod standing on the wall.
+        check(highest < k_hover_height + k_hover_reach,
+              "hitting a wall does not lift the pod on top of it");
+        std::printf("  %-10s into the wall at 70 u/s: highest %.1f over the road "
+                    "(field reaches %.1f), widest %.1f from the centreline\n",
+                    t.name, highest / 65536.0,
+                    (k_hover_height + k_hover_reach) / 65536.0, widest / 65536.0);
+    }
+}
+
+void test_the_railing_bounds_the_pod() {
+    // Reported from playing it: off the main path, "massive geometry gaps", and
+    // a request for something to keep the ship from drifting off. The drawn
+    // plain is clamped short of the fold, so past it there was nothing to see
+    // and nothing to aim at, and the sim happily let a pod fly out there
+    // forever.
+    //
+    // Eighteen units past the road edge there is a railing. This drives every
+    // track with a pilot trying to leave and measures how far it gets.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        Race race;
+        race_init(race, ti, 0);
+        Input in{};
+        int32_t widest = 0;
+        for (int i = 0; i < 3000; ++i) {
+            // Hold a turn away from the road, whichever way that is.
+            const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+            in.throttle = true;
+            in.right = s.lateral >= 0;
+            in.left = s.lateral < 0;
+            race_tick(race, in);
+            if (race.pod.wreck_ticks) continue;
+            const int32_t away = race.pod.lateral < 0 ? -race.pod.lateral
+                                                      : race.pod.lateral;
+            const int32_t half = node_half_width(t.nodes[race.pod.node]);
+            if (away - half > widest) widest = away - half;
+        }
+        // The push happens after the pod has moved, so it can be one tick's
+        // travel past the line before it is put back. A pod at top speed covers
+        // about a unit a tick.
+        check(widest < k_verge + fp(3),
+              "a pod trying to leave the track is stopped by the railing");
+        std::printf("  %-10s a pilot aiming off the road gets %.1f units past the "
+                    "edge (railing at %.0f)\n",
+                    t.name, widest / 65536.0, k_verge / 65536.0);
+    }
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -784,6 +883,8 @@ int main() {
     test_the_sea_is_a_surface_and_not_a_hazard();
     test_the_sea_costs_time();
     test_rivals_move_smoothly();
+    test_a_wall_stops_the_pod_rather_than_lifting_it();
+    test_the_railing_bounds_the_pod();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 
