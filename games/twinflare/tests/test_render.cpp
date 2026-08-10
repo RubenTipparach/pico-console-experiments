@@ -679,6 +679,53 @@ void test_scraping_a_wall_throws_sparks() {
                 scraped, sparked, peak, wrong_side, high);
 }
 
+void test_the_world_is_closed_when_you_look_off_the_side() {
+    // Reported from playing it: off the track there was "all this area" with
+    // nothing in it. There was, and it is geometry rather than taste.
+    //
+    // The drawn plain stops forty six units past the road edge and nothing is
+    // drawn beyond it: what covers the view out there is two ridges pinned to
+    // the CAMERA, whose feet sat twenty six units below it. So a ray leaving
+    // the pod downward hit the plain only if it landed inside the plain, and
+    // hit a ridge only if it was shallower than that foot, and between those
+    // two angles was a wedge that hit nothing. The wedge OPENS AS THE POD
+    // CLIMBS: at pod height it is a sliver that reads as haze, and measured
+    // from twenty six units up, which is one jump, it was 41 to 54 percent of
+    // the lower half of the frame on all four circuits.
+    //
+    // Dropping those feet to sixty units costs nothing, because it is the same
+    // two quads per column drawn taller, and every height above them gained
+    // the same amount so the skyline is unchanged to the pixel.
+    //
+    // The check is the two numbers meeting: how high a pilot actually gets
+    // above the plain, driven rather than assumed, against the height the
+    // geometry stays closed to. It is done this way because the obvious test
+    // cannot be written here: counting sky pixels needs sky and ground to be
+    // different colours, and on three of these four circuits they are not.
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        Race race;
+        race_init(race, ti, 0);
+        Input in{};
+        float highest = 0.0f;
+        for (int i = 0; i < 8000; ++i) {
+            drive(race, t, in);
+            race_tick(race, in);
+            if (race.pod.wreck_ticks) continue;
+            const float over = (race.pod.y - node_y(t.nodes[race.pod.node])
+                                + k_shoulder_drop) / 65536.0f;
+            // A pod in freefall down a chasm is not a pod looking at scenery.
+            if (over > highest && over < 60.0f) highest = over;
+        }
+        const float closes = sky_closes_below(t);
+        check(highest > 4.0f, "the pod got airborne enough for this to mean something");
+        check(closes > highest,
+              "the world has no hole in it from any height a pilot reaches");
+        std::printf("  %-10s a pilot reaches %.1f u over the plain, the world is "
+                    "closed to %.1f\n", t.name, highest, closes);
+    }
+}
+
 void test_no_band_of_ground_runs_backwards() {
     // A strip of ground is a quad between one node's boundary point and the
     // next node's. If the outer point advances the OTHER way to the road, the
@@ -748,6 +795,7 @@ int main() {
     test_pod_select_shows_the_pod();
     test_the_rocks_belong_to_the_track();
     test_scraping_a_wall_throws_sparks();
+    test_the_world_is_closed_when_you_look_off_the_side();
     test_no_band_of_ground_runs_backwards();
 
     if (g_failures) {

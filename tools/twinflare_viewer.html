@@ -221,6 +221,7 @@ const LAYERS = [
   ['ground', 'Shoulder and plain', true],
   ['rail', 'Railings', true],
   ['wall', 'Canyon and tunnel', true],
+  ['rim', 'Perimeter rim', true],
   ['chasm', 'Chasm walls', true],
   ['water', 'Water', true],
   ['wire', 'Wireframe', false],
@@ -318,6 +319,16 @@ function buildTrack(track) {
       } else {
         quad(gi[2], gj[2], gj[5], gi[5], plainCol, 'ground');
       }
+
+      // The rim: the far skyline, a hundred and forty units out, and the only
+      // thing beyond the plain that is anchored to the track rather than to
+      // the camera. Both points come from the export, and the fade is
+      // draw_road's own, so what the viewer shows and what the device draws
+      // are the same wall.
+      const fade = (band ? pal.rock0 : pal.rock1).map(
+        (v, c) => (v * 15 + pal.sky_bottom[c] * 5) / 20 | 0);
+      quad(a[side].rim[0], b[side].rim[0], b[side].rim[1], a[side].rim[1],
+           fade, 'rim');
     }
 
     // A tunnel roof, the one piece of the world above the pod.
@@ -626,7 +637,10 @@ canvas.addEventListener('pointerup', e => {
 });
 canvas.addEventListener('pointermove', e => {
   if (!dragging) return;
-  cam.yaw -= (e.clientX - lastX) * 0.005;
+  // Drag right looks right. It was the other way round, which reads as the
+  // world being dragged rather than the head being turned, and every other
+  // control on the page is a camera control.
+  cam.yaw += (e.clientX - lastX) * 0.005;
   cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch - (e.clientY - lastY) * 0.005));
   lastX = e.clientX; lastY = e.clientY;
 });

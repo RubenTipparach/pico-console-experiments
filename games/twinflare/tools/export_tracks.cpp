@@ -83,8 +83,11 @@ int main() {
             const char* names[2] = {"l", "r"};
             for (int s = 0; s < 2; ++s) {
                 const GroundSlice& g = *sides[s];
-                std::printf("\"%s\":{\"railed\":%s,\"p\":[", names[s],
+                std::printf("\"%s\":{\"railed\":%s,\"rim\":[", names[s],
                             g.railed ? "true" : "false");
+                point(g.rim_foot); std::printf(",");
+                point(g.rim_top);
+                std::printf("],\"p\":[");
                 point(g.base); std::printf(",");
                 point(g.lip); std::printf(",");
                 point(g.shoulder); std::printf(",");

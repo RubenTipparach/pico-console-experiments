@@ -74,6 +74,11 @@ struct RenderStats {
     // hole in the road with walls look the same from every angle except the one
     // the player flies at it from.
     uint16_t cliffs;
+    // Segments of perimeter rim drawn: the wall that closes the world at the
+    // outer edge of the plain. Counted because an unclosed world and a closed
+    // one look identical from the racing line, which is where every screenshot
+    // is taken from, and differ completely the moment a player looks sideways.
+    uint16_t rim;
     // Top and bottom rows the pod select screen's turning pod occupies. It
     // shares a 120 pixel screen with a name, a pilot and six labelled bars, and
     // rule 9 says measure a layout rather than placing it by eye. A pod is not
@@ -109,8 +114,31 @@ bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y)
 // normal, the fold clamp, ground_offset, the waterline, stays in one place.
 struct GroundSlice {
     float base[3], lip[3], shoulder[3], verge[3], rail[3], plain[3];
+    // The foot and the top of the perimeter rim post: the far skyline, a
+    // hundred and forty units out, which is the only thing beyond the plain
+    // that is anchored to the track rather than to the camera. Exported rather
+    // than recomputed for the same reason as everything else here: the viewer
+    // must not hold a second opinion about it.
+    float rim_foot[3], rim_top[3];
     bool railed;
 };
 void ground_slice(const Track& t, int node, float side, GroundSlice& out);
+
+// The greatest height above the outer plain from which the world still has no
+// hole in it, in world units.
+//
+// Beyond the drawn plain the ground is not drawn at all: what covers the view
+// out there is the camera pinned ridges, whose feet sit a fixed distance below
+// the camera. So a ray leaving the pod downward hits the plain if it lands
+// inside the plain's reach, and hits a ridge if it is shallower than the angle
+// that ridge's foot subtends. Between those two angles is a wedge that hits
+// nothing, and it OPENS AS THE POD CLIMBS: at pod height it is a sliver that
+// reads as haze, and from a jump it was most of the lower half of the frame.
+//
+// This is where it closes, and it exists because the obvious test cannot be
+// written. Counting sky pixels needs sky and ground to be different colours,
+// and on three of these four circuits they are not: HOARFROST is white ice
+// under white cloud and its ground sits SIX units from the sky gradient.
+float sky_closes_below(const Track& t);
 
 }  // namespace twinflare

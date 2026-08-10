@@ -514,6 +514,81 @@ float reach_limit(const Track& t, int index, float side) {
 // How far the drawn plain reaches past the road edge, before the fold clamp.
 constexpr float k_plain_reach = 46.0f;
 
+// THE RIM: the wall that closes the world around the track.
+//
+// Past the drawn plain there was nothing, and the two "distant hills" were
+// pinned to the CAMERA at ninety two and a hundred and twenty eight units. So
+// they slid along with the pod and never resolved into a place, and between
+// the plain ending at forty six units and that backdrop sat a wedge of horizon
+// haze lying on the ground. At pod height it reads as haze and is easy to
+// miss. From twenty six units up, which is one jump, it is 41 to 54 percent of
+// the lower half of the frame on all four circuits.
+//
+// The hole itself is closed by dropping those ridges' feet, which costs
+// nothing. This is the other half of the ask: a wall that SURROUNDS THE TRACK,
+// of varying sizes. It is track anchored, so unlike the ridges it is a place:
+// drive past it and it stays where it was, and it is the only thing out there
+// that does.
+//
+// So it goes furthest out of everything, a hundred and forty units, standing
+// behind both ridges as the far skyline. A first attempt put it at ninety, in
+// FRONT of them, tall enough to cover the wedge on its own, and on the desert
+// that read as a pale slab beside the road: covering the wedge from a jump
+// needs a wall taller than the pod is high, and at ninety units that subtends
+// most of the frame. Behind the ridges it can be a tenth of that and still be
+// the thing the eye reads as the edge of the world.
+constexpr float k_rim_out = 140.0f;
+constexpr float k_rim_foot = 60.0f;
+constexpr float k_rim_low = 10.0f;
+constexpr float k_rim_high = 30.0f;
+
+// A pure function of the node index, so the rim is part of the track rather
+// than something that regenerates as you look at it. Averaged with both
+// neighbours because the raw hash alternates between the extremes every eight
+// units, which is a row of teeth; one pass of that smoothing makes it a ridge.
+float rim_height(const Track& t, int index) {
+    const int n = t.node_count;
+    const auto raw = [](int k) {
+        const uint32_t h = static_cast<uint32_t>(k) * 2654435761u;
+        return ((h >> 11) & 1023) / 1023.0f;
+    };
+    const float u = (raw((index + n - 1) % n) + 2.0f * raw(index)
+                     + raw((index + 1) % n)) * 0.25f;
+    return k_rim_low + (k_rim_high - k_rim_low) * u;
+}
+
+// One node's rim on one side, as the foot and the top of the post the ridge is
+// strung between. The single description: draw_road builds its quads from it
+// and ground_slice exports it, so the browser viewer cannot end up showing a
+// different skyline from the one the device draws.
+void rim_post(const Track& t, int index, float side, float foot[3], float top[3]) {
+    const TrackNode& n = t.nodes[index];
+    const float half = to_world(node_half_width(n));
+    const float ground = to_world(node_y(n)) - to_world(k_shoulder_drop);
+    // Clamped by the same fold rule as the plain: a hundred and forty units is
+    // far wider than the tightest corners here, and an unclamped offset that
+    // far out crosses the CENTRELINE, which would draw the wall over the road.
+    const float limit = reach_limit(t, index, side);
+    const float d = k_rim_out < limit ? k_rim_out : limit;
+    // SUNK, not cut off, where that clamp has dragged the rim inside the world
+    // it is supposed to bound. On the inside of a tight corner it comes in to
+    // thirty five units, nearer than the camera pinned ridges, and it stops
+    // being a horizon and becomes a slab beside the road. Simply not drawing it
+    // there was worse: the ridge then ENDS, and a ridge that ends is a vertical
+    // edge a hundred units tall with open desert either side of it. Taper the
+    // top down to the foot instead and it sinks into the ground over a few
+    // segments, which is what a ridge running out actually looks like.
+    const float u = (d / k_rim_out - 0.55f) / 0.45f;
+    const float sink = u < 0.0f ? 0.0f : (u > 1.0f ? 1.0f : u * u);
+    // And scaled by how far out it ended up, so it holds its angular size
+    // wherever the clamp put it rather than towering when it comes close.
+    const float scale = d / k_rim_out * sink;
+    edge_at(t, index, side, d, ground - k_rim_foot, foot);
+    top[0] = foot[0];
+    top[1] = foot[1] + (k_rim_foot + rim_height(t, index)) * scale;
+    top[2] = foot[2];
+}
+
 // One node's ground on one side, as the three boundary points the strips are
 // built between: the road edge, the foot of the shoulder, and the outer edge
 // of the plain. draw_road builds its quads from this and drawn_ground() probes
@@ -664,6 +739,20 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
     const float shoulder_drop = to_world(k_shoulder_drop);
     const float roof = to_world(k_tunnel_height);
 
+    // The rim's two colours, faded toward the sky.
+    //
+    // Straight rock was wrong twice over. A vertical face gets nothing but the
+    // shading floor, so the darker of the two rock colours came out as a black
+    // curtain, and a hard edged black curtain forty six units away makes an
+    // open desert feel like a corridor. Fading toward the sky is the same
+    // aerial perspective a real ridge has: it lightens the thing AND it is the
+    // cue that says the wall is far off rather than right there.
+    uint8_t rim_col[2][3];
+    for (int k = 0; k < 2; ++k)
+        for (int c = 0; c < 3; ++c)
+            rim_col[k][c] = static_cast<uint8_t>(
+                (pal.rock[k][c] * 15 + pal.sky_bottom[c] * 5) / 20);
+
     for (int s = -k_view_behind; s < k_view_segments; ++s) {
         const int i = ((pod.node + s) % t.node_count + t.node_count) % t.node_count;
         const int j = (i + 1) % t.node_count;
@@ -810,7 +899,20 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
                 } else {
                     quad(wi, wj, fj, fi, plain_col);
                 }
+
             }
+        }
+
+        // The rim, out where the world ends. Drawn on every segment in view and
+        // not just the near ones, because it IS the horizon: the far half of
+        // the window is where most of it is seen.
+        for (int side = 0; side < 2; ++side) {
+            const float sgn = side ? 1.0f : -1.0f;
+            float fi_[3], ti_[3], fj_[3], tj_[3];
+            rim_post(t, i, sgn, fi_, ti_);
+            rim_post(t, j, sgn, fj_, tj_);
+            quad(fi_, fj_, tj_, ti_, rim_col[band ^ 1]);
+            ++g_stats.rim;
         }
 
         // Submerged road is SEA, drawn at sea level and not where the tarmac
@@ -924,17 +1026,31 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
 // the column index, so a ridge is in the same place every lap without a byte
 // of it being stored.
 void draw_horizon(const Track& t, const Camera& cam) {
-    struct Wall { float depth, amp, base; uint32_t phase; const uint8_t* col; };
+    // Two camera pinned ridges, and their FOOT is the whole fix here.
+    //
+    // It used to be twenty six units below the camera, and their tops are much
+    // lower than that, so from the road these read as rolling hills sitting on
+    // the desert and from any height at all they were a pair of ribbons with
+    // sky underneath. Between the drawn plain ending at forty six units and
+    // the nearer ridge starting at ninety two there was a wedge that hit
+    // nothing: from twenty six units up, which is one jump, the arithmetic
+    // puts it between sixteen and thirty degrees below horizontal, and that
+    // measures out as 41 to 54 percent of the lower half of the frame.
+    //
+    // The foot goes to eighty and every height gains the same fifty four, so
+    // the SKYLINE IS UNCHANGED to the pixel and the wedge underneath it is
+    // rock. It costs nothing: the same two quads per column, taller.
+    struct Wall { float depth, foot, amp, base; uint32_t phase; const uint8_t* col; };
     const Wall walls[2] = {
-        {128.0f, 22.0f, 7.0f, 11, t.palette.rock[0]},
-        {92.0f, 14.0f, 3.0f, 0, t.palette.rock[1]},
+        {128.0f, 80.0f, 22.0f, 61.0f, 11, t.palette.rock[0]},
+        {92.0f, 80.0f, 14.0f, 57.0f, 0, t.palette.rock[1]},
     };
     for (const Wall& w : walls) {
         const float dx = std::sin(cam.yaw), dz = std::cos(cam.yaw);
         const float rx = dz, rz = -dx;
         // The camera is the origin now, so the wall's own height is simply
         // below it. It was pinned to the camera already; this just says so.
-        const float base = -26.0f;
+        const float base = -w.foot;
         const auto height = [&](int k) {
             const uint32_t h = static_cast<uint32_t>(k + w.phase) * 2654435761u;
             return w.base + w.amp * (((h >> 13) & 255) / 255.0f);
@@ -2020,7 +2136,27 @@ void ground_slice(const Track& t, int node, float side, GroundSlice& out) {
         out.plain[i] = b.plain[i];
     }
     out.railed = b.railed;
+    rim_post(t, node, side, out.rim_foot, out.rim_top);
     g_origin[0] = saved[0]; g_origin[1] = saved[1]; g_origin[2] = saved[2];
+}
+
+float sky_closes_below(const Track& t) {
+    // The nearest camera pinned ridge is the one that has to catch the ray,
+    // and the tightest plain on the circuit is the one that lets it through
+    // soonest, so the answer is the minimum over every node and both sides.
+    constexpr float k_ridge_depth = 92.0f;
+    constexpr float k_ridge_foot = 80.0f;
+    float worst = 1.0e9f;
+    for (int i = 0; i < t.node_count; ++i) {
+        for (int s = 0; s < 2; ++s) {
+            const float side = s ? 1.0f : -1.0f;
+            const float limit = reach_limit(t, i, side);
+            const float reach = k_plain_reach < limit ? k_plain_reach : limit;
+            const float h = reach * k_ridge_foot / k_ridge_depth;
+            if (h < worst) worst = h;
+        }
+    }
+    return worst;
 }
 
 bool drawn_ground(const Track& t, uint16_t hint, int32_t x, int32_t z, float& y) {
