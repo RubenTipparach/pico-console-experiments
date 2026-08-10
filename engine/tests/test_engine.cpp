@@ -13,6 +13,7 @@
 #include <cstring>
 #include <vector>
 
+#include "pse/draw2d.hpp"
 #include "pse/mesh.hpp"
 #include "pse/pixel.hpp"
 #include "pse/parallel.hpp"
@@ -1076,6 +1077,213 @@ void test_texture_mapping_is_perspective_correct() {
     CHECK(first_flip < 45);
 }
 
+
+// ---------------------------------------------------------------------------
+// draw2d: shapes and sprites
+//
+// These are all clipping tests, because clipping is the only thing in a 2D
+// blitter that fails silently. An unclipped shape does not draw wrong, it
+// writes past the framebuffer, and on a device that is a reboot somewhere
+// else entirely.
+// ---------------------------------------------------------------------------
+
+// A target with a guard band either side, so a write that runs off the edge
+// lands somewhere this test can see rather than somewhere valgrind has to.
+class GuardedTarget {
+public:
+    static constexpr int k_guard = 64;
+
+    GuardedTarget(int w, int h)
+        : width_(w), height_(h),
+          store_(static_cast<size_t>(w) * h * 3 + 2 * k_guard, 0xAB) {}
+
+    pse::RenderTarget target() {
+        return pse::RenderTarget{store_.data() + k_guard, width_, height_,
+                                 width_ * 3, pse::PixelFormat::rgb888};
+    }
+    bool guards_intact() const {
+        for (int i = 0; i < k_guard; i++) {
+            if (store_[i] != 0xAB) return false;
+            if (store_[store_.size() - 1 - i] != 0xAB) return false;
+        }
+        return true;
+    }
+    void pixel(int x, int y, uint8_t& r, uint8_t& g, uint8_t& b) const {
+        const uint8_t* p =
+            store_.data() + k_guard +
+            (static_cast<size_t>(y) * width_ + x) * 3;
+        r = p[0];
+        g = p[1];
+        b = p[2];
+    }
+    bool is(int x, int y, uint8_t r, uint8_t g, uint8_t b) const {
+        uint8_t pr, pg, pb;
+        pixel(x, y, pr, pg, pb);
+        return pr == r && pg == g && pb == b;
+    }
+    int count(uint8_t r, uint8_t g, uint8_t b) const {
+        int n = 0;
+        for (int y = 0; y < height_; y++) {
+            for (int x = 0; x < width_; x++) {
+                if (is(x, y, r, g, b)) n++;
+            }
+        }
+        return n;
+    }
+
+private:
+    int width_;
+    int height_;
+    std::vector<uint8_t> store_;
+};
+
+void test_2d_shapes_clip() {
+    GuardedTarget gt(32, 32);
+    pse::RenderTarget t = gt.target();
+
+    // Every one of these is entirely or partly outside. None may write out of
+    // bounds, and the ones that overlap must draw the part that is inside.
+    pse::fill_rect(t, -10, -10, 5, 5, 255, 0, 0);          // fully outside
+    pse::fill_rect(t, 100, 100, 5, 5, 255, 0, 0);          // fully outside
+    pse::h_line(t, -50, 50, -1, 255, 0, 0);                // above
+    pse::h_line(t, -50, 50, 32, 255, 0, 0);                // below
+    pse::v_line(t, -1, -50, 50, 255, 0, 0);                // left
+    pse::v_line(t, 32, -50, 50, 255, 0, 0);                // right
+    pse::draw_line(t, -40, -40, -30, -30, 255, 0, 0);      // fully outside
+    pse::fill_circle(t, -40, 16, 5, 255, 0, 0);            // fully outside
+    pse::draw_circle(t, 80, 16, 5, 255, 0, 0);             // fully outside
+    CHECK(gt.count(255, 0, 0) == 0);
+    CHECK(gt.guards_intact());
+
+    // A run given backwards is the same run: a caller working out a span
+    // rarely knows which end is smaller.
+    pse::h_line(t, 20, 4, 8, 0, 255, 0);
+    CHECK(gt.count(0, 255, 0) == 17);
+    CHECK(gt.is(4, 8, 0, 255, 0));
+    CHECK(gt.is(20, 8, 0, 255, 0));
+    CHECK(gt.guards_intact());
+
+    // A shape straddling the edge draws its inside half and nothing else.
+    GuardedTarget gt2(32, 32);
+    pse::RenderTarget t2 = gt2.target();
+    pse::fill_rect(t2, -4, -4, 8, 8, 0, 0, 255);
+    CHECK(gt2.count(0, 0, 255) == 16);       // the 4x4 corner that is on screen
+    CHECK(gt2.guards_intact());
+
+    // A circle of radius 0 is one pixel, which is what a caller shrinking
+    // something to nothing wants rather than an empty draw.
+    GuardedTarget gt3(32, 32);
+    pse::RenderTarget t3 = gt3.target();
+    pse::fill_circle(t3, 16, 16, 0, 255, 255, 0);
+    CHECK(gt3.count(255, 255, 0) == 1);
+    pse::draw_circle(t3, 8, 8, 0, 0, 255, 255);
+    CHECK(gt3.count(0, 255, 255) == 1);
+    CHECK(gt3.guards_intact());
+}
+
+void test_2d_shapes_cover_what_they_claim() {
+    GuardedTarget gt(32, 32);
+    pse::RenderTarget t = gt.target();
+
+    // draw_rect's w and h are outside measurements, so a 10 wide outline
+    // covers x .. x+9 and the corners are not drawn twice into the count.
+    pse::draw_rect(t, 4, 4, 10, 6, 255, 0, 0);
+    CHECK(gt.count(255, 0, 0) == 2 * 10 + 2 * 6 - 4);
+    CHECK(gt.is(4, 4, 255, 0, 0));
+    CHECK(gt.is(13, 9, 255, 0, 0));
+    CHECK(!gt.is(14, 9, 255, 0, 0));
+
+    // A filled circle contains its own outline: an outline pixel the fill
+    // missed is a one pixel gap on screen, which is how a coin gets a hole.
+    GuardedTarget gtc(64, 64);
+    pse::RenderTarget tc = gtc.target();
+    pse::fill_circle(tc, 32, 32, 9, 10, 20, 30);
+    for (int y = 0; y < 64; y++) {
+        for (int x = 0; x < 64; x++) {
+            const int dx = x - 32, dy = y - 32;
+            if (dx * dx + dy * dy <= 9 * 9) {
+                CHECK(gtc.is(x, y, 10, 20, 30));
+            }
+        }
+    }
+    CHECK(gtc.guards_intact());
+}
+
+void test_sprite_blit() {
+    // A 4x2 sheet of two 2x2 cells. Left cell solid red, right cell has one
+    // transparent pixel, so the test can tell a skipped pixel from a drawn one.
+    static const uint8_t sheet[4 * 2 * 4] = {
+        255, 0, 0, 255,   255, 0, 0, 255,     0, 0, 255, 255,   0, 0, 255, 0,
+        255, 0, 0, 255,   255, 0, 0, 255,     0, 0, 255, 255,   0, 0, 255, 255,
+    };
+    const pse::Sprite sprite{sheet, 4, 2};
+
+    GuardedTarget gt(16, 16);
+    pse::RenderTarget t = gt.target();
+
+    pse::blit_sprite(t, sprite, 0, 0, 2, 2, 3, 3);
+    CHECK(gt.count(255, 0, 0) == 4);
+    CHECK(gt.is(3, 3, 255, 0, 0));
+    CHECK(gt.is(4, 4, 255, 0, 0));
+
+    // The right cell: three pixels, because alpha under the threshold is not
+    // written at all rather than written as black.
+    pse::blit_sprite(t, sprite, 2, 0, 2, 2, 8, 8);
+    CHECK(gt.count(0, 0, 255) == 3);
+    CHECK(!gt.is(9, 8, 0, 0, 255));      // the transparent one stayed put
+
+    // Off every edge, and none of it may write out of bounds.
+    pse::blit_sprite(t, sprite, 0, 0, 2, 2, -5, 8);
+    pse::blit_sprite(t, sprite, 0, 0, 2, 2, 20, 8);
+    pse::blit_sprite(t, sprite, 0, 0, 2, 2, 8, -5);
+    pse::blit_sprite(t, sprite, 0, 0, 2, 2, 8, 20);
+    CHECK(gt.count(255, 0, 0) == 4);     // unchanged: none of those landed
+    CHECK(gt.guards_intact());
+
+    // Straddling the left edge draws the half that is on screen, and the
+    // source column has to move with the cut or the sprite smears.
+    GuardedTarget gt2(16, 16);
+    pse::RenderTarget t2 = gt2.target();
+    pse::blit_sprite(t2, sprite, 0, 0, 2, 2, -1, 4);
+    CHECK(gt2.count(255, 0, 0) == 2);
+    CHECK(gt2.is(0, 4, 255, 0, 0));
+    CHECK(gt2.guards_intact());
+
+    // A region naming a cell that runs off the sheet is clamped to the sheet,
+    // never read past it into whatever is next to it in flash.
+    GuardedTarget gt3(16, 16);
+    pse::RenderTarget t3 = gt3.target();
+    pse::blit_sprite(t3, sprite, 2, 0, 8, 8, 0, 0);
+    CHECK(gt3.count(0, 0, 255) == 3);
+    CHECK(gt3.guards_intact());
+}
+
+void test_sprite_flip() {
+    // 3x1: red, green, blue. Flipped it must be blue, green, red, and the
+    // flip has to survive being clipped, which is the case that goes wrong.
+    static const uint8_t row[3 * 1 * 4] = {
+        255, 0, 0, 255,   0, 255, 0, 255,   0, 0, 255, 255,
+    };
+    const pse::Sprite sprite{row, 3, 1};
+
+    GuardedTarget gt(16, 16);
+    pse::RenderTarget t = gt.target();
+    pse::blit_sprite(t, sprite, 5, 5, true);
+    CHECK(gt.is(5, 5, 0, 0, 255));
+    CHECK(gt.is(6, 5, 0, 255, 0));
+    CHECK(gt.is(7, 5, 255, 0, 0));
+
+    // Clipped against the left edge: the first on screen column is the second
+    // column of the flipped sprite, which is green, not red.
+    GuardedTarget gt2(16, 16);
+    pse::RenderTarget t2 = gt2.target();
+    pse::blit_sprite(t2, sprite, -1, 2, true);
+    CHECK(gt2.is(0, 2, 0, 255, 0));
+    CHECK(gt2.is(1, 2, 255, 0, 0));
+    CHECK(gt2.count(0, 0, 255) == 0);
+    CHECK(gt2.guards_intact());
+}
+
 int main() {
     test_winding_and_fill();
     test_depth_ordering();
@@ -1103,6 +1311,10 @@ int main() {
     test_split_matches_immediate();
     test_two_scene_split();
     test_queue_overflow();
+    test_2d_shapes_clip();
+    test_2d_shapes_cover_what_they_claim();
+    test_sprite_blit();
+    test_sprite_flip();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

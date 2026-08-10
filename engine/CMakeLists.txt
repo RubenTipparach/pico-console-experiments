@@ -32,6 +32,7 @@ add_library(pse-core STATIC
     src/renderer3d.cpp
     src/quat.cpp
     src/parallel.cpp
+    src/draw2d.cpp
     src/text.cpp
     # Its own translation unit on purpose: a 2D game that never asks for the
     # shared rasterizer never links its 30 KB of scratch space, because an

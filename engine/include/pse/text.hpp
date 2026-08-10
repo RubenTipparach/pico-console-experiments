@@ -3,6 +3,10 @@
 #include <cstdint>
 
 #include "pse/pixel.hpp"
+// plot_pixel and fill_rect used to be declared here and are shapes, so they
+// live in draw2d.hpp now. This include keeps every existing caller of
+// pse::fill_rect compiling against the header it already includes.
+#include "pse/draw2d.hpp"
 
 namespace pse {
 
@@ -47,13 +51,5 @@ void draw_text_centred(const RenderTarget& target, const char* text,
 // enforces the same charset at build time, so this is the belt to that
 // braces: a name that would draw as blanks fails the build instead.
 bool text_is_drawable(const char* text);
-
-// Solid rectangle, clipped to the target. The menu is rectangles and text.
-void fill_rect(const RenderTarget& target, int x, int y, int w, int h,
-               uint8_t r, uint8_t g, uint8_t b);
-
-// One pixel, clipped. No depth test, no blending.
-void plot_pixel(const RenderTarget& target, int x, int y, uint8_t r, uint8_t g,
-                uint8_t b);
 
 }  // namespace pse

@@ -30,33 +30,6 @@ inline int slot_of(char c) {
 
 }  // namespace
 
-void plot_pixel(const RenderTarget& target, int x, int y, uint8_t r, uint8_t g,
-                uint8_t b) {
-    if (x < 0 || y < 0 || x >= target.width || y >= target.height) return;
-    uint8_t* dst = target.pixels + static_cast<size_t>(y) * target.row_stride +
-                   static_cast<size_t>(x) * bytes_per_pixel(target.format);
-    store(dst, target.format, r, g, b);
-}
-
-void fill_rect(const RenderTarget& target, int x, int y, int w, int h,
-               uint8_t r, uint8_t g, uint8_t b) {
-    if (w <= 0 || h <= 0) return;
-    int x0 = x < 0 ? 0 : x;
-    int y0 = y < 0 ? 0 : y;
-    int x1 = x + w > target.width ? target.width : x + w;
-    int y1 = y + h > target.height ? target.height : y + h;
-    const int bpp = bytes_per_pixel(target.format);
-    for (int py = y0; py < y1; py++) {
-        uint8_t* dst = target.pixels +
-                       static_cast<size_t>(py) * target.row_stride +
-                       static_cast<size_t>(x0) * bpp;
-        for (int px = x0; px < x1; px++) {
-            store(dst, target.format, r, g, b);
-            dst += bpp;
-        }
-    }
-}
-
 int text_width(const char* text, int scale) {
     if (text == nullptr || *text == '\0') return 0;
     int n = 0;

@@ -21,6 +21,22 @@ set(PICO_PNG2CPP ${CMAKE_CURRENT_LIST_DIR}/../tools/png2cpp.py
     CACHE INTERNAL "png2cpp converter")
 
 function(add_texture SLUG PICTURE OUT_SOURCES)
+    _add_picture(${SLUG} ${PICTURE} texture generated)
+    set(${OUT_SOURCES} ${${OUT_SOURCES}} ${generated} PARENT_SCOPE)
+endfunction()
+
+# add_sprite(<slug> <picture.png> <out_sources_var>)
+#
+# The 2D counterpart. Same pipeline, different struct on the way out: a
+# pse::Sprite is any size, four bytes a pixel, and carries alpha as a mask, so
+# a game's art is a real PNG rather than a pile of draw calls that only exist
+# at runtime. A sheet is an ordinary sprite; the caller names the cell.
+function(add_sprite SLUG PICTURE OUT_SOURCES)
+    _add_picture(${SLUG} ${PICTURE} sprite generated)
+    set(${OUT_SOURCES} ${${OUT_SOURCES}} ${generated} PARENT_SCOPE)
+endfunction()
+
+function(_add_picture SLUG PICTURE KIND OUT_SOURCES)
     get_filename_component(picture_path ${PICTURE} ABSOLUTE
                            BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
     get_filename_component(picture_name ${PICTURE} NAME_WE)
@@ -43,10 +59,11 @@ function(add_texture SLUG PICTURE OUT_SOURCES)
                 --out-hpp ${generated_hpp}
                 --name ${picture_name}
                 --namespace ${texture_ns}
+                --kind ${KIND}
         DEPENDS ${picture_path} ${PICO_PNG2CPP}
-        COMMENT "png2cpp ${picture_name}.png"
+        COMMENT "png2cpp ${KIND} ${picture_name}.png"
         VERBATIM
     )
 
-    set(${OUT_SOURCES} ${${OUT_SOURCES}} ${generated_cpp} PARENT_SCOPE)
+    set(${OUT_SOURCES} ${generated_cpp} PARENT_SCOPE)
 endfunction()
