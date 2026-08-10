@@ -71,3 +71,23 @@ target_include_directories(twinflare_preview PRIVATE
 )
 target_link_libraries(twinflare_preview pse-core)
 add_test(NAME twinflare_preview COMMAND twinflare_preview)
+
+# The track exporter, which tools/gen_twinflare_viewer.py runs to build the
+# browser viewer. It is built here, beside the other host binaries, for the
+# reason the viewer exists at all: it links the game's own sim and renderer and
+# asks THEM where the ground is. A viewer fed by a second description of the
+# cross section could not audit the first one. No add_test: it prints a track
+# dump rather than checking anything.
+add_executable(twinflare_export
+    ${CMAKE_CURRENT_SOURCE_DIR}/../tools/export_tracks.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/sim.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/tracks.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/fixed.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/render.cpp
+    ${twinflare_models}
+)
+target_include_directories(twinflare_export PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(twinflare_export pse-core)

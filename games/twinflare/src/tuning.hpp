@@ -95,6 +95,20 @@ constexpr int32_t k_tunnel_height = fp(7);
 // player sees under them is somewhere they have already died by reaching.
 constexpr int32_t k_chasm_depth = fp(34);
 
+// THE RAILING, and the distance is measured rather than chosen. A pod that
+// wandered far enough off the road ran out of drawn world: the plain is
+// clamped short of the fold, and past it there was nothing to see and nothing
+// to aim at. The circuit that clamps soonest is HOARFROST, whose tightest
+// corner leaves 18.8 units of plain past the road edge, so a railing at
+// eighteen is drawn standing on ground on every corner of every track.
+//
+// Eighteen units of runoff is generous next to a twelve unit shoulder: this
+// bounds a lost pod, it does not narrow the racing.
+constexpr int32_t k_verge = fp(18);
+// And how high it stands. Over the hover height, or it is scenery rather than
+// a barrier, and low enough to see the world over.
+constexpr int32_t k_rail_height = fp(4);
+
 // ---- gravity and lift ------------------------------------------------------
 constexpr int32_t k_gravity = per_s2(fp(26));
 // Glide, which the brief asks for by name: nose up and stay airborne longer.

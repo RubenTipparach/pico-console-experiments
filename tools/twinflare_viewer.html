@@ -1,0 +1,888 @@
+<title>Twin Flare track viewer</title>
+<style>
+  /* One committed look, painted explicitly, because this is an instrument and
+     not a document: it is a dark workshop panel over a 3D viewport, and it has
+     to read the same whatever ground the host paints behind it. */
+  :root {
+    --ground: #0b0d12;
+    --panel: rgba(17, 21, 29, 0.92);
+    --panel-solid: #111520;
+    --line: #242b3a;
+    --line-soft: #1a2030;
+    --ink: #c9d0dd;
+    --ink-dim: #7d8798;
+    --ink-faint: #565f70;
+    /* The accent is the game's own HUD orange, not a colour chosen for a web
+       page: it is what a Twin Flare bar is filled with. */
+    --accent: #e88a2b;
+    --accent-dim: #8a5320;
+    --ok: #5fd08a;
+    --warn: #e8c14a;
+    --bad: #e2645c;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 12px/1.5 var(--mono);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+  #veil {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: var(--ground); z-index: 40; transition: opacity .25s;
+  }
+  #veil p { color: var(--ink-dim); letter-spacing: .18em; text-transform: uppercase; }
+
+  .rail {
+    position: fixed; top: 0; bottom: 0; width: 236px; z-index: 20;
+    background: var(--panel); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  .rail.left { left: 0; border-right: 1px solid var(--line); }
+  .rail.right { right: 0; border-left: 1px solid var(--line); width: 268px; }
+
+  .brand { padding: 14px 14px 12px; border-bottom: 1px solid var(--line); }
+  .brand b {
+    display: block; font-size: 15px; font-weight: 700;
+    letter-spacing: .22em; color: var(--ink);
+  }
+  .brand span {
+    display: block; margin-top: 3px; color: var(--ink-faint);
+    letter-spacing: .1em; font-size: 10px; text-transform: uppercase;
+  }
+
+  section { padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+  h2 {
+    margin: 0 0 8px; font-size: 10px; font-weight: 600; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+
+  .tracks { display: grid; gap: 4px; }
+  button {
+    font: inherit; color: var(--ink); background: transparent; cursor: pointer;
+    border: 1px solid var(--line); padding: 7px 9px; text-align: left;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  button:hover { border-color: var(--accent-dim); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button[aria-pressed="true"] {
+    border-color: var(--accent); color: #fff;
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  button small { color: var(--ink-faint); font-size: 10px; }
+
+  .layers { display: grid; gap: 3px; }
+  .layers label {
+    display: flex; align-items: center; gap: 8px; padding: 3px 2px;
+    cursor: pointer; color: var(--ink-dim);
+  }
+  .layers input { accent-color: var(--accent); margin: 0; }
+  .layers label:has(input:checked) { color: var(--ink); }
+
+  /* The lap strip: the whole circuit as one band, features in place, elevation
+     behind it. Dragging it flies the camera. It is the instrument this tool is
+     really for, so it gets the width. */
+  .strip { position: relative; }
+  .strip canvas {
+    position: static; width: 100%; height: 54px; display: block;
+    border: 1px solid var(--line); cursor: ew-resize; touch-action: none;
+  }
+  .keyline {
+    display: flex; flex-wrap: wrap; gap: 3px 10px; margin-top: 8px;
+    color: var(--ink-faint); font-size: 10px;
+  }
+  .keyline i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; }
+
+  .rows { display: grid; gap: 5px; }
+  .row { display: flex; justify-content: space-between; gap: 10px; }
+  .row span { color: var(--ink-faint); }
+  .row b { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .find { border-left: 2px solid var(--line); padding: 6px 0 6px 9px; margin-bottom: 8px; }
+  .find.ok { border-color: var(--ok); }
+  .find.warn { border-color: var(--warn); }
+  .find.bad { border-color: var(--bad); }
+  .find b { display: block; font-weight: 600; color: var(--ink); }
+  .find p { margin: 3px 0 0; color: var(--ink-dim); }
+  .find u {
+    display: inline-block; margin-top: 4px; text-decoration: none;
+    color: var(--accent); cursor: pointer; border-bottom: 1px dotted var(--accent-dim);
+  }
+
+  .readout {
+    position: fixed; left: 236px; right: 268px; bottom: 0; z-index: 20;
+    display: flex; gap: 22px; padding: 8px 16px;
+    background: var(--panel); border-top: 1px solid var(--line);
+    backdrop-filter: blur(8px); overflow-x: auto; white-space: nowrap;
+  }
+  .readout div { display: flex; gap: 7px; align-items: baseline; }
+  .readout span { color: var(--ink-faint); font-size: 10px;
+                  letter-spacing: .12em; text-transform: uppercase; }
+  .readout b { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  .help {
+    position: fixed; left: 252px; top: 14px; z-index: 20; color: var(--ink-faint);
+    background: var(--panel); border: 1px solid var(--line-soft);
+    padding: 6px 10px; pointer-events: none;
+  }
+  kbd {
+    font: inherit; color: var(--ink-dim); border: 1px solid var(--line);
+    padding: 0 4px; margin: 0 1px;
+  }
+  @media (max-width: 900px) {
+    .rail.right { display: none; }
+    .readout { right: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { #veil { transition: none; } }
+</style>
+
+<canvas id="gl"></canvas>
+<div id="veil"><p>Building geometry</p></div>
+
+<div class="rail left">
+  <div class="brand">
+    <b>TWIN FLARE</b>
+    <span>Track viewer &middot; geometry as shipped</span>
+  </div>
+
+  <section>
+    <h2>Circuit</h2>
+    <div class="tracks" id="tracks"></div>
+  </section>
+
+  <section class="strip">
+    <h2>Lap</h2>
+    <canvas id="strip" width="420" height="108"></canvas>
+    <div class="keyline">
+      <span><i style="background:#8e6b3f"></i>road</span>
+      <span><i style="background:#b9772e"></i>ramp</span>
+      <span><i style="background:#2a2f3c"></i>gap</span>
+      <span><i style="background:#4aa8e8"></i>boost</span>
+      <span><i style="background:#9aa3b4"></i>canyon</span>
+      <span><i style="background:#6f5ad0"></i>tunnel</span>
+      <span><i style="background:#5fd08a"></i>shortcut</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Layers</h2>
+    <div class="layers" id="layers"></div>
+  </section>
+
+  <section>
+    <h2>Circuit facts</h2>
+    <div class="rows" id="facts"></div>
+  </section>
+</div>
+
+<div class="rail right">
+  <div class="brand">
+    <b>AUDIT</b>
+    <span id="auditline">measuring</span>
+  </div>
+  <section id="findings"></section>
+</div>
+
+<div class="help">
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly
+  &middot; <kbd>Q</kbd><kbd>E</kbd> down/up
+  &middot; <kbd>shift</kbd> faster
+  &middot; drag to look
+</div>
+
+<div class="readout" id="readout"></div>
+
+<script>
+const DATA = /*__DATA__*/;
+
+// ---------------------------------------------------------------------------
+// The geometry here is NOT rebuilt from the track tables. Every point comes out
+// of games/twinflare/tools/export_tracks.cpp, which links the game's own
+// render.cpp and asks ground_slice() where each band boundary is: the mitred
+// normal, the fold clamp, ground_offset, the waterline. A viewer that formed a
+// second opinion about the geometry could not audit the first one.
+//
+// What this file does is connect those points into quads, exactly as
+// draw_road() connects them, and light them with the same lambert the device
+// uses so the colours match what a player sees.
+// ---------------------------------------------------------------------------
+
+const F = { RAMP: 1, GAP: 2, BOOST: 4, WALL: 8, SHORT: 16, TUNNEL: 32 };
+const U = DATA.units;
+
+const LAYERS = [
+  ['road', 'Road surface', true],
+  ['ground', 'Shoulder and plain', true],
+  ['rail', 'Railings', true],
+  ['wall', 'Canyon and tunnel', true],
+  ['rim', 'Perimeter rim', true],
+  ['chasm', 'Chasm walls', true],
+  ['water', 'Water', true],
+  ['wire', 'Wireframe', false],
+];
+const layerOn = {};
+LAYERS.forEach(l => layerOn[l[0]] = l[2]);
+
+// The device's own shading: an ambient floor of 0.55 and one directional light.
+const LIGHT = [0.36, 0.86, -0.36];
+function shade(c, n) {
+  let d = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
+  d = 0.55 + 0.45 * Math.max(0, d);
+  return [Math.min(255, c[0] * d) / 255, Math.min(255, c[1] * d) / 255,
+          Math.min(255, c[2] * d) / 255];
+}
+
+function buildTrack(track) {
+  const pos = [], col = [], line = [];
+  const pal = track.palette;
+  const n = track.nodes.length;
+
+  function tri(a, b, c, colour, layer) {
+    if (!layerOn[layer]) return;
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const m = Math.hypot(nx, ny, nz) || 1;
+    nx /= m; ny /= m; nz /= m;
+    if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }   // both faces, lit from above
+    const s = shade(colour, [nx, ny, nz]);
+    for (const p of [a, b, c]) { pos.push(p[0], p[1], p[2]); col.push(s[0], s[1], s[2]); }
+    if (layerOn.wire) {
+      line.push(a[0], a[1], a[2], b[0], b[1], b[2],
+                b[0], b[1], b[2], c[0], c[1], c[2],
+                c[0], c[1], c[2], a[0], a[1], a[2]);
+    }
+  }
+  const quad = (a, b, c, d, colour, layer) => {
+    tri(a, b, c, colour, layer); tri(a, c, d, colour, layer);
+  };
+
+  for (let i = 0; i < n; i++) {
+    const a = track.nodes[i], b = track.nodes[(i + 1) % n];
+    const band = (i >> 1) & 1;
+    const wet = track.water !== null && a.c[1] < track.water && b.c[1] < track.water;
+
+    // The road, or the sea where the road is under it.
+    if (!(a.flags & F.GAP) || wet) {
+      let c = band ? pal.road1 : pal.road0;
+      if (a.flags & F.BOOST) c = [90, 190, 255];
+      if (a.flags & F.TUNNEL) c = c.map(v => v * 2 / 3 | 0);
+      if (wet) c = band ? pal.shallow1 : pal.shallow0;
+      const li = a.l.p[0].slice(), ri = a.r.p[0].slice();
+      const lj = b.l.p[0].slice(), rj = b.r.p[0].slice();
+      if (track.water !== null) {
+        for (const p of [li, ri, lj, rj]) p[1] = Math.max(p[1], track.water);
+      }
+      quad(li, lj, rj, ri, c, wet ? 'water' : 'road');
+    }
+
+    // A chasm: two lips and a floor, no plain across it.
+    if ((a.flags & F.GAP) && !wet) {
+      const deep = pal.rock1.map(v => v * 2 / 5 | 0);
+      const face = pal.rock1.map(v => v * 3 / 5 | 0);
+      const drop = p => [p[0], p[1] - U.chasm, p[2]];
+      quad(drop(a.l.p[5]), drop(b.l.p[5]), drop(b.r.p[5]), drop(a.r.p[5]),
+           deep, 'chasm');
+      const prev = track.nodes[(i + n - 1) % n];
+      if (!(prev.flags & F.GAP))
+        quad(a.l.p[5], a.r.p[5], drop(a.r.p[5]), drop(a.l.p[5]), face, 'chasm');
+      if (!(b.flags & F.GAP))
+        quad(b.l.p[5], b.r.p[5], drop(b.r.p[5]), drop(b.l.p[5]), face, 'chasm');
+      continue;
+    }
+
+    // The cross section either side: canyon face, bank, plain, railing.
+    for (const side of ['l', 'r']) {
+      const gi = a[side].p, gj = b[side].p;
+      const walled = Math.abs(gi[1][1] - gi[0][1]) > 0.01 ||
+                     Math.abs(gj[1][1] - gj[0][1]) > 0.01;
+      if (walled) {
+        const face = band ? pal.wall : pal.wall.map(v => v * 3 / 4 | 0);
+        quad(gi[0], gj[0], gj[1], gi[1], face, 'wall');
+      }
+      const bankCol = walled ? (band ? pal.rock0 : pal.rock1)
+                             : (band ? pal.rock0 : pal.rock1);
+      const plainCol = walled ? (band ? pal.rock1 : pal.rock0)
+                              : (band ? pal.ground0 : pal.ground1);
+      quad(gi[1], gj[1], gj[2], gi[2], bankCol, 'ground');
+      const railed = a[side].railed && b[side].railed && layerOn.rail;
+      if (railed) {
+        quad(gi[2], gj[2], gj[3], gi[3], plainCol, 'ground');
+        quad(gi[3], gj[3], gj[4], gi[4], pal.edge, 'rail');
+        quad(gi[4], gj[4], gj[5], gi[5], band ? pal.rock0 : pal.rock1, 'rail');
+      } else {
+        quad(gi[2], gj[2], gj[5], gi[5], plainCol, 'ground');
+      }
+
+      // The rim: the far skyline, a hundred and forty units out, and the only
+      // thing beyond the plain that is anchored to the track rather than to
+      // the camera. Both points come from the export, and the fade is
+      // draw_road's own, so what the viewer shows and what the device draws
+      // are the same wall.
+      const fade = (band ? pal.rock0 : pal.rock1).map(
+        (v, c) => (v * 15 + pal.sky_bottom[c] * 5) / 20 | 0);
+      quad(a[side].rim[0], b[side].rim[0], b[side].rim[1], a[side].rim[1],
+           fade, 'rim');
+    }
+
+    // A tunnel roof, the one piece of the world above the pod.
+    if (a.flags & F.TUNNEL) {
+      const lift = p => [p[0], p[1] + U.tunnel, p[2]];
+      quad(lift(a.l.p[0]), lift(b.l.p[0]), lift(b.r.p[0]), lift(a.r.p[0]),
+           (band ? pal.rock0 : pal.rock1).map(v => v * 3 / 4 | 0), 'wall');
+    }
+  }
+
+  // Open water beyond the drawn plain, so a sea track has a sea rather than a
+  // strip of one. Two big quads around the circuit's own bounds.
+  if (track.water !== null && layerOn.water) {
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const nd of track.nodes) {
+      x0 = Math.min(x0, nd.c[0]); x1 = Math.max(x1, nd.c[0]);
+      z0 = Math.min(z0, nd.c[2]); z1 = Math.max(z1, nd.c[2]);
+    }
+    const m = 220, y = track.water - 0.05;
+    quad([x0 - m, y, z0 - m], [x1 + m, y, z0 - m],
+         [x1 + m, y, z1 + m], [x0 - m, y, z1 + m], pal.water1, 'water');
+  }
+  return {
+    pos: new Float32Array(pos), col: new Float32Array(col),
+    line: new Float32Array(line), count: pos.length / 3, lines: line.length / 3,
+  };
+}
+
+// ---- audit ---------------------------------------------------------------
+// Everything here is measured off the exported geometry, not asserted about it.
+function audit(track) {
+  const out = [], n = track.nodes.length;
+  const feat = f => track.nodes.filter(x => x.flags & f).length;
+  const runs = f => {
+    let c = 0;
+    for (let i = 0; i < n; i++)
+      if ((track.nodes[i].flags & f) && !(track.nodes[(i + n - 1) % n].flags & f)) c++;
+    return c;
+  };
+
+  // 1. A railing is drawn standing on the plain, so wherever one exists the
+  //    plain has to reach past it. The margin is what the fold clamp left
+  //    over: on the inside of a corner the plain is cut short, and a railing
+  //    still drawn out there would be a fence in mid air.
+  let margin = 1e9, marginAt = 0, floating = 0;
+  for (let i = 0; i < n; i++) {
+    const nd = track.nodes[i];
+    for (const s of ['l', 'r']) {
+      if (!nd[s].railed) continue;
+      const reach = Math.hypot(nd[s].p[5][0] - nd.c[0], nd[s].p[5][2] - nd.c[2])
+                  - nd.half - U.verge;
+      if (reach <= 0) floating++;
+      if (reach < margin) { margin = reach; marginAt = i; }
+    }
+  }
+  out.push({
+    level: floating ? 'bad' : margin > 1 ? 'ok' : 'warn',
+    title: 'Railing stands on ground',
+    body: floating
+      ? `${floating} railing post${floating > 1 ? 's stand' : ' stands'} past `
+        + `the edge of the plain, in mid air.`
+      : `Every railing has ground under it. The tightest has ${margin.toFixed(1)} `
+        + `u of plain outside it, where the fold clamp cut the band shortest.`,
+    node: marginAt,
+  });
+
+  // 2. Does every band of ground advance with the road it borders?
+  //
+  // A strip is a quad between one node's boundary point and the next node's.
+  // If the outer point advances the other way, the ends have crossed and the
+  // quad is a bowtie: it draws over ground it does not own at the wrong
+  // height, and leaves a wedge of nothing beside it. From a pod that has
+  // wandered off the road that is a hole in the world, and this check is what
+  // found the 33 of them that used to be here.
+  let along = 1, alongAt = 0, folds = 0;
+  for (let i = 0; i < n; i++) {
+    const a = track.nodes[i], b = track.nodes[(i + 1) % n];
+    const cx = b.c[0] - a.c[0], cz = b.c[2] - a.c[2];
+    const cl = Math.hypot(cx, cz);
+    if (cl < 1e-4) continue;
+    for (const s of ['l', 'r']) for (let k = 0; k < 6; k++) {
+      const dx = b[s].p[k][0] - a[s].p[k][0], dz = b[s].p[k][2] - a[s].p[k][2];
+      const dl = Math.hypot(dx, dz);
+      if (dl < 1e-4) continue;
+      const dot = (cx * dx + cz * dz) / (cl * dl);
+      if (dot < 0) folds++;
+      if (dot < along) { along = dot; alongAt = i; }
+    }
+  }
+  out.push({
+    level: folds ? 'bad' : along > 0.1 ? 'ok' : 'warn',
+    title: 'No ground folds back',
+    body: folds
+      ? `${folds} band${folds > 1 ? 's' : ''} of ground run backwards against `
+        + `the road. Each one is a bowtie quad and a wedge of missing world.`
+      : `Every band advances with the road, the tightest still heading `
+        + `${along.toFixed(2)} with it on the inside of the sharpest corner.`,
+    node: alongAt,
+  });
+
+  // 3. Steps in the road, told apart from the drop off a jump lip, which is
+  //    the design: the ramp holds its height and the road falls away.
+  let step = 0, stepAt = 0, lip = 0, lipAt = 0;
+  for (let i = 0; i < n; i++) {
+    const a = track.nodes[i], b = track.nodes[(i + 1) % n];
+    const d = Math.abs(b.c[1] - a.c[1]);
+    if ((a.flags & F.RAMP) && !(b.flags & F.RAMP)) {
+      if (d > lip) { lip = d; lipAt = i; }
+    } else if (d > step) { step = d; stepAt = i; }
+  }
+  out.push({
+    level: step < 1.2 ? 'ok' : step < 2.5 ? 'warn' : 'bad',
+    title: 'Elevation is continuous',
+    body: `Away from a jump lip the road never changes more than `
+        + `${step.toFixed(2)} u over ${U.spacing} u. The lips themselves drop `
+        + `${lip.toFixed(1)} u, which is what launches the pod.`,
+    node: step > 1.2 ? stepAt : lipAt,
+  });
+
+  // 4. How much of the lap has something stopping a pod leaving it. A canyon
+  //    wall counts: it is a harder bound than a railing.
+  let bounded = 0, open = 0, openAt = 0, run = 0, runFrom = 0;
+  for (let i = 0; i < n * 2; i++) {
+    const nd = track.nodes[i % n];
+    const held = (nd.flags & (F.WALL | F.TUNNEL)) ||
+                 (nd.l.railed && nd.r.railed);
+    if (i < n && held) bounded++;
+    if (held) {
+      if (run > open) { open = run; openAt = runFrom; }
+      run = 0;
+    } else {
+      if (!run) runFrom = i % n;
+      run++;
+    }
+  }
+  out.push({
+    level: bounded * 100 / n >= 70 ? 'ok' : 'warn',
+    title: 'Bounded off the road',
+    body: `${(bounded * 100 / n).toFixed(0)}% of the lap has a railing or a `
+        + `canyon wall between the pod and the open plain. The longest run `
+        + `with neither is ${(open * U.spacing).toFixed(0)} u.`,
+    node: openAt,
+  });
+
+  // 5. Corners against the radius the relaxer targeted.
+  let radius = 1e9, radAt = 0;
+  for (let i = 0; i < n; i++) {
+    const a = track.nodes[i].c, b = track.nodes[(i + 1) % n].c,
+          c = track.nodes[(i + 2) % n].c;
+    const h0 = Math.atan2(b[0] - a[0], b[2] - a[2]);
+    const h1 = Math.atan2(c[0] - b[0], c[2] - b[2]);
+    let t = h1 - h0;
+    while (t > Math.PI) t -= 2 * Math.PI;
+    while (t < -Math.PI) t += 2 * Math.PI;
+    if (Math.abs(t) < 1e-4) continue;
+    const r = U.spacing / Math.abs(t);
+    if (r < radius) { radius = r; radAt = i; }
+  }
+  out.push({
+    level: radius >= 38 ? 'ok' : radius >= 30 ? 'warn' : 'bad',
+    title: 'Every corner is takeable',
+    body: `Tightest radius is ${radius.toFixed(0)} u. A pod at full speed needs `
+        + `about 103 u and about 20 u on the air brake.`,
+    node: radAt,
+  });
+
+  // 6. Jumps: how long a hole, and is the road level on both lips.
+  const gaps = [];
+  for (let i = 0; i < n; i++) {
+    if (!(track.nodes[i].flags & F.GAP)) continue;
+    if (track.nodes[(i + n - 1) % n].flags & F.GAP) continue;
+    let len = 0;
+    while (track.nodes[(i + len) % n].flags & F.GAP) len++;
+    const before = track.nodes[(i + n - 1) % n].c[1];
+    const after = track.nodes[(i + len) % n].c[1];
+    gaps.push({ at: i, units: len * U.spacing, fall: before - after });
+  }
+  if (gaps.length) {
+    const g = gaps[0];
+    out.push({
+      level: 'ok',
+      title: `${gaps.length} jump${gaps.length > 1 ? 's' : ''}`,
+      body: gaps.map(x => `${x.units.toFixed(0)} u of hole, landing `
+        + `${x.fall >= 0 ? x.fall.toFixed(1) + ' u below' : (-x.fall).toFixed(1)
+          + ' u above'} the lip`).join('. ') + '.',
+      node: g.at,
+    });
+  }
+
+  // 7. What the lap is actually made of. Only what it HAS: a track with no
+  //    tunnel saying "tunnel 0 u in 0" is a line the reader has to discard.
+  const bare = track.nodes.filter(x => x.flags === 0).length;
+  const made = [['canyon', F.WALL], ['tunnel', F.TUNNEL], ['ramp', F.RAMP],
+                ['boost', F.BOOST], ['shortcut', F.SHORT]]
+    .filter(([, bit]) => feat(bit))
+    .map(([word, bit]) => `${word} ${feat(bit) * U.spacing} u in ${runs(bit)}`);
+  out.push({
+    level: bare * 100 / n < 70 ? 'ok' : 'warn',
+    title: 'Something happening',
+    body: `${(bare * 100 / n).toFixed(0)}% of the lap is bare road. `
+        + `${made.join(', ')}.`,
+    node: 0,
+  });
+
+  // 8. Water, where there is any.
+  if (track.water !== null) {
+    const under = track.nodes.filter(x => x.c[1] < track.water).length;
+    out.push({
+      level: 'ok',
+      title: 'Sea level',
+      body: `${(under * 100 / n).toFixed(0)}% of the road is under the `
+          + `waterline at ${track.water} u. The hover field pushes off water, `
+          + `so those stretches are raced at sea level.`,
+      node: track.nodes.findIndex(x => x.c[1] < track.water),
+    });
+
+    // A tunnel roof is seven units over its road, and the sea is drawn over
+    // everything below the waterline. A tunnel in a trench is a tunnel with
+    // the ocean inside it, and from the road it just looks like the roof is
+    // missing.
+    const drowned = track.nodes.filter(
+      x => (x.flags & F.TUNNEL) && x.c[1] + U.tunnel < track.water);
+    if (track.nodes.some(x => x.flags & F.TUNNEL)) {
+      out.push({
+        level: drowned.length ? 'bad' : 'ok',
+        title: 'Tunnel roof clears the sea',
+        body: drowned.length
+          ? `${drowned.length * U.spacing} u of tunnel has its roof under the `
+            + `waterline. The sea will be drawn straight through it.`
+          : `Every tunnel roof stands above the waterline at `
+            + `${track.water} u.`,
+        node: drowned.length ? drowned[0].i
+                             : track.nodes.findIndex(x => x.flags & F.TUNNEL),
+      });
+    }
+  }
+  return out;
+}
+
+// ---- GL ------------------------------------------------------------------
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+
+const VS = `attribute vec3 aPos; attribute vec3 aCol; uniform mat4 uMVP;
+varying vec3 vCol; varying float vDist;
+void main(){ vec4 p = uMVP * vec4(aPos,1.0); gl_Position = p; vCol = aCol;
+  vDist = p.w; }`;
+const FS = `precision mediump float; varying vec3 vCol; varying float vDist;
+uniform vec3 uFog;
+void main(){ float f = clamp((vDist - 260.0) / 620.0, 0.0, 0.85);
+  gl_FragColor = vec4(mix(vCol, uFog, f), 1.0); }`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const aPos = gl.getAttribLocation(prog, 'aPos');
+const aCol = gl.getAttribLocation(prog, 'aCol');
+const uMVP = gl.getUniformLocation(prog, 'uMVP');
+const uFog = gl.getUniformLocation(prog, 'uFog');
+gl.enable(gl.DEPTH_TEST);
+
+const bufPos = gl.createBuffer(), bufCol = gl.createBuffer();
+const bufLine = gl.createBuffer(), bufLineCol = gl.createBuffer();
+let mesh = null;
+
+function upload(m) {
+  mesh = m;
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos);
+  gl.bufferData(gl.ARRAY_BUFFER, m.pos, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufCol);
+  gl.bufferData(gl.ARRAY_BUFFER, m.col, gl.STATIC_DRAW);
+  if (m.lines) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufLine);
+    gl.bufferData(gl.ARRAY_BUFFER, m.line, gl.STATIC_DRAW);
+    const c = new Float32Array(m.lines * 3).fill(0.05);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufLineCol);
+    gl.bufferData(gl.ARRAY_BUFFER, c, gl.STATIC_DRAW);
+  }
+}
+
+// ---- camera --------------------------------------------------------------
+const cam = { x: 0, y: 14, z: 0, yaw: 0, pitch: -0.25 };
+const keys = {};
+let dragging = false, lastX = 0, lastY = 0;
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  keys[e.key.toLowerCase()] = true;
+  if (['w','a','s','d','q','e'].includes(e.key.toLowerCase())) e.preventDefault();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+canvas.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointerup', e => {
+  dragging = false; canvas.releasePointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  // Drag right looks right. It was the other way round, which reads as the
+  // world being dragged rather than the head being turned, and every other
+  // control on the page is a camera control.
+  cam.yaw += (e.clientX - lastX) * 0.005;
+  cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch - (e.clientY - lastY) * 0.005));
+  lastX = e.clientX; lastY = e.clientY;
+});
+
+function mat(out, fov, aspect, near, far) {
+  const f = 1 / Math.tan(fov / 2);
+  out.set([f / aspect,0,0,0, 0,f,0,0, 0,0,(far+near)/(near-far),-1,
+           0,0,2*far*near/(near-far),0]);
+}
+function mul(a, b, o) {
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k];
+    o[i * 4 + j] = s;
+  }
+}
+const P = new Float32Array(16), V = new Float32Array(16), MVP = new Float32Array(16);
+
+// ---- state ---------------------------------------------------------------
+let current = 0, lapAt = 0;
+const meshes = [];
+
+function placeOnLap(track, frac) {
+  const n = track.nodes.length;
+  const i = Math.max(0, Math.min(n - 1, Math.round(frac * n) % n));
+  const a = track.nodes[i], b = track.nodes[(i + 1) % n];
+  cam.x = a.c[0]; cam.y = a.c[1] + 6.5; cam.z = a.c[2];
+  cam.yaw = Math.atan2(b.c[0] - a.c[0], b.c[2] - a.c[2]);
+  cam.pitch = -0.12;
+  lapAt = i / n;
+  drawStrip();
+}
+
+function nodeUnder() {
+  const t = DATA.tracks[current];
+  let best = 0, bd = 1e18;
+  for (let i = 0; i < t.nodes.length; i++) {
+    const c = t.nodes[i].c;
+    const d = (c[0] - cam.x) ** 2 + (c[2] - cam.z) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return { i: best, dist: Math.sqrt(bd) };
+}
+
+// ---- lap strip -----------------------------------------------------------
+const strip = document.getElementById('strip');
+const sctx = strip.getContext('2d');
+const FEAT = [
+  [F.SHORT, '#5fd08a'], [F.RAMP, '#b9772e'], [F.BOOST, '#4aa8e8'],
+  [F.WALL, '#9aa3b4'], [F.TUNNEL, '#6f5ad0'], [F.GAP, '#2a2f3c'],
+];
+function drawStrip() {
+  const t = DATA.tracks[current], n = t.nodes.length;
+  const w = strip.width, h = strip.height;
+  sctx.clearRect(0, 0, w, h);
+  sctx.fillStyle = '#0d1017'; sctx.fillRect(0, 0, w, h);
+
+  let lo = 1e9, hi = -1e9;
+  for (const nd of t.nodes) { lo = Math.min(lo, nd.c[1]); hi = Math.max(hi, nd.c[1]); }
+  const span = Math.max(1, hi - lo);
+  sctx.beginPath();
+  sctx.moveTo(0, h);
+  for (let i = 0; i < n; i++)
+    sctx.lineTo(i / n * w, h - 8 - (t.nodes[i].c[1] - lo) / span * (h - 46));
+  sctx.lineTo(w, h);
+  sctx.fillStyle = 'rgba(232,138,43,0.13)'; sctx.fill();
+  sctx.strokeStyle = 'rgba(232,138,43,0.55)'; sctx.lineWidth = 1.5;
+  sctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const y = h - 8 - (t.nodes[i].c[1] - lo) / span * (h - 46);
+    i ? sctx.lineTo(i / n * w, y) : sctx.moveTo(0, y);
+  }
+  sctx.stroke();
+
+  for (let i = 0; i < n; i++) {
+    let c = '#8e6b3f';
+    for (const [bit, hex] of FEAT) if (t.nodes[i].flags & bit) c = hex;
+    sctx.fillStyle = c;
+    sctx.fillRect(i / n * w, 0, w / n + 1, 16);
+  }
+  const x = lapAt * w;
+  sctx.fillStyle = '#e88a2b';
+  sctx.fillRect(x - 1, 0, 3, h);
+}
+function stripSeek(e) {
+  const r = strip.getBoundingClientRect();
+  placeOnLap(DATA.tracks[current], (e.clientX - r.left) / r.width);
+}
+strip.addEventListener('pointerdown', e => {
+  strip.setPointerCapture(e.pointerId); stripSeek(e);
+});
+strip.addEventListener('pointermove', e => {
+  if (e.buttons & 1) stripSeek(e);
+});
+
+// ---- panels --------------------------------------------------------------
+const tracksEl = document.getElementById('tracks');
+DATA.tracks.forEach((t, i) => {
+  const b = document.createElement('button');
+  b.innerHTML = `<span>${t.name}</span><small>${(t.nodes.length * U.spacing / 1000)
+    .toFixed(2)} km</small>`;
+  b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+  b.onclick = () => select(i);
+  tracksEl.appendChild(b);
+});
+
+const layersEl = document.getElementById('layers');
+LAYERS.forEach(([key, label, on]) => {
+  const l = document.createElement('label');
+  l.innerHTML = `<input type="checkbox" ${on ? 'checked' : ''}><span>${label}</span>`;
+  l.querySelector('input').onchange = e => {
+    layerOn[key] = e.target.checked;
+    meshes[current] = buildTrack(DATA.tracks[current]);
+    upload(meshes[current]);
+  };
+  layersEl.appendChild(l);
+});
+
+function select(i) {
+  current = i;
+  [...tracksEl.children].forEach((b, k) =>
+    b.setAttribute('aria-pressed', k === i ? 'true' : 'false'));
+  if (!meshes[i]) meshes[i] = buildTrack(DATA.tracks[i]);
+  upload(meshes[i]);
+  const t = DATA.tracks[i];
+  const sky = t.palette.sky_bottom;
+  gl.clearColor(sky[0] / 255 * 0.55, sky[1] / 255 * 0.55, sky[2] / 255 * 0.55, 1);
+  gl.uniform3f(uFog, sky[0] / 255, sky[1] / 255, sky[2] / 255);
+  placeOnLap(t, 0);
+  showFacts(t);
+  showFindings(t);
+}
+
+function showFacts(t) {
+  const n = t.nodes.length;
+  let lo = 1e9, hi = -1e9;
+  for (const nd of t.nodes) { lo = Math.min(lo, nd.c[1]); hi = Math.max(hi, nd.c[1]); }
+  const rows = [
+    ['Length', `${(n * U.spacing).toFixed(0)} u`],
+    ['Nodes', `${n}`],
+    ['Laps', `${t.laps}`],
+    ['Relief', `${(hi - lo).toFixed(1)} u`],
+    ['Gravity', `${(t.world.gravity / 10).toFixed(0)}%`],
+    ['Grip', `${(t.world.grip / 10).toFixed(0)}%`],
+    ['Air', `${(t.world.air / 10).toFixed(0)}%`],
+    ['Sea level', t.water === null ? 'none' : `${t.water} u`],
+  ];
+  document.getElementById('facts').innerHTML = rows
+    .map(([k, v]) => `<div class="row"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+
+function showFindings(t) {
+  const list = audit(t);
+  const bad = list.filter(f => f.level !== 'ok').length;
+  document.getElementById('auditline').textContent =
+    bad ? `${bad} to look at` : 'nothing flagged';
+  document.getElementById('findings').innerHTML = list.map(f =>
+    `<div class="find ${f.level}"><b>${f.title}</b><p>${f.body}</p>` +
+    `<u data-node="${f.node}">fly to node ${f.node}</u></div>`).join('');
+  document.querySelectorAll('#findings u').forEach(u => {
+    u.onclick = () => placeOnLap(t, (+u.dataset.node) / t.nodes.length);
+  });
+}
+
+// ---- loop ----------------------------------------------------------------
+const readout = document.getElementById('readout');
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+
+  const speed = (keys.shift ? 140 : 42) * dt;
+  const fx = Math.sin(cam.yaw) * Math.cos(cam.pitch);
+  const fy = Math.sin(cam.pitch);
+  const fz = Math.cos(cam.yaw) * Math.cos(cam.pitch);
+  if (keys.w) { cam.x += fx * speed; cam.y += fy * speed; cam.z += fz * speed; }
+  if (keys.s) { cam.x -= fx * speed; cam.y -= fy * speed; cam.z -= fz * speed; }
+  if (keys.a) { cam.x -= Math.cos(cam.yaw) * speed; cam.z += Math.sin(cam.yaw) * speed; }
+  if (keys.d) { cam.x += Math.cos(cam.yaw) * speed; cam.z -= Math.sin(cam.yaw) * speed; }
+  if (keys.e) cam.y += speed;
+  if (keys.q) cam.y -= speed;
+
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  mat(P, 1.15, w / h, 0.6, 1400);
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const r = [cy, 0, -sy], f = [sy * cp, sp, cy * cp];
+  const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2],
+             f[0] * r[1] - f[1] * r[0]];
+  V.set([r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0,
+    -(r[0]*cam.x + r[1]*cam.y + r[2]*cam.z),
+    -(u[0]*cam.x + u[1]*cam.y + u[2]*cam.z),
+     (f[0]*cam.x + f[1]*cam.y + f[2]*cam.z), 1]);
+  mul(P, V, MVP);
+  gl.uniformMatrix4fv(uMVP, false, MVP);
+
+  if (mesh) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufPos);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufCol);
+    gl.enableVertexAttribArray(aCol);
+    gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    if (mesh.lines) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufLine);
+      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufLineCol);
+      gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.LINES, 0, mesh.lines);
+    }
+  }
+
+  const t = DATA.tracks[current];
+  const near = nodeUnder();
+  const nd = t.nodes[near.i];
+  const names = [];
+  if (nd.flags & F.RAMP) names.push('ramp');
+  if (nd.flags & F.GAP) names.push('gap');
+  if (nd.flags & F.BOOST) names.push('boost');
+  if (nd.flags & F.WALL) names.push('canyon');
+  if (nd.flags & F.SHORT) names.push('shortcut');
+  if (nd.flags & F.TUNNEL) names.push('tunnel');
+  readout.innerHTML =
+    `<div><span>node</span><b>${near.i}</b></div>` +
+    `<div><span>from centre</span><b>${near.dist.toFixed(1)} u</b></div>` +
+    `<div><span>road y</span><b>${nd.c[1].toFixed(1)}</b></div>` +
+    `<div><span>camera y</span><b>${cam.y.toFixed(1)}</b></div>` +
+    `<div><span>here</span><b>${names.length ? names.join(' + ') : 'open road'}</b></div>` +
+    `<div><span>triangles</span><b>${(mesh ? mesh.count / 3 : 0).toLocaleString()}</b></div>`;
+
+  if (Math.abs(near.i / t.nodes.length - lapAt) > 0.002) {
+    lapAt = near.i / t.nodes.length; drawStrip();
+  }
+  requestAnimationFrame(frame);
+}
+
+select(0);
+document.getElementById('veil').style.opacity = '0';
+setTimeout(() => document.getElementById('veil').remove(), 300);
+requestAnimationFrame(frame);
+</script>
