@@ -1666,12 +1666,16 @@ figure('title', 'Title',
   'accepting every button instead.',
   (function(){ const g = newGame(3); play(g, 260); return g; })());
 
-// 2. Round 1, a sparse table.
-figure('early', 'Round 1',
-  '135 coins, about 45 percent of the felt covered, which is the density the ' +
-  'cart opened on. The pusher is at the top of its sweep and the cat is ' +
-  'holding the next coin.',
-  play(begin(7), 240, {drop: 40}));
+// 2. Round 1, a sparse table. The caption counts the coins rather than
+// claiming a number, because the seeding was reworked once already and a
+// hand written figure would now be describing the version before it.
+{
+  const g = play(begin(7), 240, {drop: 40});
+  figure('early', 'Round 1',
+    g.coins.length + ' coins, two thirds of what the shelf holds, which is ' +
+    'about where the cart opened. The pusher is partway down its sweep and ' +
+    'the cat is holding the next coin.', g);
+}
 
 // 3. A late round, packed, mid combo.
 figure('packed', 'Round 8, mid combo',
