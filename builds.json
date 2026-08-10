@@ -12,8 +12,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,8 +67,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -89,8 +89,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-09T01:22:47Z",
-      "commit": "a3b28fe",
+      "built_at": "2026-08-10T00:03:04Z",
+      "commit": "f9150af",
       "dir": "games/twinflare",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -100,6 +100,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-09T01:22:47Z",
+  "generated_at": "2026-08-10T00:03:04Z",
   "schema": 2
 }
