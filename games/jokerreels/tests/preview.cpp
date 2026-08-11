@@ -148,6 +148,34 @@ int main(int argc, char** argv) {
         capture(shop, out, "preview_6_shop");
     }
 
+    /* A run part way in: jokers held, a hand counting, gold spent.
+     *
+     * Every other frame here starts a fresh run, so every other frame has an
+     * empty joker row and a zero score. That is what the first ante looks like
+     * and it is not what the game looks like, and it meant the row that draws
+     * a held joker had never been looked at at all: the six character
+     * truncation, the filled slot, and the tally line under it were all
+     * unrendered until this frame existed.
+     */
+    {
+        jr::World mid;
+        jr::world_init(mid, 31u);
+        play(mid, 1, 0);
+        mid.ante = 3;
+        mid.target = jr::target_for_ante(3);
+        mid.banked = mid.target * 2 / 3;
+        mid.gold = 11;
+        mid.spins = 2;
+        mid.joker_count = 3;
+        mid.jokers[0] = jr::kTwin;
+        mid.jokers[1] = jr::kUnderstudy;   // the longest name there is
+        mid.jokers[2] = jr::kCollector;
+        play(mid, 1, 0);                   // pull
+        play(mid, 400);                    // let it land and start counting
+        capture(mid, out, "preview_7_midrun");
+        check(mid.joker_count == 3, "the jokers survived the spin");
+    }
+
     /* The window, checked on the pixels rather than asserted in a comment.
      *
      * The whole game is affordable because the 3D covers only the top band and
