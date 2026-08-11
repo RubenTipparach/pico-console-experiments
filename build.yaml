@@ -16,6 +16,8 @@
 # the way to rebuild one held game without editing this file.
 
 build:
+  - catcoin
+  - dumblander
   - dustrider
   - kingfisher
   - picospace

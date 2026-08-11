@@ -1,0 +1,18 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: catcoin
+title: Cat Coin Pusher
+blurb: Drop coins, build a combo, clear ten rounds.
+target: catcoin
+sdk: 32blit
+web: true
+
+objective: "Drop coins onto the pile and let the pusher shove them over the front edge. Every coin that falls scores, and coins that fall together score far more: the meter under the lip is your combo, and filling it opens a prize spinner. Reach the round's target before you run out of coins, then spend the gold you earned in the cat's shop on special coins that break a stuck table open. Miss a target and the run is over, and there are ten rounds."
+
+controls:
+  - "A: drop a coin from wherever the cat is"
+  - "left: move along the row at the bottom"
+  - "right: move along the row at the bottom"
+  - "B: use whatever the row has selected"
+  - "up: move through the shop between rounds"
+  - "down: move through the shop between rounds"

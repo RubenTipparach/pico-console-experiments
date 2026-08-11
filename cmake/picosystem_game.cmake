@@ -1,5 +1,5 @@
 # add_picosystem_game(<name> SOURCES ... [MODELS ...] [TEXTURES ...]
-#                     [ASSETS <file>] [DEFINES ...])
+#                     [SPRITES ...] [ASSETS <file>] [DEFINES ...])
 #
 # Registers one game. This is the only thing a game's CMakeLists.txt needs to
 # call: adding a game must never require editing the top level build, the
@@ -50,7 +50,7 @@ foreach(required ${PICO_WEB_SHELL} ${PICO_GEN_SHELL} ${PICO_STANDALONE_MAIN})
 endforeach()
 
 function(add_picosystem_game NAME)
-    cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;TEXTURES;DEFINES" ${ARGN})
+    cmake_parse_arguments(GAME "" "ASSETS" "SOURCES;MODELS;TEXTURES;SPRITES;DEFINES" ${ARGN})
 
     if(NOT GAME_SOURCES)
         message(FATAL_ERROR "add_picosystem_game(${NAME}): SOURCES is required")
@@ -61,6 +61,11 @@ function(add_picosystem_game NAME)
     # stable order keeps the build's file list from churning.
     foreach(picture ${GAME_TEXTURES})
         add_texture(${NAME} ${picture} generated_sources)
+    endforeach()
+
+    # 2D art. Same converter, different struct: see cmake/texture.cmake.
+    foreach(picture ${GAME_SPRITES})
+        add_sprite(${NAME} ${picture} generated_sources)
     endforeach()
 
     foreach(model ${GAME_MODELS})

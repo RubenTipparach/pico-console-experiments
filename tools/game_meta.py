@@ -64,12 +64,17 @@ class MetaError(Exception):
 
 # ---- PNG reading, the subset our own thumbnails are written in ----
 
-def read_png(path):
+def read_png(path, keep_alpha=False):
     """Return (width, height, rows) with rows as lists of (r, g, b).
 
     Handles 8 bit truecolour and truecolour+alpha, non interlaced, which is
     what every tool in this repo writes. Anything else is an error rather
     than a silent wrong colour.
+
+    With keep_alpha the tuples are (r, g, b, a) instead, and an RGB source
+    reads back fully opaque. The icon and texture paths do not want alpha and
+    say nothing, so they keep the three channel tuples they were written
+    against; only the 2D sprite path asks for the fourth.
     """
     with open(path, "rb") as handle:
         data = handle.read()
@@ -111,8 +116,15 @@ def read_png(path):
         line = bytearray(raw[pos:pos + stride])
         pos += stride
         _unfilter(filter_type, line, previous, channels)
-        rows.append([tuple(line[x * channels:x * channels + 3])
-                     for x in range(width)])
+        if keep_alpha:
+            rows.append([
+                (line[x * channels], line[x * channels + 1],
+                 line[x * channels + 2],
+                 line[x * channels + 3] if channels == 4 else 255)
+                for x in range(width)])
+        else:
+            rows.append([tuple(line[x * channels:x * channels + 3])
+                         for x in range(width)])
         previous = line
     return width, height, rows
 

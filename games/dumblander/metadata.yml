@@ -1,0 +1,10 @@
+title: Dumb Lander
+description: Take off, cross the valley, put it down on the gold deck.
+author: rubentipparach
+splash:
+  file: ../pico-santa/assets/no-image.png
+icon:
+  file: ../pico-santa/assets/no-icon.png
+version: v0.1.0
+category: game
+url: https://github.com/rubentipparach/pico-console-experiments

@@ -1,0 +1,15 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: dumblander
+title: Dumb Lander
+blurb: Take off, cross the valley, land on the gold deck.
+target: dumblander
+sdk: 32blit
+web: true
+
+objective: "Lift off the grey deck and put the lander down on the gold one. The main engine is worth two of gravity, so a tap is a hop and a hold is a climb, and it is the only thing that spends fuel. SPD is your speed: while it is green the deck will take you, and while it is red it will not. Land clean and the ground regenerates with the gold deck further off and a little narrower, which is one more leg on the counter. Come in fast, or run the tank dry with nowhere to sit down, and the run is over."
+
+controls:
+  - "A: the main engine, straight up, while there is fuel"
+  - "left: sideways jet, and it costs nothing"
+  - "right: sideways jet, and it costs nothing"
