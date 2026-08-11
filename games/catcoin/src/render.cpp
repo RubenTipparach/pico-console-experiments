@@ -56,7 +56,7 @@ const char* const k_end_ready = "TARGET MET. TAKE THE SHOP.";
 const char* const k_end_short = "SHORT OF TARGET. THIS ENDS THE RUN.";
 
 constexpr int k_coin_cell = 11;
-constexpr int k_cat_w = 33;
+constexpr int k_cat_w = 34;
 constexpr int k_cat_h = 30;
 
 void number_string(int32_t value, char* out, int cap) {
