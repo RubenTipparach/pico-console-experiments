@@ -1,6 +1,17 @@
 {
   "games": [
     {
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
+      "dir": "games/catcoin",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "catcoin",
+      "target": "catcoin",
+      "title": "Cat Coin Pusher",
+      "web": true
+    },
+    {
       "built_at": "2026-08-04T20:34:21Z",
       "commit": "5a0b95a",
       "dir": "games/chicken",
@@ -12,8 +23,19 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
+      "dir": "games/dumblander",
+      "has_thumbnail": true,
+      "sdk": "32blit",
+      "slug": "dumblander",
+      "target": "dumblander",
+      "title": "Dumb Lander",
+      "web": true
+    },
+    {
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +67,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -67,8 +89,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,8 +100,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -89,8 +111,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-10T04:54:42Z",
-      "commit": "3798150",
+      "built_at": "2026-08-11T01:58:34Z",
+      "commit": "1ba96a2",
       "dir": "games/twinflare",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -100,6 +122,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-10T04:54:42Z",
+  "generated_at": "2026-08-11T01:58:34Z",
   "schema": 2
 }
