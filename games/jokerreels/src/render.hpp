@@ -3,9 +3,12 @@
 // Drawing Joker Reels. Engine only: no SDK anywhere in here, which is what
 // lets the host preview harness render real frames without a device.
 //
-// The HUD's text is not here. Text is drawn with screen.text in game.cpp
-// because it is SDK code, so a change to a label is unverified until the game
-// has actually been run.
+// That includes the text. The obvious place for a HUD is game.cpp with
+// screen.text, which is what every other game here does and what this one did
+// first, and it is the wrong place: game.cpp is the one file no host build
+// compiles, so every number and label was invisible to the preview and
+// unverified until somebody ran it on hardware. pse::draw_text exists for
+// exactly this and its header says so. game.cpp is input and one call.
 
 #include "pse/pixel.hpp"
 
@@ -71,18 +74,19 @@ constexpr float k_drum_gap = 14.8f;
 constexpr int k_bezel_top = 8;
 constexpr int k_bezel_bottom = k_window_h - 12;
 
-// Draw the machine and the window frame. `screen` is the whole 240x240
-// surface; this touches only the top k_window_h rows of it.
+// The whole frame, whichever screen is showing. This is all game.cpp calls.
+void render_frame(const jr::World& world, const pse::RenderTarget& screen);
+
+// The parts, for the preview harness and for anything that wants one of them.
+// `screen` is always the whole 240x240 surface.
 void render_machine(const jr::World& world, const pse::RenderTarget& screen);
-
-// The panel's non text furniture: the score box, the speed dial, the joker
-// slots, the progress bar. Text goes over it in game.cpp.
 void render_panel(const jr::World& world, const pse::RenderTarget& screen);
-
-// The two screens that are otherwise all text. Their furniture is here so the
-// host preview harness draws it too, which is the only way it gets looked at.
 void render_shop(const jr::World& world, const pse::RenderTarget& screen);
 void render_end(const jr::World& world, const pse::RenderTarget& screen);
+
+// What a joker's name is shortened to for its HUD slot. Exposed so the string
+// check measures what is actually drawn rather than its own copy of the rule.
+const char* joker_slot_name(uint8_t joker);
 
 // Where drum `d`'s front face lands horizontally, so the HUD and the tests can
 // ask rather than assume.
