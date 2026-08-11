@@ -24,7 +24,16 @@ namespace jr {
 // strip of any length. That is how a real machine's virtual reel works, and it
 // is what lets a swap put a symbol on a drum that has no facet spare.
 constexpr int k_facets = 12;
-constexpr int k_drums = 3;
+
+// Five reels, not three.
+//
+// Three keeps the drums big and a hand readable at a glance, and it is what
+// the mockup was built on. It also caps what a hand can be: on three symbols
+// the only shapes are three of a kind, a run, a pair and nothing, which is
+// four outcomes and two of them are the same shrug. Five reels is what makes
+// a hand table worth having, and a hand table is what gives the deckbuilding
+// something to aim at.
+constexpr int k_drums = 5;
 constexpr int k_strip_start = 12;
 constexpr int k_strip_max = 24;
 
@@ -49,9 +58,18 @@ const char* symbol_name(uint8_t symbol);
 // ---------------------------------------------------------------------------
 // Hands, in the Balatro sense: what the three landed symbols make
 // ---------------------------------------------------------------------------
-enum Hand : uint8_t { kThree = 0, kRun, kPair, kNothing, k_hands };
+// Ordered best to worst, which is also the order hand_of tests them in: the
+// first shape that fits wins, so FULL HOUSE has to be looked for before THREE
+// OF A KIND or a full house would score as three of a kind and the two pair in
+// it would count for nothing.
+enum Hand : uint8_t {
+    kFive = 0, kFour, kFullHouse, kRun, kThree, kTwoPair, kPair, kNothing,
+    k_hands,
+};
 
 const char* hand_name(uint8_t hand);
+int hand_chips(uint8_t hand, int level);
+int hand_mult(uint8_t hand, int level);
 
 // ---------------------------------------------------------------------------
 // Speed, which is the whole risk of the game on one dial
@@ -101,11 +119,28 @@ struct TallyEntry {
     uint8_t colour;
     bool joker;
 };
-constexpr int k_max_tally = 16;
+constexpr int k_max_tally = 20;
+
+// Which reels made the hand, so the screen can draw a line through them.
+//
+// A tally line says PAIR and a number. It does not say WHICH two reels paired,
+// and on five reels that is the whole question: a player who cannot see why
+// they scored cannot aim at scoring more. So the scorer records the groups and
+// the renderer joins them up.
+constexpr int k_max_groups = 2;
+constexpr uint8_t k_no_group = 255;
 
 enum State : uint8_t {
-    kTitle = 0, kIdle, kSpin, kCount, kCleared, kShop, kSwap, kOver, kWin,
+    kTitle = 0, kLearn, kIdle, kSpin, kCount, kCleared, kShop, kSwap, kOver,
+    kWin,
 };
+
+// How many pages the how to play screen has. Rule 9 keeps text off the screen
+// by default and says in as many words that an explicit request for more text
+// wins, which this is: a scoring system nobody can see is not sparse, it is
+// opaque. Shown once on the way out of the title, and reachable again from
+// the shop, which is the moment a player is deciding what a hand is worth.
+constexpr int k_learn_pages = 3;
 
 // What the player pressed this tick. Edge triggered by the caller.
 struct Buttons {
@@ -156,6 +191,10 @@ struct World {
     bool spinning[k_drums];
     int8_t stopped_at[k_drums];     // which speed a reel was stopped at, or -1
     uint8_t landed[k_drums];
+    // Which match group each reel is in, or k_no_group. Set when a hand is
+    // scored and cleared when a spin starts.
+    uint8_t group_of[k_drums];
+    uint8_t group_count;
     uint32_t spin_ticks;
 
     uint8_t speed;
@@ -177,6 +216,7 @@ struct World {
     uint8_t shop_len;
     uint8_t shop_sel;
 
+    uint8_t learn_page;
     uint8_t swap_drum;
     uint8_t swap_face;
     uint8_t swap_to;
@@ -218,7 +258,10 @@ void world_tick(World& w, const Buttons& btn);
 
 // Exposed for the tests and the renderer. Not part of playing a run.
 int32_t target_for_ante(int ante);
+// The hand, and which reels made it. `groups` is filled with a group index
+// per reel, or k_no_group for a reel that took no part.
 uint8_t hand_of(const uint8_t landed[k_drums]);
+uint8_t hand_groups(const uint8_t landed[k_drums], uint8_t groups[k_drums]);
 void world_open_shop(World& w);
 
 }  // namespace jr

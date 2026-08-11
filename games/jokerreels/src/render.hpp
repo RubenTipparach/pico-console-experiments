@@ -57,17 +57,21 @@ constexpr float k_facet_size = 2.0f * k_pi * k_drum_radius / jr::k_facets;
 // Not a taste decision: it is the one number that sets how big a facet lands
 // on screen and how hard the perspective bends it. At distance D the front
 // facet is focal * facet_size / (D - R) pixels, and the facet 30 degrees round
-// is nearer, so it is drawn (D - R cos 30) / (D - R) times larger. D = 2.07 R
-// gives a 56 pixel front facet and about 27 percent of that curve, which is
-// what a reel looks like. Pulling the camera back flattens the drum into a
-// wall of stickers.
-constexpr float k_cam_dist = 49.8f;
+// is nearer, so it is drawn (D - R cos 30) / (D - R) times larger. Pulling the
+// camera back flattens the drum into a wall of stickers; pushing it in bends
+// the reel until only one face reads.
+// Five reels of 42 px across a 240 px screen, with 5 px of frame between
+// them: 58.5 is what puts a facet at exactly that width. Widening the machine
+// is a camera move, not a drum change, because the drum's proportions are
+// fixed by its own arithmetic and a drum that is not square is a squashed
+// symbol.
+constexpr float k_cam_dist = 58.53f;
 
 // Horizontal, because the engine scales the vertical by the target's WIDTH
 // when a viewport band is set, which is what keeps the pixels square.
 constexpr float k_fov_degrees = 92.0f;
 
-constexpr float k_drum_gap = 14.8f;
+constexpr float k_drum_gap = 14.062f;
 
 // The reel window, in screen pixels. Cut from where the drums actually
 // project rather than typed against a screenshot: see render.cpp.
@@ -82,6 +86,7 @@ void render_frame(const jr::World& world, const pse::RenderTarget& screen);
 void render_machine(const jr::World& world, const pse::RenderTarget& screen);
 void render_panel(const jr::World& world, const pse::RenderTarget& screen);
 void render_shop(const jr::World& world, const pse::RenderTarget& screen);
+void render_learn(const jr::World& world, const pse::RenderTarget& screen);
 void render_end(const jr::World& world, const pse::RenderTarget& screen);
 
 // What a joker's name is shortened to for its HUD slot. Exposed so the string

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,32 @@ void play(jr::World& w, int ticks, int press_at = -1, bool press_a = true) {
     }
 }
 
+/* Land a chosen hand by turning the DRUMS to it, not by writing landed[].
+ *
+ * Writing landed[] directly is one line shorter and it produces a frame that
+ * lies: the markers point at reels showing different symbols, which is exactly
+ * the "the drum shows a BAR and the panel says PLUM" desynchronisation the
+ * geometry tests exist to prevent. Painting the front facet and then asking
+ * the rules what landed goes through the same path a real spin does.
+ */
+void force_hand(jr::World& w, const uint8_t want[jr::k_drums]) {
+    for (int d = 0; d < jr::k_drums; d++) {
+        w.facet[d][jr::front_facet(w, d)] = want[d];
+        w.landed[d] = jr::face_at(w, d, jr::front_facet(w, d));
+    }
+    w.hand_index = jr::hand_of(w.landed);
+    w.group_count = jr::hand_groups(w.landed, w.group_of);
+}
+
+// Title, then the how to play pages, then the table. A press is a press: the
+// opening is several screens now and a frame that wants the machine has to
+// walk through them rather than assume one button gets there.
+void to_table(jr::World& w) {
+    for (int i = 0; i < 2 + jr::k_learn_pages && w.state != jr::kIdle; i++) {
+        play(w, 1, 0);
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -90,7 +117,7 @@ int main(int argc, char** argv) {
     capture(w, out, "preview_0_title");
 
     jr::world_init(w, 20260811u);
-    play(w, 1, 0);                       // any button leaves the title
+    to_table(w);
     capture(w, out, "preview_1_idle");
 
     // Mid spin at FAIR, which is what "there but too dark to read" looks like.
@@ -102,9 +129,9 @@ int main(int argc, char** argv) {
     {
         jr::World fast;
         jr::world_init(fast, 4242u);
-        play(fast, 1, 0);
+        to_table(fast);
         fast.speed = jr::kWild;
-        play(fast, 1, 0);
+        play(fast, 1, 0);                  // pull
         play(fast, 40);
         capture(fast, out, "preview_3_spin_wild");
     }
@@ -114,9 +141,9 @@ int main(int argc, char** argv) {
     {
         jr::World landed;
         jr::world_init(landed, 7u);
-        play(landed, 1, 0);
-        play(landed, 1, 0);
-        play(landed, 400);
+        to_table(landed);
+        play(landed, 1, 0);                // pull
+        play(landed, 600);
         capture(landed, out, "preview_4_landed");
         check(landed.state == jr::kCount || landed.state == jr::kIdle ||
                   landed.state == jr::kCleared || landed.state == jr::kOver,
@@ -128,7 +155,7 @@ int main(int argc, char** argv) {
     {
         jr::World swap;
         jr::world_init(swap, 11u);
-        play(swap, 1, 0);
+        to_table(swap);
         swap.state = jr::kSwap;
         swap.swap_drum = 1;
         swap.swap_face = 2;
@@ -137,11 +164,87 @@ int main(int argc, char** argv) {
         capture(swap, out, "preview_5_swap");
     }
 
+    // The three how to play pages, which are the answer to "how do I score".
+    {
+        for (int page = 0; page < jr::k_learn_pages; page++) {
+            jr::World learn;
+            jr::world_init(learn, 5u);
+            play(learn, 1, 0);              // title -> learn
+            learn.hand_level[jr::kPair] = 3;   // so a levelled row is drawn
+            learn.learn_page = static_cast<uint8_t>(page);
+            char name[24];
+            std::snprintf(name, sizeof(name), "preview_8_learn%d", page);
+            capture(learn, out, name);
+        }
+    }
+
+    /* A hand with lines through it, which is the whole point of five reels.
+     *
+     * Forced rather than waited for: a two pair does not turn up on demand,
+     * and a frame that shows the feature has to exist for the feature to have
+     * been looked at. The landed symbols are set and the scorer is asked for
+     * the groups exactly as a real spin would.
+     */
+    {
+        jr::World two_pair;
+        jr::world_init(two_pair, 77u);
+        to_table(two_pair);
+        play(two_pair, 1, 0);              // pull
+        play(two_pair, 600);               // let it land and count
+        const uint8_t forced[jr::k_drums] = {
+            jr::kCherry, jr::kSeven, jr::kCherry, jr::kCrown, jr::kSeven,
+        };
+        force_hand(two_pair, forced);
+        check(two_pair.hand_index == jr::kTwoPair, "that is a two pair");
+        check(two_pair.group_count == 2, "and it is two groups");
+        for (int d = 0; d < jr::k_drums; d++) {
+            check(two_pair.landed[d] == forced[d],
+                  "the drum is showing the symbol the line points at");
+        }
+        capture(two_pair, out, "preview_9_twopair");
+    }
+
+    /* A marker sits on a reel that made the group, and the reels in a group
+     * show the same symbol.
+     *
+     * This is the render half of the desync check: the sim tests prove
+     * hand_groups agrees with the landed symbols, and this proves the frame
+     * the player sees is drawn from the same landed symbols. Run over every
+     * shape rather than the one that happened to come up.
+     */
+    {
+        const uint8_t shapes[][jr::k_drums] = {
+            {jr::kBell, jr::kBell, jr::kBell, jr::kBell, jr::kBell},
+            {jr::kBell, jr::kBell, jr::kCrown, jr::kBell, jr::kBell},
+            {jr::kBell, jr::kCrown, jr::kBell, jr::kCrown, jr::kBell},
+            {jr::kCherry, jr::kBell, jr::kPlum, jr::kBar, jr::kClover},
+            {jr::kBell, jr::kBell, jr::kCrown, jr::kCrown, jr::kCherry},
+            {jr::kCherry, jr::kPlum, jr::kClover, jr::kDiamond, jr::kCrown},
+        };
+        for (const auto& shape : shapes) {
+            jr::World probe;
+            jr::world_init(probe, 61u);
+            to_table(probe);
+            force_hand(probe, shape);
+            for (int d = 0; d < jr::k_drums; d++) {
+                check(probe.landed[d] == shape[d],
+                      "the drum shows what the rules scored");
+                if (probe.group_of[d] == jr::k_no_group) continue;
+                if (probe.hand_index == jr::kRun) continue;
+                for (int e = 0; e < jr::k_drums; e++) {
+                    if (e == d || probe.group_of[e] != probe.group_of[d]) continue;
+                    check(probe.landed[e] == probe.landed[d],
+                          "a line joins reels showing the same symbol");
+                }
+            }
+        }
+    }
+
     // The back room, where the run is actually built.
     {
         jr::World shop;
         jr::world_init(shop, 9u);
-        play(shop, 1, 0);
+        to_table(shop);
         shop.gold = 14;
         jr::world_open_shop(shop);
         shop.shop_sel = 1;
@@ -160,7 +263,7 @@ int main(int argc, char** argv) {
     {
         jr::World mid;
         jr::world_init(mid, 31u);
-        play(mid, 1, 0);
+        to_table(mid);
         mid.ante = 3;
         mid.target = jr::target_for_ante(3);
         mid.banked = mid.target * 2 / 3;
@@ -187,7 +290,7 @@ int main(int argc, char** argv) {
     {
         jr::World probe;
         jr::world_init(probe, 3u);
-        play(probe, 1, 0);
+        to_table(probe);
         std::fill(buffer().begin(), buffer().end(), 0xAB);
         pse::RenderTarget target{buffer().data(), k_w, k_h, k_w * 3,
                                  pse::PixelFormat::rgb888};

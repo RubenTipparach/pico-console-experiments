@@ -15,11 +15,18 @@ const SymbolDef k_symbols_table[k_symbols] = {
 
 struct HandDef { const char* name; int16_t chips; int16_t mult;
                  int16_t per_chips; int16_t per_mult; };
+// Best to worst, matching the Hand enum. The gaps are wide on purpose: the
+// point of opening a drum is to make a better shape reachable, and a ladder
+// with even rungs gives nothing to climb toward.
 const HandDef k_hands_table[k_hands] = {
-    {"THREE OF A KIND", 100, 8, 40, 3},
-    {"RUN",              60, 5, 25, 2},
-    {"PAIR",             30, 3, 15, 1},
-    {"NOTHING",           5, 1,  5, 1},
+    {"FIVE OF A KIND", 300, 20, 60, 6},
+    {"FOUR OF A KIND", 180, 14, 45, 5},
+    {"FULL HOUSE",     130, 10, 35, 4},
+    {"RUN",            100,  8, 30, 3},
+    {"THREE OF A KIND", 70,  6, 25, 3},
+    {"TWO PAIR",        45,  4, 20, 2},
+    {"PAIR",            25,  3, 12, 1},
+    {"NOTHING",          5,  1,  5, 1},
 };
 
 struct SpeedDef { const char* name; int16_t rate; int8_t mult; int8_t blur; };
@@ -46,7 +53,7 @@ const JokerDef k_jokers_table[k_jokers] = {
 // Every drum stops itself eventually, in order, unless you stop it first.
 // Without this a spin never ends, and the whole "leave them alone" line of
 // play, which one joker pays x2 for, is unreachable.
-const uint16_t k_auto_stop[k_drums] = {190, 260, 330};
+const uint16_t k_auto_stop[k_drums] = {170, 220, 270, 320, 370};
 
 uint32_t next_random(World& w) {
     w.rng = w.rng * 1664525u + 1013904223u;
@@ -148,10 +155,11 @@ void push_tally(World& w, const char* what, int chips, int mult,
 void score(World& w) {
     const uint8_t idx = hand_of(w.landed);
     w.hand_index = idx;
+    w.group_count = 0;
+    for (int d = 0; d < k_drums; d++) w.group_of[d] = k_no_group;
     const HandDef& h = k_hands_table[idx];
-    const int level = w.hand_level[idx] - 1;
-    const int base_chips = h.chips + h.per_chips * level;
-    const int base_mult = h.mult + h.per_mult * level;
+    const int base_chips = hand_chips(idx, w.hand_level[idx]);
+    const int base_mult = hand_mult(idx, w.hand_level[idx]);
 
     w.tally_len = 0;
     w.tally_step = 0;
@@ -190,6 +198,7 @@ void score(World& w) {
         if (counts[s] > 0) distinct++;
         if (counts[s] >= 2) pairs++;
     }
+    w.group_count = hand_groups(w.landed, w.group_of);
 
     for (int j = 0; j < w.joker_count; j++) {
         uint8_t which = w.jokers[j];
@@ -260,6 +269,8 @@ void start_spin(World& w) {
     w.tally_step = 0;
     w.msg = nullptr;
     w.spin_ticks = 0;
+    w.group_count = 0;
+    for (int d = 0; d < k_drums; d++) w.group_of[d] = k_no_group;
 }
 
 bool stop_next(World& w) {
@@ -312,6 +323,16 @@ void next_ante(World& w) {
 int symbol_chips(uint8_t s) { return k_symbols_table[s % k_symbols].chips; }
 const char* symbol_name(uint8_t s) { return k_symbols_table[s % k_symbols].name; }
 const char* hand_name(uint8_t h) { return k_hands_table[h % k_hands].name; }
+
+int hand_chips(uint8_t h, int level) {
+    const HandDef& d = k_hands_table[h % k_hands];
+    return d.chips + d.per_chips * (level - 1);
+}
+
+int hand_mult(uint8_t h, int level) {
+    const HandDef& d = k_hands_table[h % k_hands];
+    return d.mult + d.per_mult * (level - 1);
+}
 int speed_rate(uint8_t s) { return k_speeds_table[s % k_speeds].rate; }
 int speed_mult(uint8_t s) { return k_speeds_table[s % k_speeds].mult; }
 int speed_blur(uint8_t s) { return k_speeds_table[s % k_speeds].blur; }
@@ -357,18 +378,90 @@ int32_t target_for_ante(int ante) {
     return target;
 }
 
-uint8_t hand_of(const uint8_t landed[k_drums]) {
-    const uint8_t a = landed[0], b = landed[1], c = landed[2];
-    if (a == b && b == c) return kThree;
-    uint8_t s[3] = {a, b, c};
-    for (int i = 0; i < 2; i++) {
-        for (int j = i + 1; j < 3; j++) {
-            if (s[j] < s[i]) { const uint8_t t = s[i]; s[i] = s[j]; s[j] = t; }
+namespace {
+
+// Counts per symbol, and the two most common symbols. Everything a five reel
+// hand needs comes out of this.
+struct Tally5 {
+    int count[k_symbols];
+    int best;        // most common symbol
+    int best_n;
+    int second;      // next most common that also repeats, or -1
+    int second_n;
+    int distinct;
+};
+
+Tally5 tally_of(const uint8_t landed[k_drums]) {
+    Tally5 t{};
+    for (int s = 0; s < k_symbols; s++) t.count[s] = 0;
+    for (int d = 0; d < k_drums; d++) t.count[landed[d]]++;
+    t.best = -1; t.best_n = 0; t.second = -1; t.second_n = 0; t.distinct = 0;
+    for (int s = 0; s < k_symbols; s++) {
+        if (t.count[s] > 0) t.distinct++;
+        if (t.count[s] > t.best_n) {
+            t.second = t.best; t.second_n = t.best_n;
+            t.best = s; t.best_n = t.count[s];
+        } else if (t.count[s] > t.second_n) {
+            t.second = s; t.second_n = t.count[s];
         }
     }
-    if (s[1] == s[0] + 1 && s[2] == s[1] + 1) return kRun;
-    if (a == b || b == c || a == c) return kPair;
+    return t;
+}
+
+// Five consecutive symbols in any order, which is what a run is on a reel
+// whose symbols are ranked by what they are worth.
+bool is_run(const Tally5& t) {
+    if (t.distinct != k_drums) return false;
+    int lowest = -1, highest = -1;
+    for (int s = 0; s < k_symbols; s++) {
+        if (t.count[s] == 0) continue;
+        if (lowest < 0) lowest = s;
+        highest = s;
+    }
+    return highest - lowest == k_drums - 1;
+}
+
+}  // namespace
+
+uint8_t hand_of(const uint8_t landed[k_drums]) {
+    const Tally5 t = tally_of(landed);
+    if (t.best_n == 5) return kFive;
+    if (t.best_n == 4) return kFour;
+    if (t.best_n == 3 && t.second_n == 2) return kFullHouse;
+    if (is_run(t)) return kRun;
+    if (t.best_n == 3) return kThree;
+    if (t.best_n == 2 && t.second_n == 2) return kTwoPair;
+    if (t.best_n == 2) return kPair;
     return kNothing;
+}
+
+uint8_t hand_groups(const uint8_t landed[k_drums], uint8_t groups[k_drums]) {
+    for (int d = 0; d < k_drums; d++) groups[d] = k_no_group;
+    const Tally5 t = tally_of(landed);
+    const uint8_t hand = hand_of(landed);
+
+    if (hand == kNothing) return 0;
+
+    // A run is one group of five, because the whole line is the hand. Every
+    // other shape is one or two groups of matching symbols, and the line is
+    // drawn through the reels that actually repeat.
+    if (hand == kRun) {
+        for (int d = 0; d < k_drums; d++) groups[d] = 0;
+        return 1;
+    }
+
+    uint8_t count = 0;
+    for (int d = 0; d < k_drums; d++) {
+        if (t.best >= 0 && landed[d] == t.best && t.best_n >= 2) groups[d] = 0;
+    }
+    if (t.best_n >= 2) count = 1;
+    if (t.second_n >= 2 && count < k_max_groups) {
+        for (int d = 0; d < k_drums; d++) {
+            if (landed[d] == t.second) groups[d] = count;
+        }
+        count++;
+    }
+    return count;
 }
 
 void world_open_shop(World& w) {
@@ -399,7 +492,11 @@ void world_open_shop(World& w) {
     {
         ShopItem& item = w.shop[w.shop_len++];
         item.kind = kShopHand;
-        item.which = static_cast<uint8_t>(random_below(w, 3));
+        // Offered from the shapes a player actually lands, not from the whole
+        // ladder. A level in FIVE OF A KIND is a level in a hand most runs
+        // never see, so it reads as a wasted slot rather than as a choice.
+        static const uint8_t k_offerable[] = {kThree, kTwoPair, kPair, kNothing};
+        item.which = k_offerable[random_below(w, 4)];
         item.cost = 5;
         item.sold = false;
     }
@@ -457,7 +554,21 @@ void world_tick(World& w, const Buttons& btn) {
                 w.angle[d] += 5 + d;
                 refresh_facets(w, d);
             }
-            if (btn.any) { w.state = kIdle; for (int d = 0; d < k_drums; d++) snap_drum(w, d); }
+            if (btn.any) {
+                w.state = kLearn;
+                w.learn_page = 0;
+                for (int d = 0; d < k_drums; d++) snap_drum(w, d);
+            }
+            return;
+        }
+
+        case kLearn: {
+            // Any button turns the page, and the last page starts the run.
+            // Nothing on screen names a button, so no press is the wrong one.
+            if (btn.any) {
+                w.learn_page++;
+                if (w.learn_page >= k_learn_pages) w.state = kIdle;
+            }
             return;
         }
 
@@ -504,6 +615,10 @@ void world_tick(World& w, const Buttons& btn) {
         case kIdle: {
             if (btn.up) w.speed = static_cast<uint8_t>(w.speed + 1 < k_speeds ? w.speed + 1 : k_speeds - 1);
             if (btn.down) w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
+            // The hand table again, for the moment a player wants to know what
+            // they are aiming at. B is the only button here with nothing else
+            // to do between spins.
+            if (btn.b) { w.state = kLearn; w.learn_page = 1; }
             if (btn.a) start_spin(w);
             return;
         }

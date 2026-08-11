@@ -38,7 +38,10 @@ const pse::Texture k_textures[jr::k_symbols] = {
     models::jokerreels::diamond, models::jokerreels::crown,
 };
 
-const float k_drum_x[jr::k_drums] = {-k_drum_gap, 0.0f, k_drum_gap};
+const float k_drum_x[jr::k_drums] = {
+    -2.0f * k_drum_gap, -k_drum_gap, 0.0f, k_drum_gap, 2.0f * k_drum_gap,
+};
+
 
 // Palette, matching the mockup and the gallery's own colours. RGB triples
 // rather than indices because the engine takes colours, not a palette.
@@ -57,6 +60,12 @@ constexpr Rgb k_select      = {0xFF, 0xEC, 0x27};
 constexpr Rgb k_paper       = {0xFF, 0xF1, 0xE8};
 constexpr Rgb k_chip        = {0x29, 0xAD, 0xFF};
 constexpr Rgb k_mult        = {0xFF, 0x00, 0x4D};
+
+// One colour per match group, so two pairs read as two lines and not as one
+// puzzle. Both are already on the panel, so nothing new has to be learned.
+constexpr Rgb k_group_colour[jr::k_max_groups] = {
+    {0xFF, 0xA3, 0x00}, {0x29, 0xAD, 0xFF},
+};
 // One colour, not two. Banding the facets light and dark was meant to sell the
 // motion and does the opposite twice over: in a still frame only two bands are
 // ever visible, so it reads as a dark hole with a lip, and in motion at 100 Hz
@@ -192,6 +201,54 @@ const char* short_name(const char* name, int chars) {
     return g_line;
 }
 
+/* The lines that say WHY a hand scored.
+ *
+ * A tally line says PAIR and a number. It does not say which two reels paired,
+ * and on five reels that is the whole question: a player who cannot see why
+ * they scored cannot aim at scoring more. So each group of matching symbols
+ * gets a line drawn through the reels that made it, with a marker on each one.
+ *
+ * Drawn over the reels rather than under them, because that is what a payline
+ * is, and one pixel of line across a 42 px symbol costs nothing to read.
+ */
+void draw_match_lines(const jr::World& world, const pse::RenderTarget& screen) {
+    if (world.group_count == 0) return;
+    const int mid = k_window_h / 2;
+
+    for (int g = 0; g < world.group_count && g < jr::k_max_groups; g++) {
+        // Two groups sit either side of the payline so they cannot be mistaken
+        // for one line with a gap in it.
+        const int y = world.group_count == 1 ? mid
+                                             : mid + (g == 0 ? -9 : 9);
+        const Rgb c = k_group_colour[g];
+
+        int first = -1, last = -1;
+        for (int d = 0; d < jr::k_drums; d++) {
+            if (world.group_of[d] != g) continue;
+            if (first < 0) first = d;
+            last = d;
+        }
+        if (first < 0) continue;
+
+        int fl, fr, ll, lr;
+        drum_window(first, fl, fr);
+        drum_window(last, ll, lr);
+        hline(screen, (fl + fr) / 2, (ll + lr) / 2, y, c);
+
+        // A marker on each reel in the group. The line alone runs straight
+        // past a reel that is not in it, which on TWO PAIR is exactly the
+        // reel a player is asking about.
+        for (int d = 0; d < jr::k_drums; d++) {
+            if (world.group_of[d] != g) continue;
+            int l, r;
+            drum_window(d, l, r);
+            const int cx = (l + r) / 2;
+            fill(screen, cx - 3, y - 3, cx + 3, y + 3, c);
+            fill(screen, cx - 1, y - 1, cx + 1, y + 1, k_ink);
+        }
+    }
+}
+
 void render_title_panel(const jr::World& w, const pse::RenderTarget& s);
 void render_swap_panel(const jr::World& w, const pse::RenderTarget& s);
 
@@ -262,7 +319,7 @@ void draw_drums(const jr::World& world) {
  * work, and it costs no geometry at all.
  */
 void draw_bezel(const pse::RenderTarget& screen) {
-    int bars[8];
+    int bars[2 * (jr::k_drums + 1)];
     int n = 0;
     int left, right;
     bars[n++] = 0;
@@ -353,6 +410,110 @@ void drum_window(int drum, int& left, int& right) {
     right = static_cast<int>(centre + half * scale + 0.5f);
 }
 
+/* How to play, and how a hand becomes a score.
+ *
+ * Rule 9 keeps text off the screen by default and says in as many words that
+ * an explicit request for more text wins. This is that request, and it is a
+ * fair one: a scoring system nobody can see is not sparse, it is opaque. Three
+ * pages, shown once on the way out of the title and reachable again from
+ * between spins, which is the moment a player wants to know what they are
+ * aiming at.
+ *
+ * Any button turns the page. Nothing on screen names one, so no press is the
+ * wrong guess, which is the half of rule 9 that still applies.
+ */
+void render_learn(const jr::World& w, const pse::RenderTarget& s) {
+    fill(s, 0, 0, k_screen_w - 1, k_screen_h - 1, k_ink);
+    fill(s, 0, 0, k_screen_w - 1, 22, k_panel);
+    hline(s, 0, k_screen_w - 1, 23, k_dim);
+
+    const int page = w.learn_page < jr::k_learn_pages ? w.learn_page : 0;
+
+    if (page == 0) {
+        text_centred(s, "HOW TO SCORE", k_screen_w / 2, 8, k_paper);
+        text(s, "FIVE REELS STOP ON FIVE SYMBOLS.", 8, 34, k_paper);
+        text(s, "WHAT THEY MAKE IS A HAND.", 8, 46, k_paper);
+
+        text(s, "A HAND IS CHIPS AND A MULT.", 8, 68, k_dim);
+        // The worked example, using the hand a player lands most.
+        fill(s, 8, 82, k_screen_w - 9, 118, k_panel);
+        pse::draw_rect(s, 8, 82, k_screen_w - 16, 37, k_dim.r, k_dim.g,
+                       k_dim.b);
+        text(s, "TWO PAIR", 14, 88, k_select);
+        // Laid out left to right by measuring each piece as it is placed. The
+        // first version positioned the CHIPS label at the width of the literal
+        // "45", which is correct for exactly one value of one hand at one
+        // level, and every one of those three can change.
+        {
+            const int level = w.hand_level[jr::kTwoPair];
+            const int chips = jr::hand_chips(jr::kTwoPair, level);
+            const int mult = jr::hand_mult(jr::kTwoPair, level);
+            int x = 14;
+            text(s, num_line("", chips, ""), x, 102, k_chip);
+            x += pse::text_width(g_line) + 5;
+            text(s, "CHIPS", x, 102, k_dim);
+            x += pse::text_width("CHIPS") + 7;
+            text(s, "X", x, 102, k_paper);
+            x += pse::text_width("X") + 7;
+            text(s, num_line("", mult, ""), x, 102, k_mult);
+            x += pse::text_width(g_line) + 5;
+            text(s, "MULT", x, 102, k_dim);
+            text_right(s, num_line("", chips * mult, ""), k_screen_w - 16, 102,
+                       k_payline);
+        }
+
+        text(s, "EACH SYMBOL ADDS ITS OWN CHIPS", 8, 132, k_dim);
+        text(s, "WHILE THE HAND COUNTS.", 8, 144, k_dim);
+        text(s, "BANK THE ANTE'S TARGET IN", 8, 168, k_paper);
+        text(s, "FIVE SPINS, EIGHT TIMES OVER.", 8, 180, k_paper);
+    } else if (page == 1) {
+        text_centred(s, "HANDS", k_screen_w / 2, 8, k_paper);
+        text_right(s, "CHIPS   MULT", k_screen_w - 8, 8, k_dim);
+        for (int h = 0; h < jr::k_hands; h++) {
+            const int y = 32 + h * 25;
+            const uint8_t which = static_cast<uint8_t>(h);
+            const int level = w.hand_level[h];
+            fill(s, 6, y, k_screen_w - 7, y + 21, (h & 1) ? k_ink : k_panel);
+            text(s, jr::hand_name(which), 10, y + 3, k_paper);
+            if (level > 1) {
+                text(s, num_line("LV", level, ""), 10, y + 13, k_good);
+            }
+            text_right(s, num_line("", jr::hand_chips(which, level), ""), 194,
+                       y + 8, k_chip);
+            text_right(s, num_line("", jr::hand_mult(which, level), ""),
+                       k_screen_w - 10, y + 8, k_mult);
+        }
+    } else {
+        text_centred(s, "THE DIAL AND THE JOKERS", k_screen_w / 2, 8, k_paper);
+        text(s, "THE SPEED DIAL IS THE RISK.", 8, 34, k_paper);
+        for (int i = 0; i < jr::k_speeds; i++) {
+            const int y = 52 + i * 16;
+            const uint8_t which = static_cast<uint8_t>(i);
+            fill(s, 8, y, 50, y + 12, k_panel);
+            text_centred(s, jr::speed_name(which), 29, y + 3, k_paper);
+            const int m = jr::speed_mult(which);
+            text(s, m > 0 ? num_line("+", m, " MULT A REEL YOU STOP")
+                          : "READABLE, AND WORTH NOTHING",
+                 58, y + 3, m > 0 ? k_payline : k_good);
+        }
+        text(s, "STOPPING A REEL IS OPTIONAL.", 8, 112, k_dim);
+        text(s, "LEAVE THEM AND THEY STOP", 8, 124, k_dim);
+        text(s, "THEMSELVES, FOR NOTHING.", 8, 136, k_dim);
+
+        text(s, "JOKERS FIRE WHILE IT COUNTS.", 8, 160, k_paper);
+        text(s, "OPENING A DRUM CHANGES WHAT", 8, 184, k_paper);
+        text(s, "THAT REEL CAN EVER LAND ON.", 8, 196, k_paper);
+    }
+
+    // Which page, as dots. Three characters of text would say the same thing
+    // and take a line to do it.
+    for (int i = 0; i < jr::k_learn_pages; i++) {
+        const int cx = k_screen_w / 2 - (jr::k_learn_pages - 1) * 5 + i * 10;
+        const Rgb c = i == page ? k_paper : k_dim;
+        fill(s, cx - 2, k_screen_h - 10, cx + 2, k_screen_h - 6, c);
+    }
+}
+
 const Stats& stats() { return g_stats; }
 
 // Six characters, which is 35 px of a 39 px slot. Truncated rather than
@@ -400,6 +561,7 @@ void render_machine(const jr::World& world, const pse::RenderTarget& screen) {
     g_stats.dropped = g_queue.dropped;
 
     draw_bezel(screen);
+    draw_match_lines(world, screen);
     if (world.flash > 0) {
         pse::draw_rect(screen, 0, 0, k_screen_w, k_window_h, 255, 255, 255);
     }
@@ -574,6 +736,7 @@ void render_end(const jr::World& world, const pse::RenderTarget& screen) {
 // One entry point, so game.cpp is input and a call. Which screen is showing is
 // a rendering decision and it belongs on this side of the line.
 void render_frame(const jr::World& world, const pse::RenderTarget& screen) {
+    if (world.state == jr::kLearn) { render_learn(world, screen); return; }
     if (world.state == jr::kShop) { render_shop(world, screen); return; }
     if (world.state == jr::kOver || world.state == jr::kWin) {
         render_end(world, screen);

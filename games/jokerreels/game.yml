@@ -2,12 +2,12 @@
 
 slug: jokerreels
 title: Joker Reels
-blurb: A 3D slot machine you build a deck for.
+blurb: Five 3D reels, poker hands, and a deck you build.
 target: jokerreels
 sdk: 32blit
 web: true
 
-objective: "Three drums, eight antes, five spins each. Pull, and stop the reels yourself if you dare: the faster they are turning the harder the symbol is to read and the more the stop is worth. What the reels land on makes a hand, the hand is counted as chips times a multiplier, and your jokers fire while it counts. Clear the ante's target and the back room sells you jokers, hand levels, and the thing the run is really about: opening a drum and changing what it is able to land on at all."
+objective: "Five reels, eight antes, five spins each. Pull, and stop the reels yourself if you dare: the faster they are turning the harder the symbol is to read and the more the stop is worth. What the five reels land on makes a hand, from a pair up to five of a kind, and the game draws a line through the reels that made it. The hand is counted as chips times a multiplier and your jokers fire while it counts. Clear the ante's target and the back room sells you jokers, hand levels, and the thing the run is really about: opening a reel and changing what it is able to land on at all."
 
 controls:
   - "A: pull, then stop the next drum still turning"
@@ -15,4 +15,4 @@ controls:
   - "down: lower the speed dial"
   - "left: move through the shop, turn an opened drum"
   - "right: move through the shop, turn an opened drum"
-  - "B: next drum, while one is open"
+  - "B: the hand table, between spins. Next reel, while one is open"

@@ -38,10 +38,14 @@ void play(jr::World& w, int ticks) {
     for (int i = 0; i < ticks; i++) jr::world_tick(w, none());
 }
 
+// A world at the table, ready to pull. The opening is the title and then the
+// how to play pages, so getting there is several presses and not one.
 jr::World started(uint32_t seed) {
     jr::World w;
     jr::world_init(w, seed);
-    jr::world_tick(w, press_a());          // leave the title
+    for (int i = 0; i < 2 + jr::k_learn_pages && w.state != jr::kIdle; i++) {
+        jr::world_tick(w, press_a());
+    }
     return w;
 }
 
@@ -238,18 +242,91 @@ void test_stopping_pays_and_costs() {
 }
 
 void test_hands() {
-    const uint8_t three[3] = {jr::kBell, jr::kBell, jr::kBell};
-    const uint8_t run[3] = {jr::kPlum, jr::kCherry, jr::kBell};
-    const uint8_t pair[3] = {jr::kBell, jr::kBell, jr::kCrown};
-    const uint8_t nothing[3] = {jr::kCherry, jr::kBar, jr::kCrown};
-    check(jr::hand_of(three) == jr::kThree, "three of a kind");
-    check(jr::hand_of(run) == jr::kRun, "a run in any order");
-    check(jr::hand_of(pair) == jr::kPair, "a pair");
-    check(jr::hand_of(nothing) == jr::kNothing, "and nothing");
-    // A run has to beat a pair when it is both, which it never is, but the
-    // ordering of the tests is what decides it and that is worth pinning.
-    const uint8_t both[3] = {jr::kCherry, jr::kBell, jr::kPlum};
-    check(jr::hand_of(both) == jr::kRun, "a run is not read as nothing");
+    // Every shape five reels can make, and the reels that made it. The order
+    // the shapes are tested in is the whole of this function's risk: a full
+    // house read as three of a kind scores less and loses the pair, and a run
+    // read as nothing loses everything.
+    struct Case {
+        uint8_t landed[jr::k_drums];
+        uint8_t hand;
+        uint8_t groups;         // how many match lines it should draw
+        const char* what;
+    };
+    const Case cases[] = {
+        {{jr::kBell, jr::kBell, jr::kBell, jr::kBell, jr::kBell},
+         jr::kFive, 1, "five of a kind"},
+        {{jr::kBell, jr::kBell, jr::kCrown, jr::kBell, jr::kBell},
+         jr::kFour, 1, "four of a kind, in any position"},
+        {{jr::kBell, jr::kCrown, jr::kBell, jr::kCrown, jr::kBell},
+         jr::kFullHouse, 2, "a full house is three and a pair"},
+        {{jr::kCherry, jr::kBell, jr::kPlum, jr::kBar, jr::kClover},
+         jr::kRun, 1, "five consecutive symbols"},
+        {{jr::kClover, jr::kBar, jr::kPlum, jr::kBell, jr::kCherry},
+         jr::kRun, 1, "a run in any order"},
+        {{jr::kBell, jr::kBell, jr::kBell, jr::kCrown, jr::kCherry},
+         jr::kThree, 1, "three of a kind"},
+        {{jr::kBell, jr::kBell, jr::kCrown, jr::kCrown, jr::kCherry},
+         jr::kTwoPair, 2, "two pair"},
+        {{jr::kBell, jr::kBell, jr::kCrown, jr::kSeven, jr::kCherry},
+         jr::kPair, 1, "a pair"},
+        {{jr::kCherry, jr::kPlum, jr::kClover, jr::kDiamond, jr::kCrown},
+         jr::kNothing, 0, "and nothing"},
+    };
+
+    for (const Case& c : cases) {
+        const uint8_t hand = jr::hand_of(c.landed);
+        if (hand != c.hand) {
+            std::printf("  %s: got %s, wanted %s\n", c.what,
+                        jr::hand_name(hand), jr::hand_name(c.hand));
+        }
+        check(hand == c.hand, c.what);
+
+        uint8_t groups[jr::k_drums];
+        const uint8_t n = jr::hand_groups(c.landed, groups);
+        check(n == c.groups, "the right number of match lines");
+
+        // A reel is in a group only if it shares its symbol with another reel
+        // in that group, and a run puts every reel in one. Checked against the
+        // landed symbols rather than against hand_groups' own reasoning.
+        for (int d = 0; d < jr::k_drums; d++) {
+            if (groups[d] == jr::k_no_group) continue;
+            check(groups[d] < n, "a group index is one of the groups drawn");
+            if (hand == jr::kRun) continue;
+            int shared = 0;
+            for (int e = 0; e < jr::k_drums; e++) {
+                if (e != d && groups[e] == groups[d] &&
+                    c.landed[e] == c.landed[d]) {
+                    shared++;
+                }
+            }
+            check(shared >= 1, "a reel in a group matches another reel in it");
+        }
+        if (hand == jr::kRun) {
+            int in = 0;
+            for (int d = 0; d < jr::k_drums; d++) {
+                if (groups[d] != jr::k_no_group) in++;
+            }
+            check(in == jr::k_drums, "a run draws through every reel");
+        }
+    }
+
+    // The ladder has to be a ladder: a better shape is worth more, at every
+    // level. Nothing else checks this and a table is exactly where a typo
+    // hides.
+    for (int h = 1; h < jr::k_hands; h++) {
+        for (int level = 1; level <= 3; level++) {
+            const int better = jr::hand_chips(static_cast<uint8_t>(h - 1), level) *
+                               jr::hand_mult(static_cast<uint8_t>(h - 1), level);
+            const int worse = jr::hand_chips(static_cast<uint8_t>(h), level) *
+                              jr::hand_mult(static_cast<uint8_t>(h), level);
+            if (better <= worse) {
+                std::printf("  %s (%d) is not worth more than %s (%d) at LV%d\n",
+                            jr::hand_name(static_cast<uint8_t>(h - 1)), better,
+                            jr::hand_name(static_cast<uint8_t>(h)), worse, level);
+            }
+            check(better > worse, "a better hand is worth more");
+        }
+    }
 }
 
 void test_a_swap_changes_what_a_drum_can_land_on() {
@@ -363,7 +440,9 @@ void test_the_run_is_deterministic() {
 
 void test_the_budget() {
     // A promise about RAM, checked by the compiler rather than by a comment.
-    check(sizeof(jr::World) <= 512, "the whole run is under half a KB");
+    // Five reels rather than three cost 168 bytes: the strips are the bulk of
+    // it, at 24 symbols a reel.
+    check(sizeof(jr::World) <= 768, "the whole run is under three quarters of a KB");
     std::printf("  sizeof(jr::World) = %zu bytes\n", sizeof(jr::World));
 }
 

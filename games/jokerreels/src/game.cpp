@@ -28,7 +28,7 @@ namespace {
 jr::World g_world;
 
 // The run's RAM footprint is a promise, checked by the compiler.
-static_assert(sizeof(jr::World) <= 640, "the run state grew past its budget");
+static_assert(sizeof(jr::World) <= 768, "the run state grew past its budget");
 
 // Any button acts. With nothing on screen naming one, no press can be the
 // wrong guess, which is rule 9's reason for having no button prompts at all.
