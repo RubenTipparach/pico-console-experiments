@@ -69,9 +69,30 @@ So a readable UI costs 1.9x the lores fill rate rather than 4x, and leaves
 100 KB. Whether that is affordable in *time* on a 250 MHz M0+ is not something
 this page can answer and it does not pretend to: config.hpp says plainly that
 nobody has measured the time budget on hardware. What it can say is measured
-and printed on the page: the worst frame of a spin is **112 triangles and 9,730
-pixels shaded**, against a window of 26,880 and a queue that holds 640. The
-scene is one machine and never grows.
+and printed on the page: the worst frame of a spin is **160 triangles and
+20,814 pixels shaded**, against a window of 26,880 and a queue that holds 640.
+The triangle count is nothing. The fill is 77 percent of the window every
+frame, most of it textured, and that is the number that would decide this on
+hardware. It is the first thing to measure with a cycle counter.
+
+## Twelve facets, and a reel strip that can be longer
+
+A drum is a twelve sided prism, so twelve symbols to start. That is also the
+shape that makes a reel look like a reel: a facet is `2 * pi * R / 12` tall, so
+a facet only comes out roughly square if the drum is about four times taller
+than it is wide, which is exactly what a slot reel is. Sizing it any other way
+squashes a square symbol into a colour band, which is what the first attempt at
+this did and what the screenshots showed.
+
+**The strip is not limited to twelve.** What the drum shows is a window of
+twelve consecutive strip entries centred on whichever entry is at the front.
+Turn the drum one facet and the window advances one entry. So the facets being
+repainted are always the ones pointing away from the camera, which are backface
+culled and therefore never seen changing, and a twelve sided prism can present
+a strip of any length. That is how a real machine's virtual reel works, and it
+is the trick that lets a swap add a symbol the drum has no facet for: measured
+on the page, a strip grown from 12 to 16 still reaches all eight symbols as it
+turns, with no seam and no extra geometry.
 
 ## Two things running it found
 
@@ -88,16 +109,18 @@ exactly this bug by listing two of three strings by hand.
 
 ## How it maps to the engine
 
-- The drums are 8 quads each plus two end fans, and the cabinet is 3 quads and
-  6 divider faces. All of it is `pse::Renderer3D::draw_mesh` work, and rule 11
-  says the drum and the cabinet should be `.obj` files rather than emitted in
-  source.
-- **The symbol is a screen space sprite, not a texture.** The engine has
-  perspective correct texturing and it would work, but only the face at the
-  front of a drum is ever read, and at the front it is nearly flat on to the
-  camera. One pip drawn at the projected centre of the front face, squashed by
-  how far that face has turned, reads the same and costs nothing per pixel.
-  Those pips want to be a real PNG sheet through `add_sprite`.
+- The drums are 12 facets each plus two end fans, and the cabinet is a back
+  panel, a floor and two dividers. All of it is `pse::Renderer3D::draw_mesh`
+  work, and rule 11 says the drum and the cabinet should be `.obj` files rather
+  than emitted in source.
+- **The symbols are textures on the drum faces.** 16x16, power of two, which is
+  what `pse::Texture` wants: sampling is a shift and a mask, so wrapping is
+  free and there is no divide near the inner loop. A transparent texel leaves
+  the drum face showing through, so a symbol reads as printed on the drum, and
+  the texel multiplies the face's lambert so it is lit by the same light the
+  drum is. Eight of them is 6 KB of flash, and they want to be real PNGs
+  through `add_texture` rather than the tables this page carries to stay one
+  file.
 - The panel is `pse::draw2d` and `pse::draw_text`, the same 2D set the two cart
   demakes use.
 - Game state is under 200 bytes: three rings of eight, five joker indices, four

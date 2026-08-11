@@ -106,11 +106,19 @@ and argued about before anyone writes C++, which is CLAUDE.md rule 10.</p>
       one line at a time: the hand, then each symbol, then each stop bonus,
       then each joker in order. Watching one number climb is the feel being
       borrowed, and a single total would throw it away.</li>
-  <li><b>Opening a drum is the deckbuilding.</b> Each drum is a ring of eight
-      faces, and buying a swap lets you replace one. Put a CROWN on and that
-      drum can land on a crown for ever; the symbol you replaced is gone from
-      it. That is the run's long arc, and it is the one screen where the 3D is
-      doing work a 2D layout could not.</li>
+  <li><b>Opening a drum is the deckbuilding.</b> Each drum starts with a strip
+      of twelve symbols, and buying a swap lets you replace one. Put a CROWN on
+      and that drum can land on a crown for ever; the symbol you replaced is
+      gone from it. That is the run's long arc, and it is the one screen where
+      the 3D is doing work a 2D layout could not.</li>
+  <li><b>The symbols are textures on the drum,</b> not sprites stuck in front
+      of it. Sixteen by sixteen, power of two, which is what
+      <code>pse::Texture</code> wants: sampling is a shift and a mask so
+      wrapping is free and there is no divide near the inner loop. A
+      transparent texel leaves the drum face showing through, so a symbol
+      reads as printed on the drum rather than floating over it, and the texel
+      multiplies the face's lambert so it is lit by the same light the drum
+      is.</li>
 </ul>
 
 <h2>WHAT IS ON SCREEN, AND WHY</h2>
@@ -168,16 +176,21 @@ small, because the scene is one machine and never grows.</p>
 <h2>WHAT IT COSTS</h2>
 <p class="note" id="perf"></p>
 <ul>
-  <li><b>The scene is 3 drums of 8 faces, 2 end fans each, and 3 cabinet
-      quads.</b> 27 quads of 2 triangles is 54 triangles plus 48 fan triangles,
-      against a queue that holds 640. There is no world to stream and no LOD to
-      pick.</li>
-  <li><b>The symbol is a screen space sprite, not a texture.</b> The engine has
-      perspective correct texturing and it would work, but only the face at the
-      front of a drum is ever read, and at the front it is nearly flat on to
-      the camera. One 5x5 pip drawn at the projected centre of the front face,
-      squashed by how far that face has turned, reads the same and costs
-      nothing per pixel.</li>
+  <li><b>The scene is 3 drums of 12 facets, 2 end fans each, and the
+      cabinet.</b> 160 triangles at worst against a queue that holds 640. There
+      is no world to stream and no LOD to pick, and the count does not grow
+      with the run.</li>
+  <li><b>The fill is the thing to watch, not the triangle count.</b> 20,814
+      pixels of a 26,880 pixel window, and most of them textured. Textured
+      pixels only cost multiplies here, because the barycentrics and the
+      perspective corrected depth are computed anyway, which is the argument
+      <code>engine/include/pse/texture.hpp</code> makes for having textures at
+      all. But 77 percent of the window covered every frame is the number that
+      would decide this on hardware, and it is the number to measure first.</li>
+  <li><b>Eight textures of 16x16 at three bytes a texel is 6 KB of flash.</b>
+      They want to be real PNGs through <code>add_texture</code>, not tables in
+      source (rule 11). They are written into this page only so it stays one
+      file.</li>
   <li><b>Game state is tiny:</b> three rings of eight bytes, five joker
       indices, four hand levels, and a tally of at most a dozen entries. Under
       200 bytes.</li>
@@ -185,6 +198,25 @@ small, because the scene is one machine and never grows.</p>
       is the one thing this page has not designed and would want real PNGs for
       (rule 11 as it now applies to sprites).</li>
 </ul>
+
+<h2>TWELVE FACETS, AND A REEL STRIP THAT CAN BE LONGER</h2>
+<p class="note">A drum is a twelve sided prism, so it has twelve faces to put
+symbols on. That is the floor you asked for and it is also the shape that makes
+a reel look like a reel: a facet is <code>2 * pi * R / 12</code> tall, so a
+facet only comes out roughly square if the drum is about four times taller than
+it is wide, which is exactly what a slot reel is. Sizing it any other way
+squashes a square symbol into a colour band, which is what the first attempt
+did.</p>
+<p class="note"><b>The strip is not limited to twelve.</b> What the drum shows
+is a window of twelve consecutive strip entries centred on whichever entry is
+at the front. Turn the drum one facet and the window advances one entry. So the
+facets being repainted are always the ones pointing away from the camera, which
+are backface culled and therefore never seen changing, and a twelve sided prism
+can present a strip of any length. That is how a real machine's virtual reel
+works, and it is the visual trick that lets a swap add a symbol the drum has no
+facet for: measured on this page, a strip grown from 12 to 16 still reaches
+every one of the eight symbols as it turns, with no seam and no extra
+geometry.</p>
 
 <h2>OPEN QUESTIONS</h2>
 <ul>
@@ -488,7 +520,7 @@ const DEPTH = new Uint8Array(VIEW_W * VIEW_H);
 // without pretending to reproduce the exact rounding.
 const K_FIXED_ONE = 1024;
 
-let cam = {x: 0, y: 1.5, z: -44, yaw: 0, pitch: -0.06, fov: 52};
+let cam = {x: 0, y: 0, z: -46, yaw: 0, pitch: -0.03, fov: 52};
 
 function clearDepth() { DEPTH.fill(0xFF); }
 
@@ -607,6 +639,86 @@ function tri3(p0, p1, p2, base) {
     TRI_COUNT += 1;
     FILL_COUNT += triangle(a, b, c, col);
 }
+
+/* A textured quad, perspective correct, the way pse::Rasterizer's draw_typed
+ * is. The texel MULTIPLIES the face's lambert rather than replacing it, so a
+ * symbol is lit by the same light the drum is, which is what the engine's
+ * texture.hpp insists on and what stops a symbol looking stuck on.
+ *
+ * A transparent texel leaves the drum face showing through, which is how the
+ * symbol reads as printed on the drum.
+ */
+function psetShaded(x, y, rgb, lit) {
+    const r = (rgb[0] * lit) | 0, g = (rgb[1] * lit) | 0, b = (rgb[2] * lit) | 0;
+    FB[y * W + x] = (255 << 24) | ((b & 0xF8) << 16) | ((g & 0xFC) << 8) | (r & 0xF8);
+}
+
+function triangleTex(a, b, c, uv, tex, lit, faceRgb) {
+    const area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+    if (area <= 0) return 0;
+    let minx = Math.max(0, Math.floor(Math.min(a.x, b.x, c.x)));
+    let maxx = Math.min(VIEW_W - 1, Math.ceil(Math.max(a.x, b.x, c.x)));
+    let miny = Math.max(0, Math.floor(Math.min(a.y, b.y, c.y)));
+    let maxy = Math.min(VIEW_H - 1, Math.ceil(Math.max(a.y, b.y, c.y)));
+    if (minx > maxx || miny > maxy) return 0;
+
+    const za = depthByte(a.z), zb = depthByte(b.z), zc = depthByte(c.z);
+    const ia = 1 / a.z, ib = 1 / b.z, ic = 1 / c.z;
+    const ua = uv[0] * ia, ub = uv[2] * ib, uc = uv[4] * ic;
+    const va = uv[1] * ia, vb = uv[3] * ib, vc = uv[5] * ic;
+    const inv = 1 / area;
+    let filled = 0;
+    for (let y = miny; y <= maxy; y++) {
+        for (let x = minx; x <= maxx; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            const w0 = (b.x - a.x) * (py - a.y) - (px - a.x) * (b.y - a.y);
+            const w1 = (c.x - b.x) * (py - b.y) - (px - b.x) * (c.y - b.y);
+            const w2 = (a.x - c.x) * (py - c.y) - (px - c.x) * (a.y - c.y);
+            if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+            const l0 = w1 * inv, l1 = w2 * inv, l2 = w0 * inv;
+            const d = (za * l0 + zb * l1 + zc * l2) | 0;
+            const di = y * VIEW_W + x;
+            if (d >= DEPTH[di]) continue;
+            const iz = ia * l0 + ib * l1 + ic * l2;
+            let u = (ua * l0 + ub * l1 + uc * l2) / iz;
+            let v = (va * l0 + vb * l1 + vc * l2) / iz;
+            u = ((u * TEX_SIZE) | 0) & (TEX_SIZE - 1);
+            v = ((v * TEX_SIZE) | 0) & (TEX_SIZE - 1);
+            const ti = (v * TEX_SIZE + u) * 4;
+            DEPTH[di] = d;
+            if (tex[ti + 3] === 0) psetShaded(x, y, faceRgb, lit);
+            else psetTexel(x, y, tex, ti, lit);
+            filled++;
+        }
+    }
+    return filled;
+}
+function psetTexel(x, y, t, i, lit) {
+    const r = (t[i] * lit) | 0, g = (t[i + 1] * lit) | 0, b = (t[i + 2] * lit) | 0;
+    FB[y * W + x] = (255 << 24) | ((b & 0xF8) << 16) | ((g & 0xFC) << 8) | (r & 0xF8);
+}
+
+// Lambert for a face, as a plain factor rather than a palette step, because a
+// textured face needs to modulate a texel rather than pick a colour.
+function litFactor(p0, p1, p3) {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p3[0] - p0[0], vy = p3[1] - p0[1], vz = p3[2] - p0[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    let d = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+    if (d < 0) d = 0;
+    return 0.45 + 0.55 * d;
+}
+
+function texQuad(p0, p1, p2, p3, tex, faceRgb) {
+    const lit = litFactor(p0, p1, p3);
+    const a = project(p0), b = project(p1), c = project(p2), d = project(p3);
+    if (!a || !b || !c || !d) return;
+    TRI_COUNT += 2;
+    FILL_COUNT += triangleTex(a, b, c, [0, 0, 1, 0, 1, 1], tex, lit, faceRgb);
+    FILL_COUNT += triangleTex(a, c, d, [0, 0, 1, 1, 0, 1], tex, lit, faceRgb);
+}
 /* ------------------------------------------------------------------ *
  * Joker Reels: the rules.
  *
@@ -626,7 +738,18 @@ const SYMBOLS = [
     {name: 'DIAMOND', chips: 55, col: 12, face: 6},
     {name: 'CROWN',   chips: 75, col: 14, face: 7},
 ];
-const FACES_PER_DRUM = 8;
+// Twelve physical facets on the drum, and a REEL STRIP that can be longer.
+//
+// The drum is a 12 sided prism, but what it shows is a window of twelve
+// consecutive strip entries centred on whichever face is at the front. Turn
+// the drum one facet and the window advances one entry. So a 12 sided prism
+// presents a strip of any length, and the faces being repainted are always the
+// ones pointing away from the camera, which are backface culled and therefore
+// unseen. That is how a real slot machine's virtual reel works, and it is what
+// lets a swap add a symbol the drum has no facet for.
+const FACES_PER_DRUM = 12;
+const STRIP_START = 12;         // symbols on a drum at the start of a run
+const STRIP_MAX = 24;
 const DRUMS = 3;
 
 // Hands, in the Balatro sense: what the three landed symbols make. Each has a
@@ -697,24 +820,35 @@ function newGame(seed) {
         msg: '', flash: 0,
     };
     for (let d = 0; d < DRUMS; d++) {
-        const ring = [];
-        for (let i = 0; i < FACES_PER_DRUM; i++) {
-            // Opening drums are weighted low: the good symbols are things you
+        const strip = [];
+        for (let i = 0; i < STRIP_START; i++) {
+            // Opening strips are weighted low: the good symbols are things you
             // put on later, which is what makes swapping a face feel like a
             // purchase rather than a shuffle.
-            ring.push(Math.min(5, (i % 6) + ((g.rnd() < 0.25) ? 1 : 0)));
+            strip.push(Math.min(5, (i % 6) + ((g.rnd() < 0.3) ? 1 : 0)));
         }
-        g.drums.push(ring);
+        g.drums.push(strip);
     }
     return g;
 }
 
-function faceAt(g, drum, angle) {
-    // Which face is at the front of the drum, given its rotation.
+// Which strip entry is at the front of the drum, given its rotation. The
+// strip is what the drum can land on; the twelve facets are only how much of
+// it is on screen at once.
+function frontIndex(g, drum, angle) {
     const step = (Math.PI * 2) / FACES_PER_DRUM;
-    let i = Math.round(angle / step) % FACES_PER_DRUM;
-    if (i < 0) i += FACES_PER_DRUM;
-    return g.drums[drum][(FACES_PER_DRUM - i) % FACES_PER_DRUM];
+    const n = g.drums[drum].length;
+    let i = Math.round(-angle / step) % n;
+    if (i < 0) i += n;
+    return i;
+}
+function faceAt(g, drum, angle) {
+    return g.drums[drum][frontIndex(g, drum, angle)];
+}
+// The strip entry shown on the facet `offset` steps round from the front.
+function stripAt(g, drum, angle, offset) {
+    const n = g.drums[drum].length;
+    return g.drums[drum][((frontIndex(g, drum, angle) + offset) % n + n) % n];
 }
 
 function startSpin(g) {
@@ -976,11 +1110,13 @@ function tick(g, btn) {
 
     if (g.state === 'swap') {
         // Turn the drum to the face you want, then pick what goes on it.
-        if (btn.left) g.swapFace = (g.swapFace + FACES_PER_DRUM - 1) % FACES_PER_DRUM;
-        if (btn.right) g.swapFace = (g.swapFace + 1) % FACES_PER_DRUM;
+        const stripLen = g.drums[g.swapDrum].length;
+        if (btn.left) g.swapFace = (g.swapFace + stripLen - 1) % stripLen;
+        if (btn.right) g.swapFace = (g.swapFace + 1) % stripLen;
         if (btn.up) g.swapTo = Math.min(SYMBOLS.length - 1, g.swapTo + 1);
         if (btn.down) g.swapTo = Math.max(0, g.swapTo - 1);
-        if (btn.b) g.swapDrum = (g.swapDrum + 1) % DRUMS;
+        if (btn.b) { g.swapDrum = (g.swapDrum + 1) % DRUMS;
+                     g.swapFace = g.swapFace % g.drums[g.swapDrum].length; }
         const step = (Math.PI * 2) / FACES_PER_DRUM;
         g.angle[g.swapDrum] += ((-g.swapFace * step) - g.angle[g.swapDrum]) * 0.2;
         if (btn.a) {
@@ -999,6 +1135,86 @@ function tick(g, btn) {
         return;
     }
 }
+/* ------------------------------------------------------------------ *
+ * Symbol textures.
+ *
+ * 16x16 each, which is what pse::Texture wants: power of two, so sampling is
+ * a shift and a mask and wrapping is free. In the real build these are PNGs
+ * through add_texture and png2cpp, not tables in source (rule 11). They are
+ * written here so the page is one file.
+ *
+ * '.' is the drum face itself showing through, which is what makes a symbol
+ * look printed on the drum rather than stuck to it.
+ * ------------------------------------------------------------------ */
+const TEX_SIZE = 16;
+const TEX_ART = {
+CHERRY: [
+'................','.......gg.......','......gg........','.....gg....k....',
+'....gg....kkk...','...gg....kkkkk..','..rrrr..kkkkkkk.','.rrrrrr..kkkkk..',
+'rrrrrrrr..kkk...','rrrrrrrr...k....','rrrrrrrr........','.rrrrrr.........',
+'..rrrr..........','................','................','................'],
+BELL: [
+'................','......ww........','.....wwww.......','....wwwwww......',
+'...wwwwwwww.....','...wwwwwwww.....','..wwwwwwwwww....','..wwwwwwwwww....',
+'.wwwwwwwwwwww...','.wwwwwwwwwwww...','wwwwwwwwwwwwww..','................',
+'....wwwwwwww....','......wwww......','.......ww.......','................'],
+PLUM: [
+'................','.......gg.......','......gg........','.....pppppp.....',
+'...pppppppppp...','..pppppppppppp..','..pppppppppppp..','.pppppppppppppp.',
+'.pppppppppppppp.','.pppppppppppppp.','..pppppppppppp..','..pppppppppppp..',
+'...pppppppppp...','.....pppppp.....','................','................'],
+BAR: [
+'................','................','wwwwwwwwwwwwwww.','wbbbbbbbbbbbbbw.',
+'wbwwwwwwwwwwwbw.','wbwbbbbbbbbbwbw.','wbwbwwwwwwwbwbw.','wbwbwbbbbbwbwbw.',
+'wbwbwwwwwwwbwbw.','wbwbbbbbbbbbwbw.','wbwwwwwwwwwwwbw.','wbbbbbbbbbbbbbw.',
+'wwwwwwwwwwwwwww.','................','................','................'],
+CLOVER: [
+'................','.....gg..gg.....','....gggggggg....','...gggggggggg...',
+'...gggggggggg...','....gggggggg....','..gg..gggg..gg..','.gggg.gggg.gggg.',
+'.gggggggggggggg.','..gggggggggggg..','....gggggggg....','......ggg.......',
+'.......gg.......','......ggg.......','................','................'],
+SEVEN: [
+'................','..oooooooooooo..','..oooooooooooo..','..ooooooooooo...',
+'...........oo...','..........oo....','.........oo.....','........oo......',
+'.......ooooo....','......ooooo.....','......oo........','.....oo.........',
+'.....oo.........','....oo..........','................','................'],
+DIAMOND: [
+'................','.......cc.......','......cccc......','.....cccccc.....',
+'....cccccccc....','...cccccccccc...','..cccccccccccc..','.cccccccccccccc.',
+'..cccccccccccc..','...cccccccccc...','....cccccccc....','.....cccccc.....',
+'......cccc......','.......cc.......','................','................'],
+CROWN: [
+'................','................','..y....y....y...','..yy..yyy..yy...',
+'..yy..yyy..yy...','..yyy.yyy.yyy...','..yyyyyyyyyyy...','..yyyyyyyyyyy...',
+'..yyyyyyyyyyy...','..yyryyyryyyy...','..yyyyyyyyyyy...','..yyyyyyyyyyy...',
+'...yyyyyyyyy....','................','................','................'],
+};
+const TEX_COL = {
+    r: [0xFF, 0x00, 0x4D], g: [0x00, 0xE4, 0x36], w: [0xFF, 0xF1, 0xE8],
+    p: [0x7E, 0x25, 0x53], b: [0x1D, 0x2B, 0x53], o: [0xFF, 0xA3, 0x00],
+    c: [0x29, 0xAD, 0xFF], y: [0xFF, 0xEC, 0x27], k: [0x00, 0x87, 0x51],
+};
+// The drum face itself, which '.' leaves showing through.
+const FACE_RGB = [[0xC2, 0xC3, 0xC7], [0x9C, 0x9D, 0xA6], [0x6E, 0x6F, 0x78]];
+
+const TEXTURES = (function () {
+    const out = [];
+    for (const sym of SYMBOLS) {
+        const art = TEX_ART[sym.name];
+        const t = new Uint8Array(TEX_SIZE * TEX_SIZE * 4);
+        for (let y = 0; y < TEX_SIZE; y++) {
+            for (let x = 0; x < TEX_SIZE; x++) {
+                const ch = art[y][x];
+                const i = (y * TEX_SIZE + x) * 4;
+                if (ch === '.') { t[i + 3] = 0; continue; }
+                const c = TEX_COL[ch];
+                t[i] = c[0]; t[i + 1] = c[1]; t[i + 2] = c[2]; t[i + 3] = 255;
+            }
+        }
+        out.push(t);
+    }
+    return out;
+})();
 /* ------------------------------------------------------------------ *
  * Drawing. The top 112 rows are 3D, everything below is 2D.
  * ------------------------------------------------------------------ */
@@ -1050,26 +1266,26 @@ function drawPip(sym, cx, cy, flat, col) {
     }
 }
 
-const DRUM_R = 7.6;
-const DRUM_HALF = 4.2;
-const DRUM_X = [-13.4, 0, 13.4];
+const DRUM_R = 14.0;
+const DRUM_HALF = 6.5;
+const DRUM_X = [-17, 0, 17];
 const STEP = (Math.PI * 2) / FACES_PER_DRUM;
 
 function drawCabinet() {
     // One back panel and a floor, and nothing either side. The first version
     // had side walls that projected into two dark wedges reading as wings.
-    quad([-22, 13, 8.5], [22, 13, 8.5], [22, -13, 8.5], [-22, -13, 8.5],
+    quad([-30, 17, 15.5], [30, 17, 15.5], [30, -17, 15.5], [-30, -17, 15.5],
          [1, 0, 0]);
-    quad([-22, -10.5, -7], [22, -10.5, -7], [22, -13, 8.5], [-22, -13, 8.5],
+    quad([-30, -15, -15], [30, -15, -15], [30, -17, 15.5], [-30, -17, 15.5],
          [5, 1, 0]);
     // A divider between each pair of drums, so three drums read as three.
-    for (const x of [-6.8, 6.8]) {
-        quad([x - 0.8, 9.5, -8.5], [x + 0.8, 9.5, -8.5],
-             [x + 0.8, -9.5, -8.5], [x - 0.8, -9.5, -8.5], [9, 4, 2]);
-        quad([x + 0.8, 9.5, -8.5], [x + 0.8, 9.5, 8.5],
-             [x + 0.8, -9.5, 8.5], [x + 0.8, -9.5, -8.5], [4, 2, 1]);
-        quad([x - 0.8, 9.5, 8.5], [x - 0.8, 9.5, -8.5],
-             [x - 0.8, -9.5, -8.5], [x - 0.8, -9.5, 8.5], [4, 2, 1]);
+    for (const x of [-8.5, 8.5]) {
+        quad([x - 1.0, 16, -15.5], [x + 1.0, 16, -15.5],
+             [x + 1.0, -16, -15.5], [x - 1.0, -16, -15.5], [9, 4, 2]);
+        quad([x + 1.0, 16, -15.5], [x + 1.0, 16, 15.5],
+             [x + 1.0, -16, 15.5], [x + 1.0, -16, -15.5], [4, 2, 1]);
+        quad([x - 1.0, 16, 15.5], [x - 1.0, 16, -15.5],
+             [x - 1.0, -16, -15.5], [x - 1.0, -16, 15.5], [4, 2, 1]);
     }
 }
 
@@ -1081,21 +1297,42 @@ function drawMachine(g) {
         const x = DRUM_X[d];
         const ang = g.angle[d];
         const opened = g.state === 'swap' && d === g.swapDrum;
+        // Blur at speed by dropping the texture and drawing the facet flat:
+        // that is what "you cannot read it" looks like, and it is also what a
+        // real machine looks like when a reel is moving.
+        const blur = g.spinning[d] ? SPEEDS[g.speed].blur : 0;
 
         for (let f = 0; f < FACES_PER_DRUM; f++) {
             const a0 = ang + f * STEP;
             const a1 = a0 + STEP;
+            // The winding the flat path already used. Reordering these for
+            // the textured path culled the near faces and showed the inside of
+            // the drum, which reads as a dark hollow shell.
             const p0 = [x - DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R];
             const p1 = [x + DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R];
             const p2 = [x + DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
             const p3 = [x - DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
-            const faceIndex = (FACES_PER_DRUM - f) % FACES_PER_DRUM;
-            const base = (opened && faceIndex === g.swapFace)
-                ? [10, 9, 4] : [6, 13, 5];
-            quad(p0, p1, p2, p3, base);
+
+            // Which strip entry this facet carries: f steps round from the
+            // front. Facets pointing away are repainted as the window moves
+            // and are backface culled, so nothing is ever seen changing.
+            const offset = ((f + FACES_PER_DRUM / 2) % FACES_PER_DRUM) - FACES_PER_DRUM / 2;
+            const sym = stripAt(g, d, ang, offset);
+            const selected = opened &&
+                ((frontIndex(g, d, ang) + offset) % g.drums[d].length +
+                 g.drums[d].length) % g.drums[d].length === g.swapFace;
+
+            if (blur >= 2) {
+                quad(p0, p1, p2, p3, [6, 13, 5]);
+            } else if (blur === 1) {
+                quad(p0, p1, p2, p3, [13, 5, 1]);
+            } else {
+                texQuad(p0, p1, p2, p3, TEXTURES[sym],
+                        selected ? [0xFF, 0xEC, 0x27] : FACE_RGB[0]);
+            }
         }
 
-        // End caps as a real fan from the axis, one triangle a face, wound so
+        // End caps as a real fan from the axis, one triangle a facet, wound so
         // each side faces outward.
         for (const side of [-1, 1]) {
             const cx = x + side * DRUM_HALF;
@@ -1108,23 +1345,6 @@ function drawMachine(g) {
                 else tri3(centre, q0, q1, [13, 5, 1]);
             }
         }
-    }
-
-    // The symbol on the front face of each drum, once that face is near
-    // enough to flat on to read.
-    for (let d = 0; d < DRUMS; d++) {
-        const blur = g.spinning[d] ? SPEEDS[g.speed].blur : 0;
-        if (blur >= 2) continue;                    // WILD is unreadable, on purpose
-        const near = ((g.angle[d] % STEP) + STEP) % STEP;
-        const off = near > STEP / 2 ? near - STEP : near;
-        const flat = Math.cos(off);
-        if (flat < 0.6) continue;
-        const front = project([DRUM_X[d], Math.sin(-off) * DRUM_R * 1.02,
-                               Math.cos(-off) * DRUM_R * 1.02]);
-        if (!front) continue;
-        const sym = faceAt(g, d, g.angle[d]);
-        const col = blur === 1 ? 5 : SYMBOLS[sym].col;
-        drawPip(sym, front.x, front.y, flat, col);
     }
 }
 
@@ -1262,7 +1482,8 @@ function drawSwap(g) {
     rectfill(0, PANEL_Y, W - 1, H - 1, 0);
     hline(0, W - 1, PANEL_Y, 5);
     print7c('OPEN A DRUM', W / 2, PANEL_Y + 6, 10, 1);
-    print('DRUM ' + (g.swapDrum + 1) + '   FACE ' + (g.swapFace + 1) + '/8',
+    print('DRUM ' + (g.swapDrum + 1) + '   SYMBOL ' + (g.swapFace + 1) + '/' +
+          g.drums[g.swapDrum].length,
           6, PANEL_Y + 22, 6);
 
     // What is on the face now, and what would go on it.
