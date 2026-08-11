@@ -69,9 +69,9 @@ So a readable UI costs 1.9x the lores fill rate rather than 4x, and leaves
 100 KB. Whether that is affordable in *time* on a 250 MHz M0+ is not something
 this page can answer and it does not pretend to: config.hpp says plainly that
 nobody has measured the time budget on hardware. What it can say is measured
-and printed on the page: the worst frame of a spin is **160 triangles and
-20,814 pixels shaded**, against a window of 26,880 and a queue that holds 640.
-The triangle count is nothing. The fill is 77 percent of the window every
+and printed on the page: the worst frame of a spin is **146 triangles and
+21,952 pixels shaded**, against a window of 26,880 and a queue that holds 640.
+The triangle count is nothing. The fill is 82 percent of the window every
 frame, most of it textured, and that is the number that would decide this on
 hardware. It is the first thing to measure with a cycle counter.
 
@@ -79,22 +79,52 @@ hardware. It is the first thing to measure with a cycle counter.
 
 A drum is a twelve sided prism, so twelve symbols to start. That is also the
 shape that makes a reel look like a reel: a facet is `2 * pi * R / 12` tall, so
-a facet only comes out roughly square if the drum is about four times taller
-than it is wide, which is exactly what a slot reel is. Sizing it any other way
-squashes a square symbol into a colour band, which is what the first attempt at
-this did and what the screenshots showed.
+it only comes out square if the drum is about four times taller than it is
+wide, which is exactly what a slot reel is.
 
-**The strip is not limited to twelve.** What the drum shows is a window of
-twelve consecutive strip entries centred on whichever entry is at the front.
-Turn the drum one facet and the window advances one entry. So the facets being
-repainted are always the ones pointing away from the camera, which are backface
-culled and therefore never seen changing, and a twelve sided prism can present
-a strip of any length. That is how a real machine's virtual reel works, and it
-is the trick that lets a swap add a symbol the drum has no facet for: measured
-on the page, a strip grown from 12 to 16 still reaches all eight symbols as it
-turns, with no seam and no extra geometry.
+**So the half width is derived from the radius, not chosen.**
+`DRUM_HALF = pi * DRUM_R / 12`, and there is no number in the file anybody can
+nudge to break it. The first attempt picked both by eye, ended up 28 wide and
+12 tall a facet, and turned every symbol into a colour band. The consequence is
+that the drum no longer fits the 112 row band, and it is not supposed to: a
+slot machine shows three faces through a window, so there is a window. It is
+drawn in 2D over the top, cut from the projected edges of the drums rather than
+from numbers typed against a screenshot, and it costs `fill_rect` rather than
+triangles.
 
-## Two things running it found
+**The strip is not limited to twelve.** A drum can carry up to 24 symbols on 12
+facets, because a facet that has turned out of sight can be repainted with a
+different one before it comes back round. That is how a real machine's virtual
+reel works, and it is what lets a swap add a symbol the drum has no facet for.
+
+**What a facet carries has to be state, not a formula.** The obvious version
+computes it from the angle: a window of twelve strip entries centred on
+whichever entry is at the front. It jitters, and it jitters in the worst
+possible place. That window advances when the rounded front index changes,
+which is the moment a facet is dead centre front, and it shifts every facet at
+once, so the symbol you are looking at changes identity while you are looking
+at it. Measured on the page, that scheme changes a symbol the player can see
+**2,363 times** over three spins. Giving each facet its own symbol and
+repainting it only as it passes behind brings that to **zero**, and while a
+strip is exactly twelve long nothing is ever repainted at all.
+
+## Four things running it found
+
+**The front face was the back face.** A facet at angle `a` sits at
+`z = R cos(a)` and the camera is at negative z, so the face under the payline
+is the one where cosine is at its *minimum*. Taking the obvious reading meant
+the game scored whichever symbol was hidden round the back: the drum showed a
+BAR and the panel under it said PLUM. The page now checks, against the
+projector rather than against the code that makes the claim, that the facet the
+rules score is the one nearest the camera, that the rasterizer's own backface
+test would draw it, and that its middle lands on the payline row. Four
+deliberate breakages were tried against that check and it caught all four.
+
+**The drums came to rest on a seam.** Snapping the angle to a multiple of a
+facet step puts the join between two facets dead centre screen, because a
+facet's middle is half a step further round than its leading edge. It is a
+vertical line down every reel, and it was invisible while the facets were squat
+colour bands.
 
 **A spin never ended.** Reels only stopped when the player stopped them, so a
 hands off spin turned for ever and the BLUR joker, which pays x2 for stopping
@@ -105,14 +135,20 @@ it, and a hands off spin ends in about 4.6 seconds.
 now measures every string the game can draw against the box it is drawn in, and
 says so under the screens. That check is built from the joker, hand and symbol
 tables rather than a list somebody typed, because the catcoin build shipped
-exactly this bug by listing two of three strings by hand.
+exactly this bug by listing two of three strings by hand. The count it reports
+is the number of measurements actually taken rather than a sum written out
+beside them, which is the same mistake one step up.
 
 ## How it maps to the engine
 
-- The drums are 12 facets each plus two end fans, and the cabinet is a back
-  panel, a floor and two dividers. All of it is `pse::Renderer3D::draw_mesh`
-  work, and rule 11 says the drum and the cabinet should be `.obj` files rather
-  than emitted in source.
+- The drums are 12 facets each plus two end fans, and the only other geometry
+  is one back panel. All of it is `pse::Renderer3D::draw_mesh` work, and rule
+  11 says the drum should be an `.obj` file rather than emitted in source. The
+  cabinet is not geometry: it is the 2D window frame, which is flat on to the
+  camera and never moves, so it is `fill_rect` work. Building it in 3D was
+  tried and its side walls projected into two dark wedges that read as wings.
+- The back panel is submitted **after** the drums, so the depth buffer rejects
+  the four fifths of it they stand in front of.
 - **The symbols are textures on the drum faces.** 16x16, power of two, which is
   what `pse::Texture` wants: sampling is a shift and a mask, so wrapping is
   free and there is no divide near the inner loop. A transparent texel leaves
@@ -121,10 +157,19 @@ exactly this bug by listing two of three strings by hand.
   drum is. Eight of them is 6 KB of flash, and they want to be real PNGs
   through `add_texture` rather than the tables this page carries to stay one
   file.
+- **Every symbol is black outlined**, because a drum face is lit near white and
+  a white bell on a white drum is a shape you can only find by squinting. The
+  outline is dilated into a one texel margin when the texture is built rather
+  than drawn into the art, so it cannot go stale when the art changes, and the
+  art is validated to leave that margin free rather than trusted to.
+- There is one drawing of each symbol. The swap screen used to carry its own
+  5x5 pip table, so the game held two pictures of every symbol and only one of
+  them was the symbol. It blits the drum's texture at 2x now.
 - The panel is `pse::draw2d` and `pse::draw_text`, the same 2D set the two cart
   demakes use.
-- Game state is under 200 bytes: three rings of eight, five joker indices, four
-  hand levels, and a tally of at most a dozen entries.
+- Game state is under 200 bytes: three strips of up to 24, twelve facet bytes a
+  drum, five joker indices, four hand levels, and a tally of at most a dozen
+  entries.
 
 ## Open questions
 

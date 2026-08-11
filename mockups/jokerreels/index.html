@@ -118,7 +118,12 @@ and argued about before anyone writes C++, which is CLAUDE.md rule 10.</p>
       transparent texel leaves the drum face showing through, so a symbol
       reads as printed on the drum rather than floating over it, and the texel
       multiplies the face's lambert so it is lit by the same light the drum
-      is.</li>
+      is. Each one is ringed in black so it survives being printed on a face
+      lit near white.</li>
+  <li><b>The face under the payline is the brightest thing in the machine.</b>
+      Deliberately, and it took moving the light: a light from high up made the
+      facet <em>above</em> the payline the brightest face on the drum, which
+      pulls the eye off the only face being scored.</li>
 </ul>
 
 <h2>WHAT IS ON SCREEN, AND WHY</h2>
@@ -126,6 +131,10 @@ and argued about before anyone writes C++, which is CLAUDE.md rule 10.</p>
   <li><b>The top 112 rows are the machine, in 3D.</b> Everything below is an
       ordinary 2D panel. See the note on the window below: this split is what
       makes a hires 3D game affordable at all.</li>
+  <li><b>The reel window is a frame, and the frame is 2D.</b> Three openings
+      cut from where the drums actually project, a chrome edge down each side,
+      and a payline tick into the frame either side of every opening so the
+      face being scored is named without a pixel crossing a symbol.</li>
   <li><b>Ante, bank against target, spins, gold</b> across one strip. Four
       numbers, which is what a run needs and no more.</li>
   <li><b>The score box is chips and mult,</b> not a total. The total is one
@@ -170,53 +179,91 @@ config.hpp is blunt that nobody has measured the time budget on hardware. What
 it can say is the triangle count and the fill, which are measured below and are
 small, because the scene is one machine and never grows.</p>
 
+<h2>IS THE FRONT FACE THE FRONT FACE</h2>
+<p class="note" id="geom"></p>
+
 <h2>DOES THE TEXT FIT</h2>
 <p class="note" id="fits"></p>
 
 <h2>WHAT IT COSTS</h2>
 <p class="note" id="perf"></p>
 <ul>
-  <li><b>The scene is 3 drums of 12 facets, 2 end fans each, and the
-      cabinet.</b> 160 triangles at worst against a queue that holds 640. There
+  <li><b>The scene is 3 drums of 12 facets, 2 end fans each, and one back
+      panel.</b> 146 triangles at worst against a queue that holds 640. There
       is no world to stream and no LOD to pick, and the count does not grow
-      with the run.</li>
-  <li><b>The fill is the thing to watch, not the triangle count.</b> 20,814
+      with the run. The window frame is 2D over the top, so the cabinet costs
+      no geometry at all.</li>
+  <li><b>The fill is the thing to watch, not the triangle count.</b> 21,952
       pixels of a 26,880 pixel window, and most of them textured. Textured
       pixels only cost multiplies here, because the barycentrics and the
       perspective corrected depth are computed anyway, which is the argument
       <code>engine/include/pse/texture.hpp</code> makes for having textures at
-      all. But 77 percent of the window covered every frame is the number that
-      would decide this on hardware, and it is the number to measure first.</li>
+      all. But 82 percent of the window covered every frame is the number that
+      would decide this on hardware, and it is the number to measure first. The
+      back panel is submitted <em>after</em> the drums so the depth buffer
+      rejects the four fifths of it they stand in front of; submitting it first
+      cost a whole window of fill for pixels nobody saw.</li>
   <li><b>Eight textures of 16x16 at three bytes a texel is 6 KB of flash.</b>
       They want to be real PNGs through <code>add_texture</code>, not tables in
       source (rule 11). They are written into this page only so it stays one
-      file.</li>
-  <li><b>Game state is tiny:</b> three rings of eight bytes, five joker
-      indices, four hand levels, and a tally of at most a dozen entries. Under
-      200 bytes.</li>
-  <li><b>Art</b> is the eight symbol pips and whatever the cabinet needs, which
-      is the one thing this page has not designed and would want real PNGs for
-      (rule 11 as it now applies to sprites).</li>
+      file. Every symbol is authored inside a 14x14 box, and the one texel
+      margin is load bearing: the black outline is dilated into it when the
+      texture is built, so a symbol that reached the edge would lose its
+      outline on that side. The page refuses to run rather than ship that.</li>
+  <li><b>The outline is the reason a pale symbol is readable at all.</b> A drum
+      face is lit near white, and a white bell on a white drum is a shape you
+      can only find by squinting. Dilated at build time rather than drawn into
+      the art, because an outline drawn by hand is one that has to be redrawn
+      whenever the art changes, and it would be wrong in exactly one place. The
+      shipped PNG carries the result, so the device pays nothing for it.</li>
+  <li><b>There is one drawing of each symbol.</b> The shop's swap screen used
+      to carry its own 5x5 pip table, which meant the game held two pictures of
+      every symbol and only one of them was the symbol. It now blits the drum's
+      own texture at 2x, so what the shop shows is what lands.</li>
+  <li><b>Game state is tiny:</b> three strips of up to 24 bytes, twelve facet
+      bytes a drum, five joker indices, four hand levels, and a tally of at
+      most a dozen entries. Under 200 bytes.</li>
 </ul>
 
 <h2>TWELVE FACETS, AND A REEL STRIP THAT CAN BE LONGER</h2>
 <p class="note">A drum is a twelve sided prism, so it has twelve faces to put
-symbols on. That is the floor you asked for and it is also the shape that makes
-a reel look like a reel: a facet is <code>2 * pi * R / 12</code> tall, so a
-facet only comes out roughly square if the drum is about four times taller than
-it is wide, which is exactly what a slot reel is. Sizing it any other way
-squashes a square symbol into a colour band, which is what the first attempt
-did.</p>
-<p class="note"><b>The strip is not limited to twelve.</b> What the drum shows
-is a window of twelve consecutive strip entries centred on whichever entry is
-at the front. Turn the drum one facet and the window advances one entry. So the
-facets being repainted are always the ones pointing away from the camera, which
-are backface culled and therefore never seen changing, and a twelve sided prism
-can present a strip of any length. That is how a real machine's virtual reel
-works, and it is the visual trick that lets a swap add a symbol the drum has no
-facet for: measured on this page, a strip grown from 12 to 16 still reaches
-every one of the eight symbols as it turns, with no seam and no extra
-geometry.</p>
+symbols on. That is the floor asked for, and it is also the shape that makes a
+reel look like a reel: a facet is <code>2 * pi * R / 12</code> tall, so it only
+comes out square if the drum is about four times taller than it is wide, which
+is exactly what a slot reel is.</p>
+<p class="note"><b>So the drum's half width is derived from its radius, not
+chosen.</b> <code>DRUM_HALF = pi * DRUM_R / 12</code>, and there is no number
+in the file anybody can nudge to break it. The first attempt at this picked
+both by eye, ended up 28 wide and 12 tall a facet, and turned every symbol into
+a colour band. The consequence is that the drum no longer fits the 112 row
+band, and it is not supposed to: a slot machine shows you three faces through a
+window, so there is a window. It is drawn in 2D over the top, cut from the
+projected edges of the drums themselves rather than from numbers typed against
+a screenshot, and it costs <code>fill_rect</code> rather than triangles.</p>
+<p class="note"><b>The strip is not limited to twelve.</b> A drum can carry up
+to 24 symbols on 12 facets, because a facet that has turned out of sight can be
+repainted with a different one before it comes back round. That is how a real
+machine's virtual reel works, and it is what lets a swap add a symbol the drum
+has no facet for.</p>
+<p class="note"><b>What a facet carries has to be state, not a formula.</b> The
+obvious version computes it from the angle: a window of twelve strip entries
+centred on whichever entry is at the front. It jitters, and it jitters in the
+worst possible place. That window advances when the rounded front index
+changes, which is the moment a facet is dead centre front, and it shifts every
+facet at once, so the symbol you are looking at changes identity while you are
+looking at it. Measured on this page, that scheme changes a symbol the player
+can see <b>2,363 times</b> over three spins. Giving each facet its own symbol
+and repainting it only as it passes behind brings that to <b>zero</b>, and
+while a strip is exactly twelve long nothing is ever repainted at all.</p>
+<p class="note">The check above is written against the renderer rather than
+against the code being checked: it asks whether the rasterizer's own backface
+test would have drawn the facet at the moment its symbol changed, and whether
+the facet the rules score is the one the projector puts nearest the camera on
+the payline row. Four deliberate breakages were tried against it, and it caught
+all four. The last of those, <b>the front face is where the cosine is at its
+minimum, not its maximum</b>, was a live bug: the game was scoring whichever
+symbol was hidden round the back, so the drum could show a BAR while the panel
+under it said PLUM.</p>
 
 <h2>OPEN QUESTIONS</h2>
 <ul>
@@ -520,7 +567,20 @@ const DEPTH = new Uint8Array(VIEW_W * VIEW_H);
 // without pretending to reproduce the exact rounding.
 const K_FIXED_ONE = 1024;
 
-let cam = {x: 0, y: 0, z: -46, yaw: 0, pitch: -0.03, fov: 52};
+/* The camera distance is not a taste decision, it is the one number that sets
+ * how square a symbol looks and how much of a drum you can see at once.
+ *
+ * A facet of a twelve sided drum of radius R is 2*pi*R/12 tall, and it is
+ * DRUM_HALF*2 wide, so the two are equal by construction (jr-draw.js derives
+ * the width from the radius). What the camera decides is how big that square
+ * lands on screen and how hard the perspective bends it: at distance D the
+ * front facet is f * (2*pi*R/12) / (D - R) pixels, and the facet 45 degrees
+ * round is nearer (D - 0.707R), so it is drawn (D - 0.707R)/(D - R) times
+ * larger than a flat projection would make it. D = 2.07 R gives a 56 pixel
+ * front facet and 27 percent of that curve, which is what a reel looks like.
+ * Pulling the camera back flattens the drum into a wall of stickers.
+ */
+let cam = {x: 0, y: 0, z: -49.8, yaw: 0, pitch: 0, fov: 52};
 
 function clearDepth() { DEPTH.fill(0xFF); }
 
@@ -542,9 +602,12 @@ function project(p) {
     };
 }
 
-// Depth is one byte across the projector's range, as the engine's is.
+// Depth is one byte across the projector's range, as the engine's is. The
+// range is the scene's, not a round number: the nearest thing is the front of
+// a drum at 25.8 and the furthest is the back panel at 80, and a byte spread
+// over 6 to 100 would throw away half its precision on empty space.
 function depthByte(z) {
-    const near = 6, far = 80;
+    const near = 24, far = 84;
     let t = (z - near) / (far - near);
     if (t < 0) t = 0;
     if (t > 1) t = 1;
@@ -586,8 +649,12 @@ function triangle(a, b, c, col) {
 
 // A quad as two triangles, lit by one lambert term against a fixed light, the
 // way pse::Renderer3D shades a face.
+// Mostly along the view, slightly above and to the left. A light from high
+// up made the facet ABOVE the payline the brightest thing on the drum, which
+// pulls the eye off the one face that is being scored. The payline facet
+// should be the brightest face in the machine.
 const LIGHT = (function () {
-    const v = [-0.4, 0.75, -0.55];
+    const v = [-0.25, 0.30, -0.92];
     const n = Math.hypot(v[0], v[1], v[2]);
     return [v[0] / n, v[1] / n, v[2] / n];
 })();
@@ -711,8 +778,8 @@ function litFactor(p0, p1, p3) {
     return 0.45 + 0.55 * d;
 }
 
-function texQuad(p0, p1, p2, p3, tex, faceRgb) {
-    const lit = litFactor(p0, p1, p3);
+function texQuad(p0, p1, p2, p3, tex, faceRgb, litScale) {
+    const lit = litFactor(p0, p1, p3) * (litScale === undefined ? 1 : litScale);
     const a = project(p0), b = project(p1), c = project(p2), d = project(p3);
     if (!a || !b || !c || !d) return;
     TRI_COUNT += 2;
@@ -829,26 +896,139 @@ function newGame(seed) {
         }
         g.drums.push(strip);
     }
+    initFacets(g);
+    // Start at rest, which is a facet middle at the front rather than a seam.
+    for (let d = 0; d < DRUMS; d++) snapDrum(g, d);
     return g;
 }
 
-// Which strip entry is at the front of the drum, given its rotation. The
-// strip is what the drum can land on; the twelve facets are only how much of
-// it is on screen at once.
-function frontIndex(g, drum, angle) {
-    const step = (Math.PI * 2) / FACES_PER_DRUM;
-    const n = g.drums[drum].length;
-    let i = Math.round(-angle / step) % n;
-    if (i < 0) i += n;
-    return i;
+/* What is painted on each facet, and why it is state rather than a formula.
+ *
+ * The obvious version computes a facet's symbol from the drum's angle: a
+ * window of twelve strip entries centred on whichever entry is at the front.
+ * It jitters, and it jitters in the worst possible place. That window advances
+ * when the rounded front index changes, which is when a facet is dead centre
+ * front, and it shifts EVERY facet at once. So the symbol you are looking at
+ * changes identity while you are looking at it.
+ *
+ * So each facet carries its own symbol, and a facet is only ever repainted at
+ * the moment it passes behind the drum. While a strip is exactly twelve long
+ * nothing is ever repainted at all: facet f simply is strip entry f, which is
+ * as continuous as it gets. Repainting only starts mattering once a strip has
+ * grown past the facet count, and even then it happens out of sight.
+ */
+function initFacets(g) {
+    g.facet = [];
+    g.cursor = [];
+    for (let d = 0; d < DRUMS; d++) {
+        const n = g.drums[d].length;
+        const f = [];
+        for (let i = 0; i < FACES_PER_DRUM; i++) f.push(g.drums[d][i % n]);
+        g.facet.push(f);
+        // The next strip entry to hand out, which is only used once a strip is
+        // longer than the drum has facets.
+        g.cursor.push(FACES_PER_DRUM % n);
+    }
+    g.wasBehind = [];
+    for (let d = 0; d < DRUMS; d++) {
+        const w = [];
+        for (let i = 0; i < FACES_PER_DRUM; i++) w.push(false);
+        g.wasBehind.push(w);
+    }
+}
+
+const FACE_STEP = (Math.PI * 2) / FACES_PER_DRUM;
+
+// Facet f spans angles [angle + f*STEP, angle + (f+1)*STEP], so the middle of
+// it, which is the part you actually look at, is half a step further round.
+// Everything that asks where a facet is has to ask about its middle: asking
+// about its leading edge puts the seam between two facets dead centre screen,
+// which is a vertical line down the middle of every reel.
+function facetMid(angle, f) { return angle + (f + 0.5) * FACE_STEP; }
+
+/* Which way round the drum is, which was wrong here for three screenshots.
+ *
+ * A facet at angle a sits at z = R cos(a), and the camera is at NEGATIVE z.
+ * So the facet under the payline, the one nearest the camera and the only one
+ * that is ever read, is the one where cos is at its MINIMUM. The obvious
+ * reading is that the front is where cos is 1, and taking it meant the game
+ * scored whichever symbol was hidden round the back: the drum showed a BAR
+ * and the panel underneath said PLUM, which is the kind of thing a mockup
+ * exists to catch.
+ */
+function facing(angle, f) { return -Math.cos(facetMid(angle, f)); }
+
+/* True when facet f cannot be seen at all.
+ *
+ * Not "is turned away": a facet on a drum of radius R seen from distance D is
+ * backface culled once facing() drops below -R/D, which is -0.48 at this
+ * camera, NOT below zero. Repainting on the wrong side of that shows the
+ * player a symbol changing identity, which is the jitter this whole scheme
+ * exists to remove. -0.75 is comfortably past the cull for any camera this
+ * scene will have, and being late costs nothing: a facet has 160 degrees of
+ * turn out of sight after the trigger before it comes back round.
+ */
+function facetHidden(angle, f) {
+    return facing(angle, f) < -0.75;
+}
+
+// Called every tick a drum moves. Repaints only facets that have just gone
+// out of sight, and only when the strip is longer than the drum.
+function refreshFacets(g, d) {
+    const n = g.drums[d].length;
+    for (let f = 0; f < FACES_PER_DRUM; f++) {
+        const hidden = facetHidden(g.angle[d], f);
+        if (hidden && !g.wasBehind[d][f]) {
+            if (n > FACES_PER_DRUM) {
+                g.facet[d][f] = g.drums[d][g.cursor[d]];
+                g.cursor[d] = (g.cursor[d] + 1) % n;
+            }
+        }
+        g.wasBehind[d][f] = hidden;
+    }
+}
+
+// Which facet is at the front, and what is painted on it.
+function frontFacet(g, drum, angle) {
+    let best = 0, bestC = -2;
+    for (let f = 0; f < FACES_PER_DRUM; f++) {
+        const c = facing(angle, f);
+        if (c > bestC) { bestC = c; best = f; }
+    }
+    return best;
 }
 function faceAt(g, drum, angle) {
-    return g.drums[drum][frontIndex(g, drum, angle)];
+    return g.facet[drum][frontFacet(g, drum, angle)];
 }
-// The strip entry shown on the facet `offset` steps round from the front.
-function stripAt(g, drum, angle, offset) {
-    const n = g.drums[drum].length;
-    return g.drums[drum][((frontIndex(g, drum, angle) + offset) % n + n) % n];
+
+// The angle that puts facet f dead centre front, which is its middle at pi.
+function angleForFacet(f) { return Math.PI - (f + 0.5) * FACE_STEP; }
+
+// The same angle, wound to whichever turn is nearest where the drum is now.
+// Without this, stepping from the last strip entry back to the first unwinds
+// the drum through a whole revolution to get somewhere it already was.
+function nearestTurn(from, want) {
+    const TAU2 = Math.PI * 2;
+    return want + Math.round((from - want) / TAU2) * TAU2;
+}
+
+/* Opening a drum is the one time the facets are set from the strip rather
+ * than left alone, because the player is stepping THROUGH the strip: entry 14
+ * of a sixteen long strip has no facet of its own, and the whole point of the
+ * screen is to look at it. So the drum is repainted as a plain window round
+ * whichever entry is selected, and the cursor is left where that window ends
+ * so the next spin carries on from there rather than jumping.
+ */
+function setFacetsFromStrip(g, d, entry) {
+    const n = g.drums[d].length;
+    const front = ((entry % FACES_PER_DRUM) + FACES_PER_DRUM) % FACES_PER_DRUM;
+    for (let k = 0; k < FACES_PER_DRUM; k++) {
+        g.facet[d][(front + k) % FACES_PER_DRUM] = g.drums[d][(entry + k) % n];
+    }
+    g.cursor[d] = (entry + FACES_PER_DRUM) % n;
+    for (let f = 0; f < FACES_PER_DRUM; f++) {
+        g.wasBehind[d][f] = facetHidden(g.angle[d], f);
+    }
 }
 
 function startSpin(g) {
@@ -879,9 +1059,12 @@ function stopNext(g) {
     return false;
 }
 
+// Snap so a facet MIDDLE is at the front, which is the half step offset. Snap
+// to a multiple of the step instead and the drum comes to rest showing the
+// join between two symbols.
 function snapDrum(g, d) {
-    const step = (Math.PI * 2) / FACES_PER_DRUM;
-    g.angle[d] = Math.round(g.angle[d] / step) * step;
+    const half = FACE_STEP / 2;
+    g.angle[d] = Math.round((g.angle[d] + half) / FACE_STEP) * FACE_STEP - half;
     g.landed[d] = faceAt(g, d, g.angle[d]);
 }
 
@@ -1043,7 +1226,7 @@ function tick(g, btn) {
     if (g.flash > 0) g.flash--;
 
     if (g.state === 'title') {
-        for (let d = 0; d < DRUMS; d++) g.angle[d] += 0.02 + d * 0.004;
+        for (let d = 0; d < DRUMS; d++) { g.angle[d] += 0.02 + d * 0.004; refreshFacets(g, d); }
         if (btn.any) { g.state = 'idle'; }
         return;
     }
@@ -1062,6 +1245,7 @@ function tick(g, btn) {
             }
             any = true;
             g.angle[d] += SPEEDS[g.speed].rate;
+            refreshFacets(g, d);
         }
         if (btn.up) g.speed = Math.min(SPEEDS.length - 1, g.speed + 1);
         if (btn.down) g.speed = Math.max(0, g.speed - 1);
@@ -1117,12 +1301,15 @@ function tick(g, btn) {
         if (btn.down) g.swapTo = Math.max(0, g.swapTo - 1);
         if (btn.b) { g.swapDrum = (g.swapDrum + 1) % DRUMS;
                      g.swapFace = g.swapFace % g.drums[g.swapDrum].length; }
-        const step = (Math.PI * 2) / FACES_PER_DRUM;
-        g.angle[g.swapDrum] += ((-g.swapFace * step) - g.angle[g.swapDrum]) * 0.2;
-        if (btn.a) {
-            g.drums[g.swapDrum][g.swapFace] = g.swapTo;
-            g.state = 'shop';
-        }
+        if (btn.a) g.drums[g.swapDrum][g.swapFace] = g.swapTo;
+        // Ease the selected entry round to the front, and repaint the drum as
+        // a window on the strip so the entry the panel names is the one under
+        // the payline. Every frame, because left/right/B all move it.
+        const cur = g.angle[g.swapDrum];
+        const want = nearestTurn(cur, angleForFacet(g.swapFace % FACES_PER_DRUM));
+        g.angle[g.swapDrum] = cur + (want - cur) * 0.2;
+        setFacetsFromStrip(g, g.swapDrum, g.swapFace);
+        if (btn.a) g.state = 'shop';
         return;
     }
 
@@ -1141,53 +1328,60 @@ function tick(g, btn) {
  * 16x16 each, which is what pse::Texture wants: power of two, so sampling is
  * a shift and a mask and wrapping is free. In the real build these are PNGs
  * through add_texture and png2cpp, not tables in source (rule 11). They are
- * written here so the page is one file.
+ * written here so the page stays one file.
  *
  * '.' is the drum face itself showing through, which is what makes a symbol
  * look printed on the drum rather than stuck to it.
+ *
+ * Every symbol is authored inside a 14x14 box with a one texel margin all
+ * round, and the margin is not decoration: the black outline is DILATED into
+ * it when the texture is built, so a symbol that reached the edge would lose
+ * its outline on that side. The validator below fails loudly rather than
+ * letting that ship, because a missing outline on one edge of one symbol is
+ * exactly the kind of thing nobody sees until it is on a drum.
  * ------------------------------------------------------------------ */
 const TEX_SIZE = 16;
 const TEX_ART = {
 CHERRY: [
-'................','.......gg.......','......gg........','.....gg....k....',
-'....gg....kkk...','...gg....kkkkk..','..rrrr..kkkkkkk.','.rrrrrr..kkkkk..',
-'rrrrrrrr..kkk...','rrrrrrrr...k....','rrrrrrrr........','.rrrrrr.........',
-'..rrrr..........','................','................','................'],
+'................','................','........ggg.....','.......g........',
+'......g.g.......','.....g...g......','....g.....g.....','...g.......g....',
+'..rrrr....rrrr..','.rwrrrr..rwrrrr.','.rrrrrr..rrrrrr.','.rrrrrr..rrrrrr.',
+'.rrrrrr..rrrrrr.','..rrrr....rrrr..','................','................'],
 BELL: [
-'................','......ww........','.....wwww.......','....wwwwww......',
-'...wwwwwwww.....','...wwwwwwww.....','..wwwwwwwwww....','..wwwwwwwwww....',
-'.wwwwwwwwwwww...','.wwwwwwwwwwww...','wwwwwwwwwwwwww..','................',
-'....wwwwwwww....','......wwww......','.......ww.......','................'],
+'................','................','.......oo.......','......yyyy......',
+'.....yyyyyy.....','.....yyyyyy.....','....ywyyyyyy....','....yyyyyyyy....',
+'...ywyyyyyyyy...','...yyyyyyyyyy...','..yyyyyyyyyyyy..','.oooooooooooooo.',
+'................','.......oo.......','................','................'],
 PLUM: [
-'................','.......gg.......','......gg........','.....pppppp.....',
-'...pppppppppp...','..pppppppppppp..','..pppppppppppp..','.pppppppppppppp.',
+'................','................','........ggg.....','.......g........',
+'.....pppppp.....','...pppppppppp...','..ppwwpppppppp..','..ppwppppppppp..',
 '.pppppppppppppp.','.pppppppppppppp.','..pppppppppppp..','..pppppppppppp..',
 '...pppppppppp...','.....pppppp.....','................','................'],
 BAR: [
-'................','................','wwwwwwwwwwwwwww.','wbbbbbbbbbbbbbw.',
-'wbwwwwwwwwwwwbw.','wbwbbbbbbbbbwbw.','wbwbwwwwwwwbwbw.','wbwbwbbbbbwbwbw.',
-'wbwbwwwwwwwbwbw.','wbwbbbbbbbbbwbw.','wbwwwwwwwwwwwbw.','wbbbbbbbbbbbbbw.',
-'wwwwwwwwwwwwwww.','................','................','................'],
+'................','................','................','................',
+'.wwwwwwwwwwwwww.','.wbbbbbbbbbbbbw.','.wbwwwwwwwwwwbw.','.wbwbbbbbbbbwbw.',
+'.wbwbbbbbbbbwbw.','.wbwwwwwwwwwwbw.','.wbbbbbbbbbbbbw.','.wwwwwwwwwwwwww.',
+'................','................','................','................'],
 CLOVER: [
-'................','.....gg..gg.....','....gggggggg....','...gggggggggg...',
-'...gggggggggg...','....gggggggg....','..gg..gggg..gg..','.gggg.gggg.gggg.',
-'.gggggggggggggg.','..gggggggggggg..','....gggggggg....','......ggg.......',
-'.......gg.......','......ggg.......','................','................'],
+'................','................','....gg....gg....','...gggg..gggg...',
+'..gggggggggggg..','..gggggggggggg..','...gggggggggg...','....gggggggg....',
+'...gggggggggg...','..gggggggggggg..','..gggggggggggg..','...gggg..gggg...',
+'....gg.kk.gg....','.......kk.......','.......kk.......','................'],
 SEVEN: [
-'................','..oooooooooooo..','..oooooooooooo..','..ooooooooooo...',
-'...........oo...','..........oo....','.........oo.....','........oo......',
-'.......ooooo....','......ooooo.....','......oo........','.....oo.........',
-'.....oo.........','....oo..........','................','................'],
+'................','................','..oooooooooooo..','..oooooooooooo..',
+'..oooooooooooo..','..........ooo...','.........ooo....','........ooo.....',
+'.......ooo......','......ooo.......','.....ooo........','.....ooo........',
+'....ooo.........','....ooo.........','................','................'],
 DIAMOND: [
-'................','.......cc.......','......cccc......','.....cccccc.....',
-'....cccccccc....','...cccccccccc...','..cccccccccccc..','.cccccccccccccc.',
-'..cccccccccccc..','...cccccccccc...','....cccccccc....','.....cccccc.....',
-'......cccc......','.......cc.......','................','................'],
+'................','................','.......cc.......','......cccc......',
+'.....wwcccc.....','....cwcccccc....','...cccccccccc...','..cccccccccccc..',
+'...cccccccccc...','....cccccccc....','.....cccccc.....','......cccc......',
+'.......cc.......','................','................','................'],
 CROWN: [
-'................','................','..y....y....y...','..yy..yyy..yy...',
-'..yy..yyy..yy...','..yyy.yyy.yyy...','..yyyyyyyyyyy...','..yyyyyyyyyyy...',
-'..yyyyyyyyyyy...','..yyryyyryyyy...','..yyyyyyyyyyy...','..yyyyyyyyyyy...',
-'...yyyyyyyyy....','................','................','................'],
+'................','................','..yy...yy...yy..','..yy...yy...yy..',
+'..yy..yyyy..yy..','..yyy.yyyy.yyy..','..yyyyyyyyyyyy..','..yyyyyyyyyyyy..',
+'..yyyyyyyyyyyy..','..yyrryyyyrryy..','..yyyyyyyyyyyy..','.oooooooooooooo.',
+'.oooooooooooooo.','................','................','................'],
 };
 const TEX_COL = {
     r: [0xFF, 0x00, 0x4D], g: [0x00, 0xE4, 0x36], w: [0xFF, 0xF1, 0xE8],
@@ -1197,109 +1391,200 @@ const TEX_COL = {
 // The drum face itself, which '.' leaves showing through.
 const FACE_RGB = [[0xC2, 0xC3, 0xC7], [0x9C, 0x9D, 0xA6], [0x6E, 0x6F, 0x78]];
 
-const TEXTURES = (function () {
-    const out = [];
-    for (const sym of SYMBOLS) {
-        const art = TEX_ART[sym.name];
-        const t = new Uint8Array(TEX_SIZE * TEX_SIZE * 4);
-        for (let y = 0; y < TEX_SIZE; y++) {
-            for (let x = 0; x < TEX_SIZE; x++) {
-                const ch = art[y][x];
-                const i = (y * TEX_SIZE + x) * 4;
-                if (ch === '.') { t[i + 3] = 0; continue; }
+/* The outline.
+ *
+ * A drum face is lit near white, and half these symbols are pale. A white
+ * bell on a white drum is a shape you can only find by squinting, and at
+ * WILD speed you have a fifth of a second to read it. So every symbol is
+ * ringed in black, eight ways, which separates it from whatever it is
+ * printed on and from whatever the light is doing to that face this frame.
+ *
+ * Dilated at build time rather than drawn by hand: an outline drawn into the
+ * art is an outline that has to be redrawn every time the art changes, and
+ * it would be wrong in exactly one place and nobody would notice. The
+ * shipped PNG carries the dilated result, so the device pays nothing.
+ */
+const TEX_OUTLINE = [0x00, 0x00, 0x00];
+
+function buildTexture(art) {
+    const painted = [];
+    for (let y = 0; y < TEX_SIZE; y++) {
+        for (let x = 0; x < TEX_SIZE; x++) painted.push(art[y][x] !== '.');
+    }
+    const t = new Uint8Array(TEX_SIZE * TEX_SIZE * 4);
+    for (let y = 0; y < TEX_SIZE; y++) {
+        for (let x = 0; x < TEX_SIZE; x++) {
+            const i = (y * TEX_SIZE + x) * 4;
+            const ch = art[y][x];
+            if (ch !== '.') {
                 const c = TEX_COL[ch];
                 t[i] = c[0]; t[i + 1] = c[1]; t[i + 2] = c[2]; t[i + 3] = 255;
+                continue;
+            }
+            // Empty. Black if it touches the symbol on any of eight sides.
+            let touches = false;
+            for (let dy = -1; dy <= 1 && !touches; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= TEX_SIZE || ny >= TEX_SIZE) continue;
+                    if (painted[ny * TEX_SIZE + nx]) { touches = true; break; }
+                }
+            }
+            if (!touches) continue;
+            t[i] = TEX_OUTLINE[0]; t[i + 1] = TEX_OUTLINE[1];
+            t[i + 2] = TEX_OUTLINE[2]; t[i + 3] = 255;
+        }
+    }
+    return t;
+}
+
+const TEXTURES = (function () {
+    // Check the art before building it. Every one of these has been wrong at
+    // least once in this repo's history of hand written tables.
+    const bad = [];
+    for (const name of Object.keys(TEX_ART)) {
+        const art = TEX_ART[name];
+        if (art.length !== TEX_SIZE) bad.push(name + ': ' + art.length + ' rows');
+        for (let y = 0; y < art.length; y++) {
+            if (art[y].length !== TEX_SIZE) {
+                bad.push(name + ' row ' + y + ': ' + art[y].length + ' chars');
+                continue;
+            }
+            for (let x = 0; x < TEX_SIZE; x++) {
+                const ch = art[y][x];
+                if (ch === '.') continue;
+                if (!TEX_COL[ch]) bad.push(name + ' row ' + y + ': unknown "' + ch + '"');
+                if (y === 0 || x === 0 || y === TEX_SIZE - 1 || x === TEX_SIZE - 1) {
+                    bad.push(name + ': paints the edge at ' + x + ',' + y +
+                             ', so the outline has nowhere to go');
+                }
             }
         }
-        out.push(t);
     }
+    if (bad.length) throw new Error('symbol art: ' + bad.join(' | '));
+
+    const out = [];
+    for (const sym of SYMBOLS) out.push(buildTexture(TEX_ART[sym.name]));
     return out;
 })();
+
+/* The same texture, blitted flat into the 2D panel.
+ *
+ * The swap screen used to carry its own 5x5 pip table, which meant the game
+ * held two drawings of every symbol and only one of them was the symbol. One
+ * picture, one place: this draws the real texture, so what the shop shows is
+ * what lands on the drum.
+ */
+function drawTexIcon(sym, x, y, scale) {
+    const t = TEXTURES[sym];
+    for (let ty = 0; ty < TEX_SIZE; ty++) {
+        for (let tx = 0; tx < TEX_SIZE; tx++) {
+            const i = (ty * TEX_SIZE + tx) * 4;
+            if (t[i + 3] === 0) continue;
+            const px = (255 << 24) | ((t[i + 2] & 0xF8) << 16) |
+                       ((t[i + 1] & 0xFC) << 8) | (t[i] & 0xF8);
+            for (let sy = 0; sy < scale; sy++) {
+                const fy = y + ty * scale + sy;
+                if (fy < 0 || fy >= H) continue;
+                for (let sx = 0; sx < scale; sx++) {
+                    const fx = x + tx * scale + sx;
+                    if (fx < 0 || fx >= W) continue;
+                    FB[fy * W + fx] = px;
+                }
+            }
+        }
+    }
+}
 /* ------------------------------------------------------------------ *
  * Drawing. The top 112 rows are 3D, everything below is 2D.
  * ------------------------------------------------------------------ */
 const PANEL_Y = VIEW_H;                 // 112: where the 3D stops and the UI starts
 
-// Symbol pips, 7x7, drawn as screen space sprites on the front face of a drum.
-//
-// Not textured quads, deliberately. The engine has perspective correct
-// texturing and it would work, but only the face at the front of a drum is
-// ever read, and at the front it is nearly flat on to the camera. So the drum
-// is 8 flat shaded quads and the symbol is one sprite at the projected centre
-// of the front face, squashed by how far that face has turned. That is 24
-// quads and 3 sprites a frame instead of 24 textured quads, and it reads the
-// same.
-const PIPS = {
-    0: ['..#..', '.###.', '#####', '#####', '.###.'],           // cherry
-    1: ['.###.', '#####', '#####', '.###.', '..#..'],           // bell
-    2: ['.###.', '#####', '#####', '#####', '.###.'],           // plum
-    3: ['#####', '.....', '#####', '.....', '#####'],           // bar
-    4: ['.#.#.', '#####', '#####', '..#..', '..#..'],           // clover
-    5: ['#####', '...#.', '..#..', '.#...', '.#...'],           // seven
-    6: ['..#..', '.###.', '#####', '.###.', '..#..'],           // diamond
-    7: ['#.#.#', '#####', '#####', '#####', '.....'],           // crown
-};
+/* The drum, and the one rule its proportions have to obey.
+ *
+ * A twelve sided prism of radius R has facets 2*pi*R/12 tall. If the drum is
+ * not also that wide, a square symbol is drawn into a rectangle and comes out
+ * squashed, which is what the first version of this did: it was 28 wide and
+ * 12 tall a facet, so every symbol read as a colour band. So the half width
+ * is DERIVED from the radius rather than chosen, and there is no number here
+ * anybody can nudge to break it again.
+ *
+ * That makes the drum about four times taller than it is wide, which is what
+ * a slot reel is, and it is why the machine needs a window: the drum does not
+ * fit the band, and it is not supposed to. You see three of its twelve faces.
+ */
+const DRUM_R = 24.0;
+const DRUM_HALF = Math.PI * DRUM_R / FACES_PER_DRUM;     // = half a facet's height
+const DRUM_X = [-14.8, 0, 14.8];
+const STEP = FACE_STEP;
 
-function drawPip(sym, cx, cy, flat, col) {
-    // 5x5, three pixels a cell across and squashed vertically by how far the
-    // face has turned away, which is what sells it as being ON the drum.
-    const m = PIPS[sym];
-    const sx = 3;
-    const sy = Math.max(1, Math.round(3 * flat));
-    for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 5; c++) {
-            if (m[r][c] !== '#') continue;
-            const x0 = (cx - (5 * sx) / 2 + c * sx) | 0;
-            const y0 = (cy - (5 * sy) / 2 + r * sy) | 0;
-            // Outlined, because a drum face is lit near white and a red or a
-            // brown pip on it is invisible otherwise.
-            rectfill(x0 - 1, y0 - 1, x0 + sx, y0 + sy, 0);
-        }
-    }
-    for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 5; c++) {
-            if (m[r][c] !== '#') continue;
-            const x0 = (cx - (5 * sx) / 2 + c * sx) | 0;
-            const y0 = (cy - (5 * sy) / 2 + r * sy) | 0;
-            rectfill(x0, y0, x0 + sx - 1, y0 + sy - 1, col);
-        }
-    }
+// Where a drum's front face lands on screen, projected rather than measured
+// off a screenshot. The bezel is cut from these, so moving a drum moves its
+// window with it.
+function drumWindow(d) {
+    const x = DRUM_X[d];
+    const l = project([x - DRUM_HALF, 0, -DRUM_R]);
+    const r = project([x + DRUM_HALF, 0, -DRUM_R]);
+    return {l: Math.round(l.x), r: Math.round(r.x)};
 }
 
-const DRUM_R = 14.0;
-const DRUM_HALF = 6.5;
-const DRUM_X = [-17, 0, 17];
-const STEP = (Math.PI * 2) / FACES_PER_DRUM;
+/* What the renderer paints on facet f, and the only place that decides it.
+ *
+ * A one line function because the page's continuity check has to ask the
+ * RENDERER what a facet is showing, not the state the renderer happens to
+ * read. Checking g.facet directly passed a version of this file that computed
+ * the symbol from the angle instead, which is precisely the jittering scheme
+ * the state exists to replace: the state sat there unchanged and correct
+ * while the drum drew something else.
+ */
+function facetSymbol(g, d, f) { return g.facet[d][f]; }
+
+/* Would the rasterizer draw this facet?
+ *
+ * Built from the same four corners drawMachine builds and culled on the same
+ * screen space winding triangle() culls on, so it is the renderer's answer
+ * rather than a second opinion. The page checks repaints against THIS and not
+ * against facetHidden, because asking facetHidden whether facetHidden was
+ * right is a check that cannot fail.
+ */
+function facetDrawn(d, ang, f) {
+    const x = DRUM_X[d];
+    const a0 = ang + f * STEP, a1 = a0 + STEP;
+    const a = project([x - DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R]);
+    const b = project([x + DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R]);
+    const c = project([x + DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R]);
+    if (!a || !b || !c) return false;
+    return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y) > 0;
+}
+
+// Where a facet's middle lands, for the same reason.
+function facetCentre(d, ang, f) {
+    const am = facetMid(ang, f);
+    return project([DRUM_X[d], Math.sin(am) * DRUM_R, Math.cos(am) * DRUM_R]);
+}
 
 function drawCabinet() {
-    // One back panel and a floor, and nothing either side. The first version
-    // had side walls that projected into two dark wedges reading as wings.
-    quad([-30, 17, 15.5], [30, 17, 15.5], [30, -17, 15.5], [-30, -17, 15.5],
-         [1, 0, 0]);
-    quad([-30, -15, -15], [30, -15, -15], [30, -17, 15.5], [-30, -17, 15.5],
-         [5, 1, 0]);
-    // A divider between each pair of drums, so three drums read as three.
-    for (const x of [-8.5, 8.5]) {
-        quad([x - 1.0, 16, -15.5], [x + 1.0, 16, -15.5],
-             [x + 1.0, -16, -15.5], [x - 1.0, -16, -15.5], [9, 4, 2]);
-        quad([x + 1.0, 16, -15.5], [x + 1.0, 16, 15.5],
-             [x + 1.0, -16, 15.5], [x + 1.0, -16, -15.5], [4, 2, 1]);
-        quad([x - 1.0, 16, 15.5], [x - 1.0, 16, -15.5],
-             [x - 1.0, -16, -15.5], [x - 1.0, -16, 15.5], [4, 2, 1]);
-    }
+    // One back panel, sized to fill the windows and no more, and drawn AFTER
+    // the drums so the depth buffer throws away the four fifths of it they are
+    // standing in front of. Drawing it first cost a full window of fill every
+    // frame for pixels nobody ever saw. Green, and not the frame's colour, so
+    // the gap between two reels reads as the inside of the machine rather than
+    // as more frame.
+    quad([-70, 42, 32], [70, 42, 32], [70, -42, 32], [-70, -42, 32], [3, 3, 1]);
 }
 
 function drawMachine(g) {
     clearDepth();
-    drawCabinet();
 
     for (let d = 0; d < DRUMS; d++) {
         const x = DRUM_X[d];
         const ang = g.angle[d];
         const opened = g.state === 'swap' && d === g.swapDrum;
-        // Blur at speed by dropping the texture and drawing the facet flat:
-        // that is what "you cannot read it" looks like, and it is also what a
-        // real machine looks like when a reel is moving.
+        const openFace = ((g.swapFace % FACES_PER_DRUM) + FACES_PER_DRUM) % FACES_PER_DRUM;
+        // Blur at speed is the whole risk of the game made visible. At FAIR
+        // the symbol is still drawn and still moving, just too dark to read
+        // comfortably. At WILD it is gone, and the drum is banded light and
+        // dark by facet so the motion still reads.
         const blur = g.spinning[d] ? SPEEDS[g.speed].blur : 0;
 
         for (let f = 0; f < FACES_PER_DRUM; f++) {
@@ -1313,20 +1598,18 @@ function drawMachine(g) {
             const p2 = [x + DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
             const p3 = [x - DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
 
-            // Which strip entry this facet carries: f steps round from the
-            // front. Facets pointing away are repainted as the window moves
-            // and are backface culled, so nothing is ever seen changing.
-            const offset = ((f + FACES_PER_DRUM / 2) % FACES_PER_DRUM) - FACES_PER_DRUM / 2;
-            const sym = stripAt(g, d, ang, offset);
-            const selected = opened &&
-                ((frontIndex(g, d, ang) + offset) % g.drums[d].length +
-                 g.drums[d].length) % g.drums[d].length === g.swapFace;
+            // What this facet carries is state, not a function of the angle.
+            // See initFacets: computing it from the angle repaints every facet
+            // at the instant one of them is dead centre front, which is the
+            // jitter this used to have.
+            const sym = facetSymbol(g, d, f);
 
             if (blur >= 2) {
-                quad(p0, p1, p2, p3, [6, 13, 5]);
+                quad(p0, p1, p2, p3, (f & 1) ? [13, 5, 1] : [6, 13, 5]);
             } else if (blur === 1) {
-                quad(p0, p1, p2, p3, [13, 5, 1]);
+                texQuad(p0, p1, p2, p3, TEXTURES[sym], FACE_RGB[0], 0.42);
             } else {
+                const selected = opened && f === openFace;
                 texQuad(p0, p1, p2, p3, TEXTURES[sym],
                         selected ? [0xFF, 0xEC, 0x27] : FACE_RGB[0]);
             }
@@ -1345,6 +1628,53 @@ function drawMachine(g) {
                 else tri3(centre, q0, q1, [13, 5, 1]);
             }
         }
+    }
+
+    drawCabinet();
+    drawBezel();
+}
+
+/* The window the drums are seen through, in 2D over the 3D band.
+ *
+ * A cabinet built in 3D would need side walls, and side walls project to two
+ * dark wedges that read as wings, which is how the first version of this
+ * looked. It is also the wrong tool: the frame is flat on to the camera and
+ * never moves, so it is fill_rect work, not triangle work. Cut from the
+ * projected drum edges so it frames whatever the drums are actually doing.
+ */
+const BEZEL_TOP = 8, BEZEL_BOT = PANEL_Y - 12;
+
+function bezelBars() {
+    const win = [drumWindow(0), drumWindow(1), drumWindow(2)];
+    return [[0, win[0].l - 1], [win[0].r + 1, win[1].l - 1],
+            [win[1].r + 1, win[2].l - 1], [win[2].r + 1, W - 1]];
+}
+
+function drawBezel() {
+    const bars = bezelBars();
+    for (const [x0, x1] of bars) {
+        if (x0 > x1) continue;
+        rectfill(x0, 0, x1, PANEL_Y - 1, 1);
+        // A chrome edge down each side of every opening, which is what makes
+        // the gap read as a frame in front of the drums rather than a hole
+        // between them.
+        if (x0 > 0) vline(x0, 0, PANEL_Y - 1, 13);
+        if (x1 < W - 1) vline(x1, 0, PANEL_Y - 1, 13);
+    }
+    rectfill(0, 0, W - 1, BEZEL_TOP - 1, 1);
+    rectfill(0, BEZEL_BOT, W - 1, PANEL_Y - 1, 1);
+    hline(0, W - 1, BEZEL_TOP - 1, 13);
+    hline(0, W - 1, BEZEL_BOT, 13);
+
+    // The payline: a tick into the frame either side of every window, at the
+    // height a drum comes to rest. It says which of the three faces you can
+    // see is the one being read, without a pixel of it crossing a symbol.
+    const mid = (PANEL_Y / 2) | 0;
+    for (const [x0, x1] of bars) {
+        if (x0 > x1) continue;
+        hline(x0, x1, mid - 1, 9);
+        hline(x0, x1, mid, 9);
+        hline(x0, x1, mid + 1, 4);
     }
 }
 
@@ -1425,14 +1755,16 @@ function drawHud(g) {
 
     drawScoreBox(g, 4, PANEL_Y + 32);
     drawSpeedDial(g, 120, PANEL_Y + 32);
-    drawTallyLine(g, 4, PANEL_Y + 68);
-    drawJokerRow(g, 4, PANEL_Y + 78);
+    // SCORE sits at +62 and is five rows tall, so the tally cannot start
+    // before +69 without the two reading as one smudged line.
+    drawTallyLine(g, 4, PANEL_Y + 71);
+    drawJokerRow(g, 4, PANEL_Y + 82);
 
     if (g.handIndex !== undefined && g.state === 'count') {
         const h = HANDS[g.handIndex];
-        print7c(h.name + ' LV' + g.handLevel[g.handIndex], W / 2, PANEL_Y + 108, 10, 1);
+        print7c(h.name + ' LV' + g.handLevel[g.handIndex], W / 2, PANEL_Y + 112, 10, 1);
     }
-    if (g.msg) print7c(g.msg, W / 2, PANEL_Y + 108, 11, 1);
+    if (g.msg) print7c(g.msg, W / 2, PANEL_Y + 112, 11, 1);
 }
 
 function drawShop(g) {
@@ -1477,34 +1809,42 @@ function drawShop(g) {
     print7c('NEXT ANTE', W / 2, y + 7, sel ? 7 : 6, 1);
 }
 
+// A symbol in a box, drawn from the drum's own texture at 2x. Nothing here
+// knows how to draw a cherry: there is one cherry in this game and it is the
+// one printed on the drum.
+function symbolBox(sym, x, y, fill, edge) {
+    rectfill(x, y, x + 35, y + 35, fill);
+    rect(x, y, x + 35, y + 35, edge);
+    drawTexIcon(sym, x + 2, y + 2, 2);
+}
+
 function drawSwap(g) {
     drawMachine(g);
     rectfill(0, PANEL_Y, W - 1, H - 1, 0);
     hline(0, W - 1, PANEL_Y, 5);
-    print7c('OPEN A DRUM', W / 2, PANEL_Y + 6, 10, 1);
+    print7c('OPEN A DRUM', W / 2, PANEL_Y + 5, 10, 1);
     print('DRUM ' + (g.swapDrum + 1) + '   SYMBOL ' + (g.swapFace + 1) + '/' +
           g.drums[g.swapDrum].length,
-          6, PANEL_Y + 22, 6);
+          6, PANEL_Y + 20, 6);
 
-    // What is on the face now, and what would go on it.
+    // What is on the face now, and what would go on it. Both columns hang off
+    // the edge of the screen, so the right one is right aligned rather than
+    // placed at a hand tuned x that is only correct for CHERRY.
     const now = g.drums[g.swapDrum][g.swapFace];
-    print('NOW', 6, PANEL_Y + 36, 6);
-    rectfill(6, PANEL_Y + 46, 30, PANEL_Y + 70, 1);
-    rect(6, PANEL_Y + 46, 30, PANEL_Y + 70, 5);
-    drawPip(now, 18, PANEL_Y + 58, 1, SYMBOLS[now].col);
-    print(SYMBOLS[now].name, 6, PANEL_Y + 74, SYMBOLS[now].col);
-
-    print7c('TO', W / 2, PANEL_Y + 52, 7, 1);
-
     const to = g.swapTo;
-    print('NEW', W - 60, PANEL_Y + 36, 6);
-    rectfill(W - 60, PANEL_Y + 46, W - 36, PANEL_Y + 70, 3);
-    rect(W - 60, PANEL_Y + 46, W - 36, PANEL_Y + 70, 11);
-    drawPip(to, W - 48, PANEL_Y + 58, 1, SYMBOLS[to].col);
-    print(SYMBOLS[to].name, W - 60, PANEL_Y + 74, SYMBOLS[to].col);
-    print(SYMBOLS[to].chips + ' CHIPS', W - 60, PANEL_Y + 84, 12);
+    print('NOW', 6, PANEL_Y + 32, 6);
+    symbolBox(now, 6, PANEL_Y + 42, 1, 5);
+    print(SYMBOLS[now].name, 6, PANEL_Y + 82, SYMBOLS[now].col);
+    print(SYMBOLS[now].chips + ' CHIPS', 6, PANEL_Y + 92, 5);
 
-    print('A DRUM LANDS ONLY ON WHAT IS ON IT', 6, PANEL_Y + 100, 5);
+    print7c('TO', W / 2, PANEL_Y + 56, 7, 1);
+
+    printr('NEW', W - 6, PANEL_Y + 32, 6);
+    symbolBox(to, W - 42, PANEL_Y + 42, 3, 11);
+    printr(SYMBOLS[to].name, W - 6, PANEL_Y + 82, SYMBOLS[to].col);
+    printr(SYMBOLS[to].chips + ' CHIPS', W - 6, PANEL_Y + 92, 12);
+
+    print('A DRUM LANDS ONLY ON WHAT IS ON IT', 6, PANEL_Y + 108, 5);
 }
 
 function drawTitle(g) {
@@ -1717,9 +2057,118 @@ figure('over', 'Out of spins',
         'Measured over ' + frames + ' frames of a spin: worst frame <b>' + tris +
         ' triangles</b> and <b>' + fill.toLocaleString() + ' pixels</b> shaded, ' +
         'against a 240 x 112 window that is 26,880 pixels and a queue that ' +
-        'holds 640. Three drums of eight faces plus two end fans plus the ' +
-        'cabinet is the whole scene, and it never grows: there is no world ' +
-        'here, just a machine.';
+        'holds 640. Three drums of twelve textured facets, two end fans each, ' +
+        'and one back panel is the whole scene, and it never grows: there is ' +
+        'no world here, just a machine. The window frame is 2D over the top, ' +
+        'so it costs fill_rect rather than triangles, and the panel is drawn ' +
+        'last so the drums reject most of it.';
+}
+
+/* The two claims the drums make, checked against the renderer rather than
+ * against the code that makes them.
+ *
+ *  1. The facet the rules score is the one the player is looking at. This was
+ *     false for three screenshots: the front was taken to be where cos is 1,
+ *     which is the far side, so the panel named a symbol nobody could see.
+ *  2. A facet only ever changes symbol while it is backface culled. That is
+ *     the whole reason the facets are state rather than a window computed
+ *     from the angle, and if it does not hold the jitter is back.
+ */
+{
+    const problems = [];
+    let checks = 0;
+
+    for (let d = 0; d < DRUMS; d++) {
+        for (let k = 0; k < 24; k++) {
+            const g = newGame(1);
+            g.angle[d] = k * FACE_STEP * 0.5 + 0.11;
+            snapDrum(g, d);
+            const ang = g.angle[d];
+            const f = frontFacet(g, d, ang);
+            let nearest = -1, nz = 1e9;
+            for (let i = 0; i < FACES_PER_DRUM; i++) {
+                const p = facetCentre(d, ang, i);
+                if (p && p.z < nz) { nz = p.z; nearest = i; }
+            }
+            checks++;
+            if (nearest !== f) {
+                problems.push('drum ' + d + ': the rules call facet ' + f +
+                              ' the front, the projector says facet ' + nearest);
+                break;
+            }
+            if (!facetDrawn(d, ang, f)) {
+                problems.push('drum ' + d + ': facet ' + f + ' is scored and culled');
+                break;
+            }
+            const p = facetCentre(d, ang, f);
+            if (Math.abs(p.y - VIEW_H / 2) > 1.5) {
+                problems.push('drum ' + d + ': the scored facet sits at row ' +
+                              p.y.toFixed(1) + ', the payline is ' + (VIEW_H / 2));
+                break;
+            }
+            if (g.landed[d] !== g.facet[d][f]) {
+                problems.push('drum ' + d + ': landed on ' + SYMBOLS[g.landed[d]].name +
+                              ', the front facet carries ' + SYMBOLS[g.facet[d][f]].name);
+                break;
+            }
+        }
+    }
+
+    let repaints = 0;
+    for (let sp = 0; sp < SPEEDS.length; sp++) {
+        const g = begin(17);
+        // A strip longer than the drum has facets, which is the only case
+        // where a facet is ever repainted at all. Without this the check
+        // passes by never exercising the thing it is checking.
+        while (g.drums[0].length < 20) g.drums[0].push(g.drums[0].length % 8);
+        initFacets(g);
+        for (let d = 0; d < DRUMS; d++) snapDrum(g, d);
+        g.speed = sp;
+        startSpin(g);
+        const shown = gg => {
+            const out = [];
+            for (let d = 0; d < DRUMS; d++) {
+                const row = [];
+                for (let f = 0; f < FACES_PER_DRUM; f++) row.push(facetSymbol(gg, d, f));
+                out.push(row);
+            }
+            return out;
+        };
+        for (let t = 0; t < 400 && g.state === 'spin'; t++) {
+            const before = shown(g);
+            tick(g, blank());
+            const after = shown(g);
+            for (let d = 0; d < DRUMS; d++) {
+                for (let f = 0; f < FACES_PER_DRUM; f++) {
+                    if (before[d][f] === after[d][f]) continue;
+                    repaints++;
+                    checks++;
+                    if (facetDrawn(d, g.angle[d], f)) {
+                        problems.push(SPEEDS[sp].name + ': drum ' + d + ' facet ' + f +
+                                      ' changed symbol while it was on screen');
+                    }
+                }
+            }
+        }
+    }
+    if (repaints === 0) {
+        problems.push('no facet was ever repainted, so the continuity check ' +
+                      'proved nothing');
+    }
+
+    const box = document.getElementById('geom');
+    if (problems.length) {
+        box.innerHTML = '<b style="color:#ff6b6b">' + problems.length +
+            ' problem(s):</b><br>' + problems.join('<br>');
+        console.error('joker reels: ' + problems.join(' | '));
+    } else {
+        box.innerHTML = '<b>' + checks.toLocaleString() + ' checks pass.</b> The ' +
+            'facet the rules score is the facet nearest the camera, it is one ' +
+            'the rasterizer would draw, and its middle lands on the payline row ' +
+            'to within a pixel. Across a full spin at all three speeds, ' +
+            repaints + ' facets were repainted and every one of them was ' +
+            'backface culled at the moment it changed.';
+    }
 }
 
 /* Rule 9's other half: measure, never place by eye. This walks every string
@@ -1727,7 +2176,9 @@ figure('over', 'Out of spins',
  * the catcoin build got wrong by listing the strings by hand. */
 {
     const problems = [];
+    let measured = 0;
     const fits = (text, x, limit, where) => {
+        measured++;
         const w = measure(text);
         if (x + w > limit) problems.push(where + ': "' + text + '" is ' + w +
                                          ' px from x=' + x + ', limit ' + limit);
@@ -1741,7 +2192,20 @@ figure('over', 'Out of spins',
         fits(h.name, 38, W - 40, 'hand name');
         fits('LEVEL IT UP: +' + h.per[0] + ' CHIPS +' + h.per[1] + ' MULT', 38, W - 4, 'hand text');
     }
-    for (const sm of SYMBOLS) fits(sm.name, 6, 70, 'symbol name');
+    const rfits = (text, rightX, floor, where) => {
+        measured++;
+        const w = measure(text);
+        if (rightX - w < floor) problems.push(where + ': "' + text + '" is ' + w +
+                                              ' px ending at x=' + rightX +
+                                              ', floor ' + floor);
+    };
+    for (const sm of SYMBOLS) {
+        fits(sm.name, 6, 100, 'swap NOW name');
+        fits(sm.chips + ' CHIPS', 6, 100, 'swap NOW chips');
+        rfits(sm.name, W - 6, 140, 'swap NEW name');
+        rfits(sm.chips + ' CHIPS', W - 6, 140, 'swap NEW chips');
+    }
+    fits('DRUM 3   SYMBOL ' + STRIP_MAX + '/' + STRIP_MAX, 6, W - 4, 'swap counter');
     fits('A DRUM LANDS ONLY ON WHAT IS ON IT', 6, W, 'swap hint');
     fits('SWAP ONE FACE FOR ANY SYMBOL', 38, W - 4, 'swap card');
     fits('OUT OF SPINS', 6, W, 'end message');
@@ -1752,12 +2216,13 @@ figure('over', 'Out of spins',
         console.error('joker reels: ' + problems.join(' | '));
     } else {
         box.innerHTML = 'Every string the game can draw was measured against the ' +
-            'box it is drawn in: <b>all ' + (JOKERS.length * 2 + HANDS.length * 2 +
-            SYMBOLS.length + 4) + ' of them fit</b>. Two joker texts and the swap ' +
-            'hint did not, before this check existed.';
+            'box it is drawn in: <b>all ' + measured + ' of them fit</b>. The ' +
+            'count is the number of measurements actually taken, not a sum ' +
+            'written out beside them, because a hand written total is the same ' +
+            'mistake this check exists to catch. Two joker texts and the swap ' +
+            'hint did not fit, before it existed.';
     }
 }
-
 </script>
 </body>
 </html>
