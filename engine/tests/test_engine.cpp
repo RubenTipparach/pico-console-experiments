@@ -114,7 +114,7 @@ pse::ScreenTriangle make_triangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1
 // model rendering inside out with no other symptom.
 void test_winding_and_fill() {
     TestSurface surface(64, 64, pse::PixelFormat::rgb888);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     raster.begin_frame(surface.target());
 
     raster.draw(make_triangle(10, 10, 10, 50, 50, 10, 500, 255, 0, 0));
@@ -126,7 +126,7 @@ void test_winding_and_fill() {
 
     // Reversed winding is a backface and must be culled.
     TestSurface back(64, 64, pse::PixelFormat::rgb888);
-    pse::Rasterizer back_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> back_raster;
     back_raster.begin_frame(back.target());
     back_raster.draw(make_triangle(10, 10, 50, 10, 10, 50, 500, 255, 0, 0));
     CHECK(back_raster.triangles_drawn() == 0);
@@ -138,7 +138,7 @@ void test_winding_and_fill() {
 void test_depth_ordering() {
     for (int order = 0; order < 2; order++) {
         TestSurface surface(64, 64, pse::PixelFormat::rgb888);
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         raster.begin_frame(surface.target());
 
         const auto far_tri = make_triangle(0, 0, 0, 60, 60, 0, 900, 0, 0, 255);
@@ -166,7 +166,7 @@ void test_offscreen_clipping() {
     pse::RenderTarget target{canvas.data() + 16, width, height, width * 3,
                              pse::PixelFormat::rgb888};
 
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     raster.begin_frame(target);
     raster.draw(make_triangle(-500, -500, -500, 500, 500, -500, 400, 1, 2, 3));
     raster.draw(make_triangle(1000, 1000, 1000, 2000, 2000, 1000, 400, 1, 2, 3));
@@ -188,7 +188,7 @@ void test_row_stride_is_respected() {
     pse::RenderTarget target{canvas.data(), width, height, stride,
                              pse::PixelFormat::rgb888};
 
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     raster.begin_frame(target);
     raster.plot(0, 2, 11, 22, 33);
 
@@ -203,7 +203,7 @@ void test_gradient_covers_every_pixel() {
     for (auto format : {pse::PixelFormat::rgb565, pse::PixelFormat::rgb888,
                         pse::PixelFormat::rgba8888}) {
         TestSurface surface(40, 40, format);
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         raster.begin_frame(surface.target());
         raster.clear_gradient(20, 40, 80, 200, 220, 240);
 
@@ -224,7 +224,7 @@ void test_gradient_covers_every_pixel() {
 // claim afterwards.
 void test_billboard_depth_claim() {
     TestSurface surface(32, 32, pse::PixelFormat::rgb565);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     raster.begin_frame(surface.target());
 
     CHECK(raster.test_and_set_depth(4, 4, 100));
@@ -239,7 +239,7 @@ void test_billboard_depth_claim() {
 void test_renderer_projects_and_culls() {
     TestSurface surface(pse::k_render_width, pse::k_render_height,
                         pse::PixelFormat::rgb565);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     pse::Renderer3D renderer(raster);
 
     raster.begin_frame(surface.target());
@@ -251,7 +251,7 @@ void test_renderer_projects_and_culls() {
 
     TestSurface empty(pse::k_render_width, pse::k_render_height,
                       pse::PixelFormat::rgb565);
-    pse::Rasterizer behind_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> behind_raster;
     pse::Renderer3D behind(behind_raster);
     behind_raster.begin_frame(empty.target());
     behind.set_camera(0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -269,7 +269,7 @@ void test_renderer_projects_and_culls() {
 // still identity at identity. So the roll case follows it, where the two
 // forms genuinely differ and yaw and pitch have no answer at all.
 void test_camera_basis_matches_angles_and_can_roll() {
-    pse::Rasterizer angle_raster, basis_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> angle_raster, basis_raster;
     pse::Renderer3D angle_cam(angle_raster), basis_cam(basis_raster);
 
     // A point above the camera and ahead of it. Where it lands on screen is
@@ -306,7 +306,7 @@ void test_camera_basis_matches_angles_and_can_roll() {
     // A point overhead then has to leave the top of the frame and appear out
     // to the right, on the centre row, the same distance out as it was up.
     // Yaw and pitch cannot express this at all: there is no third angle.
-    pse::Rasterizer rolled_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> rolled_raster;
     pse::Renderer3D rolled(rolled_raster);
     TestSurface c(pse::k_render_width, pse::k_render_height,
                   pse::PixelFormat::rgb565);
@@ -339,7 +339,7 @@ void test_box_has_a_lid() {
 
     TestSurface surface(pse::k_render_width, pse::k_render_height,
                         pse::PixelFormat::rgb888);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     pse::Renderer3D renderer(raster);
     raster.begin_frame(surface.target());
     renderer.set_orbit_camera(0.0f, 0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f);
@@ -361,7 +361,7 @@ void test_box_has_a_lid() {
     // than merely inside out.
     TestSurface below(pse::k_render_width, pse::k_render_height,
                       pse::PixelFormat::rgb888);
-    pse::Rasterizer under_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> under_raster;
     pse::Renderer3D under(under_raster);
     under_raster.begin_frame(below.target());
     under.set_orbit_camera(0.0f, 0.0f, 0.0f, 0.0f, 10.0f, -10.0f, 0.0f);
@@ -414,7 +414,7 @@ void test_a_box_is_solid_from_every_side() {
     for (const Case& c : cases) {
         TestSurface surface(pse::k_render_width, pse::k_render_height,
                             pse::PixelFormat::rgb888);
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         pse::Renderer3D renderer(raster);
         raster.begin_frame(surface.target());
         renderer.set_fov(58.0f);
@@ -427,7 +427,7 @@ void test_a_box_is_solid_from_every_side() {
     // And three faces from a corner above, which is the view a game uses.
     TestSurface corner(pse::k_render_width, pse::k_render_height,
                        pse::PixelFormat::rgb888);
-    pse::Rasterizer corner_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> corner_raster;
     pse::Renderer3D corner_view(corner_raster);
     corner_raster.begin_frame(corner.target());
     corner_view.set_fov(58.0f);
@@ -453,7 +453,7 @@ void test_mesh_rendering_and_bounds() {
 
     TestSurface surface(pse::k_render_width, pse::k_render_height,
                         pse::PixelFormat::rgb888);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     pse::Renderer3D renderer(raster);
     raster.begin_frame(surface.target());
     renderer.set_orbit_camera(0.0f, 0.0f, 0.0f, 0.0f, 6.0f, 2.0f);
@@ -464,7 +464,7 @@ void test_mesh_rendering_and_bounds() {
     // An index past the end of the vertex table must be skipped, not followed.
     static const pse::MeshFace bad_faces[] = {{0, 1, 9999, 255, 0, 0, 0, 127, 0}};
     static const pse::MeshData bad{vertices, 4, bad_faces, 1, 256};
-    pse::Rasterizer bad_raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> bad_raster;
     pse::Renderer3D bad_renderer(bad_raster);
     TestSurface bad_surface(pse::k_render_width, pse::k_render_height,
                             pse::PixelFormat::rgb888);
@@ -516,7 +516,7 @@ void test_mesh_roll() {
     };
 
     auto render_at = [&](TestSurface& surface, float roll) {
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         pse::Renderer3D renderer(raster);
         raster.begin_frame(surface.target());
         // Looking along +Z from behind, so +X is screen right and a roll
@@ -547,7 +547,7 @@ void test_mesh_roll() {
     TestSurface defaulted(pse::k_render_width, pse::k_render_height,
                           pse::PixelFormat::rgb888);
     {
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         pse::Renderer3D renderer(raster);
         raster.begin_frame(defaulted.target());
         renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
@@ -582,7 +582,7 @@ void test_mesh_pitch() {
     };
 
     auto render_at = [&](TestSurface& surface, float pitch) {
-        pse::Rasterizer raster;
+        pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
         pse::Renderer3D renderer(raster);
         raster.begin_frame(surface.target());
         renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
@@ -611,7 +611,7 @@ void test_mesh_pitch() {
     // pitch renders byte for byte what it rendered before pitch existed.
     TestSurface defaulted(pse::k_render_width, pse::k_render_height,
                           pse::PixelFormat::rgb888);
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     pse::Renderer3D renderer(raster);
     raster.begin_frame(defaulted.target());
     renderer.set_camera(0.0f, 0.0f, -3.0f, 0.0f, 0.0f);
@@ -657,7 +657,7 @@ void test_split_matches_immediate() {
 
     // Immediate reference.
     TestSurface reference(w, h, pse::PixelFormat::rgb565);
-    static pse::Rasterizer immediate;
+    static pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> immediate;
     immediate.begin_frame(reference.target());
     immediate.clear_gradient(sky.top_r, sky.top_g, sky.top_b,
                              sky.bottom_r, sky.bottom_g, sky.bottom_b);
@@ -665,7 +665,7 @@ void test_split_matches_immediate() {
 
     // Collected and rendered as two bands.
     TestSurface split_out(w, h, pse::PixelFormat::rgb565);
-    static pse::Rasterizer collector;
+    static pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> collector;
     static pse::FrameQueue queue;
     collector.begin_frame_collect(split_out.target(), queue);
     for (const auto& t : tris) collector.draw(t);
@@ -703,7 +703,7 @@ void test_two_scene_split() {
 
     // Reference: the exact band calls the split should reduce to.
     TestSurface reference(w, h, pse::PixelFormat::rgb565);
-    static pse::Rasterizer ref_raster;
+    static pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> ref_raster;
     ref_raster.begin_frame(reference.target());
     ref_raster.clear_gradient_span(sky_top.top_r, sky_top.top_g, sky_top.top_b,
                                    sky_top.bottom_r, sky_top.bottom_g,
@@ -716,7 +716,7 @@ void test_two_scene_split() {
     ref_raster.draw_rows(bottom_tri, mid, h);
 
     TestSurface split_out(w, h, pse::PixelFormat::rgb565);
-    static pse::Rasterizer collector;
+    static pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> collector;
     static pse::FrameQueue queue;
     collector.begin_frame_collect(split_out.target(), queue);
     collector.draw(top_tri);
@@ -795,7 +795,19 @@ void test_memory_budget() {
     CHECK(sizeof(pse::MeshFace) == 12);
     CHECK(sizeof(pse::MeshVertex) == 6);
     CHECK(pse::k_render_width * pse::k_render_height <= 120 * 120);
-    CHECK(sizeof(pse::Rasterizer) < 20 * 1024);
+    // The depth buffer is the caller's now, so a bare Rasterizer is small and
+    // the storage is whatever the caller brought. Both halves are checked:
+    // the class must not quietly regrow an array, and the default sized owner
+    // must still cost exactly the buffer it is named for.
+    CHECK(sizeof(pse::Rasterizer) < 256);
+    CHECK(sizeof(pse::OwnedRasterizer<pse::k_render_width,
+                                      pse::k_render_height>) <
+          sizeof(pse::Rasterizer) + pse::k_render_width * pse::k_render_height
+              + 64);
+    // A window of a different shape costs its own size and nothing global.
+    CHECK(sizeof(pse::OwnedRasterizer<240, 112>) >
+          sizeof(pse::OwnedRasterizer<pse::k_render_width,
+                                      pse::k_render_height>));
 }
 
 }  // namespace
@@ -953,7 +965,7 @@ constexpr int k_w = 120, k_h = 120;
 // regression that would be silent, because three other games draw through this
 // loop and none of them will ever set a tex index.
 void test_untextured_is_unchanged_by_the_texture_path() {
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     std::vector<uint8_t> a(k_w * k_h * 3), b(k_w * k_h * 3);
 
     pse::ScreenTriangle tri{};
@@ -983,7 +995,7 @@ void test_untextured_is_unchanged_by_the_texture_path() {
 // equal) so the expected texel is a plain barycentric lookup and the check does
 // not depend on the perspective maths.
 void test_a_textured_triangle_samples_its_texture() {
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     std::vector<uint8_t> buf(k_w * k_h * 3, 0);
     pse::RenderTarget target{buf.data(), k_w, k_h, k_w * 3,
                              pse::PixelFormat::rgb888};
@@ -1033,7 +1045,7 @@ void test_a_textured_triangle_samples_its_texture() {
 // mapping would put the halfway texel at the halfway pixel, and perspective
 // correct mapping puts it much nearer the far end.
 void test_texture_mapping_is_perspective_correct() {
-    pse::Rasterizer raster;
+    pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> raster;
     std::vector<uint8_t> buf(k_w * k_h * 3, 0);
     pse::RenderTarget target{buf.data(), k_w, k_h, k_w * 3,
                              pse::PixelFormat::rgb888};

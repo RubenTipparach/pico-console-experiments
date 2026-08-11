@@ -39,7 +39,7 @@ using namespace models::picomon;
 // the documented RAM cost of drawing the game:
 //   Rasterizer  14,400 bytes of depth buffer
 //   the rest    under 200 bytes
-pse::Rasterizer g_raster;
+pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> g_raster;
 pse::Renderer3D g_renderer(g_raster);
 
 // ---- the camera, measured out of Black and White ------------------------

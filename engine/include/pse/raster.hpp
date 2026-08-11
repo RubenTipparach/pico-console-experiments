@@ -95,6 +95,29 @@ public:
     Rasterizer(const Rasterizer&) = delete;
     Rasterizer& operator=(const Rasterizer&) = delete;
 
+    /* Where the depth buffer lives, and why the caller owns it.
+     *
+     * It used to be a fixed array inside this class, sized by
+     * PSE_RENDER_WIDTH * PSE_RENDER_HEIGHT. That made two macros part of this
+     * class's LAYOUT, so a game that set them to size a window of its own got
+     * a Rasterizer of a different size to the one raster.cpp was compiled
+     * with. That is an ODR violation and silent memory corruption, not a
+     * bigger window, and it would have looked almost right.
+     *
+     * Handing the buffer in takes the macros out of the layout altogether. A
+     * game picks its own render size with no cost to any other game, and one
+     * program can hold a 120x120 lores scene and a 240x112 hires band at once,
+     * which is what the console needs and what a windowed 3D game needs.
+     *
+     * `buffer` must be at least width * height bytes and outlive every frame.
+     * Until one is set, draw() does nothing: an unset depth buffer draws
+     * nothing rather than scribbling on address zero.
+     */
+    void set_depth_buffer(uint8_t* buffer, int width, int height);
+
+    int depth_width() const { return depth_w_; }
+    int depth_height() const { return depth_h_; }
+
     // Point the rasterizer at this frame's surface and clear the depth buffer.
     void begin_frame(const RenderTarget& target);
 
@@ -190,11 +213,26 @@ private:
     FrameQueue* queue_ = nullptr;
     uint32_t triangles_drawn_ = 0;
 
-    // 14,400 bytes at the default 120x120. This is the renderer's single
-    // largest RAM cost and it is deliberately static.
-    uint8_t depth_[k_render_width * k_render_height];
+    // Borrowed, never owned. See set_depth_buffer.
+    uint8_t* depth_ = nullptr;
+    int depth_w_ = 0;
+    int depth_h_ = 0;
     const Texture* textures_ = nullptr;
     uint8_t texture_count_ = 0;
+};
+
+// A Rasterizer that brings its own depth buffer, which is what a game not
+// sharing one wants. The size is a template argument rather than a macro so
+// two of these can exist in one program at different sizes: the console links
+// several games, and a lores game and a windowed hires one have no business
+// agreeing on a number.
+template <int Width, int Height>
+class OwnedRasterizer : public Rasterizer {
+public:
+    OwnedRasterizer() { set_depth_buffer(storage_, Width, Height); }
+
+private:
+    uint8_t storage_[Width * Height];
 };
 
 }  // namespace pse

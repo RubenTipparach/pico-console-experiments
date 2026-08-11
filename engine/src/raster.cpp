@@ -31,12 +31,19 @@ void Rasterizer::begin_frame(const RenderTarget& target) {
     // Refuse to draw outside the statically sized depth buffer rather than
     // corrupting RAM if a caller hands over a bigger surface than the build was
     // configured for.
-    if (target_.width > k_render_width) target_.width = k_render_width;
-    if (target_.height > k_render_height) target_.height = k_render_height;
+    if (target_.width > depth_w_) target_.width = depth_w_;
+    if (target_.height > depth_h_) target_.height = depth_h_;
 
+    if (depth_ == nullptr) return;
     const int pixels = clamp_int(target_.width * target_.height, 0,
-                                 k_render_width * k_render_height);
+                                 depth_w_ * depth_h_);
     std::memset(depth_, 0xFF, static_cast<size_t>(pixels));
+}
+
+void Rasterizer::set_depth_buffer(uint8_t* buffer, int width, int height) {
+    depth_ = buffer;
+    depth_w_ = buffer ? width : 0;
+    depth_h_ = buffer ? height : 0;
 }
 
 void Rasterizer::begin_frame_collect(const RenderTarget& target,
@@ -44,8 +51,8 @@ void Rasterizer::begin_frame_collect(const RenderTarget& target,
     target_ = target;
     triangles_drawn_ = 0;
 
-    if (target_.width > k_render_width) target_.width = k_render_width;
-    if (target_.height > k_render_height) target_.height = k_render_height;
+    if (target_.width > depth_w_) target_.width = depth_w_;
+    if (target_.height > depth_h_) target_.height = depth_h_;
 
     queue.reset();
     queue_ = &queue;
@@ -58,6 +65,7 @@ void Rasterizer::end_collect() {
 }
 
 void Rasterizer::clear_depth_rows(int row_begin, int row_end) {
+    if (depth_ == nullptr) return;
     row_begin = clamp_int(row_begin, 0, target_.height);
     row_end = clamp_int(row_end, row_begin, target_.height);
     std::memset(depth_ + static_cast<size_t>(row_begin) * target_.width, 0xFF,
@@ -70,6 +78,7 @@ uint8_t* Rasterizer::pixel_at(int x, int y) const {
 }
 
 bool Rasterizer::test_and_set_depth(int x, int y, uint8_t depth) {
+    if (depth_ == nullptr) return false;
     if (x < 0 || x >= target_.width || y < 0 || y >= target_.height) return false;
     const int index = y * target_.width + x;
     if (depth >= depth_[index]) return false;
@@ -104,7 +113,7 @@ bool Rasterizer::rejected(const ScreenTriangle& tri) const {
 }
 
 void Rasterizer::draw(const ScreenTriangle& tri) {
-    if (target_.pixels == nullptr) return;
+    if (target_.pixels == nullptr || depth_ == nullptr) return;
     if (rejected(tri)) return;
 
     if (queue_ != nullptr) {
@@ -118,7 +127,7 @@ void Rasterizer::draw(const ScreenTriangle& tri) {
 
 void Rasterizer::draw_rows(const ScreenTriangle& tri, int row_begin,
                            int row_end) {
-    if (target_.pixels == nullptr) return;
+    if (target_.pixels == nullptr || depth_ == nullptr) return;
     switch (target_.format) {
         case PixelFormat::rgb565: draw_typed<Rgb565>(tri, row_begin, row_end); break;
         case PixelFormat::bgr555: draw_typed<Bgr555>(tri, row_begin, row_end); break;
