@@ -1,0 +1,19 @@
+# The drum's own colours, under the symbols.
+#
+# `face` is near white on purpose and not a taste decision: a texel MULTIPLIES
+# the face's lit colour rather than replacing it (pse/texture.hpp), so the
+# symbol's own colours only survive if what is under them is close to white.
+# Paint the drum mid grey here and every symbol comes out muddy.
+#
+# Pure white, because the shading is what makes it read as a surface: the
+# engine's lambert puts the payline face at 0.67 intensity, so a white drum
+# renders as a mid grey cylinder and every symbol keeps two thirds of its own
+# colour. Painting the drum grey here as well multiplies the two and every
+# symbol comes out muddy.
+newmtl face
+Kd 1.000000 1.000000 1.000000
+
+# The flat ends, which carry no symbol and want to read as the edge of a
+# machined cylinder rather than as more of the printed face.
+newmtl drum
+Kd 0.451000 0.463000 0.510000

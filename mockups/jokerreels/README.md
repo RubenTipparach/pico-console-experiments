@@ -1,8 +1,17 @@
 # Joker Reels, a 3D slot machine mockup
 
 Design mockup for a 3D slot machine with a Balatro shaped run around it.
-Nothing is built yet. This exists so the design can be played and argued about
-before anyone writes C++, which is CLAUDE.md rule 10.
+This exists so the design could be played and argued about before anyone wrote
+C++, which is CLAUDE.md rule 10.
+
+**The game was built from it and is at `/jokerreels/`.** This page is kept as
+the record of what was proposed, not of what shipped, and the two have already
+diverged: the real machine's window is cut from where the drums project, its
+lighting is corrected per facet because the engine's light is fixed, and its
+depth range had to clear the projector's actual near clip rather than the
+drums' front face. What survived intact is the part this page existed to
+argue: the 240x112 window, square facets derived from the radius, per facet
+state instead of an angle formula, and outlines dilated into the texture.
 
 Open `index.html` in a browser. One self contained file, no build step and no
 network.
