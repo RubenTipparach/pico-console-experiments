@@ -1,0 +1,1542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Joker Reels // 240x240 mockup</title>
+<style>
+  :root{
+    --ink:#e8ecf5; --dim:#8d93a6; --line:#252a3a; --bg:#0b0d15; --panel:#12151f;
+    --accent:#ffa300;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:28px 20px 60px}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:.04em}
+  h1 span{color:var(--accent)}
+  p.lede{color:var(--dim);margin:0 0 24px;max-width:70ch}
+  h2{font-size:14px;margin:34px 0 10px;letter-spacing:.06em;color:var(--accent)}
+
+  .bench{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+  .bench .screen{background:var(--panel);border:1px solid var(--line);
+                 border-radius:8px;padding:12px}
+  .bench canvas{width:480px;height:480px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  .bench .side{max-width:36ch;color:var(--dim);font-size:12.5px}
+  .bench .side b{color:var(--ink);font-weight:400}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px;
+        margin:8px 0 0}
+  .keys dt{color:var(--ink);white-space:nowrap}
+  .keys dd{margin:0;color:var(--dim)}
+  .hint{color:var(--dim);font-size:12px;margin:12px 0 0}
+
+  .grid{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);
+         border-radius:8px;padding:12px 12px 10px;width:264px}
+  figure canvas{width:240px;height:240px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  figcaption{margin-top:9px;font-size:12px;color:var(--dim)}
+  figcaption b{color:var(--ink);display:block;font-size:13px;margin-bottom:3px}
+
+  table{border-collapse:collapse;font-size:12.5px}
+  td{padding:3px 16px 3px 0;vertical-align:top;color:var(--dim)}
+  td:first-child{color:var(--ink);white-space:nowrap}
+  ul{color:var(--dim);font-size:12.5px;max-width:78ch;padding-left:18px}
+  li{margin:5px 0}
+  li b{color:var(--ink);font-weight:400}
+  code{color:var(--accent)}
+  p.note{color:var(--dim);font-size:12.5px;max-width:78ch}
+  p.note b{color:var(--ink);font-weight:400}
+
+  @media (max-width:560px){ .bench canvas{width:240px;height:240px} }
+</style>
+</head>
+<body>
+
+<h1>Joker Reels <span>// 240x240 mockup</span></h1>
+<p class="lede">A 3D slot machine with a Balatro shaped run around it. Three
+drums you can actually see turning, a speed dial that trades reading the
+symbols against a multiplier, jokers that fire while the score counts, hands
+you level up, and the ability to open a drum and change what it is able to
+land on. Nothing is built yet: this page exists so the design can be played
+and argued about before anyone writes C++, which is CLAUDE.md rule 10.</p>
+
+<h2>PLAY IT</h2>
+<div class="bench">
+  <div class="screen"><canvas id="bench" width="240" height="240" data-shot="bench"></canvas></div>
+  <div class="side">
+    <b>Set the speed, pull, and stop the drums yourself if you dare.</b>
+    A slow drum can be read and aimed at. A fast one cannot, and pays a
+    multiplier for the privilege. Every reel you leave to stop on its own pays
+    nothing and risks nothing.
+    <dl class="keys">
+      <dt>Z</dt><dd>pull, then stop the next drum still turning</dd>
+      <dt>up / down</dt><dd>the speed dial, and you can move it mid spin</dd>
+      <dt>left / right</dt><dd>move through the shop, turn the drum when one is open</dd>
+      <dt>X</dt><dd>next drum, while one is open</dd>
+      <dt>any key</dt><dd>start, and continue on the end screens</dd>
+      <dt>R</dt><dd>reseed. Bench affordance, not a game control</dd>
+    </dl>
+    <p class="hint">Click the screen first if the keys do nothing.</p>
+    <p class="hint" id="readout" style="color:#e8ecf5"></p>
+  </div>
+</div>
+
+<h2>SCREENS</h2>
+<div class="grid" id="grid"></div>
+
+<h2>THE IDEA</h2>
+<ul>
+  <li><b>A slot machine is a bad game and a great verb.</b> Pulling is
+      satisfying and deciding nothing is not, so everything here is about
+      giving the pull a decision attached to it. There are three: what speed to
+      spin at, when to stop each drum, and what the drums are able to land on
+      at all.</li>
+  <li><b>The speed dial is the risk.</b> SLOW draws the symbol on the front
+      face clearly, so you can watch one come round and stop it. FAIR greys it,
+      so you can time a stop but not read it comfortably. WILD does not draw it
+      at all and is worth +5 mult a reel. That is the whole gamble, and it is
+      one button.</li>
+  <li><b>Stopping is optional.</b> Leave every drum to stop itself and you
+      score nothing extra and take no risk, which is the floor. The BLUR joker
+      pays x2 for doing exactly that, which is the kind of inversion Balatro
+      builds its best runs out of.</li>
+  <li><b>Chips and mult are separate and both large.</b> The tally plays back
+      one line at a time: the hand, then each symbol, then each stop bonus,
+      then each joker in order. Watching one number climb is the feel being
+      borrowed, and a single total would throw it away.</li>
+  <li><b>Opening a drum is the deckbuilding.</b> Each drum is a ring of eight
+      faces, and buying a swap lets you replace one. Put a CROWN on and that
+      drum can land on a crown for ever; the symbol you replaced is gone from
+      it. That is the run's long arc, and it is the one screen where the 3D is
+      doing work a 2D layout could not.</li>
+</ul>
+
+<h2>WHAT IS ON SCREEN, AND WHY</h2>
+<ul>
+  <li><b>The top 112 rows are the machine, in 3D.</b> Everything below is an
+      ordinary 2D panel. See the note on the window below: this split is what
+      makes a hires 3D game affordable at all.</li>
+  <li><b>Ante, bank against target, spins, gold</b> across one strip. Four
+      numbers, which is what a run needs and no more.</li>
+  <li><b>The score box is chips and mult,</b> not a total. The total is one
+      small line under it, because it is the outcome and they are the
+      decision.</li>
+  <li><b>One tally line at a time.</b> The count is the animation.</li>
+  <li><b>The joker row is five slots</b> and shows what you have, not what
+      they do. What a joker does is on the shop card when you buy it and in the
+      tally when it fires, which is the two moments you need it.</li>
+  <li><b>Nothing names a button.</b> Rule 9.</li>
+</ul>
+
+<h2>THE 3D WINDOW, AND WHY IT IS 112 ROWS</h2>
+<p class="note">Every 3D game in this repo runs at lores 120x120, and
+<code>engine/include/pse/config.hpp</code> says why in as many words: the depth
+buffer is <code>width * height</code> bytes, 120x120 costs 14,400, and going to
+240x240 would be 57.6 KB on top of a 115 KB hires framebuffer. A Balatro-shaped
+UI does not fit in 120x120, so that would normally be the end of the idea.</p>
+<p class="note">It is not, because of something the engine already does.
+<code>pse::Rasterizer</code> indexes its depth buffer as
+<code>y * target.width + x</code> on whatever <code>RenderTarget</code> it is
+handed, and <code>RenderTarget</code> carries <code>row_stride</code> separately
+from <code>width</code> precisely so its rows need not be packed. So a target
+pointing at row 0 of a 240x240 screen, with height 112 and the screen's own
+stride, gives a <b>3D window in the top band</b> and a depth buffer that only
+covers that band. <code>PSE_RENDER_WIDTH</code> and
+<code>PSE_RENDER_HEIGHT</code> are already per game overridable through
+<code>DEFINES</code>.</p>
+<table>
+  <tr><td style="color:#ffa300">what</td><td style="color:#ffa300">lores 120x120</td><td style="color:#ffa300">full hires</td><td style="color:#ffa300">this</td></tr>
+  <tr><td>framebuffer</td><td>28.8 KB</td><td>115.2 KB</td><td>115.2 KB</td></tr>
+  <tr><td>depth buffer</td><td>14.4 KB</td><td>57.6 KB</td><td>26.9 KB</td></tr>
+  <tr><td>triangle queue</td><td>21.8 KB</td><td>21.8 KB</td><td>21.8 KB</td></tr>
+  <tr><td>total scratch</td><td>65.0 KB</td><td>194.6 KB</td><td>163.9 KB</td></tr>
+  <tr><td>left of 264 KB</td><td>199 KB</td><td>69 KB</td><td>100 KB</td></tr>
+  <tr><td>pixels a full frame can shade</td><td>14,400</td><td>57,600</td><td>26,880</td></tr>
+</table>
+<p class="note">So the readable UI costs 1.9x the lores fill rate rather than
+4x, and leaves 100 KB. Whether that is affordable in <em>time</em> on a 250 MHz
+M0+ is not something this page can answer and it should not pretend to:
+config.hpp is blunt that nobody has measured the time budget on hardware. What
+it can say is the triangle count and the fill, which are measured below and are
+small, because the scene is one machine and never grows.</p>
+
+<h2>DOES THE TEXT FIT</h2>
+<p class="note" id="fits"></p>
+
+<h2>WHAT IT COSTS</h2>
+<p class="note" id="perf"></p>
+<ul>
+  <li><b>The scene is 3 drums of 8 faces, 2 end fans each, and 3 cabinet
+      quads.</b> 27 quads of 2 triangles is 54 triangles plus 48 fan triangles,
+      against a queue that holds 640. There is no world to stream and no LOD to
+      pick.</li>
+  <li><b>The symbol is a screen space sprite, not a texture.</b> The engine has
+      perspective correct texturing and it would work, but only the face at the
+      front of a drum is ever read, and at the front it is nearly flat on to
+      the camera. One 5x5 pip drawn at the projected centre of the front face,
+      squashed by how far that face has turned, reads the same and costs
+      nothing per pixel.</li>
+  <li><b>Game state is tiny:</b> three rings of eight bytes, five joker
+      indices, four hand levels, and a tally of at most a dozen entries. Under
+      200 bytes.</li>
+  <li><b>Art</b> is the eight symbol pips and whatever the cabinet needs, which
+      is the one thing this page has not designed and would want real PNGs for
+      (rule 11 as it now applies to sprites).</li>
+</ul>
+
+<h2>OPEN QUESTIONS</h2>
+<ul>
+  <li><b>Is the 112 row window the right split?</b> It is the number that makes
+      the panel hold a score box, a speed dial, a tally line and five joker
+      slots without crowding. More rows to the machine means a cramped panel;
+      fewer means the drums stop reading as objects.</li>
+  <li><b>Three drums or five?</b> Three keeps a hand readable at a glance and
+      the drums big. Five gives room for real poker hands and makes each drum
+      small and each swap cheaper. This page is built on three.</li>
+  <li><b>Should stopping a drum be free?</b> Right now leaving them all to stop
+      themselves is the safe floor and one joker pays for it. The alternative is
+      that not stopping costs you, which would force engagement and remove the
+      floor.</li>
+  <li><b>Eight jokers is a demo, not a game.</b> Balatro ships 150. What makes
+      this worth building is whether twenty or so can be written that interact,
+      and that is a design job to do before the C++, not after.</li>
+</ul>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * The device, as far as this page is concerned.
+ *
+ * 240x240, RGB565 out, and a drawing API with nothing in it the RP2040
+ * will not have. No ctx.arc, no fillText, no gradients, no alpha. The
+ * frame is built in a Uint32Array and pushed once.
+ * ------------------------------------------------------------------ */
+const W = 240, H = 240;
+const TAU = Math.PI * 2;
+
+// PICO-8's sixteen, then four the cart could not afford and 240x240 can.
+const PAL_HEX = [
+  '#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C7','#FFF1E8',
+  '#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA',
+  '#B0003A', // 16 terrain mid, one step down from colour 8
+  '#7A5C3E'  // 17 rock lit face
+];
+// Quantised on the way in, because RGB565 is what the panel is handed and a
+// mockup that shows colours the panel cannot is a mockup that lies.
+const PACK = PAL_HEX.map(h => {
+  const r = parseInt(h.slice(1,3),16) & 0xF8;
+  const g = parseInt(h.slice(3,5),16) & 0xFC;
+  const b = parseInt(h.slice(5,7),16) & 0xF8;
+  return (255<<24) | (b<<16) | (g<<8) | r;   // little endian ABGR
+});
+
+let FB = null;                       // the Uint32Array being drawn into
+function useTarget(s){ FB = s.buf; }
+
+function cls(c){ FB.fill(PACK[c]); }
+function pset(x,y,c){
+  x|=0; y|=0;
+  if(x<0||y<0||x>=W||y>=H) return;
+  FB[y*W+x] = PACK[c];
+}
+function hline(x0,x1,y,c){
+  y|=0; if(y<0||y>=H) return;
+  if(x0>x1){ const t=x0; x0=x1; x1=t; }
+  x0|=0; x1|=0;
+  if(x1<0||x0>=W) return;
+  if(x0<0) x0=0; if(x1>=W) x1=W-1;
+  const p = PACK[c], row = y*W;
+  for(let x=x0;x<=x1;x++) FB[row+x]=p;
+}
+function vline(x,y0,y1,c){
+  x|=0; if(x<0||x>=W) return;
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  y0|=0; y1|=0;
+  if(y1<0||y0>=H) return;
+  if(y0<0) y0=0; if(y1>=H) y1=H-1;
+  const p = PACK[c];
+  for(let y=y0;y<=y1;y++) FB[y*W+x]=p;
+}
+function rectfill(x0,y0,x1,y1,c){
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  for(let y=y0|0;y<=(y1|0);y++) hline(x0,x1,y,c);
+}
+function rect(x0,y0,x1,y1,c){
+  hline(x0,x1,y0,c); hline(x0,x1,y1,c);
+  vline(x0,y0,y1,c); vline(x1,y0,y1,c);
+}
+function line(x0,y0,x1,y1,c){
+  x0|=0; y0|=0; x1|=0; y1|=0;
+  const dx=Math.abs(x1-x0), sx=x0<x1?1:-1;
+  const dy=-Math.abs(y1-y0), sy=y0<y1?1:-1;
+  let err=dx+dy;
+  for(;;){
+    pset(x0,y0,c);
+    if(x0===x1 && y0===y1) break;
+    const e2=2*err;
+    if(e2>=dy){ err+=dy; x0+=sx; }
+    if(e2<=dx){ err+=dx; y0+=sy; }
+  }
+}
+function circfill(cx,cy,r,c){
+  cx|=0; cy|=0;
+  const rr = r*r;
+  for(let dy=-Math.ceil(r); dy<=Math.ceil(r); dy++){
+    const s = rr - dy*dy;
+    if(s < 0) continue;
+    const dx = Math.sqrt(s)|0;
+    hline(cx-dx, cx+dx, cy+dy, c);
+  }
+}
+function circ(cx,cy,r,c){
+  cx|=0; cy|=0;
+  let x=r|0, y=0, err=1-x;
+  while(x>=y){
+    pset(cx+x,cy+y,c); pset(cx+y,cy+x,c);
+    pset(cx-y,cy+x,c); pset(cx-x,cy+y,c);
+    pset(cx-x,cy-y,c); pset(cx-y,cy-x,c);
+    pset(cx+y,cy-x,c); pset(cx+x,cy-y,c);
+    y++;
+    if(err<0) err += 2*y+1; else { x--; err += 2*(y-x)+1; }
+  }
+}
+
+/* minimal_font, honestly.
+ *
+ * 32blit's smallest font is a 3x5 glyph in a 4x6 cell, so a string of n
+ * characters is 4n-1 wide and 5 tall. Everything on screen is measured with
+ * measure(), never placed by eye: rule 9. A heading at scale 2 is what
+ * pse::draw_text gives the real build, not the SDK font. */
+const GLYPHS = {
+  '0':'111101101101111','1':'010110010010111','2':'111001111100111','3':'111001111001111',
+  '4':'101101111001001','5':'111100111001111','6':'111100111101111','7':'111001001001001',
+  '8':'111101111101111','9':'111101111001111',
+  'A':'111101111101101','B':'110101110101110','C':'111100100100111','D':'110101101101110',
+  'E':'111100110100111','F':'111100110100100','G':'111100101101111','H':'101101111101101',
+  'I':'111010010010111','J':'001001001101111','K':'101101110101101','L':'100100100100111',
+  'M':'101111111101101','N':'110101101101101','O':'111101101101111','P':'111101111100100',
+  'Q':'111101101111001','R':'111101110101101','S':'111100111001111','T':'111010010010010',
+  'U':'101101101101111','V':'101101101101010','W':'101101111111101','X':'101101010101101',
+  'Y':'101101010010010','Z':'111001010100111',
+  ' ':'000000000000000','.':'000000000000010',':':'000010000010000','-':'000000111000000',
+  '+':'000010111010000','/':'001001010100100','!':'010010010000010','?':'111001011000010',
+  '%':'101001010100101','>':'100010001010100','<':'001010100010001','=':'000111000111000',
+  ',':'000000000010100',"'":'010010000000000','(':'001010010010001',')':'100010010010100',
+  '*':'000101010101000','#':'101111101111101'
+};
+const GLYPH_W = 3, GLYPH_H = 5, ADVANCE = 4;
+function measure(s, scale){ scale = scale||1; return (s.length*ADVANCE - 1) * scale; }
+function print(s, x, y, c, scale){
+  scale = scale||1;
+  x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS[s[i]] || GLYPHS[s[i].toUpperCase()] || GLYPHS['?'];
+    const gx = x + i*ADVANCE*scale;
+    for(let ry=0;ry<GLYPH_H;ry++){
+      for(let rx=0;rx<GLYPH_W;rx++){
+        if(g[ry*GLYPH_W+rx] === '1'){
+          if(scale===1) pset(gx+rx, y+ry, c);
+          else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+        }
+      }
+    }
+  }
+}
+function printc(s, cx, y, c, scale){
+  scale = scale||1;
+  print(s, (cx - measure(s,scale)/2)|0, y, c, scale);
+}
+// A shadowed heading, which is how the cart drew its own titles.
+function printcs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  printc(s, cx+scale, y+scale, shadow, scale);
+  printc(s, cx, y, c, scale);
+}
+function printr(s, rightX, y, c, scale){
+  scale = scale||1;
+  print(s, (rightX - measure(s,scale))|0, y, c, scale);
+}
+
+/* The engine's own 5x7, for anything a 3 px glyph cannot carry.
+ *
+ * minimal_font's M is three pixels wide and reads as an H with a filled
+ * middle, which is fine in a HUD and not fine in a title. The real build has
+ * pse::draw_text (engine/include/pse/text.hpp) for exactly this: a 5x7 bitmap
+ * font with a scale argument, drawn straight into a RenderTarget, so it works
+ * on the device and in the host preview harness alike. One blank column
+ * between glyphs, so n characters is 6n-1 wide. */
+const G7W = 5, G7H = 7, ADV7 = 6;
+// One row per line, exactly as engine/font/console5x7.txt holds them, because
+// a glyph written as one 35 character string is a glyph nobody can check: the
+// first version of this table had four miscounted rows and drew A as P.
+const GLYPHS7_SRC = {
+  'A':['.###.','#...#','#...#','#####','#...#','#...#','#...#'],
+  'B':['####.','#...#','#...#','####.','#...#','#...#','####.'],
+  'C':['.###.','#...#','#....','#....','#....','#...#','.###.'],
+  'D':['####.','#...#','#...#','#...#','#...#','#...#','####.'],
+  'E':['#####','#....','#....','####.','#....','#....','#####'],
+  'F':['#####','#....','#....','####.','#....','#....','#....'],
+  'G':['.###.','#...#','#....','#.###','#...#','#...#','.###.'],
+  'H':['#...#','#...#','#...#','#####','#...#','#...#','#...#'],
+  'I':['#####','..#..','..#..','..#..','..#..','..#..','#####'],
+  'J':['....#','....#','....#','....#','#...#','#...#','.###.'],
+  'K':['#...#','#..#.','#.#..','##...','#.#..','#..#.','#...#'],
+  'L':['#....','#....','#....','#....','#....','#....','#####'],
+  'M':['#...#','##.##','#.#.#','#.#.#','#...#','#...#','#...#'],
+  'N':['#...#','##..#','##..#','#.#.#','#..##','#..##','#...#'],
+  'O':['.###.','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'P':['####.','#...#','#...#','####.','#....','#....','#....'],
+  'Q':['.###.','#...#','#...#','#...#','#.#.#','#..#.','.##.#'],
+  'R':['####.','#...#','#...#','####.','#.#..','#..#.','#...#'],
+  'S':['.###.','#...#','#....','.###.','....#','#...#','.###.'],
+  'T':['#####','..#..','..#..','..#..','..#..','..#..','..#..'],
+  'U':['#...#','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'V':['#...#','#...#','#...#','#...#','#...#','.#.#.','..#..'],
+  'W':['#...#','#...#','#...#','#.#.#','#.#.#','##.##','#...#'],
+  'X':['#...#','#...#','.#.#.','..#..','.#.#.','#...#','#...#'],
+  'Y':['#...#','#...#','.#.#.','..#..','..#..','..#..','..#..'],
+  'Z':['#####','....#','...#.','..#..','.#...','#....','#####'],
+  '0':['.###.','#...#','#..##','#.#.#','##..#','#...#','.###.'],
+  '1':['..#..','.##..','..#..','..#..','..#..','..#..','#####'],
+  '2':['.###.','#...#','....#','...#.','..#..','.#...','#####'],
+  '3':['#####','...#.','..#..','...#.','....#','#...#','.###.'],
+  '4':['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.'],
+  '5':['#####','#....','####.','....#','....#','#...#','.###.'],
+  '6':['..##.','.#...','#....','####.','#...#','#...#','.###.'],
+  '7':['#####','....#','...#.','..#..','.#...','.#...','.#...'],
+  '8':['.###.','#...#','#...#','.###.','#...#','#...#','.###.'],
+  '9':['.###.','#...#','#...#','.####','....#','...#.','.##..'],
+  ' ':['.....','.....','.....','.....','.....','.....','.....'],
+  '.':['.....','.....','.....','.....','.....','.##..','.##..'],
+  ':':['.....','.##..','.##..','.....','.##..','.##..','.....'],
+  '-':['.....','.....','.....','#####','.....','.....','.....'],
+  '!':['..#..','..#..','..#..','..#..','..#..','.....','..#..'],
+  '/':['....#','....#','...#.','..#..','.#...','#....','#....'],
+  '+':['.....','..#..','..#..','#####','..#..','..#..','.....']
+};
+const GLYPHS7 = {};
+for(const k in GLYPHS7_SRC){
+  const rows = GLYPHS7_SRC[k];
+  if(rows.length !== G7H) throw new Error('5x7 glyph ' + k + ' has ' + rows.length + ' rows');
+  for(const r of rows) if(r.length !== G7W) throw new Error('5x7 glyph ' + k + ' row "' + r + '"');
+  GLYPHS7[k] = rows.join('');
+}
+function measure7(s, scale){ scale = scale||1; return (s.length*ADV7 - 1) * scale; }
+function print7(s, x, y, c, scale){
+  scale = scale||1; x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS7[s[i]] || GLYPHS7[s[i].toUpperCase()] || GLYPHS7[' '];
+    const gx = x + i*ADV7*scale;
+    for(let ry=0;ry<G7H;ry++) for(let rx=0;rx<G7W;rx++){
+      if(g[ry*G7W+rx] === '#'){
+        if(scale===1) pset(gx+rx, y+ry, c);
+        else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+      }
+    }
+  }
+}
+function print7c(s, cx, y, c, scale){
+  scale = scale||1;
+  print7(s, (cx - measure7(s,scale)/2)|0, y, c, scale);
+}
+function print7cs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  print7c(s, cx+scale, y+scale, shadow, scale);
+  print7c(s, cx, y, c, scale);
+}
+
+function makeScreen(canvas){
+  const ctx = canvas.getContext('2d', {alpha:false});
+  ctx.imageSmoothingEnabled = false;
+  const img = ctx.createImageData(W,H);
+  const buf = new Uint32Array(img.data.buffer);
+  return {ctx, img, buf};
+}
+function present(s){ s.ctx.putImageData(s.img, 0, 0); }
+
+// Deterministic, so a posed frame is the same frame every time the page loads.
+function rng(seed){
+  let s = (seed>>>0) || 1;
+  return () => { s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* ------------------------------------------------------------------ *
+ * A software rasterizer that mirrors pse::Rasterizer and pse::Renderer3D.
+ *
+ * Same shape as the engine's, so what this page shows is what the device
+ * would draw: flat shaded triangles, backfaces culled in world space, a one
+ * byte depth buffer, and a fixed point screen space.
+ *
+ * The one thing worth reading carefully is the WINDOW. The engine's
+ * rasterizer indexes its depth buffer as y * target.width + x on whatever
+ * RenderTarget it is handed, and RenderTarget carries row_stride separately
+ * from width precisely so its rows need not be packed. So handing it a target
+ * that points at row 0 of a 240x240 screen with height 112 and the screen's
+ * own stride gives a 3D window in the top band and a depth buffer that only
+ * covers that band: 240 x 112 is 26,880 bytes rather than the 57,600 a full
+ * hires depth buffer would cost. The panel underneath is ordinary 2D.
+ * ------------------------------------------------------------------ */
+const VIEW_W = 240;         // the 3D window, top band of a 240x240 screen
+const VIEW_H = 112;
+const DEPTH = new Uint8Array(VIEW_W * VIEW_H);
+
+// The engine's fixed point scale, for the record: it projects and rasterizes
+// in integers because the RP2040 has no FPU. This page keeps the maths in
+// floats and rounds at the same places, which is honest about the geometry
+// without pretending to reproduce the exact rounding.
+const K_FIXED_ONE = 1024;
+
+let cam = {x: 0, y: 1.5, z: -44, yaw: 0, pitch: -0.06, fov: 52};
+
+function clearDepth() { DEPTH.fill(0xFF); }
+
+function project(p) {
+    // Camera space.
+    let dx = p[0] - cam.x, dy = p[1] - cam.y, dz = p[2] - cam.z;
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    let rx = dx * cy - dz * sy;
+    let rz = dx * sy + dz * cy;
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    let ry = dy * cp - rz * sp;
+    rz = dy * sp + rz * cp;
+    if (rz < 0.2) return null;                        // near plane
+    const f = (VIEW_H / 2) / Math.tan(cam.fov * Math.PI / 360);
+    return {
+        x: VIEW_W / 2 + (rx * f) / rz,
+        y: VIEW_H / 2 - (ry * f) / rz,
+        z: rz
+    };
+}
+
+// Depth is one byte across the projector's range, as the engine's is.
+function depthByte(z) {
+    const near = 6, far = 80;
+    let t = (z - near) / (far - near);
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return (t * 254) | 0;
+}
+
+function triangle(a, b, c, col) {
+    // Screen space backface cull, matching the engine's winding.
+    const area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+    if (area <= 0) return 0;
+
+    let minx = Math.max(0, Math.floor(Math.min(a.x, b.x, c.x)));
+    let maxx = Math.min(VIEW_W - 1, Math.ceil(Math.max(a.x, b.x, c.x)));
+    let miny = Math.max(0, Math.floor(Math.min(a.y, b.y, c.y)));
+    let maxy = Math.min(VIEW_H - 1, Math.ceil(Math.max(a.y, b.y, c.y)));
+    if (minx > maxx || miny > maxy) return 0;
+
+    const za = depthByte(a.z), zb = depthByte(b.z), zc = depthByte(c.z);
+    const inv = 1 / area;
+    let filled = 0;
+    for (let y = miny; y <= maxy; y++) {
+        for (let x = minx; x <= maxx; x++) {
+            const px = x + 0.5, py = y + 0.5;
+            const w0 = (b.x - a.x) * (py - a.y) - (px - a.x) * (b.y - a.y);
+            const w1 = (c.x - b.x) * (py - b.y) - (px - b.x) * (c.y - b.y);
+            const w2 = (a.x - c.x) * (py - c.y) - (px - c.x) * (a.y - c.y);
+            if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+            const l0 = w1 * inv, l1 = w2 * inv, l2 = w0 * inv;
+            const d = (za * l0 + zb * l1 + zc * l2) | 0;
+            const di = y * VIEW_W + x;
+            if (d >= DEPTH[di]) continue;
+            DEPTH[di] = d;
+            FB[y * W + x] = PACK[col];
+            filled++;
+        }
+    }
+    return filled;
+}
+
+// A quad as two triangles, lit by one lambert term against a fixed light, the
+// way pse::Renderer3D shades a face.
+const LIGHT = (function () {
+    const v = [-0.4, 0.75, -0.55];
+    const n = Math.hypot(v[0], v[1], v[2]);
+    return [v[0] / n, v[1] / n, v[2] / n];
+})();
+
+function shade(base, nx, ny, nz) {
+    let d = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+    if (d < 0) d = 0;
+    // Three steps, because a palette game does not have a gradient to spend.
+    return d > 0.72 ? base[0] : (d > 0.34 ? base[1] : base[2]);
+}
+
+let TRI_COUNT = 0;
+let FILL_COUNT = 0;
+
+function quad(p0, p1, p2, p3, base) {
+    // World space normal, from the first three corners.
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p3[0] - p0[0], vy = p3[1] - p0[1], vz = p3[2] - p0[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    const col = shade(base, nx, ny, nz);
+
+    const a = project(p0), b = project(p1), c = project(p2), d = project(p3);
+    if (!a || !b || !c || !d) return;
+    TRI_COUNT += 2;
+    FILL_COUNT += triangle(a, b, c, col) + triangle(a, c, d, col);
+}
+
+function rotX(p, ang, cx, cy, cz) {
+    const s = Math.sin(ang), c = Math.cos(ang);
+    const y = p[1] - cy, z = p[2] - cz;
+    return [p[0], cy + y * c - z * s, cz + y * s + z * c];
+}
+
+// A flat triangle with its own world normal, for the drum end caps. They were
+// quads with a repeated corner, which is a degenerate triangle: it either
+// fills nothing or, winding the other way, fills a wedge that is not part of
+// the object. Both happened, which is why the drums had wings.
+function tri3(p0, p1, p2, base) {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    const col = shade(base, nx, ny, nz);
+    const a = project(p0), b = project(p1), c = project(p2);
+    if (!a || !b || !c) return;
+    TRI_COUNT += 1;
+    FILL_COUNT += triangle(a, b, c, col);
+}
+/* ------------------------------------------------------------------ *
+ * Joker Reels: the rules.
+ *
+ * A slot machine with a Balatro shaped run around it. The slot half is the
+ * verb, the Balatro half is the reason to keep pulling.
+ * ------------------------------------------------------------------ */
+
+// Eight symbols, which is one drum face each. Chips are what a symbol is
+// worth before any multiplier, the way Balatro's cards carry chips.
+const SYMBOLS = [
+    {name: 'CHERRY',  chips: 10, col: 8,  face: 0},
+    {name: 'BELL',    chips: 15, col: 10, face: 1},
+    {name: 'PLUM',    chips: 20, col: 2,  face: 2},
+    {name: 'BAR',     chips: 25, col: 6,  face: 3},
+    {name: 'CLOVER',  chips: 30, col: 11, face: 4},
+    {name: 'SEVEN',   chips: 40, col: 9,  face: 5},
+    {name: 'DIAMOND', chips: 55, col: 12, face: 6},
+    {name: 'CROWN',   chips: 75, col: 14, face: 7},
+];
+const FACES_PER_DRUM = 8;
+const DRUMS = 3;
+
+// Hands, in the Balatro sense: what the three landed symbols make. Each has a
+// level, and levelling one is what an upgrade buys.
+const HANDS = [
+    {name: 'THREE OF A KIND', chips: 100, mult: 8, per: [40, 3]},
+    {name: 'RUN',             chips: 60,  mult: 5, per: [25, 2]},
+    {name: 'PAIR',            chips: 30,  mult: 3, per: [15, 1]},
+    {name: 'NOTHING',         chips: 5,   mult: 1, per: [5, 1]},
+];
+const HAND_THREE = 0, HAND_RUN = 1, HAND_PAIR = 2, HAND_NOTHING = 3;
+
+// Jokers. Every one of them is a rule that fires while the score is being
+// counted, which is the shape Balatro's are.
+const JOKERS = [
+    {name: 'GREASER',   cost: 6, col: 8,
+     text: '+4 MULT IF ALL REELS STOP FAST'},
+    {name: 'TWIN',      cost: 5, col: 12,
+     text: '+30 CHIPS PER PAIR'},
+    {name: 'RATCHET',   cost: 7, col: 9,
+     text: '+1 MULT PER SPIN THIS ROUND'},
+    {name: 'BLUR',      cost: 8, col: 13,
+     text: 'X2 MULT IF YOU STOPPED NOTHING'},
+    {name: 'COLLECTOR', cost: 5, col: 11,
+     text: '+10 CHIPS PER DIFFERENT SYMBOL'},
+    {name: 'METRONOME', cost: 6, col: 14,
+     text: '+3 MULT IF ALL STOPS MATCH'},
+    {name: 'SUNK COST', cost: 6, col: 5,
+     text: '+50 CHIPS PER SPIN ALREADY USED'},
+    {name: 'UNDERSTUDY',cost: 9, col: 7,
+     text: 'COPIES THE JOKER ON ITS LEFT'},
+];
+
+const MAX_JOKERS = 5;
+const ANTES = 8;
+const SPINS_PER_ROUND = 5;
+
+// Three speeds, and the whole risk of the game is on this dial. Slow enough
+// to read the symbols coming round, or fast enough that you cannot, and the
+// mult pays for the difference.
+const SPEEDS = [
+    {name: 'SLOW', rate: 0.055, mult: 0, blur: 0},
+    {name: 'FAIR', rate: 0.135, mult: 2, blur: 1},
+    {name: 'WILD', rate: 0.290, mult: 5, blur: 2},
+];
+
+const target_for = ante => Math.floor(300 * Math.pow(1.6, ante - 1));
+
+function newGame(seed) {
+    const g = {
+        rnd: rng(seed), state: 'title', t: 0,
+        ante: 1, target: target_for(1), banked: 0, spins: SPINS_PER_ROUND,
+        gold: 4,
+        // Each drum is an ordered ring of symbol indices. Swapping a face is
+        // the deckbuilding: it changes what that drum can ever land on.
+        drums: [],
+        angle: [0, 0, 0], spinning: [false, false, false],
+        stoppedAt: [-1, -1, -1],          // which speed each reel was stopped at
+        landed: [0, 0, 0],
+        speed: 1,
+        jokers: [], handLevel: [1, 1, 1, 1],
+        // Scoring readout, Balatro's chips and mult shown separately because
+        // the whole game is watching one of them grow.
+        chips: 0, mult: 0, handIndex: HAND_NOTHING, scored: 0,
+        tally: [], tallyStep: 0,
+        shopItems: [], shopSel: 0,
+        swapDrum: 0, swapFace: 0, swapTo: 0,
+        msg: '', flash: 0,
+    };
+    for (let d = 0; d < DRUMS; d++) {
+        const ring = [];
+        for (let i = 0; i < FACES_PER_DRUM; i++) {
+            // Opening drums are weighted low: the good symbols are things you
+            // put on later, which is what makes swapping a face feel like a
+            // purchase rather than a shuffle.
+            ring.push(Math.min(5, (i % 6) + ((g.rnd() < 0.25) ? 1 : 0)));
+        }
+        g.drums.push(ring);
+    }
+    return g;
+}
+
+function faceAt(g, drum, angle) {
+    // Which face is at the front of the drum, given its rotation.
+    const step = (Math.PI * 2) / FACES_PER_DRUM;
+    let i = Math.round(angle / step) % FACES_PER_DRUM;
+    if (i < 0) i += FACES_PER_DRUM;
+    return g.drums[drum][(FACES_PER_DRUM - i) % FACES_PER_DRUM];
+}
+
+function startSpin(g) {
+    if (g.spins <= 0) return;
+    g.spins--;
+    g.state = 'spin';
+    g.spinning = [true, true, true];
+    g.stoppedAt = [-1, -1, -1];
+    g.chips = 0; g.mult = 0; g.scored = 0;
+    g.tally = []; g.tallyStep = 0;
+    g.msg = '';
+    // Every drum stops itself eventually, in order, unless you stop it first.
+    // Without this a spin never ends, and the whole "leave them alone" line of
+    // play, which one joker pays x2 for, is unreachable.
+    g.spinTicks = 0;
+    g.autoStop = [190, 260, 330];
+}
+
+function stopNext(g) {
+    for (let d = 0; d < DRUMS; d++) {
+        if (g.spinning[d]) {
+            g.spinning[d] = false;
+            g.stoppedAt[d] = g.speed;
+            snapDrum(g, d);
+            return true;
+        }
+    }
+    return false;
+}
+
+function snapDrum(g, d) {
+    const step = (Math.PI * 2) / FACES_PER_DRUM;
+    g.angle[d] = Math.round(g.angle[d] / step) * step;
+    g.landed[d] = faceAt(g, d, g.angle[d]);
+}
+
+function handOf(landed) {
+    const a = landed[0], b = landed[1], c = landed[2];
+    if (a === b && b === c) return HAND_THREE;
+    const s = [a, b, c].slice().sort((x, y) => x - y);
+    if (s[1] === s[0] + 1 && s[2] === s[1] + 1) return HAND_RUN;
+    if (a === b || b === c || a === c) return HAND_PAIR;
+    return HAND_NOTHING;
+}
+
+function handValue(g, index) {
+    const h = HANDS[index];
+    const lv = g.handLevel[index] - 1;
+    return {chips: h.chips + h.per[0] * lv, mult: h.mult + h.per[1] * lv};
+}
+
+/* Scoring, built as a list of steps rather than one number.
+ *
+ * Balatro's whole feel is watching the tally happen: the hand lands, then each
+ * card adds chips, then each joker fires in order. A slot machine that just
+ * printed a total would throw that away, so the score is a script the render
+ * plays back one entry at a time. */
+function score(g) {
+    const idx = handOf(g.landed);
+    g.handIndex = idx;
+    const base = handValue(g, idx);
+    g.tally = [];
+    g.chips = base.chips;
+    g.mult = base.mult;
+    g.tally.push({what: HANDS[idx].name, chips: base.chips, mult: base.mult, col: 7});
+
+    for (let d = 0; d < DRUMS; d++) {
+        const s = SYMBOLS[g.landed[d]];
+        g.tally.push({what: s.name, chips: s.chips, mult: 0, col: s.col});
+    }
+
+    // The speed dial pays here, once per reel you stopped yourself.
+    let fastStops = 0, stoppedAny = false, allSame = true, firstStop = -1;
+    for (let d = 0; d < DRUMS; d++) {
+        const at = g.stoppedAt[d];
+        if (at >= 0) {
+            stoppedAny = true;
+            if (firstStop < 0) firstStop = at;
+            else if (at !== firstStop) allSame = false;
+            if (at === 2) fastStops++;
+            if (SPEEDS[at].mult > 0) {
+                g.tally.push({what: SPEEDS[at].name + ' STOP', chips: 0,
+                              mult: SPEEDS[at].mult, col: 9});
+            }
+        }
+    }
+
+    const counts = {};
+    for (const l of g.landed) counts[l] = (counts[l] || 0) + 1;
+    const distinct = Object.keys(counts).length;
+    const pairs = Object.values(counts).filter(n => n >= 2).length;
+
+    for (let j = 0; j < g.jokers.length; j++) {
+        let jk = JOKERS[g.jokers[j]];
+        // UNDERSTUDY copies whatever is to its left, which is why it is
+        // resolved here rather than when it is bought.
+        if (jk.name === 'UNDERSTUDY' && j > 0) jk = JOKERS[g.jokers[j - 1]];
+        let chips = 0, mult = 0;
+        switch (jk.name) {
+            case 'GREASER':   if (fastStops === DRUMS) mult = 4; break;
+            case 'TWIN':      chips = 30 * pairs; break;
+            case 'RATCHET':   mult = (SPINS_PER_ROUND - g.spins); break;
+            case 'BLUR':      if (!stoppedAny) mult = -1; break;   // -1 marks a x2
+            case 'COLLECTOR': chips = 10 * distinct; break;
+            case 'METRONOME': if (stoppedAny && allSame) mult = 3; break;
+            case 'SUNK COST': chips = 50 * (SPINS_PER_ROUND - g.spins - 1); break;
+            default: break;
+        }
+        if (chips || mult) {
+            g.tally.push({what: jk.name, chips: chips, mult: mult, col: jk.col,
+                          joker: true});
+        }
+    }
+    return g.tally;
+}
+
+// Play the tally back one entry at a time. The render draws whatever the last
+// applied entry was, which is how the count reads as a count.
+function applyTallyStep(g) {
+    if (g.tallyStep >= g.tally.length) return false;
+    const e = g.tally[g.tallyStep++];
+    if (g.tallyStep === 1) return true;         // the hand itself is already in
+    g.chips += e.chips;
+    if (e.mult === -1) g.mult *= 2;
+    else g.mult += e.mult;
+    return true;
+}
+
+function finishScore(g) {
+    g.scored = g.chips * g.mult;
+    g.banked += g.scored;
+    g.gold += Math.max(1, Math.floor(g.scored / Math.max(1, g.target / 4)));
+    if (g.banked >= g.target) {
+        g.state = 'cleared';
+        g.msg = 'ANTE ' + g.ante + ' CLEAR';
+    } else if (g.spins <= 0) {
+        g.state = 'over';
+        g.msg = 'OUT OF SPINS';
+    } else {
+        g.state = 'idle';
+    }
+}
+
+function openShop(g) {
+    g.state = 'shop';
+    g.shopSel = 0;
+    g.shopItems = [];
+    // Two jokers and two upgrades, which is enough of a choice to be a choice
+    // and few enough to fit a 240 wide panel.
+    const pool = [];
+    for (let i = 0; i < JOKERS.length; i++) if (!g.jokers.includes(i)) pool.push(i);
+    for (let n = 0; n < 2 && pool.length; n++) {
+        const k = Math.floor(g.rnd() * pool.length);
+        g.shopItems.push({kind: 'joker', joker: pool[k], cost: JOKERS[pool[k]].cost});
+        pool.splice(k, 1);
+    }
+    const h = Math.floor(g.rnd() * 3);
+    g.shopItems.push({kind: 'hand', hand: h, cost: 5});
+    g.shopItems.push({kind: 'swap', cost: 4});
+}
+
+function buy(g) {
+    const item = g.shopItems[g.shopSel];
+    if (!item || item.sold || g.gold < item.cost) return;
+    if (item.kind === 'joker') {
+        if (g.jokers.length >= MAX_JOKERS) return;
+        g.jokers.push(item.joker);
+    } else if (item.kind === 'hand') {
+        g.handLevel[item.hand]++;
+    } else if (item.kind === 'swap') {
+        g.state = 'swap';
+        g.swapDrum = 0; g.swapFace = 0; g.swapTo = g.drums[0][0];
+    }
+    g.gold -= item.cost;
+    item.sold = true;
+}
+
+function nextAnte(g) {
+    g.ante++;
+    if (g.ante > ANTES) {
+        g.state = 'win';
+        return;
+    }
+    g.target = target_for(g.ante);
+    g.banked = 0;
+    g.spins = SPINS_PER_ROUND;
+    g.state = 'idle';
+}
+
+function tick(g, btn) {
+    g.t++;
+    if (g.flash > 0) g.flash--;
+
+    if (g.state === 'title') {
+        for (let d = 0; d < DRUMS; d++) g.angle[d] += 0.02 + d * 0.004;
+        if (btn.any) { g.state = 'idle'; }
+        return;
+    }
+
+    if (g.state === 'spin') {
+        g.spinTicks++;
+        let any = false;
+        for (let d = 0; d < DRUMS; d++) {
+            if (!g.spinning[d]) continue;
+            if (g.spinTicks >= g.autoStop[d]) {
+                // Stopped itself: stoppedAt stays -1, so it pays no speed
+                // bonus and counts as a reel you did not touch.
+                g.spinning[d] = false;
+                snapDrum(g, d);
+                continue;
+            }
+            any = true;
+            g.angle[d] += SPEEDS[g.speed].rate;
+        }
+        if (btn.up) g.speed = Math.min(SPEEDS.length - 1, g.speed + 1);
+        if (btn.down) g.speed = Math.max(0, g.speed - 1);
+        if (btn.a) stopNext(g);
+        if (!any) {
+            // Everything is still. Work out the hand and start the count.
+            for (let d = 0; d < DRUMS; d++) g.landed[d] = faceAt(g, d, g.angle[d]);
+            score(g);
+            g.state = 'count';
+            g.countWait = 0;
+            g.flash = 6;
+        }
+        return;
+    }
+
+    if (g.state === 'count') {
+        g.countWait++;
+        if (g.countWait >= 22) {
+            g.countWait = 0;
+            if (!applyTallyStep(g)) finishScore(g);
+        }
+        return;
+    }
+
+    if (g.state === 'idle') {
+        if (btn.up) g.speed = Math.min(SPEEDS.length - 1, g.speed + 1);
+        if (btn.down) g.speed = Math.max(0, g.speed - 1);
+        if (btn.a) startSpin(g);
+        return;
+    }
+
+    if (g.state === 'cleared') {
+        if (btn.any) openShop(g);
+        return;
+    }
+
+    if (g.state === 'shop') {
+        if (btn.left) g.shopSel = Math.max(0, g.shopSel - 1);
+        if (btn.right) g.shopSel = Math.min(g.shopItems.length, g.shopSel + 1);
+        if (btn.a) {
+            if (g.shopSel >= g.shopItems.length) nextAnte(g);
+            else buy(g);
+        }
+        return;
+    }
+
+    if (g.state === 'swap') {
+        // Turn the drum to the face you want, then pick what goes on it.
+        if (btn.left) g.swapFace = (g.swapFace + FACES_PER_DRUM - 1) % FACES_PER_DRUM;
+        if (btn.right) g.swapFace = (g.swapFace + 1) % FACES_PER_DRUM;
+        if (btn.up) g.swapTo = Math.min(SYMBOLS.length - 1, g.swapTo + 1);
+        if (btn.down) g.swapTo = Math.max(0, g.swapTo - 1);
+        if (btn.b) g.swapDrum = (g.swapDrum + 1) % DRUMS;
+        const step = (Math.PI * 2) / FACES_PER_DRUM;
+        g.angle[g.swapDrum] += ((-g.swapFace * step) - g.angle[g.swapDrum]) * 0.2;
+        if (btn.a) {
+            g.drums[g.swapDrum][g.swapFace] = g.swapTo;
+            g.state = 'shop';
+        }
+        return;
+    }
+
+    if (g.state === 'over' || g.state === 'win') {
+        if (g.t > 60 && btn.any) {
+            const seed = (g.rnd() * 1e9) | 0;
+            Object.assign(g, newGame(seed));
+            g.state = 'idle';
+        }
+        return;
+    }
+}
+/* ------------------------------------------------------------------ *
+ * Drawing. The top 112 rows are 3D, everything below is 2D.
+ * ------------------------------------------------------------------ */
+const PANEL_Y = VIEW_H;                 // 112: where the 3D stops and the UI starts
+
+// Symbol pips, 7x7, drawn as screen space sprites on the front face of a drum.
+//
+// Not textured quads, deliberately. The engine has perspective correct
+// texturing and it would work, but only the face at the front of a drum is
+// ever read, and at the front it is nearly flat on to the camera. So the drum
+// is 8 flat shaded quads and the symbol is one sprite at the projected centre
+// of the front face, squashed by how far that face has turned. That is 24
+// quads and 3 sprites a frame instead of 24 textured quads, and it reads the
+// same.
+const PIPS = {
+    0: ['..#..', '.###.', '#####', '#####', '.###.'],           // cherry
+    1: ['.###.', '#####', '#####', '.###.', '..#..'],           // bell
+    2: ['.###.', '#####', '#####', '#####', '.###.'],           // plum
+    3: ['#####', '.....', '#####', '.....', '#####'],           // bar
+    4: ['.#.#.', '#####', '#####', '..#..', '..#..'],           // clover
+    5: ['#####', '...#.', '..#..', '.#...', '.#...'],           // seven
+    6: ['..#..', '.###.', '#####', '.###.', '..#..'],           // diamond
+    7: ['#.#.#', '#####', '#####', '#####', '.....'],           // crown
+};
+
+function drawPip(sym, cx, cy, flat, col) {
+    // 5x5, three pixels a cell across and squashed vertically by how far the
+    // face has turned away, which is what sells it as being ON the drum.
+    const m = PIPS[sym];
+    const sx = 3;
+    const sy = Math.max(1, Math.round(3 * flat));
+    for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+            if (m[r][c] !== '#') continue;
+            const x0 = (cx - (5 * sx) / 2 + c * sx) | 0;
+            const y0 = (cy - (5 * sy) / 2 + r * sy) | 0;
+            // Outlined, because a drum face is lit near white and a red or a
+            // brown pip on it is invisible otherwise.
+            rectfill(x0 - 1, y0 - 1, x0 + sx, y0 + sy, 0);
+        }
+    }
+    for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+            if (m[r][c] !== '#') continue;
+            const x0 = (cx - (5 * sx) / 2 + c * sx) | 0;
+            const y0 = (cy - (5 * sy) / 2 + r * sy) | 0;
+            rectfill(x0, y0, x0 + sx - 1, y0 + sy - 1, col);
+        }
+    }
+}
+
+const DRUM_R = 7.6;
+const DRUM_HALF = 4.2;
+const DRUM_X = [-13.4, 0, 13.4];
+const STEP = (Math.PI * 2) / FACES_PER_DRUM;
+
+function drawCabinet() {
+    // One back panel and a floor, and nothing either side. The first version
+    // had side walls that projected into two dark wedges reading as wings.
+    quad([-22, 13, 8.5], [22, 13, 8.5], [22, -13, 8.5], [-22, -13, 8.5],
+         [1, 0, 0]);
+    quad([-22, -10.5, -7], [22, -10.5, -7], [22, -13, 8.5], [-22, -13, 8.5],
+         [5, 1, 0]);
+    // A divider between each pair of drums, so three drums read as three.
+    for (const x of [-6.8, 6.8]) {
+        quad([x - 0.8, 9.5, -8.5], [x + 0.8, 9.5, -8.5],
+             [x + 0.8, -9.5, -8.5], [x - 0.8, -9.5, -8.5], [9, 4, 2]);
+        quad([x + 0.8, 9.5, -8.5], [x + 0.8, 9.5, 8.5],
+             [x + 0.8, -9.5, 8.5], [x + 0.8, -9.5, -8.5], [4, 2, 1]);
+        quad([x - 0.8, 9.5, 8.5], [x - 0.8, 9.5, -8.5],
+             [x - 0.8, -9.5, -8.5], [x - 0.8, -9.5, 8.5], [4, 2, 1]);
+    }
+}
+
+function drawMachine(g) {
+    clearDepth();
+    drawCabinet();
+
+    for (let d = 0; d < DRUMS; d++) {
+        const x = DRUM_X[d];
+        const ang = g.angle[d];
+        const opened = g.state === 'swap' && d === g.swapDrum;
+
+        for (let f = 0; f < FACES_PER_DRUM; f++) {
+            const a0 = ang + f * STEP;
+            const a1 = a0 + STEP;
+            const p0 = [x - DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R];
+            const p1 = [x + DRUM_HALF, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R];
+            const p2 = [x + DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
+            const p3 = [x - DRUM_HALF, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
+            const faceIndex = (FACES_PER_DRUM - f) % FACES_PER_DRUM;
+            const base = (opened && faceIndex === g.swapFace)
+                ? [10, 9, 4] : [6, 13, 5];
+            quad(p0, p1, p2, p3, base);
+        }
+
+        // End caps as a real fan from the axis, one triangle a face, wound so
+        // each side faces outward.
+        for (const side of [-1, 1]) {
+            const cx = x + side * DRUM_HALF;
+            const centre = [cx, 0, 0];
+            for (let f = 0; f < FACES_PER_DRUM; f++) {
+                const a0 = ang + f * STEP, a1 = a0 + STEP;
+                const q0 = [cx, Math.sin(a0) * DRUM_R, Math.cos(a0) * DRUM_R];
+                const q1 = [cx, Math.sin(a1) * DRUM_R, Math.cos(a1) * DRUM_R];
+                if (side < 0) tri3(centre, q1, q0, [13, 5, 1]);
+                else tri3(centre, q0, q1, [13, 5, 1]);
+            }
+        }
+    }
+
+    // The symbol on the front face of each drum, once that face is near
+    // enough to flat on to read.
+    for (let d = 0; d < DRUMS; d++) {
+        const blur = g.spinning[d] ? SPEEDS[g.speed].blur : 0;
+        if (blur >= 2) continue;                    // WILD is unreadable, on purpose
+        const near = ((g.angle[d] % STEP) + STEP) % STEP;
+        const off = near > STEP / 2 ? near - STEP : near;
+        const flat = Math.cos(off);
+        if (flat < 0.6) continue;
+        const front = project([DRUM_X[d], Math.sin(-off) * DRUM_R * 1.02,
+                               Math.cos(-off) * DRUM_R * 1.02]);
+        if (!front) continue;
+        const sym = faceAt(g, d, g.angle[d]);
+        const col = blur === 1 ? 5 : SYMBOLS[sym].col;
+        drawPip(sym, front.x, front.y, flat, col);
+    }
+}
+
+/* ------------------------------------------------------------------ *
+ * The panel: 240 x 128 of ordinary 2D under the 3D window.
+ * ------------------------------------------------------------------ */
+function num(n) { return String(n | 0); }
+
+function drawSpeedDial(g, x, y) {
+    print('SPEED', x, y, 6);
+    for (let i = 0; i < SPEEDS.length; i++) {
+        const on = i === g.speed;
+        const bx = x + i * 22;
+        rectfill(bx, y + 9, bx + 19, y + 19, on ? 9 : 1);
+        rect(bx, y + 9, bx + 19, y + 19, on ? 10 : 5);
+        print(SPEEDS[i].name.slice(0, 4), bx + 2, y + 12, on ? 0 : 6);
+    }
+    const m = SPEEDS[g.speed].mult;
+    print(m > 0 ? '+' + m + ' MULT' : 'READABLE', x, y + 22, m > 0 ? 9 : 11);
+}
+
+function drawJokerRow(g, x, y) {
+    for (let i = 0; i < MAX_JOKERS; i++) {
+        const bx = x + i * 26;
+        const has = i < g.jokers.length;
+        rectfill(bx, y, bx + 23, y + 25, has ? 1 : 0);
+        rect(bx, y, bx + 23, y + 25, has ? 7 : 5);
+        if (has) {
+            const jk = JOKERS[g.jokers[i]];
+            rectfill(bx + 3, y + 3, bx + 20, y + 14, jk.col);
+            print(jk.name.slice(0, 4), bx + 2, y + 17, 6);
+        }
+    }
+}
+
+function drawScoreBox(g, x, y) {
+    // Chips and mult, separately and large, because watching one of them grow
+    // is the whole feel Balatro is built on.
+    rectfill(x, y, x + 108, y + 26, 1);
+    rect(x, y, x + 108, y + 26, 5);
+    const chips = num(g.chips);
+    const mult = num(g.mult);
+    print7(chips, x + 4, y + 5, 12, 2);
+    print7('X', x + 56, y + 8, 7, 1);
+    print7(mult, x + 66, y + 5, 8, 2);
+    const total = 'SCORE ' + num(g.chips * g.mult);
+    print(total, x + 2, y + 30, 10);
+}
+
+function drawTallyLine(g, x, y) {
+    if (g.tallyStep === 0) return;
+    const e = g.tally[g.tallyStep - 1];
+    if (!e) return;
+    print(e.what, x, y, e.col);
+    let s = '';
+    if (e.chips) s += '+' + e.chips + ' CHIPS';
+    if (e.mult === -1) s += ' X2 MULT';
+    else if (e.mult) s += (s ? '  ' : '') + '+' + e.mult + ' MULT';
+    if (s) print(s, x + measure(e.what) + 6, y, e.joker ? 10 : 6);
+}
+
+function drawHud(g) {
+    rectfill(0, PANEL_Y, W - 1, H - 1, 0);
+    hline(0, W - 1, PANEL_Y, 5);
+
+    print('ANTE ' + g.ante + '/' + ANTES, 4, PANEL_Y + 4, 7);
+    const bank = num(g.banked) + '/' + num(g.target);
+    printr(bank, W - 60, PANEL_Y + 4, g.banked >= g.target ? 11 : 6);
+    printr('G' + g.gold, W - 4, PANEL_Y + 4, 10);
+    printr('SPINS ' + g.spins, W - 4, PANEL_Y + 13, g.spins > 1 ? 6 : 8);
+
+    // Progress toward the ante's target.
+    const bw = W - 8;
+    rectfill(4, PANEL_Y + 22, 4 + bw, PANEL_Y + 27, 1);
+    const pct = Math.min(1, g.banked / g.target);
+    if (pct > 0) rectfill(4, PANEL_Y + 22, 4 + bw * pct, PANEL_Y + 27,
+                          g.banked >= g.target ? 11 : 8);
+
+    drawScoreBox(g, 4, PANEL_Y + 32);
+    drawSpeedDial(g, 120, PANEL_Y + 32);
+    drawTallyLine(g, 4, PANEL_Y + 68);
+    drawJokerRow(g, 4, PANEL_Y + 78);
+
+    if (g.handIndex !== undefined && g.state === 'count') {
+        const h = HANDS[g.handIndex];
+        print7c(h.name + ' LV' + g.handLevel[g.handIndex], W / 2, PANEL_Y + 108, 10, 1);
+    }
+    if (g.msg) print7c(g.msg, W / 2, PANEL_Y + 108, 11, 1);
+}
+
+function drawShop(g) {
+    cls(0);
+    rectfill(0, 0, W - 1, 20, 1);
+    print7c('THE BACK ROOM', W / 2, 3, 7, 1);
+    print('GOLD ' + g.gold, 6, 13, 10);
+    printr('ANTE ' + g.ante + ' CLEAR', W - 6, 13, 11);
+
+    for (let i = 0; i < g.shopItems.length; i++) {
+        const it = g.shopItems[i];
+        const y = 28 + i * 40;
+        const sel = i === g.shopSel;
+        rectfill(6, y, W - 7, y + 36, sel ? 1 : 0);
+        rect(6, y, W - 7, y + 36, sel ? 7 : 5);
+        let title = '', body = '', col = 7;
+        if (it.kind === 'joker') {
+            const jk = JOKERS[it.joker];
+            title = jk.name; body = jk.text; col = jk.col;
+            rectfill(12, y + 8, 30, y + 26, jk.col);
+        } else if (it.kind === 'hand') {
+            title = HANDS[it.hand].name;
+            body = 'LEVEL IT UP: +' + HANDS[it.hand].per[0] + ' CHIPS +' +
+                   HANDS[it.hand].per[1] + ' MULT';
+            col = 12;
+            rectfill(12, y + 8, 30, y + 26, 12);
+        } else {
+            title = 'OPEN A DRUM';
+            body = 'SWAP ONE FACE FOR ANY SYMBOL';
+            col = 10;
+            rectfill(12, y + 8, 30, y + 26, 10);
+        }
+        print(title, 38, y + 8, it.sold ? 5 : col);
+        print(body, 38, y + 20, it.sold ? 5 : 6);
+        printr(it.sold ? 'SOLD' : 'G' + it.cost, W - 12, y + 14,
+               it.sold ? 5 : (g.gold >= it.cost ? 10 : 8));
+    }
+    const y = 28 + g.shopItems.length * 40;
+    const sel = g.shopSel >= g.shopItems.length;
+    rectfill(60, y, W - 61, y + 20, sel ? 3 : 1);
+    rect(60, y, W - 61, y + 20, sel ? 11 : 5);
+    print7c('NEXT ANTE', W / 2, y + 7, sel ? 7 : 6, 1);
+}
+
+function drawSwap(g) {
+    drawMachine(g);
+    rectfill(0, PANEL_Y, W - 1, H - 1, 0);
+    hline(0, W - 1, PANEL_Y, 5);
+    print7c('OPEN A DRUM', W / 2, PANEL_Y + 6, 10, 1);
+    print('DRUM ' + (g.swapDrum + 1) + '   FACE ' + (g.swapFace + 1) + '/8',
+          6, PANEL_Y + 22, 6);
+
+    // What is on the face now, and what would go on it.
+    const now = g.drums[g.swapDrum][g.swapFace];
+    print('NOW', 6, PANEL_Y + 36, 6);
+    rectfill(6, PANEL_Y + 46, 30, PANEL_Y + 70, 1);
+    rect(6, PANEL_Y + 46, 30, PANEL_Y + 70, 5);
+    drawPip(now, 18, PANEL_Y + 58, 1, SYMBOLS[now].col);
+    print(SYMBOLS[now].name, 6, PANEL_Y + 74, SYMBOLS[now].col);
+
+    print7c('TO', W / 2, PANEL_Y + 52, 7, 1);
+
+    const to = g.swapTo;
+    print('NEW', W - 60, PANEL_Y + 36, 6);
+    rectfill(W - 60, PANEL_Y + 46, W - 36, PANEL_Y + 70, 3);
+    rect(W - 60, PANEL_Y + 46, W - 36, PANEL_Y + 70, 11);
+    drawPip(to, W - 48, PANEL_Y + 58, 1, SYMBOLS[to].col);
+    print(SYMBOLS[to].name, W - 60, PANEL_Y + 74, SYMBOLS[to].col);
+    print(SYMBOLS[to].chips + ' CHIPS', W - 60, PANEL_Y + 84, 12);
+
+    print('A DRUM LANDS ONLY ON WHAT IS ON IT', 6, PANEL_Y + 100, 5);
+}
+
+function drawTitle(g) {
+    drawMachine(g);
+    rectfill(0, PANEL_Y, W - 1, H - 1, 0);
+    print7cs('JOKER', W / 2, PANEL_Y + 6, 10, 0, 4);
+    print7cs('REELS', W / 2, PANEL_Y + 40, 9, 0, 4);
+    print7c('EIGHT ANTES, FIVE SPINS EACH', W / 2, PANEL_Y + 80, 5, 1);
+    print7c('A DRUM LANDS ON WHAT YOU PUT ON IT', W / 2, PANEL_Y + 94, 5, 1);
+}
+
+function drawEnd(g, won) {
+    cls(0);
+    print7cs(won ? 'YOU BROKE THE BANK' : 'OUT OF SPINS', W / 2, 40,
+             won ? 11 : 8, 0, 2);
+    print7c('ANTE ' + g.ante + ' OF ' + ANTES, W / 2, 80, 7, 1);
+    print7c('BANKED ' + num(g.banked) + ' OF ' + num(g.target), W / 2, 96, 6, 1);
+    let y = 120;
+    for (let i = 0; i < g.jokers.length; i++) {
+        print7c(JOKERS[g.jokers[i]].name, W / 2, y, JOKERS[g.jokers[i]].col, 1);
+        y += 12;
+    }
+}
+
+function drawFrame(g) {
+    TRI_COUNT = 0; FILL_COUNT = 0;
+    if (g.state === 'shop') { drawShop(g); return; }
+    if (g.state === 'swap') { drawSwap(g); return; }
+    if (g.state === 'over') { drawEnd(g, false); return; }
+    if (g.state === 'win') { drawEnd(g, true); return; }
+    if (g.state === 'title') { cls(0); drawTitle(g); return; }
+    cls(0);
+    drawMachine(g);
+    if (g.flash > 0) rect(0, 0, W - 1, PANEL_Y - 1, 7);
+    drawHud(g);
+}
+/* ------------------------------------------------------------------ *
+ * The bench and the gallery.
+ * ------------------------------------------------------------------ */
+function blank() {
+    return {any:false, a:false, b:false, left:false, right:false, up:false, down:false};
+}
+
+const benchCanvas = document.getElementById('bench');
+const benchScreen = makeScreen(benchCanvas);
+const readout = document.getElementById('readout');
+let bench = newGame(20260811);
+
+const KEYMAP = {
+    'KeyZ':'a', 'KeyX':'b', 'ArrowLeft':'left', 'ArrowRight':'right',
+    'ArrowUp':'up', 'ArrowDown':'down',
+    'KeyA':'left', 'KeyD':'right', 'KeyW':'up', 'KeyS':'down'
+};
+const held = Object.create(null);
+let pending = blank();
+window.addEventListener('keydown', e => {
+    if (e.code === 'KeyR') { bench = newGame((Math.random()*1e9)|0); e.preventDefault(); return; }
+    const b = KEYMAP[e.code];
+    if (b === undefined) return;
+    e.preventDefault();
+    if (!held[b]) { held[b] = true; pending.any = true; pending[b] = true; }
+});
+window.addEventListener('keyup', e => {
+    const b = KEYMAP[e.code];
+    if (b === undefined) return;
+    e.preventDefault();
+    held[b] = false;
+});
+benchCanvas.tabIndex = 0;
+benchCanvas.addEventListener('mousedown', () => benchCanvas.focus());
+
+const TICK_MS = 10;
+let tickAcc = 0, last = performance.now();
+let worstTris = 0, worstFill = 0;
+function loop(now) {
+    let dt = now - last; last = now;
+    if (dt > 250) dt = 250;
+    tickAcc += dt;
+    let steps = 0;
+    while (tickAcc >= TICK_MS && steps < 30) {
+        tick(bench, pending);
+        pending = blank();
+        tickAcc -= TICK_MS; steps++;
+    }
+    useTarget(benchScreen);
+    drawFrame(bench);
+    present(benchScreen);
+    if (TRI_COUNT > worstTris) worstTris = TRI_COUNT;
+    if (FILL_COUNT > worstFill) worstFill = FILL_COUNT;
+    readout.textContent =
+        bench.state + '   speed ' + SPEEDS[bench.speed].name +
+        '   chips ' + bench.chips + ' x mult ' + bench.mult +
+        '   worst frame ' + worstTris + ' tris, ' + worstFill + ' pixels filled';
+    requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* The gallery: every frame is the simulation above, driven there by the same
+ * buttons the bench uses. */
+function play(g, ticks, script) {
+    for (let i = 0; i < ticks; i++) {
+        const b = blank();
+        if (script && script[i]) Object.assign(b, script[i]);
+        tick(g, b);
+    }
+    return g;
+}
+function begin(seed) {
+    const g = newGame(seed);
+    tick(g, Object.assign(blank(), {any: true}));
+    return g;
+}
+function figure(id, title, sub, g) {
+    const fig = document.createElement('figure');
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    c.setAttribute('data-shot', id);
+    fig.appendChild(c);
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = '<b>' + title + '</b>' + sub;
+    fig.appendChild(cap);
+    document.getElementById('grid').appendChild(fig);
+    const s = makeScreen(c);
+    useTarget(s);
+    drawFrame(g);
+    present(s);
+}
+
+figure('title', 'Title',
+  'The drums turn behind the name. Any button starts, and nothing on screen ' +
+  'says which: rule 9.',
+  (function(){ const g = newGame(4); play(g, 200); return g; })());
+
+figure('idle', 'Between spins',
+  'Ante, bank against target, spins left, gold. The speed dial is the only ' +
+  'thing you set before pulling, and it says what it costs you: SLOW is ' +
+  'readable, WILD is worth +5 mult and is a blur.',
+  begin(4));
+
+figure('spinning', 'Spinning at FAIR',
+  'Three drums turning at their own phase. At FAIR the symbol is there but ' +
+  'greyed, so you can time a stop and not read it comfortably. At WILD it is ' +
+  'not drawn at all.',
+  (function(){
+      const g = begin(4);
+      const s = {}; s[0] = {a: true};
+      return play(g, 60, s);
+  })());
+
+figure('count', 'The count',
+  'Chips and mult are separate and large, and the tally plays back one line ' +
+  'at a time: the hand, then each symbol, then each stop bonus, then each ' +
+  'joker. Watching one number grow is the whole feel this is borrowing.',
+  (function(){
+      const g = begin(7);
+      g.jokers = [1, 4];
+      const s = {}; s[0] = {a: true}; s[30] = {a: true}; s[46] = {a: true}; s[60] = {a: true};
+      play(g, 200, s);
+      return g;
+  })());
+
+figure('shop', 'The back room',
+  'Two jokers, a hand to level, and a drum to open. Four things, because a ' +
+  '240 wide panel holds four things and a choice between four is still a ' +
+  'choice.',
+  (function(){
+      const g = begin(9);
+      g.gold = 14; g.banked = g.target;
+      openShop(g);
+      g.shopSel = 1;
+      return g;
+  })());
+
+figure('swap', 'Opening a drum',
+  'The deckbuilding. Turn the drum to a face, pick what goes on it, and that ' +
+  'drum can never land on the old symbol again. This is the one screen where ' +
+  'the 3D is doing work the 2D could not.',
+  (function(){
+      const g = begin(11);
+      g.state = 'swap'; g.swapDrum = 1; g.swapFace = 2; g.swapTo = 7;
+      for (let i = 0; i < 40; i++) tick(g, blank());
+      return g;
+  })());
+
+figure('over', 'Out of spins',
+  'Short of the ante and out of spins ends the run, and it shows the jokers ' +
+  'you had when it did.',
+  (function(){
+      const g = begin(13);
+      g.jokers = [0, 2, 6];
+      g.banked = Math.floor(g.target * 0.6);
+      g.spins = 0; g.state = 'over'; g.msg = 'OUT OF SPINS';
+      return g;
+  })());
+
+/* The numbers, measured off the page rather than asserted. */
+{
+    const g = begin(3);
+    let tris = 0, fill = 0, frames = 0;
+    const probe = makeScreen(document.createElement('canvas'));
+    for (let i = 0; i < 120; i++) {
+        tick(g, i === 0 ? Object.assign(blank(), {a: true}) : blank());
+        useTarget(probe);
+        drawFrame(g);
+        tris = Math.max(tris, TRI_COUNT);
+        fill = Math.max(fill, FILL_COUNT);
+        frames++;
+    }
+    document.getElementById('perf').innerHTML =
+        'Measured over ' + frames + ' frames of a spin: worst frame <b>' + tris +
+        ' triangles</b> and <b>' + fill.toLocaleString() + ' pixels</b> shaded, ' +
+        'against a 240 x 112 window that is 26,880 pixels and a queue that ' +
+        'holds 640. Three drums of eight faces plus two end fans plus the ' +
+        'cabinet is the whole scene, and it never grows: there is no world ' +
+        'here, just a machine.';
+}
+
+/* Rule 9's other half: measure, never place by eye. This walks every string
+ * the game can draw and fails loudly if one would not fit, which is the check
+ * the catcoin build got wrong by listing the strings by hand. */
+{
+    const problems = [];
+    const fits = (text, x, limit, where) => {
+        const w = measure(text);
+        if (x + w > limit) problems.push(where + ': "' + text + '" is ' + w +
+                                         ' px from x=' + x + ', limit ' + limit);
+    };
+    for (const jk of JOKERS) {
+        fits(jk.text, 38, W - 4, 'joker text');
+        fits(jk.name, 38, W - 40, 'joker name');
+        if (jk.name.length > 10) problems.push('joker name too long for a slot: ' + jk.name);
+    }
+    for (const h of HANDS) {
+        fits(h.name, 38, W - 40, 'hand name');
+        fits('LEVEL IT UP: +' + h.per[0] + ' CHIPS +' + h.per[1] + ' MULT', 38, W - 4, 'hand text');
+    }
+    for (const sm of SYMBOLS) fits(sm.name, 6, 70, 'symbol name');
+    fits('A DRUM LANDS ONLY ON WHAT IS ON IT', 6, W, 'swap hint');
+    fits('SWAP ONE FACE FOR ANY SYMBOL', 38, W - 4, 'swap card');
+    fits('OUT OF SPINS', 6, W, 'end message');
+    const box = document.getElementById('fits');
+    if (problems.length) {
+        box.innerHTML = '<b style="color:#ff6b6b">' + problems.length +
+            ' string(s) do not fit:</b><br>' + problems.join('<br>');
+        console.error('joker reels: ' + problems.join(' | '));
+    } else {
+        box.innerHTML = 'Every string the game can draw was measured against the ' +
+            'box it is drawn in: <b>all ' + (JOKERS.length * 2 + HANDS.length * 2 +
+            SYMBOLS.length + 4) + ' of them fit</b>. Two joker texts and the swap ' +
+            'hint did not, before this check existed.';
+    }
+}
+
+</script>
+</body>
+</html>
