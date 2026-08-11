@@ -2,12 +2,12 @@
 
 slug: jokerreels
 title: Joker Reels
-blurb: Five 3D reels, poker hands, and a deck you build.
+blurb: Five 3D reels, five paylines, and a deck you build.
 target: jokerreels
 sdk: 32blit
 web: true
 
-objective: "Five reels, eight antes, five spins each. Pull, and stop the reels yourself if you dare: the faster they are turning the harder the symbol is to read and the more the stop is worth. What the five reels land on makes a hand, from a pair up to five of a kind, and the game draws a line through the reels that made it. The hand is counted as chips times a multiplier and your jokers fire while it counts. Clear the ante's target and the back room sells you jokers, hand levels, and the thing the run is really about: opening a reel and changing what it is able to land on at all."
+objective: "Five reels stop three rows deep, and five paylines cross the grid: the middle row, the top, the bottom and both diagonals. Every line that makes a hand pays, from a pair up to five of a kind, and the game draws each line through the cells that made it as it counts. The best line sets the multiplier and the rest add their chips. Stop the reels yourself if you dare: the faster they are turning the harder a symbol is to read and the more the stop is worth. Clear the ante's target in five spins, eight times over, and the back room sells you jokers, hand levels, and the thing the run is really about: opening a reel and changing what it is able to land on at all."
 
 controls:
   - "A: pull, then stop the next drum still turning"

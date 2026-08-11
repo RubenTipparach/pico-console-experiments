@@ -391,7 +391,9 @@ void test_a_strip_longer_than_the_drum_still_reaches_every_symbol() {
 
 void test_a_run_is_finite_and_a_shop_is_a_choice() {
     jr::World w = started(3u);
-    check(jr::target_for_ante(1) == 300, "the first ante wants 300");
+    // The opening target is about one spin of the hands off floor, which is
+    // measured in test_the_floor_loses_and_skill_wins rather than assumed.
+    check(jr::target_for_ante(1) == 4000, "the first ante wants 4000");
     check(jr::target_for_ante(8) > jr::target_for_ante(7) * 3 / 2,
           "and each one wants half again more");
 
@@ -423,6 +425,70 @@ void test_a_run_is_finite_and_a_shop_is_a_choice() {
                   "the shop never offers a joker you hold");
         }
     }
+}
+
+/* The difficulty curve, measured rather than hoped for.
+ *
+ * Two autopilots: one that pulls and never touches anything, and one that
+ * plays the dial at WILD and stops every reel. The floor has to lose and the
+ * skilled line has to mostly win, and the gap between them is the game.
+ *
+ * This is here because the numbers have already been wrong twice, both times
+ * invisibly. Giving every payline its own mult and adding them up multiplied
+ * everything by everything, and 300 hands off runs cleared all eight antes
+ * without a button being pressed. Then the targets, written for three reels
+ * and one line, survived the change to five of each and did it again.
+ */
+void run_autopilot(uint32_t seed, bool skilled, int& reached, bool& won) {
+    jr::World w;
+    jr::world_init(w, seed);
+    for (int i = 0; i < 2 + jr::k_learn_pages && w.state != jr::kIdle; i++) {
+        jr::world_tick(w, press_a());
+    }
+    for (int t = 0; t < 60000; t++) {
+        jr::Buttons b{};
+        const bool act = w.state == jr::kIdle || w.state == jr::kCleared ||
+                         w.state == jr::kShop ||
+                         (skilled && w.state == jr::kSpin);
+        if (act) b = press_a();
+        if (w.state == jr::kShop) w.shop_sel = w.shop_len;   // straight on
+        if (skilled) w.speed = jr::kWild;
+        jr::world_tick(w, b);
+        if (w.state == jr::kOver || w.state == jr::kWin) break;
+    }
+    won = w.state == jr::kWin;
+    reached = w.ante;
+}
+
+void test_the_floor_loses_and_skill_wins() {
+    int floor_wins = 0, floor_ante = 0;
+    int skilled_wins = 0;
+    const int runs = 120;
+    for (int i = 0; i < runs; i++) {
+        const uint32_t seed = static_cast<uint32_t>(i + 1) * 7919u;
+        int reached = 0;
+        bool won = false;
+        run_autopilot(seed, false, reached, won);
+        if (won) floor_wins++;
+        floor_ante += reached;
+
+        run_autopilot(seed, true, reached, won);
+        if (won) skilled_wins++;
+    }
+    const int mean_ante = floor_ante / runs;
+    std::printf("  floor: 0 wins wanted, %d seen, mean ante %d\n",
+                floor_wins, mean_ante);
+    std::printf("  skilled: %d of %d runs won\n", skilled_wins, runs);
+
+    // Pulling and touching nothing must not finish the game. If it does, the
+    // dial, the jokers and the whole shop are decoration.
+    check(floor_wins == 0, "the hands off floor never wins");
+    // But it has to get somewhere, or the opening antes are a wall.
+    check(mean_ante >= 3, "and it is not a wall from the first ante");
+    check(mean_ante <= 7, "and it does not walk to the last one either");
+    // Playing the dial has to be worth it, and not a formality.
+    check(skilled_wins > runs / 2, "playing the dial usually wins");
+    check(skilled_wins < runs, "and is not a guarantee");
 }
 
 void test_the_run_is_deterministic() {
@@ -457,6 +523,7 @@ int main() {
     test_a_swap_changes_what_a_drum_can_land_on();
     test_a_strip_longer_than_the_drum_still_reaches_every_symbol();
     test_a_run_is_finite_and_a_shop_is_a_choice();
+    test_the_floor_loses_and_skill_wins();
     test_the_run_is_deterministic();
     test_the_budget();
 

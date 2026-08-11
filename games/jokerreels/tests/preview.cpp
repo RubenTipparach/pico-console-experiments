@@ -88,13 +88,20 @@ void play(jr::World& w, int ticks, int press_at = -1, bool press_a = true) {
  * geometry tests exist to prevent. Painting the front facet and then asking
  * the rules what landed goes through the same path a real spin does.
  */
-void force_hand(jr::World& w, const uint8_t want[jr::k_drums]) {
+void force_grid(jr::World& w, const uint8_t want[jr::k_drums][jr::k_rows]) {
     for (int d = 0; d < jr::k_drums; d++) {
-        w.facet[d][jr::front_facet(w, d)] = want[d];
-        w.landed[d] = jr::face_at(w, d, jr::front_facet(w, d));
+        for (int r = 0; r < jr::k_rows; r++) {
+            w.facet[d][jr::facet_in_row(w, d, r)] = want[d][r];
+        }
     }
-    w.hand_index = jr::hand_of(w.landed);
-    w.group_count = jr::hand_groups(w.landed, w.group_of);
+    // Read it back the way the game does, off the drums, so what is checked
+    // below is what the drums are actually showing.
+    for (int d = 0; d < jr::k_drums; d++) {
+        for (int r = 0; r < jr::k_rows; r++) {
+            w.grid[d][r] = jr::face_at(w, d, jr::facet_in_row(w, d, r));
+        }
+        w.landed[d] = w.grid[d][1];
+    }
 }
 
 // Title, then the how to play pages, then the table. A press is a press: the
@@ -172,72 +179,145 @@ int main(int argc, char** argv) {
             play(learn, 1, 0);              // title -> learn
             learn.hand_level[jr::kPair] = 3;   // so a levelled row is drawn
             learn.learn_page = static_cast<uint8_t>(page);
-            char name[24];
+            char name[32];
             std::snprintf(name, sizeof(name), "preview_8_learn%d", page);
             capture(learn, out, name);
         }
     }
 
-    /* A hand with lines through it, which is the whole point of five reels.
+    /* A payline being paid, which is the whole point of three rows.
      *
-     * Forced rather than waited for: a two pair does not turn up on demand,
-     * and a frame that shows the feature has to exist for the feature to have
-     * been looked at. The landed symbols are set and the scorer is asked for
-     * the groups exactly as a real spin would.
+     * Forced rather than waited for: a two pair on the V does not turn up on
+     * demand, and a frame that shows the feature has to exist for the feature
+     * to have been looked at. The GRID is painted onto the drums and read back
+     * off them, so the line the screen draws crosses the symbols the rules
+     * scored. Writing landed[] directly instead produced a frame whose markers
+     * pointed at reels showing something else, which is the same
+     * desynchronisation the geometry tests exist to prevent.
      */
     {
-        jr::World two_pair;
-        jr::world_init(two_pair, 77u);
-        to_table(two_pair);
-        play(two_pair, 1, 0);              // pull
-        play(two_pair, 600);               // let it land and count
-        const uint8_t forced[jr::k_drums] = {
-            jr::kCherry, jr::kSeven, jr::kCherry, jr::kCrown, jr::kSeven,
+        jr::World lines;
+        jr::world_init(lines, 77u);
+        to_table(lines);
+        // Top row a pair of sevens, the payline row three cherries, the V a
+        // run: three lines paying at once, drawn one at a time.
+        const uint8_t grid[jr::k_drums][jr::k_rows] = {
+            {jr::kSeven,  jr::kCherry, jr::kBell},
+            {jr::kSeven,  jr::kCherry, jr::kPlum},
+            {jr::kCrown,  jr::kCherry, jr::kBar},
+            {jr::kBar,    jr::kCherry, jr::kClover},
+            {jr::kDiamond, jr::kCherry, jr::kCrown},
         };
-        force_hand(two_pair, forced);
-        check(two_pair.hand_index == jr::kTwoPair, "that is a two pair");
-        check(two_pair.group_count == 2, "and it is two groups");
+        play(lines, 1, 0);                 // pull
+        play(lines, 700);                  // let it land, and count it out
+
+        /* Paint the grid onto the resting drums, then land them AGAIN.
+         *
+         * Painting after the spin has been scored changes what is drawn and
+         * not what was counted, which is a frame that lies. Putting the drums
+         * back into a spin whose auto stop has already passed makes the very
+         * next tick snap every reel and score it, through the same path a real
+         * spin takes, with the angles already where they were.
+         */
+        force_grid(lines, grid);
+        lines.state = jr::kSpin;
+        lines.spin_ticks = 9999;
         for (int d = 0; d < jr::k_drums; d++) {
-            check(two_pair.landed[d] == forced[d],
-                  "the drum is showing the symbol the line points at");
+            lines.spinning[d] = true;
+            lines.stopped_at[d] = -1;
         }
-        capture(two_pair, out, "preview_9_twopair");
+        play(lines, 1);
+        check(lines.state == jr::kCount, "the forced grid was scored");
+        check(lines.grid[0][1] == jr::kCherry, "and the grid took");
+
+        // Step to the frame where a payline is being paid, which is the one
+        // worth photographing.
+        for (int guard = 0; guard < 60 && lines.state == jr::kCount; guard++) {
+            if (lines.tally_step > 0 &&
+                lines.tally[lines.tally_step - 1].line != jr::k_no_line) {
+                break;
+            }
+            play(lines, 1);
+        }
+        check(lines.state == jr::kCount, "still counting when photographed");
+        check(lines.tally[lines.tally_step - 1].line != jr::k_no_line,
+              "and paying a line, so there is one to draw");
+        capture(lines, out, "preview_9_payline");
+
+        // And on to a DIAGONAL, which is the line a straight row cannot show
+        // and the one most likely to be drawn wrong.
+        for (int guard = 0; guard < 200 && lines.state == jr::kCount; guard++) {
+            play(lines, 1);
+            if (lines.tally_step == 0) continue;
+            const uint8_t line = lines.tally[lines.tally_step - 1].line;
+            if (line == jr::kVee || line == jr::kCaret) break;
+        }
+        if (lines.state == jr::kCount && lines.tally_step > 0 &&
+            (lines.tally[lines.tally_step - 1].line == jr::kVee ||
+             lines.tally[lines.tally_step - 1].line == jr::kCaret)) {
+            capture(lines, out, "preview_10_diagonal");
+        } else {
+            std::printf("FAIL no diagonal line was paid, so none was drawn\n");
+            g_failures++;
+        }
     }
 
-    /* A marker sits on a reel that made the group, and the reels in a group
-     * show the same symbol.
+    /* A payline crosses the cells the rules scored.
      *
-     * This is the render half of the desync check: the sim tests prove
-     * hand_groups agrees with the landed symbols, and this proves the frame
-     * the player sees is drawn from the same landed symbols. Run over every
-     * shape rather than the one that happened to come up.
+     * The render half of the desync check: the sim tests prove hand_of and
+     * hand_groups agree with the symbols on a line, and this proves the line
+     * the SCREEN draws reads those same cells off the same drums. Run over
+     * every line rather than the one that happened to come up.
      */
     {
-        const uint8_t shapes[][jr::k_drums] = {
-            {jr::kBell, jr::kBell, jr::kBell, jr::kBell, jr::kBell},
-            {jr::kBell, jr::kBell, jr::kCrown, jr::kBell, jr::kBell},
-            {jr::kBell, jr::kCrown, jr::kBell, jr::kCrown, jr::kBell},
-            {jr::kCherry, jr::kBell, jr::kPlum, jr::kBar, jr::kClover},
-            {jr::kBell, jr::kBell, jr::kCrown, jr::kCrown, jr::kCherry},
-            {jr::kCherry, jr::kPlum, jr::kClover, jr::kDiamond, jr::kCrown},
+        jr::World probe;
+        jr::world_init(probe, 61u);
+        to_table(probe);
+        const uint8_t grid[jr::k_drums][jr::k_rows] = {
+            {jr::kBell, jr::kCherry, jr::kCrown},
+            {jr::kBell, jr::kCherry, jr::kCrown},
+            {jr::kBell, jr::kCherry, jr::kCrown},
+            {jr::kBell, jr::kCherry, jr::kCrown},
+            {jr::kBell, jr::kCherry, jr::kCrown},
         };
-        for (const auto& shape : shapes) {
-            jr::World probe;
-            jr::world_init(probe, 61u);
-            to_table(probe);
-            force_hand(probe, shape);
+        force_grid(probe, grid);
+        for (uint8_t line = 0; line < jr::k_lines; line++) {
+            uint8_t symbols[jr::k_drums];
+            jr::line_symbols(probe, line, symbols);
+            const uint8_t* rows = jr::payline_rows(line);
             for (int d = 0; d < jr::k_drums; d++) {
-                check(probe.landed[d] == shape[d],
-                      "the drum shows what the rules scored");
-                if (probe.group_of[d] == jr::k_no_group) continue;
-                if (probe.hand_index == jr::kRun) continue;
-                for (int e = 0; e < jr::k_drums; e++) {
-                    if (e == d || probe.group_of[e] != probe.group_of[d]) continue;
-                    check(probe.landed[e] == probe.landed[d],
-                          "a line joins reels showing the same symbol");
-                }
+                check(symbols[d] == grid[d][rows[d]],
+                      "a payline reads the cell it crosses");
+                int cy, h, left, right;
+                jrr::row_band(rows[d], cy, h);
+                jrr::drum_window(d, left, right);
+                check(cy >= 0 && cy < jrr::k_window_h,
+                      "and that cell is on screen");
+                check(h > 12, "and big enough to read");
+            }
+            // Each ROW is one symbol repeated, so the three straight lines are
+            // five of a kind. The diagonals cross rows and are not, which is
+            // the point of having them: a grid where every line scores the
+            // same is a grid with one line.
+            const bool straight = line == jr::kMiddle || line == jr::kTop ||
+                                  line == jr::kBottom;
+            if (straight) {
+                check(jr::hand_of(symbols) == jr::kFive,
+                      "a straight line is five of one symbol here");
+            } else {
+                check(jr::hand_of(symbols) != jr::kFive,
+                      "a diagonal crosses rows, so it is not");
             }
         }
+        // The three rows have to be in the order the paylines assume, or the V
+        // and the caret are each other.
+        int top_y, mid_y, bot_y, h;
+        jrr::row_band(0, top_y, h);
+        jrr::row_band(1, mid_y, h);
+        jrr::row_band(2, bot_y, h);
+        check(top_y < mid_y && mid_y < bot_y,
+              "row 0 is above row 1 is above row 2");
+        check(mid_y == jrr::k_window_h / 2, "and row 1 is the payline");
     }
 
     // The back room, where the run is actually built.

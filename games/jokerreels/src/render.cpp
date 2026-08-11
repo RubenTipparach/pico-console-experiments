@@ -201,51 +201,55 @@ const char* short_name(const char* name, int chars) {
     return g_line;
 }
 
-/* The lines that say WHY a hand scored.
+/* The line that says WHY a hand scored.
  *
- * A tally line says PAIR and a number. It does not say which two reels paired,
- * and on five reels that is the whole question: a player who cannot see why
- * they scored cannot aim at scoring more. So each group of matching symbols
- * gets a line drawn through the reels that made it, with a marker on each one.
+ * One at a time, and the one the count is paying for right now. Five paylines
+ * drawn at once is a cat's cradle; one drawn while its own tally entry is on
+ * screen is a player being told, in order, what each shape was worth.
  *
- * Drawn over the reels rather than under them, because that is what a payline
- * is, and one pixel of line across a 42 px symbol costs nothing to read.
+ * The path is the payline's own rows, so a V goes through the top of the outer
+ * reels, the payline row of reels two and four, and the bottom of the middle.
+ * Markers go on the cells that actually made the hand, which on TWO PAIR is
+ * four of the five.
  */
-void draw_match_lines(const jr::World& world, const pse::RenderTarget& screen) {
-    if (world.group_count == 0) return;
-    const int mid = k_window_h / 2;
+void draw_payline(const jr::World& world, const pse::RenderTarget& screen) {
+    if (world.state != jr::kCount) return;
+    if (world.tally_step == 0 || world.tally_step > world.tally_len) return;
+    const jr::TallyEntry& e = world.tally[world.tally_step - 1];
+    if (e.line == jr::k_no_line) return;
 
-    for (int g = 0; g < world.group_count && g < jr::k_max_groups; g++) {
-        // Two groups sit either side of the payline so they cannot be mistaken
-        // for one line with a gap in it.
-        const int y = world.group_count == 1 ? mid
-                                             : mid + (g == 0 ? -9 : 9);
-        const Rgb c = k_group_colour[g];
+    const uint8_t* rows = jr::payline_rows(e.line);
+    uint8_t symbols[jr::k_drums];
+    jr::line_symbols(world, e.line, symbols);
+    uint8_t groups[jr::k_drums];
+    jr::hand_groups(symbols, groups);
 
-        int first = -1, last = -1;
-        for (int d = 0; d < jr::k_drums; d++) {
-            if (world.group_of[d] != g) continue;
-            if (first < 0) first = d;
-            last = d;
-        }
-        if (first < 0) continue;
+    const Rgb c = k_group_colour[e.line % jr::k_max_groups];
 
-        int fl, fr, ll, lr;
-        drum_window(first, fl, fr);
-        drum_window(last, ll, lr);
-        hline(screen, (fl + fr) / 2, (ll + lr) / 2, y, c);
+    int px = 0, py = 0;
+    for (int d = 0; d < jr::k_drums; d++) {
+        int left, right, cy, h;
+        drum_window(d, left, right);
+        row_band(rows[d], cy, h);
+        const int cx = (left + right) / 2;
 
-        // A marker on each reel in the group. The line alone runs straight
-        // past a reel that is not in it, which on TWO PAIR is exactly the
-        // reel a player is asking about.
-        for (int d = 0; d < jr::k_drums; d++) {
-            if (world.group_of[d] != g) continue;
-            int l, r;
-            drum_window(d, l, r);
-            const int cx = (l + r) / 2;
-            fill(screen, cx - 3, y - 3, cx + 3, y + 3, c);
-            fill(screen, cx - 1, y - 1, cx + 1, y + 1, k_ink);
-        }
+        // The joining line. Straight between cell centres, which on a diagonal
+        // is a real diagonal and not a staircase of horizontals.
+        if (d > 0) pse::draw_line(screen, px, py, cx, cy, c.r, c.g, c.b);
+        px = cx;
+        py = cy;
+    }
+
+    // Markers second, so a line never draws over one.
+    for (int d = 0; d < jr::k_drums; d++) {
+        int left, right, cy, h;
+        drum_window(d, left, right);
+        row_band(rows[d], cy, h);
+        const int cx = (left + right) / 2;
+        const bool made_it = groups[d] != jr::k_no_group;
+        const int r = made_it ? 4 : 2;
+        fill(screen, cx - r, cy - r, cx + r, cy + r, c);
+        fill(screen, cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2, k_ink);
     }
 }
 
@@ -431,15 +435,16 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
 
     if (page == 0) {
         text_centred(s, "HOW TO SCORE", k_screen_w / 2, 8, k_paper);
-        text(s, "FIVE REELS STOP ON FIVE SYMBOLS.", 8, 34, k_paper);
-        text(s, "WHAT THEY MAKE IS A HAND.", 8, 46, k_paper);
+        text(s, "FIVE REELS STOP, THREE ROWS DEEP.", 8, 34, k_paper);
+        text(s, "FIVE LINES CROSS THE GRID, AND", 8, 46, k_paper);
+        text(s, "EVERY LINE THAT MAKES A HAND PAYS.", 8, 58, k_paper);
 
-        text(s, "A HAND IS CHIPS AND A MULT.", 8, 68, k_dim);
+        text(s, "A HAND IS CHIPS AND A MULT.", 8, 74, k_dim);
         // The worked example, using the hand a player lands most.
-        fill(s, 8, 82, k_screen_w - 9, 118, k_panel);
-        pse::draw_rect(s, 8, 82, k_screen_w - 16, 37, k_dim.r, k_dim.g,
+        fill(s, 8, 88, k_screen_w - 9, 124, k_panel);
+        pse::draw_rect(s, 8, 88, k_screen_w - 16, 37, k_dim.r, k_dim.g,
                        k_dim.b);
-        text(s, "TWO PAIR", 14, 88, k_select);
+        text(s, "TWO PAIR", 14, 94, k_select);
         // Laid out left to right by measuring each piece as it is placed. The
         // first version positioned the CHIPS label at the width of the literal
         // "45", which is correct for exactly one value of one hand at one
@@ -449,23 +454,24 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
             const int chips = jr::hand_chips(jr::kTwoPair, level);
             const int mult = jr::hand_mult(jr::kTwoPair, level);
             int x = 14;
-            text(s, num_line("", chips, ""), x, 102, k_chip);
+            text(s, num_line("", chips, ""), x, 108, k_chip);
             x += pse::text_width(g_line) + 5;
-            text(s, "CHIPS", x, 102, k_dim);
+            text(s, "CHIPS", x, 108, k_dim);
             x += pse::text_width("CHIPS") + 7;
-            text(s, "X", x, 102, k_paper);
+            text(s, "X", x, 108, k_paper);
             x += pse::text_width("X") + 7;
-            text(s, num_line("", mult, ""), x, 102, k_mult);
+            text(s, num_line("", mult, ""), x, 108, k_mult);
             x += pse::text_width(g_line) + 5;
-            text(s, "MULT", x, 102, k_dim);
-            text_right(s, num_line("", chips * mult, ""), k_screen_w - 16, 102,
+            text(s, "MULT", x, 108, k_dim);
+            text_right(s, num_line("", chips * mult, ""), k_screen_w - 16, 108,
                        k_payline);
         }
 
-        text(s, "EACH SYMBOL ADDS ITS OWN CHIPS", 8, 132, k_dim);
-        text(s, "WHILE THE HAND COUNTS.", 8, 144, k_dim);
-        text(s, "BANK THE ANTE'S TARGET IN", 8, 168, k_paper);
-        text(s, "FIVE SPINS, EIGHT TIMES OVER.", 8, 180, k_paper);
+        text(s, "THE BEST LINE SETS THE MULT.", 8, 138, k_dim);
+        text(s, "EVERY OTHER PAYING LINE ADDS", 8, 150, k_dim);
+        text(s, "ITS CHIPS TO THE SAME PILE.", 8, 162, k_dim);
+        text(s, "BANK THE ANTE'S TARGET IN", 8, 186, k_paper);
+        text(s, "FIVE SPINS, EIGHT TIMES OVER.", 8, 198, k_paper);
     } else if (page == 1) {
         text_centred(s, "HANDS", k_screen_w / 2, 8, k_paper);
         text_right(s, "CHIPS   MULT", k_screen_w - 8, 8, k_dim);
@@ -482,6 +488,38 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
                        y + 8, k_chip);
             text_right(s, num_line("", jr::hand_mult(which, level), ""),
                        k_screen_w - 10, y + 8, k_mult);
+        }
+    } else if (page == 2) {
+        text_centred(s, "PAYLINES", k_screen_w / 2, 8, k_paper);
+        text(s, "A HAND CAN BE MADE ALONG ANY", 8, 30, k_dim);
+        text(s, "OF FIVE LINES. ALL OF THEM PAY.", 8, 42, k_dim);
+
+        // Each line as the grid it crosses. A picture of the shape, because
+        // the shape is the thing: "0 1 2 1 0" is not a V to anybody.
+        for (int line = 0; line < jr::k_lines; line++) {
+            const int gx = 24 + (line % 2) * 112;
+            const int gy = 62 + (line / 2) * 58;
+            const uint8_t* rows = jr::payline_rows(static_cast<uint8_t>(line));
+            const Rgb c = k_group_colour[line % jr::k_max_groups];
+
+            for (int col = 0; col < jr::k_drums; col++) {
+                for (int row = 0; row < jr::k_rows; row++) {
+                    const int x = gx + col * 12;
+                    const int y = gy + row * 12;
+                    const bool on = rows[col] == row;
+                    fill(s, x, y, x + 10, y + 10, on ? c : k_panel);
+                }
+            }
+            // The path itself, joining cell centres, so a diagonal reads as a
+            // diagonal rather than as a staircase.
+            for (int col = 1; col < jr::k_drums; col++) {
+                pse::draw_line(s, gx + (col - 1) * 12 + 5,
+                               gy + rows[col - 1] * 12 + 5,
+                               gx + col * 12 + 5, gy + rows[col] * 12 + 5,
+                               k_paper.r, k_paper.g, k_paper.b);
+            }
+            text(s, jr::payline_name(static_cast<uint8_t>(line)), gx,
+                 gy + 40, k_dim);
         }
     } else {
         text_centred(s, "THE DIAL AND THE JOKERS", k_screen_w / 2, 8, k_paper);
@@ -512,6 +550,23 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
         const Rgb c = i == page ? k_paper : k_dim;
         fill(s, cx - 2, k_screen_h - 10, cx + 2, k_screen_h - 6, c);
     }
+}
+
+void row_band(int row, int& centre_y, int& height) {
+    // The facet one step either side of the front one, projected. A row is not
+    // a third of the window: the outer two are further away and turned away,
+    // so they are both smaller and closer to the middle than a flat grid would
+    // put them.
+    const float step = 2.0f * k_pi / jr::k_facets;
+    const float a = (row - 1) * step;
+    const float wy = -k_drum_radius * std::sin(a);
+    const float wz = -k_drum_radius * std::cos(a);
+    const float depth = k_cam_dist + wz;
+    const float focal = 1.0f / std::tan(radians(k_fov_degrees) * 0.5f);
+    const float scale = focal * (k_screen_w - 1) * 0.5f / depth;
+    centre_y = static_cast<int>(k_window_h * 0.5f - wy * scale + 0.5f);
+    height = static_cast<int>(std::fabs(std::cos(a)) * k_facet_size * scale +
+                              0.5f);
 }
 
 const Stats& stats() { return g_stats; }
@@ -561,7 +616,7 @@ void render_machine(const jr::World& world, const pse::RenderTarget& screen) {
     g_stats.dropped = g_queue.dropped;
 
     draw_bezel(screen);
-    draw_match_lines(world, screen);
+    draw_payline(world, screen);
     if (world.flash > 0) {
         pse::draw_rect(screen, 0, 0, k_screen_w, k_window_h, 255, 255, 255);
     }

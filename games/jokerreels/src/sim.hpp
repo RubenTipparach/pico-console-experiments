@@ -23,7 +23,19 @@ namespace jr {
 // entry before it comes back round, so a twelve sided prism can present a
 // strip of any length. That is how a real machine's virtual reel works, and it
 // is what lets a swap put a symbol on a drum that has no facet spare.
-constexpr int k_facets = 12;
+// Sixteen facets, not twelve.
+//
+// A facet is 360/N degrees of the drum, so twelve of them is a 30 degree step
+// and the reel curves away fast enough that only the front face reads. Sixteen
+// is 22.5 degrees, which leaves the two neighbours of the front facet flat
+// enough to be symbols rather than slivers, and THREE READABLE ROWS is what
+// makes a payline a line: a 5 by 3 grid can be crossed by a middle row, a top,
+// a bottom and two diagonals, and a hand can be made along any of them.
+constexpr int k_facets = 16;
+
+// Rows of the grid the player is looking at, and the reel's own row order:
+// 0 is the top, 1 is the payline, 2 is the bottom.
+constexpr int k_rows = 3;
 
 // Five reels, not three.
 //
@@ -34,7 +46,7 @@ constexpr int k_facets = 12;
 // a hand table worth having, and a hand table is what gives the deckbuilding
 // something to aim at.
 constexpr int k_drums = 5;
-constexpr int k_strip_start = 12;
+constexpr int k_strip_start = 16;
 constexpr int k_strip_max = 24;
 
 // Angles are in facet steps, fixed point, because the RP2040 has no FPU and
@@ -112,6 +124,11 @@ constexpr int k_spins_per_round = 5;
 // one entry at a time.
 struct TallyEntry {
     const char* what;
+    // Which payline this entry is paying, or k_no_line for the entries that
+    // are not about a line at all: the speed bonus and the jokers. The screen
+    // draws the line while its entry is showing, so a player watching the
+    // count sees the shape being paid for.
+    uint8_t line;
     int16_t chips;
     // -1 marks a x2 rather than an addition, which is the one multiplicative
     // joker and not worth a second field.
@@ -123,12 +140,25 @@ constexpr int k_max_tally = 20;
 
 // Which reels made the hand, so the screen can draw a line through them.
 //
-// A tally line says PAIR and a number. It does not say WHICH two reels paired,
-// and on five reels that is the whole question: a player who cannot see why
-// they scored cannot aim at scoring more. So the scorer records the groups and
-// the renderer joins them up.
+// A tally line says PAIR and a number. It does not say WHICH cells paired, and
+// on a 5 by 3 grid that is the whole question: a player who cannot see why they
+// scored cannot aim at scoring more.
 constexpr int k_max_groups = 2;
 constexpr uint8_t k_no_group = 255;
+
+// The paylines, in the order they are scored and drawn.
+//
+// The five a real machine starts with: the middle row, the two outer rows, and
+// the two diagonals. Every one of them is a path through one cell per reel, so
+// every one of them is five symbols and can make any hand.
+enum Payline : uint8_t {
+    kMiddle = 0, kTop, kBottom, kVee, kCaret, k_lines,
+};
+constexpr uint8_t k_no_line = 255;
+
+// The row this line takes on each reel.
+const uint8_t* payline_rows(uint8_t line);
+const char* payline_name(uint8_t line);
 
 enum State : uint8_t {
     kTitle = 0, kLearn, kIdle, kSpin, kCount, kCleared, kShop, kSwap, kOver,
@@ -140,7 +170,7 @@ enum State : uint8_t {
 // wins, which this is: a scoring system nobody can see is not sparse, it is
 // opaque. Shown once on the way out of the title, and reachable again from
 // the shop, which is the moment a player is deciding what a hand is worth.
-constexpr int k_learn_pages = 3;
+constexpr int k_learn_pages = 4;
 
 // What the player pressed this tick. Edge triggered by the caller.
 struct Buttons {
@@ -190,11 +220,12 @@ struct World {
     int32_t angle[k_drums];
     bool spinning[k_drums];
     int8_t stopped_at[k_drums];     // which speed a reel was stopped at, or -1
+    // What is showing, all fifteen cells of it. grid[reel][1] is the payline
+    // row, which is what `landed` used to mean on its own.
+    uint8_t grid[k_drums][k_rows];
     uint8_t landed[k_drums];
-    // Which match group each reel is in, or k_no_group. Set when a hand is
-    // scored and cleared when a spin starts.
-    uint8_t group_of[k_drums];
-    uint8_t group_count;
+    // The hand each payline made, or kNothing for one that made none.
+    uint8_t line_hand[k_lines];
     uint32_t spin_ticks;
 
     uint8_t speed;
@@ -262,6 +293,15 @@ int32_t target_for_ante(int ante);
 // per reel, or k_no_group for a reel that took no part.
 uint8_t hand_of(const uint8_t landed[k_drums]);
 uint8_t hand_groups(const uint8_t landed[k_drums], uint8_t groups[k_drums]);
+
+// The five symbols a payline crosses. The renderer asks for these rather than
+// keeping its own idea of where a line goes.
+void line_symbols(const World& w, uint8_t line, uint8_t out[k_drums]);
+
+// Which facet of `drum` is showing in `row`. The middle row is the front
+// facet; the rows either side are its neighbours, and which neighbour is the
+// top one is a fact about how the drum turns, so it lives here.
+int facet_in_row(const World& w, int drum, int row);
 void world_open_shop(World& w);
 
 }  // namespace jr

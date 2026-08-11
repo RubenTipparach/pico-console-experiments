@@ -55,6 +55,19 @@ const JokerDef k_jokers_table[k_jokers] = {
 // play, which one joker pays x2 for, is unreachable.
 const uint16_t k_auto_stop[k_drums] = {170, 220, 270, 320, 370};
 
+// One row per reel, per line. Row 0 is the top, 1 is the payline, 2 is the
+// bottom, and every line touches one cell of every reel.
+const uint8_t k_payline_rows[k_lines][k_drums] = {
+    {1, 1, 1, 1, 1},        // MIDDLE
+    {0, 0, 0, 0, 0},        // TOP
+    {2, 2, 2, 2, 2},        // BOTTOM
+    {0, 1, 2, 1, 0},        // V
+    {2, 1, 0, 1, 2},        // CARET
+};
+const char* const k_payline_names[k_lines] = {
+    "MIDDLE", "TOP", "BOTTOM", "V", "CARET",
+};
+
 uint32_t next_random(World& w) {
     w.rng = w.rng * 1664525u + 1013904223u;
     return w.rng >> 8;
@@ -138,39 +151,95 @@ void snap_drum(World& w, int drum) {
     int32_t turns = a / k_step_one;
     if (a < 0 && a % k_step_one != 0) turns--;
     w.angle[drum] = turns * k_step_one - half;
-    w.landed[drum] = face_at(w, drum, front_facet(w, drum));
+    for (int r = 0; r < k_rows; r++) {
+        w.grid[drum][r] = face_at(w, drum, facet_in_row(w, drum, r));
+    }
+    w.landed[drum] = w.grid[drum][1];
 }
 
 void push_tally(World& w, const char* what, int chips, int mult,
-                uint8_t colour, bool joker) {
+                uint8_t colour, bool joker, uint8_t line = k_no_line) {
     if (w.tally_len >= k_max_tally) return;
     TallyEntry& e = w.tally[w.tally_len++];
     e.what = what;
+    e.line = line;
     e.chips = static_cast<int16_t>(chips);
     e.mult = static_cast<int16_t>(mult);
     e.colour = colour;
     e.joker = joker;
 }
 
+/* Scoring, once per payline.
+ *
+ * Every line that makes anything at all pays, and each one is its own tally
+ * entry, so the count walks the lines and the screen draws whichever line it
+ * is paying. That is what makes the grid teachable: a player sees the shape,
+ * not just a number climbing.
+ *
+ * A line's chips are the hand's, plus the chips of the symbols that actually
+ * made it. Paying for every symbol on every line would count the middle row
+ * three times over, once for each line through it.
+ */
 void score(World& w) {
-    const uint8_t idx = hand_of(w.landed);
-    w.hand_index = idx;
-    w.group_count = 0;
-    for (int d = 0; d < k_drums; d++) w.group_of[d] = k_no_group;
-    const HandDef& h = k_hands_table[idx];
-    const int base_chips = hand_chips(idx, w.hand_level[idx]);
-    const int base_mult = hand_mult(idx, w.hand_level[idx]);
-
     w.tally_len = 0;
     w.tally_step = 0;
-    w.chips = base_chips;
-    w.mult = base_mult;
-    push_tally(w, h.name, base_chips, base_mult, 7, false);
+    w.chips = 0;
+    w.mult = 0;
+    w.hand_index = kNothing;
 
-    for (int d = 0; d < k_drums; d++) {
-        const uint8_t s = w.landed[d];
-        push_tally(w, k_symbols_table[s].name, k_symbols_table[s].chips, 0,
-                   static_cast<uint8_t>(8 + s % 7), false);
+    /* The BEST line sets the mult. Every other paying line adds its chips.
+     *
+     * Giving every line its own mult and adding them up multiplies everything
+     * by everything: five lines each worth 60 chips and 3 mult came out as 300
+     * times 15 rather than five times 180, and the game measured 8,070 a spin
+     * against an ante 8 target of 8,043. Three hundred hands off runs cleared
+     * all eight antes, every time, which is not a difficulty curve.
+     *
+     * One mult and a growing pile of chips is also the shape the score box was
+     * built for, and it keeps a second paying line worth having without making
+     * it worth five times the first.
+     */
+    int best_hand = kNothing;
+    uint8_t best_line = k_no_line;
+    int line_chips[k_lines] = {0};
+    for (uint8_t line = 0; line < k_lines; line++) {
+        uint8_t symbols[k_drums];
+        line_symbols(w, line, symbols);
+        const uint8_t hand = hand_of(symbols);
+        w.line_hand[line] = hand;
+        if (hand == kNothing) continue;
+
+        uint8_t groups[k_drums];
+        hand_groups(symbols, groups);
+        int chips = hand_chips(hand, w.hand_level[hand]);
+        for (int d = 0; d < k_drums; d++) {
+            if (groups[d] != k_no_group) chips += symbol_chips(symbols[d]);
+        }
+        line_chips[line] = chips;
+        if (hand < best_hand) { best_hand = hand; best_line = line; }
+    }
+    w.hand_index = static_cast<uint8_t>(best_hand);
+
+    // The best line first, carrying the mult, so the count opens on the thing
+    // the player was aiming at.
+    if (best_line != k_no_line) {
+        push_tally(w, hand_name(static_cast<uint8_t>(best_hand)),
+                   line_chips[best_line],
+                   hand_mult(static_cast<uint8_t>(best_hand),
+                             w.hand_level[best_hand]),
+                   7, false, best_line);
+        for (uint8_t line = 0; line < k_lines; line++) {
+            if (line == best_line || w.line_hand[line] == kNothing) continue;
+            push_tally(w, hand_name(w.line_hand[line]), line_chips[line], 0, 6,
+                       false, line);
+        }
+    }
+
+    // Nothing anywhere still pays the floor, so a spin is never worth zero and
+    // the count always has something to play.
+    if (w.tally_len == 0) {
+        push_tally(w, hand_name(kNothing), hand_chips(kNothing, w.hand_level[kNothing]),
+                   hand_mult(kNothing, w.hand_level[kNothing]), 7, false, kMiddle);
     }
 
     // The speed dial pays here, once per reel you stopped yourself.
@@ -191,14 +260,18 @@ void score(World& w) {
         }
     }
 
+    // Counted over the whole grid, because that is what the player is looking
+    // at, and over the paying lines, because that is what they aimed for.
     int counts[k_symbols] = {0};
-    for (int d = 0; d < k_drums; d++) counts[w.landed[d]]++;
-    int distinct = 0, pairs = 0;
-    for (int s = 0; s < k_symbols; s++) {
-        if (counts[s] > 0) distinct++;
-        if (counts[s] >= 2) pairs++;
+    for (int d = 0; d < k_drums; d++) {
+        for (int r = 0; r < k_rows; r++) counts[w.grid[d][r]]++;
     }
-    w.group_count = hand_groups(w.landed, w.group_of);
+    int distinct = 0;
+    for (int sym = 0; sym < k_symbols; sym++) if (counts[sym] > 0) distinct++;
+    int paying = 0;
+    for (uint8_t line = 0; line < k_lines; line++) {
+        if (w.line_hand[line] != kNothing) paying++;
+    }
 
     for (int j = 0; j < w.joker_count; j++) {
         uint8_t which = w.jokers[j];
@@ -208,7 +281,7 @@ void score(World& w) {
         int chips = 0, mult = 0;
         switch (which) {
             case kGreaser:   if (fast_stops == k_drums) mult = 4; break;
-            case kTwin:      chips = 30 * pairs; break;
+            case kTwin:      chips = 30 * paying; break;
             case kRatchet:   mult = k_spins_per_round - w.spins; break;
             case kBlur:      if (!stopped_any) mult = -1; break;
             case kCollector: chips = 10 * distinct; break;
@@ -228,7 +301,10 @@ void score(World& w) {
 bool apply_tally_step(World& w) {
     if (w.tally_step >= w.tally_len) return false;
     const TallyEntry& e = w.tally[w.tally_step++];
-    if (w.tally_step == 1) return true;      // the hand itself is already in
+    // Every entry adds, including the first. It used to be skipped because
+    // score() seeded chips and mult with the base hand before the count
+    // started; it does not any more, so skipping it dropped the best line and
+    // with it the ONLY entry carrying a mult. Every hand scored zero.
     w.chips += e.chips;
     if (e.mult == -1) w.mult *= 2;
     else w.mult += e.mult;
@@ -269,8 +345,7 @@ void start_spin(World& w) {
     w.tally_step = 0;
     w.msg = nullptr;
     w.spin_ticks = 0;
-    w.group_count = 0;
-    for (int d = 0; d < k_drums; d++) w.group_of[d] = k_no_group;
+    for (uint8_t line = 0; line < k_lines; line++) w.line_hand[line] = kNothing;
 }
 
 bool stop_next(World& w) {
@@ -367,13 +442,49 @@ uint8_t face_at(const World& w, int drum, int facet) {
     return w.facet[drum][facet % k_facets];
 }
 
+const uint8_t* payline_rows(uint8_t line) {
+    return k_payline_rows[line % k_lines];
+}
+
+const char* payline_name(uint8_t line) {
+    return k_payline_names[line % k_lines];
+}
+
+/* Which facet is showing in which row.
+ *
+ * The middle row is the front facet. Which neighbour is ABOVE it is a fact
+ * about how the drum turns rather than a choice: a facet's centre sits at
+ * y = -R sin(a), so a smaller angle is higher up the screen, and a smaller
+ * angle is a lower facet index. Getting this backwards flips the top and
+ * bottom rows, which turns the V payline into the caret and reads as the
+ * diagonals being scored wrong.
+ */
+int facet_in_row(const World& w, int drum, int row) {
+    const int front = front_facet(w, drum);
+    const int offset = row - 1;          // -1 above, 0 the payline, +1 below
+    return ((front + offset) % k_facets + k_facets) % k_facets;
+}
+
+void line_symbols(const World& w, uint8_t line, uint8_t out[k_drums]) {
+    const uint8_t* rows = payline_rows(line);
+    for (int d = 0; d < k_drums; d++) out[d] = w.grid[d][rows[d]];
+}
+
 int32_t angle_for_facet(int facet) {
     return -(facet * k_step_one + k_step_one / 2);
 }
 
 int32_t target_for_ante(int ante) {
-    // 300 and half again each time, in integers rather than a pow.
-    int32_t target = 300;
+    /* 4,000 and 1.6 times that each ante, in integers rather than a pow.
+     *
+     * Measured, not picked. A hands off run, taking no risk on the dial and
+     * buying nothing, averages 3,944 a spin over 300 runs, so ante 1 is about
+     * one spin of the floor and ante 8 is 107,374, which five floor spins
+     * cannot reach. The old 300 was written for three reels and one payline
+     * and it survived the change to five of each: every one of those 300 runs
+     * cleared all eight antes without a button being pressed.
+     */
+    int32_t target = 4000;
     for (int i = 1; i < ante; i++) target = target * 8 / 5;
     return target;
 }
@@ -592,9 +703,7 @@ void world_tick(World& w, const Buttons& btn) {
             if (btn.down) w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
             if (btn.a) stop_next(w);
             if (!any) {
-                for (int d = 0; d < k_drums; d++) {
-                    w.landed[d] = face_at(w, d, front_facet(w, d));
-                }
+                for (int d = 0; d < k_drums; d++) snap_drum(w, d);
                 score(w);
                 w.state = kCount;
                 w.count_wait = 0;
