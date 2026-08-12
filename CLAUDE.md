@@ -301,6 +301,29 @@ fastest. Do not spend a long implementation on an unconfirmed design.
 
 Small changes (a label, a colour, one control) do not need a mockup.
 
+**A mockup lives in `mockups/<slug>/index.html` and is published.** It was repo
+only, which meant the only way to look at one was to clone the repo and open a
+file, and that is not the audience: a mockup exists to be sent to somebody and
+argued about. The publish job copies `mockups/` to the site and
+`tools/gen_mockups.py` writes the index at `/mockups/`, with a door to it from
+the gallery.
+
+- One self contained HTML file per mockup. No build step and no network, the
+  same constraint the games have on a phone.
+- The index is generated from each page's own `<title>` and its
+  `<meta name="description">` or `<p class="lede">`, so there is no second copy
+  of a mockup's pitch to go stale. A mockup with neither fails the build:
+  `tools/tests/test_gen_mockups.py` walks the repo, the way
+  `test_gen_shell.py` does for game tutorials.
+- Adding a mockup is adding a directory. Do not edit the index, the gallery, or
+  the workflow to list one.
+- The publish job boot checks every mockup in a real browser and fails the
+  deploy if one throws, because a mockup runs a whole simulation in one file
+  and a broken one is a dead page in exactly the way a dead game is.
+- Mockups are copied from the repo on every run, not carried forward on the
+  gh-pages state branch: they are source, not build output, so whatever is on
+  main is what is on the site.
+
 ### 11. Models come from .obj files, not from code
 
 Do not hand write vertex tables in C++. Do not procedurally emit geometry in
@@ -413,6 +436,7 @@ engine/            shared library, SDK facing code, no game rules
 games/<slug>/      one game: game.yml, CMakeLists.txt, src/, assets/, models/
 cmake/             reusable CMake helpers (game registration, obj packaging)
 tools/             build tooling, gallery generator, flasher utility
+mockups/<slug>/    one design mockup: a single page, published at /mockups/
 web/               gallery templates and the emscripten page shell
 .github/workflows/ the build and publish pipeline
 console/           the multi game console: menu, dispatch, its own tests

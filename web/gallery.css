@@ -342,3 +342,48 @@ kbd {
   .cart, .btn { transition: none; }
   .cart:hover, .cart:focus-within { transform: none; }
 }
+
+/* The mockups index.
+ *
+ * A list rather than a shelf, the same call the archive makes and for the
+ * same reason: these are not choices in a cabinet, they are arguments about
+ * games that do not exist. A screenshot would promise one that does. */
+.mockups {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mockup {
+  background: var(--panel);
+  border: 3px solid var(--line);
+  border-bottom-width: 5px;
+  box-shadow: 0 0 0 3px var(--ground);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.mockup h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.mockup h2 a { color: var(--ink); text-decoration: none; }
+.mockup h2 a:hover { color: var(--play); }
+.mockup p { margin: 0; color: var(--muted); font-size: 0.8125rem; }
+.mockup .meta { padding-top: 0.2rem; }
+
+.wrap > .note {
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  max-width: 62ch;
+}

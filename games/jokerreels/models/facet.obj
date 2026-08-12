@@ -1,0 +1,27 @@
+# One face of a reel drum: a unit square, ready to be textured with a symbol.
+#
+# The drum is twelve of these, not one twelve sided mesh, because a symbol has
+# to be chosen per facet at RUNTIME and pse::Renderer3D::draw_mesh carries one
+# texture index for a whole mesh. Twelve instances of one quad is what lets a
+# facet be repainted while it is out of sight, which is the trick that gives a
+# twelve sided prism a reel strip of any length.
+#
+# Authored 1x1 and centred, so the game scales it to the facet size and the
+# drum's radius follows: a twelve sided prism of radius R has facets
+# 2*pi*R/12 tall, so a square facet means R = 12 * size / (2*pi).
+#
+# Wound for a -Z normal, which is the face pointing at the camera before any
+# rotation. obj2cpp takes the cross the other way round (v x u), so this
+# winding is the front facing one.
+mtllib drum.mtl
+o facet
+v -0.500000 -0.500000 0.000000
+v 0.500000 -0.500000 0.000000
+v 0.500000 0.500000 0.000000
+v -0.500000 0.500000 0.000000
+vt 0.000000 0.000000
+vt 1.000000 0.000000
+vt 1.000000 1.000000
+vt 0.000000 1.000000
+usemtl face
+f 1/1 2/2 3/3 4/4

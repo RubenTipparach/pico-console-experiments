@@ -115,11 +115,46 @@ def test_held_games_leave_the_shelf_for_the_archive():
         shutil.rmtree(site, ignore_errors=True)
 
 
+def test_the_mockups_door_follows_the_site_not_the_repo():
+    """The front page links the mockups only when a page is there to link.
+
+    The repo always has mockups; the assembled site only has them once the
+    publish job has copied them, which a preview or a hand assembled tree may
+    not have done. Reading the repo here would put a door on the page with a
+    404 behind it."""
+    site = tempfile.mkdtemp()
+    try:
+        page = render(site, [])
+        check('href="mockups/"' not in page,
+              "no door when the site has no mockups")
+
+        os.makedirs(os.path.join(site, "mockups", "alpha"))
+        os.makedirs(os.path.join(site, "mockups", "beta"))
+        for path in (("mockups", "index.html"),
+                     ("mockups", "alpha", "index.html"),
+                     ("mockups", "beta", "index.html")):
+            with open(os.path.join(site, *path), "w") as handle:
+                handle.write("<html></html>")
+        page = render(site, [])
+        check('href="mockups/"' in page, "a door once the pages are there")
+        check("2 designs" in page, "the door counts the mockups it found")
+
+        # An index with nothing behind it still counts nothing, and a
+        # directory with no page of its own is not a mockup.
+        os.makedirs(os.path.join(site, "mockups", "notamockup"))
+        page = render(site, [])
+        check("2 designs" in page,
+              "a directory with no index.html is not counted")
+    finally:
+        shutil.rmtree(site, ignore_errors=True)
+
+
 def main():
     test_repo_name_loses_its_dashes()
     test_an_empty_title_still_derives_one()
     test_a_given_title_is_left_alone()
     test_held_games_leave_the_shelf_for_the_archive()
+    test_the_mockups_door_follows_the_site_not_the_repo()
     if failures:
         print("gen_gallery: %d check(s) failed" % len(failures))
         return 1

@@ -1,0 +1,18 @@
+# Gallery and build metadata. See games/README.md for every field.
+
+slug: jokerreels
+title: Joker Reels
+blurb: Five 3D reels, five paylines, and a deck you build.
+target: jokerreels
+sdk: 32blit
+web: true
+
+objective: "Five reels stop three rows deep, and five paylines cross the grid: the middle row, the top, the bottom and both diagonals. Every line that makes a hand pays, from a pair up to five of a kind, and the game draws each line through the cells that made it as it counts. The best line sets the multiplier and the rest add their chips. Stop the reels yourself if you dare: the faster they are turning the harder a symbol is to read and the more the stop is worth. Clear the ante's target in five spins, eight times over, and the back room sells you jokers, hand levels, and the thing the run is really about: opening a reel and changing what it is able to land on at all."
+
+controls:
+  - "A: pull, then stop the next drum still turning"
+  - "up: raise the speed dial, worth more mult and harder to read"
+  - "down: lower the speed dial"
+  - "left: move through the shop, turn an opened drum"
+  - "right: move through the shop, turn an opened drum"
+  - "B: the hand table, between spins. Next reel, while one is open"

@@ -131,7 +131,24 @@ class Card:
         ])
 
 
-def render_page(cards, repo, generated_at, title, active_cards=None):
+def count_mockups(site_dir):
+    """How many mockups are on the assembled site.
+
+    Counted off the site rather than off the repo, so the door on the front
+    page only appears when gen_mockups actually wrote a page behind it. A link
+    to a 404 is worse than no link, and the two can disagree: the mockups are
+    copied by the publish job, which a preview build or a hand assembled tree
+    may not have run.
+    """
+    root = os.path.join(site_dir, "mockups")
+    if not os.path.isfile(os.path.join(root, "index.html")):
+        return 0
+    return sum(1 for entry in os.listdir(root)
+               if os.path.isfile(os.path.join(root, entry, "index.html")))
+
+
+def render_page(cards, repo, generated_at, title, active_cards=None,
+                mockups=0):
     if active_cards is None:
         active_cards = cards
         archived_cards = []
@@ -154,6 +171,16 @@ def render_page(cards, repo, generated_at, title, active_cards=None):
             'Archive &rarr;</a> <span>%d game%s no longer in the rotation'
             '</span></p>' % (len(archived_cards),
                              "" if len(archived_cards) == 1 else "s"))
+
+    # Mockups get a door too, and for the same reason: they are not games and
+    # a shelf of them under the live ones would offer something that cannot be
+    # played. The count comes from what was actually indexed, so this link
+    # cannot appear pointing at a page that is not there.
+    if mockups:
+        archived_section += (
+            '\n  <p class="archive-link"><a class="btn" href="mockups/">'
+            'Mockups &rarr;</a> <span>%d design%s argued before any code'
+            '</span></p>' % (mockups, "" if mockups == 1 else "s"))
 
     playable = sum(1 for c in active_cards if c.game.web and c.is_published)
     stats = "%d game%s &middot; %d playable" % (
@@ -308,7 +335,7 @@ def main(argv):
         title = args.title or (args.repo.split("/")[-1].replace("-", " ")
                                if args.repo else "games")
         handle.write(render_page(cards, args.repo, args.timestamp, title,
-                                 active_cards))
+                                 active_cards, count_mockups(args.site)))
 
     # The archive is its own page so the front page can stay a shelf of what
     # is live. Written under archived/ rather than as archived.html so the

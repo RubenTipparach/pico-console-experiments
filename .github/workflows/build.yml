@@ -88,6 +88,8 @@ jobs:
           python3 tools/tests/test_gen_library.py
           python3 tools/tests/test_make_thumbnail.py
           python3 tools/tests/test_gen_gallery.py
+          python3 tools/tests/test_gen_mockups.py
+          python3 tools/tests/test_jokerreels_art.py
           python3 tools/tests/test_gen_shell.py
           python3 tools/tests/test_game_entry.py
           python3 tools/tests/test_pack_picocad_texture.py
@@ -417,6 +419,29 @@ jobs:
             fi
           done
 
+      # Mockups are copied straight from the repo checkout, not carried
+      # forward on the state branch, because they are source and not build
+      # output: whatever is on main is what should be on the site. --delete
+      # matters here, since a mockup deleted from the repo would otherwise
+      # live on the site for ever, and the index is written after the copy
+      # because it is written INTO the directory --delete manages.
+      - name: Publish the mockups
+        env:
+          PREFIX: ${{ needs.detect.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          if [ ! -d mockups ]; then
+            echo "no mockups in this tree"
+            exit 0
+          fi
+          mkdir -p "site/${PREFIX}mockups"
+          rsync -a --checksum --delete mockups/ "site/${PREFIX}mockups/"
+          python3 tools/gen_mockups.py \
+            --source mockups \
+            --out "site/${PREFIX}mockups" \
+            --repo "$GITHUB_REPOSITORY" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
       # A compiled game is not a working game, and a checked game is not the
       # game that ships. This runs on the ASSEMBLED SITE, after the overlay
       # and the stamping, because that is the only tree the deploy actually
@@ -444,6 +469,29 @@ jobs:
           export PLAYWRIGHT_CHROMIUM_EXECUTABLE
           for slug in $needed; do
             python3 tools/boot_check.py --dir "$root" --slug "$slug"
+          done
+
+      # The mockups run a whole simulation in one file, so a broken one is a
+      # dead page in exactly the way a dead game is: jokerreels validates its
+      # own symbol art and throws rather than shipping a symbol with no
+      # outline, and nothing downstream would notice. Checked with --kind
+      # page, which drops the tutorial assertions a game gets and keeps the
+      # only one that applies here: it must not throw. All seven were clean
+      # when this was added, so it starts green rather than grandfathering a
+      # failure in.
+      - name: Boot check the mockups
+        env:
+          PREFIX: ${{ needs.detect.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          root="site/${PREFIX}mockups"
+          [ -d "$root" ] || { echo "no mockups on this site"; exit 0; }
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(tools/setup_browser.sh)"
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          for dir in "$root"/*/; do
+            [ -f "$dir/index.html" ] || continue
+            python3 tools/boot_check.py --dir "$root" \
+              --slug "$(basename "$dir")" --kind page
           done
 
       - name: Capture a thumbnail for anything that has never had one

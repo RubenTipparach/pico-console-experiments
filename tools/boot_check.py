@@ -38,7 +38,15 @@ def serve(directory):
     return port, httpd.shutdown
 
 
-def check(directory, slug):
+def check(directory, slug, kind="game"):
+    """Load a page and fail on anything it throws.
+
+    kind="game" also asserts the tutorial made it into the HTML. kind="page"
+    is for anything else the site serves that runs JavaScript, which is the
+    mockups: they are single files that run a whole simulation, and one that
+    throws on load is a dead page in exactly the way a dead game is. The
+    difference is only in what else is expected to be there.
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -73,8 +81,9 @@ def check(directory, slug):
             # cold would find it says nothing about itself. Checked on the
             # page that is about to deploy, because that is the only place
             # the whole chain from game.yml to the served HTML is visible.
-            panels = page.locator("#tutorial [data-panel]").count()
-            leftover = page.content().count("PSE_TUTORIAL")
+            if kind == "game":
+                panels = page.locator("#tutorial [data-panel]").count()
+                leftover = page.content().count("PSE_TUTORIAL")
             browser.close()
     finally:
         shutdown()
@@ -85,6 +94,10 @@ def check(directory, slug):
         for error in errors[:5]:
             sys.stderr.write("  %s\n" % error.splitlines()[0][:300])
         return 1
+
+    if kind != "game":
+        sys.stderr.write("boot_check: %s boots clean\n" % slug)
+        return 0
 
     if leftover:
         sys.stderr.write("boot_check: %s still has the tutorial placeholder: "
@@ -107,8 +120,11 @@ def main(argv):
     parser.add_argument("--dir", required=True,
                         help="directory holding <slug>/index.html")
     parser.add_argument("--slug", required=True)
+    parser.add_argument("--kind", choices=["game", "page"], default="game",
+                        help="game also requires the tutorial to be present; "
+                             "page only requires the page not to throw")
     args = parser.parse_args(argv)
-    return check(args.dir, args.slug)
+    return check(args.dir, args.slug, args.kind)
 
 
 if __name__ == "__main__":
