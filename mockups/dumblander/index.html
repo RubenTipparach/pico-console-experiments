@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dumb Lander // 240x240 mockup</title>
+<style>
+  :root{
+    --ink:#e8ecf5; --dim:#8d93a6; --line:#252a3a; --bg:#0b0d15; --panel:#12151f;
+    --accent:#ffa300;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:28px 20px 60px}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:.04em}
+  h1 span{color:var(--accent)}
+  p.lede{color:var(--dim);margin:0 0 24px;max-width:70ch}
+  h2{font-size:14px;margin:34px 0 10px;letter-spacing:.06em;color:var(--accent)}
+
+  .bench{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+  .bench .screen{background:var(--panel);border:1px solid var(--line);
+                 border-radius:8px;padding:12px}
+  .bench canvas{width:480px;height:480px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  .bench .side{max-width:36ch;color:var(--dim);font-size:12.5px}
+  .bench .side b{color:var(--ink);font-weight:400}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px;
+        margin:8px 0 0}
+  .keys dt{color:var(--ink);white-space:nowrap}
+  .keys dd{margin:0;color:var(--dim)}
+  .hint{color:var(--dim);font-size:12px;margin:12px 0 0}
+
+  .grid{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);
+         border-radius:8px;padding:12px 12px 10px;width:264px}
+  figure canvas{width:240px;height:240px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  figcaption{margin-top:9px;font-size:12px;color:var(--dim)}
+  figcaption b{color:var(--ink);display:block;font-size:13px;margin-bottom:3px}
+
+  table{border-collapse:collapse;font-size:12.5px}
+  td{padding:3px 16px 3px 0;vertical-align:top;color:var(--dim)}
+  td:first-child{color:var(--ink);white-space:nowrap}
+  ul{color:var(--dim);font-size:12.5px;max-width:78ch;padding-left:18px}
+  li{margin:5px 0}
+  li b{color:var(--ink);font-weight:400}
+  code{color:var(--accent)}
+
+  @media (max-width:560px){ .bench canvas{width:240px;height:240px} }
+</style>
+</head>
+<body>
+
+<h1>Dumb Lander <span>// 240x240 mockup</span></h1>
+<p class="lede">The <code>dumb_lander.p8</code> cart moved off PICO-8's 128x128 at 30 Hz
+and onto the PicoSystem's 240x240 at 100 Hz. The flight model is the cart's,
+converted rather than retuned: gravity, thrust, the sideways nudge and the
+1.0 crash threshold all still come from the same four numbers. What is new is
+the shape around them, because the cart was one landing and a key that reset
+it. Nothing here is built yet. This page exists so the feel can be flown and
+argued about before anyone writes C++, which is CLAUDE.md rule 10.</p>
+
+<h2>PLAY IT</h2>
+<div class="bench">
+  <div class="screen"><canvas id="bench" width="240" height="240" data-shot="bench"></canvas></div>
+  <div class="side">
+    <b>Take off from the grey pad, put it down on the gold one.</b>
+    One press of the main engine is worth two of gravity, so a tap is a hop and
+    a hold is a climb. The sideways jets are free, the main engine is not.
+    <dl class="keys">
+      <dt>Z</dt><dd>main engine, and the only thing that spends fuel</dd>
+      <dt>left / right</dt><dd>sideways jets</dd>
+      <dt>any key</dt><dd>start, and restart after a wreck</dd>
+      <dt>R</dt><dd>reseed the world. Bench affordance, not a game control</dd>
+    </dl>
+    <p class="hint">Click the screen first if the keys do nothing: the canvas
+    has to have focus. Live state is under the frame.</p>
+    <p class="hint" id="readout" style="color:#e8ecf5"></p>
+  </div>
+</div>
+
+<h2>SCREENS</h2>
+<div class="grid" id="grid"></div>
+
+<h2>CONTROLS</h2>
+<table>
+  <tr><td>A</td><td>main engine: two gravities of thrust, straight up, while there is fuel</td></tr>
+  <tr><td>left / right</td><td>sideways jets: a tenth of the main engine, and free</td></tr>
+  <tr><td>any button</td><td>start a run, and start another after a wreck</td></tr>
+</table>
+
+<h2>WHAT IS ON SCREEN, AND WHY</h2>
+<ul>
+  <li><b>Fuel bar, top left.</b> The cart had this and the cart was right. It
+      goes amber at a third and red at an eighth, so the moment to stop being
+      ambitious arrives before the tank is empty rather than after.</li>
+  <li><b>SPD, under the bar.</b> Pixels per second, green while a touchdown
+      would survive and red while it would not. This is the whole game read as
+      one number, so it is the one number that gets a colour.</li>
+  <li><b>LEG, top right.</b> How many pads you have crossed this run. The score,
+      and the only reason to keep flying.</li>
+  <li><b>Nothing names a button.</b> Rule 9. The cart printed
+      <code>"X to reset"</code> in the corner of every frame, which is exactly
+      what the rule forbids: any button restarts, so no press can be the wrong
+      guess and the line disappears. The gallery card lists the controls for
+      anyone who wants them.</li>
+  <li><b>No arrow to the goal.</b> The world is exactly one screen wide, the
+      same as the cart. The gold pad is always visible, so pointing at it would
+      be a HUD element earning nothing. Worth stating so nobody adds a camera
+      this game does not need.</li>
+</ul>
+
+<h2>WHAT 240x240 CHANGES</h2>
+<ul>
+  <li><b>The lander stops being a rumour.</b> The cart drew an 8x8 sprite: four
+      pixels of hull and two legs. At 240 it is 15 wide with a canopy, splayed
+      legs and an engine bell, and the flame is three bands instead of five
+      random pixels.</li>
+  <li><b>Sub pixel motion reads.</b> At 128 with a 30 Hz tick, a lander drifting
+      at the crash threshold moved a whole pixel per frame. At 240 with a 100 Hz
+      tick the same physical speed is 0.56 px per tick, so a slow approach looks
+      slow instead of looking like a slideshow.</li>
+  <li><b>The terrain gets its detail back.</b> Same two cosine bands as the
+      cart, sampled over 240 columns instead of 120, with a lit rim and a
+      shaded depth the 128 version had no pixels for.</li>
+  <li><b>The HUD stops overlapping the world.</b> The cart's speed readout sat
+      at y=32, in the sky the lander flies through. There is room for it now.</li>
+</ul>
+
+<h2>WHAT THE CART DID, AND WHAT THIS DOES INSTEAD</h2>
+<ul>
+  <li><b>A run, not a screen.</b> The cart ended at the first landing and gave
+      you a reset key. Here a clean landing is a leg: the world regenerates, the
+      gold pad moves further out and narrows by 2 px, the tank tops up by 55,
+      and the leg count goes up. A wreck ends the run. This is the one change
+      that turns the cart into something a gallery card can promise, and it is
+      also the one most worth vetoing: say the word and it goes back to a single
+      pad with a restart.</li>
+  <li><b>Landing on the pad means being on the pad.</b> The cart tested
+      <code>x &gt;= goal.x and x + 8 &lt;= goal.x + 16</code>, where
+      <code>x</code> is the hull's centre, so it actually demanded the centre
+      sit in the left half of the pad and the right half of the pad did not
+      count. Here the whole 15 px footprint has to be inside the pad. Same
+      difficulty, no dead half.</li>
+  <li><b>Rocks hold still.</b> The cart picked each rock's colour with
+      <code>rnd</code> inside <code>_draw</code>, so all thirty strobed every
+      frame. Colour is chosen once when the rock is placed.</li>
+  <li><b>Being out of fuel on the wrong ground is an ending.</b> The cart let
+      you settle gently anywhere and then sit there with an empty tank forever.
+      A soft touchdown off the pad is still just a rest, and you can take off
+      again, but resting with nothing left in the tank ends the run as
+      STRANDED rather than deadlocking.</li>
+  <li><b>A ceiling.</b> The cart let the lander leave the top of the screen and
+      come back. Here it stops at y=8 with its climb cancelled, because a lander
+      you cannot see is a lander you cannot fly.</li>
+  <li><b>Kept exactly: everything else.</b> Gravity, thrust, the sideways
+      impulse, the 1.0 crash threshold, the tank of 100 draining one unit per
+      thrusting frame, the two cosine terrain bands and their clamp, the pad
+      flattening, the take-off latch that stops the opening frame counting as a
+      crash. All of it converted by the table below, none of it retuned.</li>
+</ul>
+
+<h2>THE CONVERSION, NUMBER BY NUMBER</h2>
+<p class="hint" style="max-width:78ch">The cart runs <code>_update</code>, which
+is 30 Hz, not <code>_update60</code>. The device runs the SDK's
+<code>update()</code>, which is one tick per 10 ms. So a per frame velocity is
+multiplied by <code>1.875 * (30/100)</code>, a per frame acceleration by
+<code>1.875 * (30/100)^2</code>, and a count of frames by
+<code>100/30</code>.</p>
+<table id="consts"></table>
+
+<h2>WHAT IT COSTS THE DEVICE</h2>
+<ul>
+  <li><b>Framebuffer 115 KB</b> of the 264 KB, because 240x240 at 16 bits is
+      what <code>ScreenMode::hires</code> costs. <code>chicken</code> already
+      pays it.</li>
+  <li><b>Terrain 480 B.</b> 240 columns of <code>uint16_t</code>, in Q8.8 so the
+      ridge is smooth rather than staircased.</li>
+  <li><b>Rocks 336 B.</b> 56 rocks of 6 bytes: x, y, radius, colour, shape.</li>
+  <li><b>Stars 180 B.</b> 60 stars of 3 bytes.</li>
+  <li><b>Flame particles 288 B.</b> 24 of 12 bytes, a fixed array with an active
+      flag, never allocated.</li>
+  <li><b>Everything else is the lander itself</b>, which is six Q16.16 scalars,
+      so 24 bytes.</li>
+  <li><b>Total on top of the framebuffer: about 1.3 KB.</b> There is no pressure
+      here at all. Flash is a few KB of code and no baked assets, since the
+      terrain is generated and rule 11 does not apply to a game with no
+      models.</li>
+</ul>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * The device, as far as this page is concerned.
+ *
+ * 240x240, RGB565 out, and a drawing API with nothing in it the RP2040
+ * will not have. No ctx.arc, no fillText, no gradients, no alpha. The
+ * frame is built in a Uint32Array and pushed once.
+ * ------------------------------------------------------------------ */
+const W = 240, H = 240;
+const TAU = Math.PI * 2;
+
+// PICO-8's sixteen, then four the cart could not afford and 240x240 can.
+const PAL_HEX = [
+  '#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C7','#FFF1E8',
+  '#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA',
+  '#B0003A', // 16 terrain mid, one step down from colour 8
+  '#7A5C3E'  // 17 rock lit face
+];
+// Quantised on the way in, because RGB565 is what the panel is handed and a
+// mockup that shows colours the panel cannot is a mockup that lies.
+const PACK = PAL_HEX.map(h => {
+  const r = parseInt(h.slice(1,3),16) & 0xF8;
+  const g = parseInt(h.slice(3,5),16) & 0xFC;
+  const b = parseInt(h.slice(5,7),16) & 0xF8;
+  return (255<<24) | (b<<16) | (g<<8) | r;   // little endian ABGR
+});
+
+let FB = null;                       // the Uint32Array being drawn into
+function useTarget(s){ FB = s.buf; }
+
+function cls(c){ FB.fill(PACK[c]); }
+function pset(x,y,c){
+  x|=0; y|=0;
+  if(x<0||y<0||x>=W||y>=H) return;
+  FB[y*W+x] = PACK[c];
+}
+function hline(x0,x1,y,c){
+  y|=0; if(y<0||y>=H) return;
+  if(x0>x1){ const t=x0; x0=x1; x1=t; }
+  x0|=0; x1|=0;
+  if(x1<0||x0>=W) return;
+  if(x0<0) x0=0; if(x1>=W) x1=W-1;
+  const p = PACK[c], row = y*W;
+  for(let x=x0;x<=x1;x++) FB[row+x]=p;
+}
+function vline(x,y0,y1,c){
+  x|=0; if(x<0||x>=W) return;
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  y0|=0; y1|=0;
+  if(y1<0||y0>=H) return;
+  if(y0<0) y0=0; if(y1>=H) y1=H-1;
+  const p = PACK[c];
+  for(let y=y0;y<=y1;y++) FB[y*W+x]=p;
+}
+function rectfill(x0,y0,x1,y1,c){
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  for(let y=y0|0;y<=(y1|0);y++) hline(x0,x1,y,c);
+}
+function rect(x0,y0,x1,y1,c){
+  hline(x0,x1,y0,c); hline(x0,x1,y1,c);
+  vline(x0,y0,y1,c); vline(x1,y0,y1,c);
+}
+function line(x0,y0,x1,y1,c){
+  x0|=0; y0|=0; x1|=0; y1|=0;
+  const dx=Math.abs(x1-x0), sx=x0<x1?1:-1;
+  const dy=-Math.abs(y1-y0), sy=y0<y1?1:-1;
+  let err=dx+dy;
+  for(;;){
+    pset(x0,y0,c);
+    if(x0===x1 && y0===y1) break;
+    const e2=2*err;
+    if(e2>=dy){ err+=dy; x0+=sx; }
+    if(e2<=dx){ err+=dx; y0+=sy; }
+  }
+}
+function circfill(cx,cy,r,c){
+  cx|=0; cy|=0;
+  const rr = r*r;
+  for(let dy=-Math.ceil(r); dy<=Math.ceil(r); dy++){
+    const s = rr - dy*dy;
+    if(s < 0) continue;
+    const dx = Math.sqrt(s)|0;
+    hline(cx-dx, cx+dx, cy+dy, c);
+  }
+}
+function circ(cx,cy,r,c){
+  cx|=0; cy|=0;
+  let x=r|0, y=0, err=1-x;
+  while(x>=y){
+    pset(cx+x,cy+y,c); pset(cx+y,cy+x,c);
+    pset(cx-y,cy+x,c); pset(cx-x,cy+y,c);
+    pset(cx-x,cy-y,c); pset(cx-y,cy-x,c);
+    pset(cx+y,cy-x,c); pset(cx+x,cy-y,c);
+    y++;
+    if(err<0) err += 2*y+1; else { x--; err += 2*(y-x)+1; }
+  }
+}
+
+/* minimal_font, honestly.
+ *
+ * 32blit's smallest font is a 3x5 glyph in a 4x6 cell, so a string of n
+ * characters is 4n-1 wide and 5 tall. Everything on screen is measured with
+ * measure(), never placed by eye: rule 9. A heading at scale 2 is what
+ * pse::draw_text gives the real build, not the SDK font. */
+const GLYPHS = {
+  '0':'111101101101111','1':'010110010010111','2':'111001111100111','3':'111001111001111',
+  '4':'101101111001001','5':'111100111001111','6':'111100111101111','7':'111001001001001',
+  '8':'111101111101111','9':'111101111001111',
+  'A':'111101111101101','B':'110101110101110','C':'111100100100111','D':'110101101101110',
+  'E':'111100110100111','F':'111100110100100','G':'111100101101111','H':'101101111101101',
+  'I':'111010010010111','J':'001001001101111','K':'101101110101101','L':'100100100100111',
+  'M':'101111111101101','N':'110101101101101','O':'111101101101111','P':'111101111100100',
+  'Q':'111101101111001','R':'111101110101101','S':'111100111001111','T':'111010010010010',
+  'U':'101101101101111','V':'101101101101010','W':'101101111111101','X':'101101010101101',
+  'Y':'101101010010010','Z':'111001010100111',
+  ' ':'000000000000000','.':'000000000000010',':':'000010000010000','-':'000000111000000',
+  '+':'000010111010000','/':'001001010100100','!':'010010010000010','?':'111001011000010',
+  '%':'101001010100101','>':'100010001010100','<':'001010100010001','=':'000111000111000',
+  ',':'000000000010100',"'":'010010000000000','(':'001010010010001',')':'100010010010100',
+  '*':'000101010101000','#':'101111101111101'
+};
+const GLYPH_W = 3, GLYPH_H = 5, ADVANCE = 4;
+function measure(s, scale){ scale = scale||1; return (s.length*ADVANCE - 1) * scale; }
+function print(s, x, y, c, scale){
+  scale = scale||1;
+  x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS[s[i]] || GLYPHS[s[i].toUpperCase()] || GLYPHS['?'];
+    const gx = x + i*ADVANCE*scale;
+    for(let ry=0;ry<GLYPH_H;ry++){
+      for(let rx=0;rx<GLYPH_W;rx++){
+        if(g[ry*GLYPH_W+rx] === '1'){
+          if(scale===1) pset(gx+rx, y+ry, c);
+          else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+        }
+      }
+    }
+  }
+}
+function printc(s, cx, y, c, scale){
+  scale = scale||1;
+  print(s, (cx - measure(s,scale)/2)|0, y, c, scale);
+}
+// A shadowed heading, which is how the cart drew its own titles.
+function printcs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  printc(s, cx+scale, y+scale, shadow, scale);
+  printc(s, cx, y, c, scale);
+}
+function printr(s, rightX, y, c, scale){
+  scale = scale||1;
+  print(s, (rightX - measure(s,scale))|0, y, c, scale);
+}
+
+/* The engine's own 5x7, for anything a 3 px glyph cannot carry.
+ *
+ * minimal_font's M is three pixels wide and reads as an H with a filled
+ * middle, which is fine in a HUD and not fine in a title. The real build has
+ * pse::draw_text (engine/include/pse/text.hpp) for exactly this: a 5x7 bitmap
+ * font with a scale argument, drawn straight into a RenderTarget, so it works
+ * on the device and in the host preview harness alike. One blank column
+ * between glyphs, so n characters is 6n-1 wide. */
+const G7W = 5, G7H = 7, ADV7 = 6;
+// One row per line, exactly as engine/font/console5x7.txt holds them, because
+// a glyph written as one 35 character string is a glyph nobody can check: the
+// first version of this table had four miscounted rows and drew A as P.
+const GLYPHS7_SRC = {
+  'A':['.###.','#...#','#...#','#####','#...#','#...#','#...#'],
+  'B':['####.','#...#','#...#','####.','#...#','#...#','####.'],
+  'C':['.###.','#...#','#....','#....','#....','#...#','.###.'],
+  'D':['####.','#...#','#...#','#...#','#...#','#...#','####.'],
+  'E':['#####','#....','#....','####.','#....','#....','#####'],
+  'F':['#####','#....','#....','####.','#....','#....','#....'],
+  'G':['.###.','#...#','#....','#.###','#...#','#...#','.###.'],
+  'H':['#...#','#...#','#...#','#####','#...#','#...#','#...#'],
+  'I':['#####','..#..','..#..','..#..','..#..','..#..','#####'],
+  'J':['....#','....#','....#','....#','#...#','#...#','.###.'],
+  'K':['#...#','#..#.','#.#..','##...','#.#..','#..#.','#...#'],
+  'L':['#....','#....','#....','#....','#....','#....','#####'],
+  'M':['#...#','##.##','#.#.#','#.#.#','#...#','#...#','#...#'],
+  'N':['#...#','##..#','##..#','#.#.#','#..##','#..##','#...#'],
+  'O':['.###.','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'P':['####.','#...#','#...#','####.','#....','#....','#....'],
+  'Q':['.###.','#...#','#...#','#...#','#.#.#','#..#.','.##.#'],
+  'R':['####.','#...#','#...#','####.','#.#..','#..#.','#...#'],
+  'S':['.###.','#...#','#....','.###.','....#','#...#','.###.'],
+  'T':['#####','..#..','..#..','..#..','..#..','..#..','..#..'],
+  'U':['#...#','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'V':['#...#','#...#','#...#','#...#','#...#','.#.#.','..#..'],
+  'W':['#...#','#...#','#...#','#.#.#','#.#.#','##.##','#...#'],
+  'X':['#...#','#...#','.#.#.','..#..','.#.#.','#...#','#...#'],
+  'Y':['#...#','#...#','.#.#.','..#..','..#..','..#..','..#..'],
+  'Z':['#####','....#','...#.','..#..','.#...','#....','#####'],
+  '0':['.###.','#...#','#..##','#.#.#','##..#','#...#','.###.'],
+  '1':['..#..','.##..','..#..','..#..','..#..','..#..','#####'],
+  '2':['.###.','#...#','....#','...#.','..#..','.#...','#####'],
+  '3':['#####','...#.','..#..','...#.','....#','#...#','.###.'],
+  '4':['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.'],
+  '5':['#####','#....','####.','....#','....#','#...#','.###.'],
+  '6':['..##.','.#...','#....','####.','#...#','#...#','.###.'],
+  '7':['#####','....#','...#.','..#..','.#...','.#...','.#...'],
+  '8':['.###.','#...#','#...#','.###.','#...#','#...#','.###.'],
+  '9':['.###.','#...#','#...#','.####','....#','...#.','.##..'],
+  ' ':['.....','.....','.....','.....','.....','.....','.....'],
+  '.':['.....','.....','.....','.....','.....','.##..','.##..'],
+  ':':['.....','.##..','.##..','.....','.##..','.##..','.....'],
+  '-':['.....','.....','.....','#####','.....','.....','.....'],
+  '!':['..#..','..#..','..#..','..#..','..#..','.....','..#..'],
+  '/':['....#','....#','...#.','..#..','.#...','#....','#....'],
+  '+':['.....','..#..','..#..','#####','..#..','..#..','.....']
+};
+const GLYPHS7 = {};
+for(const k in GLYPHS7_SRC){
+  const rows = GLYPHS7_SRC[k];
+  if(rows.length !== G7H) throw new Error('5x7 glyph ' + k + ' has ' + rows.length + ' rows');
+  for(const r of rows) if(r.length !== G7W) throw new Error('5x7 glyph ' + k + ' row "' + r + '"');
+  GLYPHS7[k] = rows.join('');
+}
+function measure7(s, scale){ scale = scale||1; return (s.length*ADV7 - 1) * scale; }
+function print7(s, x, y, c, scale){
+  scale = scale||1; x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS7[s[i]] || GLYPHS7[s[i].toUpperCase()] || GLYPHS7[' '];
+    const gx = x + i*ADV7*scale;
+    for(let ry=0;ry<G7H;ry++) for(let rx=0;rx<G7W;rx++){
+      if(g[ry*G7W+rx] === '#'){
+        if(scale===1) pset(gx+rx, y+ry, c);
+        else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+      }
+    }
+  }
+}
+function print7c(s, cx, y, c, scale){
+  scale = scale||1;
+  print7(s, (cx - measure7(s,scale)/2)|0, y, c, scale);
+}
+function print7cs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  print7c(s, cx+scale, y+scale, shadow, scale);
+  print7c(s, cx, y, c, scale);
+}
+
+function makeScreen(canvas){
+  const ctx = canvas.getContext('2d', {alpha:false});
+  ctx.imageSmoothingEnabled = false;
+  const img = ctx.createImageData(W,H);
+  const buf = new Uint32Array(img.data.buffer);
+  return {ctx, img, buf};
+}
+function present(s){ s.ctx.putImageData(s.img, 0, 0); }
+
+// Deterministic, so a posed frame is the same frame every time the page loads.
+function rng(seed){
+  let s = (seed>>>0) || 1;
+  return () => { s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* ------------------------------------------------------------------ *
+ * The conversion. Every constant is the cart's, times the two factors.
+ *
+ *   POS  = 1.875          240 / 128
+ *   HZ   = 30 / 100       the cart is _update, the device is one tick per 10 ms
+ * ------------------------------------------------------------------ */
+const POS = 240/128, HZ = 30/100;
+const CONSTS = [
+  ['gravity',        '0.1 px/frame^2',  '0.1 * 1.875 * 0.3^2',   0.1*POS*HZ*HZ,  'px/tick^2'],
+  ['main engine',    '-0.2 px/frame^2', '-0.2 * 1.875 * 0.3^2',  -0.2*POS*HZ*HZ, 'px/tick^2'],
+  ['sideways jet',   '0.05 px/frame^2', '0.05 * 1.875 * 0.3^2',  0.05*POS*HZ*HZ, 'px/tick^2'],
+  ['crash threshold','1.0 px/frame',    '1.0 * 1.875 * 0.3',     1.0*POS*HZ,     'px/tick'],
+  ['fuel burn',      '1 per frame',     '1 * 0.3 / 1.875',       0.16,           'per tick'],
+  ['tank',           '100',             'unchanged',             100,            'units'],
+  ['ridge period',   'x / 200 turns',   '/ 200 * 1.875',         375,            'px per turn'],
+  ['ridge amplitude','30 px',           '30 * 1.875',            30*POS,         'px'],
+  ['ripple period',  'x / 50 turns',    '/ 50 * 1.875',          50*POS,         'px per turn'],
+  ['ripple amplitude','4 px',           '4 * 1.875',             4*POS,          'px'],
+  ['ridge centre',   'y = 95',          '95 * 1.875',            95*POS,         'px'],
+  ['ridge floor',    'y = 110 clamp',   '110 * 1.875',           110*POS,        'px'],
+  ['pad width',      '16 px',           '16 * 1.875',            16*POS,         'px'],
+  ['hull width',     '8 px',            '8 * 1.875',             8*POS,          'px'],
+  ['rock count',     '30',              '30 * 1.875',            56,             'rocks']
+];
+const GRAV   = 0.1  * POS * HZ * HZ;   // 0.016875
+const THRUST = -0.2 * POS * HZ * HZ;   // -0.03375, two gravities up
+const SIDE   = 0.05 * POS * HZ * HZ;   // 0.0084375
+const SAFE   = 1.0  * POS * HZ;        // 0.5625 px/tick, 56 px/s
+// The cart's tank was one crossing's worth of burn on a 128 px screen. The
+// crossing is 1.875x longer now, so the tank has to last 1.875x longer to hold
+// the same fraction of a flight. The number on the bar is still 100: what
+// changed is how fast it drains, which is the smallest way to say it.
+// Measured: an autopilot leg burns 334 ticks, so this leaves it 47% in hand.
+const BURN   = 0.3 / POS;              // 0.16, and 100 units lasts 625 ticks
+const PAD_W  = 30;
+const HULL_W = 15;
+const CEIL   = 8;
+
+/* ------------------------------------------------------------------ *
+ * The game.
+ * ------------------------------------------------------------------ */
+function newGame(seed){
+  const g = {
+    rnd: rng(seed), seed: seed,
+    state: 'title', t: 0,
+    terr: new Float32Array(W),
+    pads: {start:{x:0,y:0,w:PAD_W}, goal:{x:0,y:0,w:PAD_W}},
+    rocks: [], stars: [], flame: [],
+    L: {x:0,y:0,vx:0,vy:0},
+    fuel: 100, speed: 0, leg: 1,
+    tookOff: false, resting: false, restT: 0,
+    msg: '', msgT: 0, thrust: false, jet: 0,
+    shake: 0, wreck: []
+  };
+  for(let i=0;i<60;i++){
+    g.stars.push({x: (g.rnd()*W)|0, y: (g.rnd()*150)|0, c: g.rnd()<0.25 ? 6 : 5});
+  }
+  genTerrain(g);
+  placeOnStart(g);
+  return g;
+}
+
+function genTerrain(g){
+  const R = g.rnd;
+  // The cart's three phase offsets, scaled with the screen so the ridge keeps
+  // its shape rather than repeating 1.875 times as often.
+  const x1 = R()*300*POS, x2 = R()*200*POS;
+  for(let x=0;x<W;x++){
+    const big = Math.cos(TAU*(x+x1)/(200*POS)) * (30*POS);
+    const med = Math.sin(TAU*(x+x2)/(50*POS)) * (4*POS) + R()*(3*POS);
+    g.terr[x] = Math.min(95*POS + big, 110*POS) + med;
+  }
+  // Pads. The goal walks further out and narrows as the run goes on, which is
+  // the only difficulty curve this game has.
+  const p = g.pads;
+  const step = Math.min(g.leg-1, 6);
+  p.start.x = ((R()*30*POS)|0) + (10*POS|0);
+  p.start.w = PAD_W;
+  p.goal.w  = Math.max(18, PAD_W - step*2);
+  p.goal.x  = ((R()*(30*POS - step*4))|0) + (80*POS|0) + step*2;
+  if(p.goal.x + p.goal.w > W-4) p.goal.x = W-4-p.goal.w;
+  for(const k of ['start','goal']){
+    const pad = p[k];
+    const py = g.terr[pad.x|0];
+    pad.y = py;
+    for(let i=pad.x|0; i<(pad.x|0)+pad.w; i++) if(i>=0 && i<W) g.terr[i] = py;
+  }
+  // Rocks, coloured once rather than every frame.
+  g.rocks = [];
+  const cols = [5, 5, 13, 17];
+  for(let i=0;i<34;i++){
+    let x = 0, tries = 0;
+    do { x = (R()*W)|0; tries++; } while(tries < 40 && nearPad(g, x));
+    if(nearPad(g, x)) continue;
+    g.rocks.push({
+      x: x, y: g.terr[x] + 4 + R()*7,
+      r: 1 + ((R()*3)|0),
+      c: cols[(R()*cols.length)|0]
+    });
+  }
+}
+function nearPad(g, x){
+  for(const k of ['start','goal']){
+    const p = g.pads[k];
+    if(x >= p.x - 8 && x <= p.x + p.w + 8) return true;
+  }
+  return false;
+}
+function placeOnStart(g){
+  const s = g.pads.start;
+  g.L.x = s.x + s.w/2;
+  g.L.y = s.y;
+  g.L.vx = 0; g.L.vy = 0;
+  g.speed = 0;
+  g.tookOff = false;
+  g.resting = false;
+  g.restT = 0;
+  g.flame.length = 0;
+  g.wreck.length = 0;
+}
+
+function startRun(g){
+  g.leg = 1;
+  g.fuel = 100;
+  g.msg = ''; g.msgT = 0;
+  genTerrain(g);
+  placeOnStart(g);
+  g.state = 'fly';
+}
+
+function tick(g, btn){
+  g.t++;
+  if(g.shake > 0) g.shake--;
+
+  if(g.state === 'title'){
+    if(btn.any) startRun(g);
+    return;
+  }
+  if(g.state === 'won'){
+    // A beat on the pad, then the next leg.
+    g.msgT--;
+    if(g.msgT <= 0){
+      g.leg++;
+      g.fuel = Math.min(100, g.fuel + 55);
+      g.msg = '';
+      genTerrain(g);
+      placeOnStart(g);
+      g.state = 'fly';
+    }
+    return;
+  }
+  if(g.state === 'over'){
+    g.msgT++;
+    for(const p of g.wreck){ p.x += p.vx; p.y += p.vy; p.vy += GRAV*3; p.life--; }
+    g.wreck = g.wreck.filter(p => p.life > 0);
+    if(g.msgT > 40 && btn.any) startRun(g);
+    return;
+  }
+
+  // --- flying -----------------------------------------------------
+  const L = g.L;
+  g.thrust = false;
+  g.jet = 0;
+
+  L.vy += GRAV;
+  if(btn.a && g.fuel > 0){
+    L.vy += THRUST;
+    g.fuel = Math.max(0, g.fuel - BURN);
+    g.thrust = true;
+    if(!g.tookOff && (L.vy < -0.005 || Math.abs(L.vx) > 0.005)) g.tookOff = true;
+  }
+  if(btn.left){  L.vx -= SIDE; g.jet = -1; }
+  if(btn.right){ L.vx += SIDE; g.jet =  1; }
+
+  L.x += L.vx;
+  L.y += L.vy;
+
+  // The cart clamped to 0..120 of 128, which is the hull's own width off the
+  // right edge. Same fraction here.
+  const xMin = HULL_W/2, xMax = W - HULL_W/2;
+  if(L.x < xMin){ L.x = xMin; L.vx = 0; }
+  if(L.x > xMax){ L.x = xMax; L.vx = 0; }
+  if(L.y < CEIL){ L.y = CEIL; if(L.vy < 0) L.vy = 0; }
+
+  g.speed = Math.sqrt(L.vx*L.vx + L.vy*L.vy);
+
+  // Flame particles, so thrust reads as thrust and not as a colour change.
+  if(g.thrust && g.t % 2 === 0){
+    g.flame.push({x: L.x + (g.rnd()-0.5)*4, y: L.y - 2,
+                  vx: (g.rnd()-0.5)*0.5 - L.vx*0.4, vy: 0.9 + g.rnd()*0.6,
+                  life: 7 + ((g.rnd()*6)|0)});
+  }
+  for(const p of g.flame){ p.x += p.vx; p.y += p.vy; p.life--; }
+  if(g.flame.length) g.flame = g.flame.filter(p => p.life > 0);
+
+  const ground = g.terr[Math.max(0, Math.min(W-1, L.x|0))];
+  if(L.y >= ground){
+    L.y = ground;
+    const goal = g.pads.goal;
+    // The whole footprint on the pad, not the cart's centre-in-the-left-half.
+    const onGoal = (L.x - HULL_W/2) >= goal.x && (L.x + HULL_W/2) <= goal.x + goal.w;
+
+    if(g.speed <= SAFE && onGoal){
+      g.state = 'won';
+      g.msg = 'LANDED';
+      g.msgT = 90;
+    } else if(g.tookOff && g.speed > SAFE){
+      wreck(g);
+    } else {
+      g.resting = true;
+      g.restT++;
+      // Sat down softly somewhere that is not the pad. Fine, unless the tank
+      // is empty, in which case the run is over rather than deadlocked.
+      if(g.fuel <= 0 && g.restT > 60){
+        g.state = 'over';
+        g.msg = 'STRANDED';
+        g.msgT = 0;
+      }
+    }
+    L.vx = 0; L.vy = 0;
+  } else {
+    g.resting = false;
+    g.restT = 0;
+  }
+}
+
+function wreck(g){
+  g.state = 'over';
+  g.msg = 'CRASHED';
+  g.msgT = 0;
+  g.shake = 14;
+  g.wreck = [];
+  for(let i=0;i<26;i++){
+    const a = g.rnd()*TAU, s = 0.4 + g.rnd()*1.6;
+    g.wreck.push({x: g.L.x, y: g.L.y - 6, vx: Math.cos(a)*s, vy: Math.sin(a)*s - 1.1,
+                  life: 30 + ((g.rnd()*40)|0), c: [8,9,10,13,7][(g.rnd()*5)|0]});
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Drawing. Ten calls, in this order, every frame.
+ * ------------------------------------------------------------------ */
+function drawWorld(g){
+  const sh = g.shake > 0 ? ((g.t%2) ? 1 : -1) * ((g.shake/5)|0) : 0;
+
+  cls(0);
+  for(const s of g.stars) pset(s.x, s.y, s.c);
+
+  // Terrain. The cart's solid red, with a lit rim on top and one step of
+  // shade below it, which is the whole of what 240x240 buys the ground.
+  for(let x=0;x<W;x++){
+    const y = (g.terr[x] + sh)|0;
+    vline(x, y+44, H-1, 2);
+    vline(x, y+18, y+43, 16);
+    vline(x, y+2, y+17, 8);
+    vline(x, y, y+1, 9);
+  }
+
+  // Rocks, sitting in the lit band rather than fringing the rim.
+  for(const r of g.rocks){
+    const ry = (r.y + sh)|0;
+    circfill(r.x, ry, r.r, r.c);
+    if(r.r > 1) pset(r.x-1, ry-1, 6);
+  }
+
+  // Pads. Grey where you left, gold where you are going, both with a rim so
+  // the flat top reads as a deck rather than as a gap in the terrain.
+  const p = g.pads;
+  drawPad(p.start, sh, 5, 6);
+  drawPad(p.goal,  sh, 9, 10);
+}
+function drawPad(pad, sh, body, rim){
+  const y = (pad.y + sh)|0;
+  rectfill(pad.x, y, pad.x + pad.w - 1, y + 3, body);
+  hline(pad.x, pad.x + pad.w - 1, y, rim);
+  // Two posts, so the deck has an edge you can aim between.
+  vline(pad.x, y-4, y-1, rim);
+  vline(pad.x + pad.w - 1, y-4, y-1, rim);
+  pset(pad.x, y-5, rim);
+  pset(pad.x + pad.w - 1, y-5, rim);
+}
+
+function drawLander(g){
+  const L = g.L;
+  const sh = g.shake > 0 ? ((g.t%2) ? 1 : -1) * ((g.shake/5)|0) : 0;
+  const x = L.x|0, y = (L.y + sh)|0;   // y is the point the feet touch
+
+  // Flame, under the bell, three bands.
+  for(const f of g.flame){
+    const c = f.life > 9 ? 10 : (f.life > 5 ? 9 : 8);
+    pset(f.x, f.y + sh, c);
+  }
+  if(g.thrust){
+    const len = 7 + ((g.t%3));
+    for(let i=0;i<len;i++){
+      const w = Math.max(0, 2 - (i/3)|0);
+      const c = i < 3 ? 7 : (i < 5 ? 10 : 9);
+      hline(x-w, x+w, y-3+i, c);
+    }
+  }
+  // Sideways jets: gas out of the side you are NOT accelerating toward.
+  if(g.jet !== 0){
+    const sx = x - g.jet*7;
+    for(let i=0;i<4;i++){
+      pset(sx - g.jet*i, y-13 + ((g.rnd()*3)|0) - 1, i<2 ? 7 : 6);
+    }
+  }
+
+  // Legs, splayed, feet on y. Grey so they read against both sky and ground.
+  line(x-3, y-8, x-6, y-1, 5);
+  line(x+3, y-8, x+6, y-1, 5);
+  hline(x-7, x-4, y, 6);
+  hline(x+4, x+7, y, 6);
+  pset(x-6, y-1, 6); pset(x+6, y-1, 6);
+  // Engine bell, flaring out under the hull.
+  hline(x-1, x+1, y-7, 5);
+  hline(x-2, x+2, y-6, 5);
+  hline(x-3, x+3, y-5, 13);
+  hline(x-3, x+3, y-4, 5);
+  // Hull: light on top, shaded below, so it has a lit side at a glance.
+  rectfill(x-5, y-16, x+5, y-8, 13);
+  rectfill(x-5, y-16, x+5, y-13, 6);
+  hline(x-4, x+4, y-17, 6);
+  vline(x+5, y-16, y-8, 5);
+  hline(x-5, x+5, y-8, 5);
+  // Canopy, the cart's one blue pixel grown into a window.
+  rectfill(x-3, y-15, x, y-13, 12);
+  pset(x-3, y-15, 7);
+  // Tank band and a hatch, so the hull is not a plain slab.
+  hline(x-4, x+4, y-11, 5);
+  pset(x+3, y-10, 8);
+}
+
+function drawWreckage(g){
+  // Two pixels a side, because one pixel of debris on a 240 wide screen is
+  // indistinguishable from a star.
+  for(const p of g.wreck) rectfill(p.x, p.y, p.x+1, p.y+1, p.c);
+}
+
+function drawHud(g){
+  // Fuel: label, then a measured bar under it.
+  print('FUEL', 5, 5, 6);
+  const barX = 5, barY = 13, barW = 66, barH = 7;
+  rect(barX, barY, barX+barW, barY+barH, 5);
+  const fw = ((g.fuel/100) * (barW-2))|0;
+  if(fw > 0){
+    const c = g.fuel > 33 ? 11 : (g.fuel > 12 ? 9 : 8);
+    rectfill(barX+1, barY+1, barX+fw, barY+barH-1, c);
+  }
+
+  // Speed, in pixels per second, which is a number a person can hold.
+  const pxs = Math.round(g.speed * 100);
+  const safe = g.speed <= SAFE;
+  print('SPD', 5, 25, 6);
+  print(String(pxs), 5 + measure('SPD ') , 25, safe ? 11 : 8);
+
+  // Leg count, right aligned off a measured width.
+  printr('LEG ' + g.leg, W-5, 5, 6);
+}
+
+function drawMessage(g){
+  if(!g.msg) return;
+  const c = g.msg === 'LANDED' ? 11 : 8;
+  print7cs(g.msg, W/2, 92, c, 0, 3);
+  if(g.state === 'over'){
+    print7cs('LEGS ' + (g.leg-1), W/2, 124, 6, 0, 1);
+  }
+}
+
+function drawTitle(g){
+  cls(0);
+  for(const s of g.stars) pset(s.x, s.y, s.c);
+  for(let x=0;x<W;x++){
+    const y = g.terr[x]|0;
+    vline(x, y+44, H-1, 2);
+    vline(x, y+18, y+43, 16);
+    vline(x, y+2, y+17, 8);
+    vline(x, y, y+1, 9);
+  }
+  for(const r of g.rocks){ circfill(r.x, r.y|0, r.r, r.c); }
+  drawPad(g.pads.start, 0, 5, 6);
+  drawPad(g.pads.goal,  0, 9, 10);
+
+  // The lander bobs on a pad while the title sits. Which pad is not a matter
+  // of taste: the terrain is generated, so on some seeds a pad sits high
+  // enough that a lander on it would be drawn through the title. Take the
+  // lower of the two, and if even that one does not clear the text, show no
+  // lander rather than a collision. TEXT_BOTTOM is measured, not guessed.
+  const TEXT_BOTTOM = 87;
+  const pad = g.pads.start.y > g.pads.goal.y ? g.pads.start : g.pads.goal;
+  const landerY = pad.y - 14 + Math.sin(g.t/40) * 3;
+  if(landerY - 17 > TEXT_BOTTOM + 6){
+    const sx = g.L.x, sy = g.L.y;
+    g.L.x = pad.x + pad.w/2;
+    g.L.y = landerY;
+    g.thrust = false; g.jet = 0;
+    drawLander(g);
+    g.L.x = sx; g.L.y = sy;
+  }
+
+  print7cs('DUMB',   W/2, 14, 10, 0, 4);
+  print7cs('LANDER', W/2, 48, 9,  0, 4);
+  print7cs('A CART DEMAKE', W/2, 80, 5, 0, 1);
+}
+
+function drawFrame(g){
+  if(g.state === 'title'){ drawTitle(g); return; }
+  drawWorld(g);
+  if(g.state !== 'over' || g.msg === 'STRANDED') drawLander(g);
+  drawWreckage(g);
+  drawHud(g);
+  drawMessage(g);
+}
+
+/* ------------------------------------------------------------------ *
+ * The bench.
+ * ------------------------------------------------------------------ */
+const benchCanvas = document.getElementById('bench');
+const benchScreen = makeScreen(benchCanvas);
+const readout = document.getElementById('readout');
+let bench = newGame(1234);
+
+const held = Object.create(null);
+const KEYMAP = {
+  'KeyZ':'a', 'KeyX':'b', 'KeyC':'x', 'KeyV':'y',
+  'ArrowLeft':'left', 'ArrowRight':'right', 'ArrowUp':'up', 'ArrowDown':'down',
+  'KeyA':'left', 'KeyD':'right', 'KeyW':'up', 'KeyS':'down'
+};
+let anyEdge = false;
+window.addEventListener('keydown', e => {
+  if(e.code === 'KeyR'){ bench = newGame((Math.random()*1e9)|0); e.preventDefault(); return; }
+  const b = KEYMAP[e.code];
+  if(b === undefined) return;
+  e.preventDefault();
+  if(!held[b]) anyEdge = true;
+  held[b] = true;
+});
+window.addEventListener('keyup', e => {
+  const b = KEYMAP[e.code];
+  if(b === undefined) return;
+  e.preventDefault();
+  held[b] = false;
+});
+benchCanvas.addEventListener('mousedown', () => benchCanvas.focus());
+benchCanvas.tabIndex = 0;
+
+// One tick is 10 ms, which is what the SDK's update() runs at on this
+// hardware. Render on rAF, step the sim in whole ticks, never in frames.
+const TICK_MS = 10;
+let acc = 0, last = performance.now();
+function loop(now){
+  let dt = now - last; last = now;
+  if(dt > 250) dt = 250;                 // a backgrounded tab is not a long burn
+  acc += dt;
+  let steps = 0;
+  while(acc >= TICK_MS && steps < 40){
+    const btn = {a: !!held['a'], left: !!held['left'], right: !!held['right'], any: anyEdge};
+    anyEdge = false;
+    tick(bench, btn);
+    acc -= TICK_MS;
+    steps++;
+  }
+  useTarget(benchScreen);
+  drawFrame(bench);
+  present(benchScreen);
+  readout.textContent =
+    'state ' + bench.state +
+    '   fuel ' + bench.fuel.toFixed(0) +
+    '   spd ' + (bench.speed*100).toFixed(0) + ' px/s' +
+    '   leg ' + bench.leg;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ------------------------------------------------------------------ *
+ * The gallery. Every frame below is the simulation above with its state
+ * driven there by held keys, never a picture drawn by hand.
+ * ------------------------------------------------------------------ */
+/* An autopilot, so a posed frame is the game being flown rather than a
+ * hand chosen key sequence that happens to look right. It holds a cruise
+ * altitude above the ridge, drives across to the gold pad, and lets itself
+ * down on it under the crash threshold. It flies the same tick() every
+ * button on the bench flies, and it is not part of the game. */
+function autopilot(g){
+  const L = g.L, goal = g.pads.goal;
+  const tx = goal.x + goal.w/2;
+  const dx = tx - L.x;
+  if(!g.ap) g.ap = {desc:false};
+
+  // Clearance is measured over the highest ground between here and the pad,
+  // not over the pads themselves: the ridge between them is what you hit.
+  let peak = H;
+  const a0 = Math.max(0, Math.min(L.x, tx)|0);
+  const a1 = Math.min(W-1, Math.max(L.x, tx)|0);
+  for(let x=a0; x<=a1; x++) if(g.terr[x] < peak) peak = g.terr[x];
+  const cruise = peak - 26;
+
+  // Commit to the descent once it is over the pad and nearly stopped, and
+  // give it up only if it drifts well off. Without the hysteresis it dithers
+  // on the pad edge and hovers until the tank is dry.
+  if(!g.ap.desc && Math.abs(dx) < 4 && Math.abs(L.vx) < 0.14) g.ap.desc = true;
+  if(g.ap.desc && Math.abs(dx) > 14) g.ap.desc = false;
+
+  // Aim BELOW the deck, not at it. Aimed at it, the controller holds station
+  // two pixels up and hovers there until the tank is empty, which is how the
+  // first version of this page reported that the tank was too small.
+  const want = g.ap.desc ? goal.y + 8 : cruise;
+  const errY = L.y - want;
+  const desiredVy = Math.max(-1.2, Math.min(SAFE*0.72, -errY * 0.12));
+  const a = L.vy > desiredVy;
+
+  // Do not translate until it is clear of the ridge. Flattening a pad leaves a
+  // step where the deck meets the natural terrain, exactly as the cart's
+  // flattening did, and a controller that slides sideways while still climbing
+  // flies into that step.
+  const clear = L.y < cruise + 10;
+  const cap = g.ap.desc ? 0.25 : (clear ? 0.8 : 0);
+  const desiredVx = Math.max(-cap, Math.min(cap, dx * 0.06));
+  let left = false, right = false;
+  if(L.vx > desiredVx + 0.012) left = true;
+  else if(L.vx < desiredVx - 0.012) right = true;
+  return {a, left, right};
+}
+// Fly `n` ticks under the autopilot, stopping early if the run ends.
+function fly(g, n){
+  for(let i=0;i<n && g.state === 'fly';i++) tick(g, autopilot(g));
+  return g;
+}
+function launch(seed){
+  const g = newGame(seed);
+  tick(g, {any:true});
+  return g;
+}
+function figure(id, title, sub, g){
+  const fig = document.createElement('figure');
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.setAttribute('data-shot', id);
+  fig.appendChild(c);
+  const cap = document.createElement('figcaption');
+  cap.innerHTML = '<b>' + title + '</b>' + sub;
+  fig.appendChild(cap);
+  document.getElementById('grid').appendChild(fig);
+  const s = makeScreen(c);
+  useTarget(s);
+  drawFrame(g);
+  present(s);
+}
+
+// 1. Title.
+{
+  const g = newGame(4);
+  for(let i=0;i<120;i++) tick(g, {});
+  figure('title', 'Title',
+    'Any button starts it. Nothing on screen says which, which is rule 9: with ' +
+    'no button named, no press can be the wrong guess.', g);
+}
+// 2. Climb out.
+figure('climb', 'Off the pad',
+  'Main engine lit, three bands of flame under the bell, fuel already moving. ' +
+  'Thrust is two gravities, so this is a climb and not a hover.',
+  fly(launch(4), 60));
+
+// 3. Translating across the valley, caught on a tick where a jet is actually
+// firing rather than on a tick number that happened to look right.
+figure('cross', 'Crossing',
+  'Sideways jet firing, gas leaving the side it is not accelerating toward. ' +
+  'The jets cost nothing, which is why the tank only moves while the main ' +
+  'engine is lit.',
+  (function(){
+    const g = launch(4);
+    for(let i=0;i<600 && g.state === 'fly';i++){
+      tick(g, autopilot(g));
+      if(i > 150 && g.jet !== 0 && g.thrust) break;
+    }
+    return g;
+  })());
+
+// 4. Slow approach, green.
+figure('approach', 'On the numbers',
+  'SPD green: at this speed the deck would take it. The colour is the whole ' +
+  'game read as one number, which is why it is the only number with a colour.',
+  (function(){
+    const g = launch(4);
+    // Fly until the hull is over the pad and coming down slowly.
+    for(let i=0;i<900 && g.state === 'fly';i++){
+      tick(g, autopilot(g));
+      const goal = g.pads.goal;
+      if(Math.abs(g.L.x - (goal.x + goal.w/2)) < 4 && g.L.y > goal.y - 26 &&
+         g.L.vy > 0.1 && g.speed <= SAFE) break;
+    }
+    return g;
+  })());
+
+// 5. Landed.
+figure('landed', 'Leg complete',
+  'The footprint was inside the gold deck and the speed was under the limit. ' +
+  'The world regenerates, the pad narrows by 2 px and moves further out, and ' +
+  'the tank gets 55 back.',
+  (function(){
+    const g = launch(4);
+    fly(g, 1400);
+    // Hold the frame on the landed beat rather than rolling into the next leg.
+    if(g.state === 'won') g.msgT = 60;
+    return g;
+  })());
+
+// 6. Crashed.
+figure('crash', 'Wreck',
+  'Came in over 56 px/s. The hull comes apart, the frame shakes for 14 ticks, ' +
+  'and the run ends on the leg count. Any button starts another.',
+  (function(){
+    const g = newGame(7);
+    tick(g, {any:true});
+    g.L.y = g.terr[g.L.x|0] - 60;
+    g.L.vy = 1.4;
+    g.tookOff = true;
+    for(let i=0;i<80 && g.state!=='over';i++) tick(g, {});
+    for(let i=0;i<9;i++) tick(g, {});
+    return g;
+  })());
+
+// 7. Dry tank.
+figure('dry', 'Empty, and not on the deck',
+  'Set down softly on rock with nothing left. The cart let you sit here for ' +
+  'ever; here it ends the run after 60 ticks rather than deadlocking.',
+  (function(){
+    const g = newGame(21);
+    tick(g, {any:true});
+    g.fuel = 0;
+    g.tookOff = true;
+    g.L.x = 118;
+    g.L.y = g.terr[118] - 30;
+    g.L.vy = 0.2;
+    for(let i=0;i<300 && g.state!=='over';i++) tick(g, {});
+    for(let i=0;i<5;i++) tick(g, {});
+    return g;
+  })());
+
+/* The conversion table, filled from the same constants the sim runs on, so
+ * the page cannot document a number it is not using. */
+{
+  const t = document.getElementById('consts');
+  const head = document.createElement('tr');
+  head.innerHTML = '<td style="color:#ffa300">what</td>' +
+                   '<td style="color:#ffa300">cart</td>' +
+                   '<td style="color:#ffa300">conversion</td>' +
+                   '<td style="color:#ffa300">device</td>';
+  t.appendChild(head);
+  for(const [what, cart, conv, val, unit] of CONSTS){
+    const tr = document.createElement('tr');
+    const shown = (Math.abs(val) < 1 && val !== 0) ? val.toFixed(6).replace(/0+$/,'') : String(val);
+    tr.innerHTML = '<td>' + what + '</td><td>' + cart + '</td><td>' + conv +
+                   '</td><td>' + shown + ' ' + unit + '</td>';
+    t.appendChild(tr);
+  }
+}
+</script>
+</body>
+</html>

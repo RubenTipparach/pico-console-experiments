@@ -1,0 +1,1818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cat Coin Pusher // 240x240 mockup</title>
+<style>
+  :root{
+    --ink:#e8ecf5; --dim:#8d93a6; --line:#252a3a; --bg:#0b0d15; --panel:#12151f;
+    --accent:#ffa300;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       padding:28px 20px 60px}
+  h1{font-size:19px;margin:0 0 4px;letter-spacing:.04em}
+  h1 span{color:var(--accent)}
+  p.lede{color:var(--dim);margin:0 0 24px;max-width:70ch}
+  h2{font-size:14px;margin:34px 0 10px;letter-spacing:.06em;color:var(--accent)}
+
+  .bench{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+  .bench .screen{background:var(--panel);border:1px solid var(--line);
+                 border-radius:8px;padding:12px}
+  .bench canvas{width:480px;height:480px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  .bench .side{max-width:36ch;color:var(--dim);font-size:12.5px}
+  .bench .side b{color:var(--ink);font-weight:400}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px;
+        margin:8px 0 0}
+  .keys dt{color:var(--ink);white-space:nowrap}
+  .keys dd{margin:0;color:var(--dim)}
+  .hint{color:var(--dim);font-size:12px;margin:12px 0 0}
+
+  .grid{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);
+         border-radius:8px;padding:12px 12px 10px;width:264px}
+  figure canvas{width:240px;height:240px;image-rendering:pixelated;display:block;
+                border:1px solid #000;background:#000}
+  figcaption{margin-top:9px;font-size:12px;color:var(--dim)}
+  figcaption b{color:var(--ink);display:block;font-size:13px;margin-bottom:3px}
+
+  table{border-collapse:collapse;font-size:12.5px}
+  td{padding:3px 16px 3px 0;vertical-align:top;color:var(--dim)}
+  td:first-child{color:var(--ink);white-space:nowrap}
+  ul{color:var(--dim);font-size:12.5px;max-width:78ch;padding-left:18px}
+  li{margin:5px 0}
+  li b{color:var(--ink);font-weight:400}
+  code{color:var(--accent)}
+  p.note{color:var(--dim);font-size:12.5px;max-width:78ch}
+  p.note b{color:var(--ink);font-weight:400}
+
+  @media (max-width:560px){ .bench canvas{width:240px;height:240px} }
+</style>
+</head>
+<body>
+
+<h1>Cat Coin Pusher <span>// 240x240 mockup</span></h1>
+<p class="lede">The <code>cat_coin_pusher.p8</code> cart moved off PICO-8's
+128x128 at 60 Hz and onto the PicoSystem's 240x240 at 100 Hz. All of it comes
+across: eleven special coins with their two second fuses, the combo spinner,
+the shop, ten rounds and a target that grows by half each time. What changes is
+that the table is 4.9 times the area and the panel under it is no longer four
+pixel text in a 50 pixel strip. Nothing is built yet. This page exists so the
+layout and the feel can be argued about before anyone writes C++, which is
+CLAUDE.md rule 10.</p>
+
+<h2>PLAY IT</h2>
+<div class="bench">
+  <div class="screen"><canvas id="bench" width="240" height="240" data-shot="bench"></canvas></div>
+  <div class="side">
+    <b>Drop coins on the pile until enough of it falls off the front edge.</b>
+    The pusher does the work, the combo does the scoring, and gold between
+    rounds buys the coins that break a stuck table open.
+    <dl class="keys">
+      <dt>Z</dt><dd>drop a coin, wherever the cat happens to be</dd>
+      <dt>left / right</dt><dd>move along the row at the bottom</dd>
+      <dt>X</dt><dd>use whatever the row has selected</dd>
+      <dt>up / down</dt><dd>move through the shop and the spinner</dd>
+      <dt>any key</dt><dd>start, and continue on the title and end screens</dd>
+      <dt>R</dt><dd>reseed. Bench affordance, not a game control</dd>
+    </dl>
+    <p class="hint">Click the screen first if the keys do nothing: the canvas
+    has to have focus.</p>
+    <p class="hint" id="readout" style="color:#e8ecf5"></p>
+  </div>
+</div>
+
+<h2>SCREENS</h2>
+<div class="grid" id="grid"></div>
+
+<h2>CONTROLS</h2>
+<table>
+  <tr><td>A</td><td>drop a coin from wherever the cat is</td></tr>
+  <tr><td>left / right</td><td>move along the row: the bag, buy coins, end the round</td></tr>
+  <tr><td>B</td><td>use what the row has selected</td></tr>
+  <tr><td>up / down</td><td>move through the shop between rounds</td></tr>
+  <tr><td>any button</td><td>start, and continue on the title, shop prize and end screens</td></tr>
+</table>
+
+<h2>WHAT IS ON SCREEN, AND WHY</h2>
+<ul>
+  <li><b>Top strip: round, buffs, coins, gold.</b> Four things, each one a
+      letter and a number. The buffs only appear while they are running.</li>
+  <li><b>The progress bar carries the score,</b> and the score appears nowhere
+      else. The cart printed it twice, in the top strip and again on the bar,
+      because at 128 neither copy was quite readable. One readable copy is
+      better than two cramped ones.</li>
+  <li><b>The combo meter sits under the lip,</b> which is where the combo
+      happens. It fills toward the five that opens the spinner, so the thing
+      you are chasing is drawn at the place you are watching.</li>
+  <li><b>One selectable row, and it names no buttons.</b> This is the rule 9
+      problem this cart poses, and it is the most interesting design call on
+      the page. See below.</li>
+  <li><b>A fuse is a ring and some dots, not a number.</b> The ring tightens as
+      the two seconds burn down and there is one dot per second left.</li>
+</ul>
+
+<h2>THE ROW THAT REPLACED THE BUTTON PROMPTS</h2>
+<p class="note">The cart's bottom panel was three button prompts:
+<code>"&#x2b07;:buy 5 coins g5"</code>, <code>"end round&#x274e;"</code> and
+<code>"&#x1f170;&#x274e; to start"</code> on the title. CLAUDE.md rule 9
+forbids naming a button on screen, so those three lines cannot come across as
+they are. <b>Selection carries the meaning instead:</b> the five bag slots, a
+BUY chip and an END ROUND chip are all slots on one row, left and right move
+along it, and one button uses whatever is selected. A line under the row says
+what the selection does, in words about the game rather than words about the
+controller. Dropping a coin is the verb of the game and keeps a button of its
+own. Nothing on the screen names a key, and the gallery card lists them for
+anyone who wants them.</p>
+
+<h2>WHAT 240x240 CHANGES</h2>
+<ul>
+  <li><b>The table is 4.9 times the area,</b> 208 x 112 against the cart's
+      108 x 44, and it is proportionally taller as well as wider. A coin pusher
+      wants depth to pile into and the vertical is what 240x240 hands over.</li>
+  <li><b>A coin is 10 px across instead of 5,</b> which is the difference
+      between a special being a colour and a special being a face. Eleven of
+      the cart's specials had to be told apart by hue alone at r 2.5.</li>
+  <li><b>The cat is a cat.</b> At 128 it was one <code>circfill</code> and four
+      lines. It is the game's whole personality, so it gets the pixels: ears
+      that twitch, eyes that blink, whiskers, and paws holding the coin it is
+      about to drop.</li>
+  <li><b>The shop can say what an item does</b> on a line of its own instead of
+      sharing sixteen pixels of height with its own name and price.</li>
+  <li><b>The bottom panel stops being a crush.</b> The cart fitted a progress
+      bar, five inventory slots, a description line, an end button and a buy
+      line into y 76 to 127. The same five things now have 84 px.</li>
+</ul>
+
+<h2>WHAT THE CART DID, AND WHAT THIS DOES INSTEAD</h2>
+<ul>
+  <li><b>No button named on any screen.</b> Rule 9, as above.</li>
+  <li><b>The field is proportionally taller,</b> 1.86:1 rather than the cart's
+      2.45:1. This is a real change to how the game plays: a coin has a longer
+      run from the pusher to the lip, so the pile is deeper and a shove
+      travels further. The pusher plate and its sweep were scaled by the field
+      height rather than by 1.875 so that they keep the same share of the
+      table, and its speed was then set so a sweep still takes the cart's 0.76
+      seconds. If you would rather keep the cart's exact proportions, the field
+      becomes 208 x 85 and 27 px of screen goes back to the panel.</li>
+  <li><b>The score is drawn once.</b> As above.</li>
+  <li><b>The felt speckle holds still.</b> The cart re-scattered its 50 felt
+      pixels every frame from <code>rnd</code> inside <code>_draw</code>, so
+      the table fizzed. Same pattern, computed from the index.</li>
+  <li><b>A special going off flashes the cabinet edge for six ticks</b> rather
+      than doing nothing visible. With 200 loose coins on the table, a bomb
+      needs to announce itself.</li>
+  <li><b>Kept exactly:</b> all eleven specials and their radii, impulses and
+      durations; the two second fuse and the fact that buying coins sets every
+      fuse off early; the goldfish being passive and worth 50; the combo
+      multiplier <code>min(combo,8) * comboMult</code>; the spinner at a combo
+      of five with a multiplier of how many times over; the shop's three offers
+      and its refresh at 1.5x; targets of <code>150 * 1.5^(round-1)</code>;
+      ten rounds; gold paid out per <code>ceil(target/100)</code> of score.</li>
+</ul>
+
+<h2>THE CONVERSION, NUMBER BY NUMBER</h2>
+<p class="note">The cart runs <code>_update60</code>, so 60 Hz, not the 30 Hz
+of the lander cart. A per frame velocity is multiplied by
+<code>1.875 * (60/100)</code>, an acceleration by <code>1.875 * (60/100)^2</code>,
+a count of frames by <code>100/60</code>, and a per frame damping factor
+<code>d</code> becomes <code>d^0.6</code>, because damping compounds: 0.92
+sixty times a second is 0.9509 a hundred times a second, not 0.92.</p>
+<table id="consts"></table>
+
+<h2>WHAT IT COSTS THE DEVICE</h2>
+<p class="note" id="perf"></p>
+<ul>
+  <li><b>Framebuffer 115 KB</b> of the 264 KB, for 240x240 at 16 bits.</li>
+  <li><b>Coins 6.8 KB.</b> 340 slots of 20 bytes: x, y, vx, vy in Q16.16, plus
+      a type, a flag byte and a fuse. 340 rather than the 243 a round 10 table
+      seeds, because the clone special adds five at a time.</li>
+  <li><b>Collision grid 1.4 KB.</b> A head index per cell over an 18 x 11 grid
+      plus a next index per coin, both <code>int16_t</code>. No allocation and
+      no hash map: the grid is a fixed array cleared each tick.</li>
+  <li><b>Particles, popups and payout coins 2.2 KB.</b> 96 particles, 16
+      popups and 32 falling coins, all fixed arrays with an active flag, which
+      is rule 8's shape rather than a <code>std::vector</code>.</li>
+  <li><b>Everything else is scalars,</b> under 200 bytes: the pusher, the
+      dispenser, the bag of five, the shop of three, the spinner of three.</li>
+  <li><b>Total about 10.6 KB on top of the framebuffer,</b> so roughly 126 KB
+      of 264 KB. Comfortable. Flash is code plus the thumbnail; there are no
+      models, so rule 11 does not apply.</li>
+</ul>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * The device, as far as this page is concerned.
+ *
+ * 240x240, RGB565 out, and a drawing API with nothing in it the RP2040
+ * will not have. No ctx.arc, no fillText, no gradients, no alpha. The
+ * frame is built in a Uint32Array and pushed once.
+ * ------------------------------------------------------------------ */
+const W = 240, H = 240;
+const TAU = Math.PI * 2;
+
+// PICO-8's sixteen, then four the cart could not afford and 240x240 can.
+const PAL_HEX = [
+  '#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C7','#FFF1E8',
+  '#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA',
+  '#B0003A', // 16 terrain mid, one step down from colour 8
+  '#7A5C3E'  // 17 rock lit face
+];
+// Quantised on the way in, because RGB565 is what the panel is handed and a
+// mockup that shows colours the panel cannot is a mockup that lies.
+const PACK = PAL_HEX.map(h => {
+  const r = parseInt(h.slice(1,3),16) & 0xF8;
+  const g = parseInt(h.slice(3,5),16) & 0xFC;
+  const b = parseInt(h.slice(5,7),16) & 0xF8;
+  return (255<<24) | (b<<16) | (g<<8) | r;   // little endian ABGR
+});
+
+let FB = null;                       // the Uint32Array being drawn into
+function useTarget(s){ FB = s.buf; }
+
+function cls(c){ FB.fill(PACK[c]); }
+function pset(x,y,c){
+  x|=0; y|=0;
+  if(x<0||y<0||x>=W||y>=H) return;
+  FB[y*W+x] = PACK[c];
+}
+function hline(x0,x1,y,c){
+  y|=0; if(y<0||y>=H) return;
+  if(x0>x1){ const t=x0; x0=x1; x1=t; }
+  x0|=0; x1|=0;
+  if(x1<0||x0>=W) return;
+  if(x0<0) x0=0; if(x1>=W) x1=W-1;
+  const p = PACK[c], row = y*W;
+  for(let x=x0;x<=x1;x++) FB[row+x]=p;
+}
+function vline(x,y0,y1,c){
+  x|=0; if(x<0||x>=W) return;
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  y0|=0; y1|=0;
+  if(y1<0||y0>=H) return;
+  if(y0<0) y0=0; if(y1>=H) y1=H-1;
+  const p = PACK[c];
+  for(let y=y0;y<=y1;y++) FB[y*W+x]=p;
+}
+function rectfill(x0,y0,x1,y1,c){
+  if(y0>y1){ const t=y0; y0=y1; y1=t; }
+  for(let y=y0|0;y<=(y1|0);y++) hline(x0,x1,y,c);
+}
+function rect(x0,y0,x1,y1,c){
+  hline(x0,x1,y0,c); hline(x0,x1,y1,c);
+  vline(x0,y0,y1,c); vline(x1,y0,y1,c);
+}
+function line(x0,y0,x1,y1,c){
+  x0|=0; y0|=0; x1|=0; y1|=0;
+  const dx=Math.abs(x1-x0), sx=x0<x1?1:-1;
+  const dy=-Math.abs(y1-y0), sy=y0<y1?1:-1;
+  let err=dx+dy;
+  for(;;){
+    pset(x0,y0,c);
+    if(x0===x1 && y0===y1) break;
+    const e2=2*err;
+    if(e2>=dy){ err+=dy; x0+=sx; }
+    if(e2<=dx){ err+=dx; y0+=sy; }
+  }
+}
+function circfill(cx,cy,r,c){
+  cx|=0; cy|=0;
+  const rr = r*r;
+  for(let dy=-Math.ceil(r); dy<=Math.ceil(r); dy++){
+    const s = rr - dy*dy;
+    if(s < 0) continue;
+    const dx = Math.sqrt(s)|0;
+    hline(cx-dx, cx+dx, cy+dy, c);
+  }
+}
+function circ(cx,cy,r,c){
+  cx|=0; cy|=0;
+  let x=r|0, y=0, err=1-x;
+  while(x>=y){
+    pset(cx+x,cy+y,c); pset(cx+y,cy+x,c);
+    pset(cx-y,cy+x,c); pset(cx-x,cy+y,c);
+    pset(cx-x,cy-y,c); pset(cx-y,cy-x,c);
+    pset(cx+y,cy-x,c); pset(cx+x,cy-y,c);
+    y++;
+    if(err<0) err += 2*y+1; else { x--; err += 2*(y-x)+1; }
+  }
+}
+
+/* minimal_font, honestly.
+ *
+ * 32blit's smallest font is a 3x5 glyph in a 4x6 cell, so a string of n
+ * characters is 4n-1 wide and 5 tall. Everything on screen is measured with
+ * measure(), never placed by eye: rule 9. A heading at scale 2 is what
+ * pse::draw_text gives the real build, not the SDK font. */
+const GLYPHS = {
+  '0':'111101101101111','1':'010110010010111','2':'111001111100111','3':'111001111001111',
+  '4':'101101111001001','5':'111100111001111','6':'111100111101111','7':'111001001001001',
+  '8':'111101111101111','9':'111101111001111',
+  'A':'111101111101101','B':'110101110101110','C':'111100100100111','D':'110101101101110',
+  'E':'111100110100111','F':'111100110100100','G':'111100101101111','H':'101101111101101',
+  'I':'111010010010111','J':'001001001101111','K':'101101110101101','L':'100100100100111',
+  'M':'101111111101101','N':'110101101101101','O':'111101101101111','P':'111101111100100',
+  'Q':'111101101111001','R':'111101110101101','S':'111100111001111','T':'111010010010010',
+  'U':'101101101101111','V':'101101101101010','W':'101101111111101','X':'101101010101101',
+  'Y':'101101010010010','Z':'111001010100111',
+  ' ':'000000000000000','.':'000000000000010',':':'000010000010000','-':'000000111000000',
+  '+':'000010111010000','/':'001001010100100','!':'010010010000010','?':'111001011000010',
+  '%':'101001010100101','>':'100010001010100','<':'001010100010001','=':'000111000111000',
+  ',':'000000000010100',"'":'010010000000000','(':'001010010010001',')':'100010010010100',
+  '*':'000101010101000','#':'101111101111101'
+};
+const GLYPH_W = 3, GLYPH_H = 5, ADVANCE = 4;
+function measure(s, scale){ scale = scale||1; return (s.length*ADVANCE - 1) * scale; }
+function print(s, x, y, c, scale){
+  scale = scale||1;
+  x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS[s[i]] || GLYPHS[s[i].toUpperCase()] || GLYPHS['?'];
+    const gx = x + i*ADVANCE*scale;
+    for(let ry=0;ry<GLYPH_H;ry++){
+      for(let rx=0;rx<GLYPH_W;rx++){
+        if(g[ry*GLYPH_W+rx] === '1'){
+          if(scale===1) pset(gx+rx, y+ry, c);
+          else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+        }
+      }
+    }
+  }
+}
+function printc(s, cx, y, c, scale){
+  scale = scale||1;
+  print(s, (cx - measure(s,scale)/2)|0, y, c, scale);
+}
+// A shadowed heading, which is how the cart drew its own titles.
+function printcs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  printc(s, cx+scale, y+scale, shadow, scale);
+  printc(s, cx, y, c, scale);
+}
+function printr(s, rightX, y, c, scale){
+  scale = scale||1;
+  print(s, (rightX - measure(s,scale))|0, y, c, scale);
+}
+
+/* The engine's own 5x7, for anything a 3 px glyph cannot carry.
+ *
+ * minimal_font's M is three pixels wide and reads as an H with a filled
+ * middle, which is fine in a HUD and not fine in a title. The real build has
+ * pse::draw_text (engine/include/pse/text.hpp) for exactly this: a 5x7 bitmap
+ * font with a scale argument, drawn straight into a RenderTarget, so it works
+ * on the device and in the host preview harness alike. One blank column
+ * between glyphs, so n characters is 6n-1 wide. */
+const G7W = 5, G7H = 7, ADV7 = 6;
+// One row per line, exactly as engine/font/console5x7.txt holds them, because
+// a glyph written as one 35 character string is a glyph nobody can check: the
+// first version of this table had four miscounted rows and drew A as P.
+const GLYPHS7_SRC = {
+  'A':['.###.','#...#','#...#','#####','#...#','#...#','#...#'],
+  'B':['####.','#...#','#...#','####.','#...#','#...#','####.'],
+  'C':['.###.','#...#','#....','#....','#....','#...#','.###.'],
+  'D':['####.','#...#','#...#','#...#','#...#','#...#','####.'],
+  'E':['#####','#....','#....','####.','#....','#....','#####'],
+  'F':['#####','#....','#....','####.','#....','#....','#....'],
+  'G':['.###.','#...#','#....','#.###','#...#','#...#','.###.'],
+  'H':['#...#','#...#','#...#','#####','#...#','#...#','#...#'],
+  'I':['#####','..#..','..#..','..#..','..#..','..#..','#####'],
+  'J':['....#','....#','....#','....#','#...#','#...#','.###.'],
+  'K':['#...#','#..#.','#.#..','##...','#.#..','#..#.','#...#'],
+  'L':['#....','#....','#....','#....','#....','#....','#####'],
+  'M':['#...#','##.##','#.#.#','#.#.#','#...#','#...#','#...#'],
+  'N':['#...#','##..#','##..#','#.#.#','#..##','#..##','#...#'],
+  'O':['.###.','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'P':['####.','#...#','#...#','####.','#....','#....','#....'],
+  'Q':['.###.','#...#','#...#','#...#','#.#.#','#..#.','.##.#'],
+  'R':['####.','#...#','#...#','####.','#.#..','#..#.','#...#'],
+  'S':['.###.','#...#','#....','.###.','....#','#...#','.###.'],
+  'T':['#####','..#..','..#..','..#..','..#..','..#..','..#..'],
+  'U':['#...#','#...#','#...#','#...#','#...#','#...#','.###.'],
+  'V':['#...#','#...#','#...#','#...#','#...#','.#.#.','..#..'],
+  'W':['#...#','#...#','#...#','#.#.#','#.#.#','##.##','#...#'],
+  'X':['#...#','#...#','.#.#.','..#..','.#.#.','#...#','#...#'],
+  'Y':['#...#','#...#','.#.#.','..#..','..#..','..#..','..#..'],
+  'Z':['#####','....#','...#.','..#..','.#...','#....','#####'],
+  '0':['.###.','#...#','#..##','#.#.#','##..#','#...#','.###.'],
+  '1':['..#..','.##..','..#..','..#..','..#..','..#..','#####'],
+  '2':['.###.','#...#','....#','...#.','..#..','.#...','#####'],
+  '3':['#####','...#.','..#..','...#.','....#','#...#','.###.'],
+  '4':['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.'],
+  '5':['#####','#....','####.','....#','....#','#...#','.###.'],
+  '6':['..##.','.#...','#....','####.','#...#','#...#','.###.'],
+  '7':['#####','....#','...#.','..#..','.#...','.#...','.#...'],
+  '8':['.###.','#...#','#...#','.###.','#...#','#...#','.###.'],
+  '9':['.###.','#...#','#...#','.####','....#','...#.','.##..'],
+  ' ':['.....','.....','.....','.....','.....','.....','.....'],
+  '.':['.....','.....','.....','.....','.....','.##..','.##..'],
+  ':':['.....','.##..','.##..','.....','.##..','.##..','.....'],
+  '-':['.....','.....','.....','#####','.....','.....','.....'],
+  '!':['..#..','..#..','..#..','..#..','..#..','.....','..#..'],
+  '/':['....#','....#','...#.','..#..','.#...','#....','#....'],
+  '+':['.....','..#..','..#..','#####','..#..','..#..','.....']
+};
+const GLYPHS7 = {};
+for(const k in GLYPHS7_SRC){
+  const rows = GLYPHS7_SRC[k];
+  if(rows.length !== G7H) throw new Error('5x7 glyph ' + k + ' has ' + rows.length + ' rows');
+  for(const r of rows) if(r.length !== G7W) throw new Error('5x7 glyph ' + k + ' row "' + r + '"');
+  GLYPHS7[k] = rows.join('');
+}
+function measure7(s, scale){ scale = scale||1; return (s.length*ADV7 - 1) * scale; }
+function print7(s, x, y, c, scale){
+  scale = scale||1; x|=0; y|=0;
+  for(let i=0;i<s.length;i++){
+    const g = GLYPHS7[s[i]] || GLYPHS7[s[i].toUpperCase()] || GLYPHS7[' '];
+    const gx = x + i*ADV7*scale;
+    for(let ry=0;ry<G7H;ry++) for(let rx=0;rx<G7W;rx++){
+      if(g[ry*G7W+rx] === '#'){
+        if(scale===1) pset(gx+rx, y+ry, c);
+        else rectfill(gx+rx*scale, y+ry*scale, gx+rx*scale+scale-1, y+ry*scale+scale-1, c);
+      }
+    }
+  }
+}
+function print7c(s, cx, y, c, scale){
+  scale = scale||1;
+  print7(s, (cx - measure7(s,scale)/2)|0, y, c, scale);
+}
+function print7cs(s, cx, y, c, shadow, scale){
+  scale = scale||1;
+  print7c(s, cx+scale, y+scale, shadow, scale);
+  print7c(s, cx, y, c, scale);
+}
+
+function makeScreen(canvas){
+  const ctx = canvas.getContext('2d', {alpha:false});
+  ctx.imageSmoothingEnabled = false;
+  const img = ctx.createImageData(W,H);
+  const buf = new Uint32Array(img.data.buffer);
+  return {ctx, img, buf};
+}
+function present(s){ s.ctx.putImageData(s.img, 0, 0); }
+
+// Deterministic, so a posed frame is the same frame every time the page loads.
+function rng(seed){
+  let s = (seed>>>0) || 1;
+  return () => { s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* ------------------------------------------------------------------ *
+ * The conversion.
+ *
+ *   POS = 1.875           240 / 128
+ *   HZ  = 60 / 100        the cart is _update60, the device is one tick per 10 ms
+ *
+ * A per frame velocity is multiplied by 1.125, a per frame acceleration by
+ * 0.675, a count of frames by 1.6667, and a per frame damping factor d becomes
+ * d^0.6, because damping compounds: 0.92 sixty times a second is 0.9509 a
+ * hundred times a second, not 0.92.
+ * ------------------------------------------------------------------ */
+const POS = 240/128, HZ = 60/100;
+const vel  = v => v * POS * HZ;           // px/frame  -> px/tick
+const acc  = a => a * POS * HZ * HZ;      // px/frame2 -> px/tick2
+const dur  = f => Math.round(f / HZ);     // frames    -> ticks
+const rad  = r => r * POS;                // px        -> px
+const damp = d => Math.pow(d, HZ);        // per frame -> per tick
+
+/* The field, and the one measurement on this page that had to be taken twice.
+ *
+ * A coin pusher's geometry is not in pixels, it is in coin diameters: what
+ * decides whether a shove reaches the lip is how many coins deep the shelf is,
+ * not how many pixels. The cart's numbers in its own coins (5 px across):
+ *
+ *     field           108 x 44 px   = 21.6 x 8.8 coins
+ *     plate height    10 px         = 2.0 coins
+ *     plate travel    16 px         = 3.2 coins
+ *     free shelf      22 px         = 4.4 coins
+ *
+ * The first version of this page scaled the field by pixels and gave it 208 x
+ * 112, which is 20.8 x 11.2 coins: two and a half coins deeper than the cart.
+ * Round 1 then became unwinnable, and not subtly. Sixty seconds of simulation
+ * with every coin the round hands out scored exactly nothing, because the pile
+ * was never deep enough to reach the lip. So the field is scaled in coins
+ * instead, and the 24 px that frees goes to the tray and the panel, which
+ * wanted it anyway. */
+const COIN_R = 5;                          // the cart's 2.5, doubled: a coin can carry a face
+const COIN_D = COIN_R*2;
+const FL = 16, FR = 224, FT = 44;
+const FBOT = FT + Math.round(8.8 * COIN_D);            // 8.8 coins deep, as the cart
+const FW = FR - FL, FH = FBOT - FT;
+
+const CELL   = 12;                         // >= one diameter, so a colliding pair spans at most one cell
+const GRID_W = Math.ceil(FW/CELL) + 2, GRID_H = Math.ceil(FH/CELL) + 2;
+
+const PUSH_H     = Math.round(2.0 * COIN_D);           // 2 coins tall
+const PUSH_TRAVEL= Math.round(3.2 * COIN_D);           // 3.2 coins of sweep
+const PUSH_MAX   = FBOT - Math.round(4.4 * COIN_D);    // leaving a 4.4 coin shelf
+const PUSH_MIN   = PUSH_MAX - PUSH_TRAVEL;
+const PUSH_SPEED = PUSH_TRAVEL / dur(16/0.35);         // still 0.76 s per sweep
+const DISP_SPEED = vel(0.6);
+
+const COIN_DAMP  = damp(0.92);
+const FUSE       = dur(120);               // the cart's two second fuse
+const COMBO_HOLD = dur(90);
+const MULT_TIME  = dur(360);
+const CROWN_TIME = dur(480);
+const ICE_TIME   = dur(300);
+const DROP_TIME  = dur(12);
+const DROP_LERP  = 1 - Math.pow(1-0.3, HZ);
+const DROP_SHRINK= damp(0.75);
+
+const SPC_NAMES = ['BOMB','WHIRL','B.HOLE','MAGNET','GOLD','MULTI',
+                   'QUAKE','ICE','CLONE','CROWN','CASH'];
+const SPC_COLS  = [8,12,6,12,10,9,4,12,11,10,14];
+const SPC_COSTS = [30,25,40,20,15,35,30,25,20,45,50];
+const SPC_DESCS = ['BLAST COINS TO EDGE','SPIN COINS TO CENTER','SUCK THEN RELEASE',
+                   'PULL COINS TOGETHER','WORTH 5X WHEN SCORED','2X SCORE 6 SECONDS',
+                   'SHAKE ALL COINS','FREEZE PUSHER 5 SEC','SPAWN 5 EXTRA COINS',
+                   '3X COMBO 8 SECONDS','SCORE NEARBY COINS'];
+const NUM_SPC = 11;
+const MAX_ROUNDS = 10;
+const COMBO_THRESHOLD = 5;
+const INV_MAX = 5;
+const MAX_COINS = 340;
+const BUY_COIN_BASE = 5, BUY_COIN_AMT = 5;
+
+const target_for = r => Math.floor(150 * Math.pow(1.5, r-1));
+
+// How full the shelf starts, as a fraction of what the shelf holds. The cart
+// opened around two thirds full and was packed solid by the last round, so
+// that is the curve. See seedCoins for why this is not the cart's 100 + 10r.
+const seed_fill = r => Math.min(1, 0.66 + 0.038*(r-1));
+
+/* ------------------------------------------------------------------ *
+ * State
+ * ------------------------------------------------------------------ */
+function newGame(seed){
+  const g = {
+    rnd: rng(seed), seed: seed,
+    state: 'title', t: 0,
+    coins: [], dropping: [], falling: [], particles: [], popups: [],
+    push: {y: PUSH_MIN + 8, dir: 1, frozen: 0},
+    disp: {x: (FL+FR)/2, dir: 1},
+    round: 1, roundScore: 0, target: 0, gold: 0, coinsLeft: 0,
+    scorePerGold: 1, roundGoldGiven: 0,
+    scoreMult: 1, multTimer: 0, comboMult: 1, comboBuffTimer: 0,
+    combo: 0, comboTimer: 0, comboBest: 0, spinnerPending: false,
+    inv: [], sel: 0,
+    buyCount: 0, buyCost: BUY_COIN_BASE,
+    shop: [], shopSel: 0, refreshCost: 0,
+    spin: null,
+    catBlink: 0, catTwitch: 0,
+    high: 0, flash: 0
+  };
+  return g;
+}
+
+function makeCoin(g, x, y, stype){
+  return {x:x, y:y, vx:0, vy:0, onPusher:false, stype:stype||0, activated:false, fuse:0};
+}
+function particle(g, x, y, col, life){
+  if(g.particles.length > 90) return;
+  g.particles.push({x:x, y:y, vx:vel(g.rnd()*2-1), vy:vel(g.rnd()*2-1),
+                    life:dur(life), max:dur(life), col:col});
+}
+function popup(g, x, y, val){
+  g.popups.push({x:x, y:y, val:val, timer:dur(45), vy:vel(-0.6)});
+}
+
+function startRun(g){
+  g.round = 1; g.gold = 0; g.inv = [];
+  g.scoreMult = 1; g.multTimer = 0; g.comboMult = 1; g.comboBuffTimer = 0;
+  startRound(g, true);
+}
+function startRound(g, seedField){
+  g.state = 'play'; g.t = 0;
+  g.roundScore = 0; g.combo = 0; g.comboTimer = 0; g.comboBest = 0;
+  g.target = target_for(g.round);
+  g.coinsLeft = Math.floor(30 * Math.pow(1.3, g.round-1));
+  g.scorePerGold = Math.max(1, Math.ceil(g.target/100));
+  g.roundGoldGiven = 0;
+  g.dropping = []; g.falling = []; g.particles = []; g.popups = [];
+  g.buyCount = 0; g.buyCost = BUY_COIN_BASE;
+  g.spinnerPending = false;
+  g.sel = 0;
+  if(seedField){
+    g.coins = [];
+    g.push.y = PUSH_MIN + 8; g.push.dir = 1; g.push.frozen = 0;
+    g.disp.x = (FL+FR)/2; g.disp.dir = 1;
+    seedCoins(g, Math.round(SEED_CAPACITY * seed_fill(g.round)));
+  }
+}
+/* Seeding, and a thing the cart got away with that this cannot.
+ *
+ * The cart asked for 100 + 10r coins and placed them by rejection sampling:
+ * pick a spot, keep it if nothing is within 5 px, give up after 40 tries. Its
+ * shelf was 108 x 17 and it was asking for 110 coins of 19.6 px2 to fit into
+ * 1836 px2, which is over 100 percent coverage. So the sampler always
+ * saturated long before the count was met, the round number barely moved the
+ * result, and the cart's real seed count was "as many as random sequential
+ * packing fits", about 54 percent coverage.
+ *
+ * Converting that literally put 65 coins on the table when the arithmetic said
+ * 135, which is the sort of number that looks fine in a comment and is wrong
+ * on screen. So the sites are a jittered hexagonal lattice taken in random
+ * order instead: the same loose carpet, but the count asked for is the count
+ * placed, and the page can report the real number. */
+function seedSites(){
+  const sites = [];
+  const sx = COIN_R*2 + 0.5, sy = COIN_R*1.8;
+  let row = 0;
+  for(let y = PUSH_MAX + COIN_R + 2; y <= FBOT - COIN_R - 1; y += sy, row++){
+    const off = (row % 2) ? sx/2 : 0;
+    for(let x = FL + COIN_R + 1 + off; x <= FR - COIN_R - 1; x += sx) sites.push([x, y]);
+  }
+  return sites;
+}
+const SEED_CAPACITY = seedSites().length;
+function seedCoins(g, n){
+  const sites = seedSites();
+  for(let i=sites.length-1;i>0;i--){
+    const j = Math.floor(g.rnd()*(i+1));
+    const t = sites[i]; sites[i] = sites[j]; sites[j] = t;
+  }
+  const take = Math.min(n, sites.length, MAX_COINS);
+  for(let i=0;i<take;i++){
+    g.coins.push(makeCoin(g, sites[i][0] + (g.rnd()-0.5)*2, sites[i][1] + (g.rnd()-0.5)*2, 0));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Specials. Every radius scaled by 1.875, every impulse by 1.125,
+ * every timer by 1.6667.
+ * ------------------------------------------------------------------ */
+function activate(g, c){
+  if(c.activated || c.stype === 0) return;
+  c.activated = true;
+  const st = c.stype, R = g.rnd;
+  const each = (r2, fn) => {
+    for(const o of g.coins){
+      if(o === c) continue;
+      const dx = o.x-c.x, dy = o.y-c.y, dd = dx*dx+dy*dy;
+      if(dd < r2) fn(o, dx, dy, Math.sqrt(dd)+0.1);
+    }
+  };
+  if(st === 1){                                   // bomb
+    const r = rad(28);
+    each(r*r, (o,dx,dy,d) => { o.vx += dx/d*vel(4); o.vy += dy/d*vel(4); });
+    for(let i=0;i<8;i++){ particle(g,c.x,c.y,8,25); particle(g,c.x,c.y,10,20); }
+  } else if(st === 2){                            // whirlpool
+    const r = rad(25);
+    each(r*r, (o,dx,dy) => {
+      const a = Math.atan2(dy,dx) + Math.PI/2;
+      o.vx += Math.cos(a)*vel(1.5); o.vy += Math.sin(a)*vel(1.5) + vel(0.5);
+    });
+    for(let i=0;i<6;i++) particle(g,c.x,c.y,12,25);
+  } else if(st === 3){                            // black hole
+    const r = rad(30);
+    each(r*r, (o,dx,dy,d) => { o.vx -= dx/d*vel(2); o.vy -= dy/d*vel(2); });
+    for(let i=0;i<6;i++){ particle(g,c.x,c.y,1,20); particle(g,c.x,c.y,13,18); }
+  } else if(st === 4){                            // magnet
+    const r = rad(22);
+    each(r*r, (o,dx,dy,d) => { o.vx -= dx/d*vel(1.5); o.vy -= dy/d*vel(1.5); });
+    for(let i=0;i<4;i++) particle(g,c.x,c.y,12,15);
+  } else if(st === 5){                            // goldfish, passive
+  } else if(st === 6){                            // multiplier
+    g.scoreMult = 2; g.multTimer = MULT_TIME;
+    for(let i=0;i<4;i++) particle(g,c.x,c.y,9,20);
+  } else if(st === 7){                            // earthquake
+    for(const o of g.coins){ o.vx += vel(R()*2-1); o.vy += vel(R()*2-1); }
+    for(let i=0;i<5;i++) particle(g,c.x,c.y,4,15);
+  } else if(st === 8){                            // ice
+    g.push.frozen = ICE_TIME;
+    for(let i=0;i<5;i++){ particle(g,c.x,c.y,12,20); particle(g,c.x,c.y,7,15); }
+  } else if(st === 9){                            // clone
+    for(let i=0;i<5 && g.coins.length<MAX_COINS;i++){
+      const nc = makeCoin(g, c.x + R()*rad(10)-rad(5), c.y + R()*rad(10)-rad(5), 0);
+      nc.vy = vel(0.5 + R()*0.5); nc.vx = vel(R()-0.5);
+      g.coins.push(nc);
+    }
+    for(let i=0;i<4;i++) particle(g,c.x,c.y,11,15);
+  } else if(st === 10){                           // crown
+    g.comboMult = 3; g.comboBuffTimer = CROWN_TIME;
+    for(let i=0;i<5;i++) particle(g,c.x,c.y,10,20);
+  } else if(st === 11){                           // cashout
+    const r = rad(22), list = [];
+    each(r*r, (o) => list.push(o));
+    for(const o of list){
+      o.y = FBOT + COIN_R + 1; o.onPusher = false;
+      particle(g, o.x, o.y-5, 14, 20);
+    }
+    for(let i=0;i<6;i++){ particle(g,c.x,c.y,14,25); particle(g,c.x,c.y,7,20); }
+  }
+  g.flash = 6;
+}
+function triggerAllFused(g){
+  for(const c of g.coins) if(c.stype > 0 && c.fuse > 0 && !c.activated){ c.fuse = 0; activate(g, c); }
+}
+
+/* ------------------------------------------------------------------ *
+ * The selectable row. The cart printed three button prompts along the
+ * bottom, which rule 9 forbids. Everything you can do to the bag is a
+ * slot on one row instead: left and right move, one button confirms,
+ * and nothing on screen names a key.
+ * ------------------------------------------------------------------ */
+function slots(g){
+  const s = [];
+  for(let i=0;i<g.inv.length;i++) s.push({kind:'item', i:i});
+  s.push({kind:'buy'});
+  if(canEnd(g)) s.push({kind:'end'});
+  return s;
+}
+function canEnd(g){
+  return g.roundScore >= g.target || (g.coinsLeft <= 0 && g.dropping.length === 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * One tick
+ * ------------------------------------------------------------------ */
+function tick(g, btn){
+  g.t++;
+  if(g.flash > 0) g.flash--;
+  if(g.rnd()*dur(200) < 1) g.catBlink = dur(10);
+  if(g.catBlink > 0) g.catBlink--;
+  if(g.rnd()*dur(300) < 1) g.catTwitch = dur(15);
+  if(g.catTwitch > 0) g.catTwitch--;
+
+  if(g.state === 'title')      updateTitle(g, btn);
+  else if(g.state === 'play')  updatePlay(g, btn);
+  else if(g.state === 'shop')  updateShop(g, btn);
+  else if(g.state === 'spin')  updateSpinner(g, btn);
+  else if(g.state === 'over' || g.state === 'win'){
+    if(g.t > dur(60) && btn.any) g.state = 'title';
+  }
+
+  for(let i=g.particles.length-1;i>=0;i--){
+    const p = g.particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += acc(0.03); p.life--;
+    if(p.life <= 0) g.particles.splice(i,1);
+  }
+  for(let i=g.popups.length-1;i>=0;i--){
+    const p = g.popups[i];
+    p.y += p.vy; p.timer--;
+    if(p.timer <= 0) g.popups.splice(i,1);
+  }
+  for(let i=g.falling.length-1;i>=0;i--){
+    const f = g.falling[i];
+    f.y += f.vy; f.x += f.vx; f.vy += acc(0.08);
+    f.h += f.vh; f.vh += acc(0.15); f.life--;
+    if(f.life <= 0) g.falling.splice(i,1);
+  }
+}
+
+function updateTitle(g, btn){
+  g.disp.x += g.disp.dir * vel(0.5);
+  if(g.disp.x > FR-12){ g.disp.dir = -1; }
+  if(g.disp.x < FL+12){ g.disp.dir =  1; }
+  if(btn.any) startRun(g);
+}
+
+function updatePlay(g, btn){
+  // Dispenser tracks left and right on its own, as the cart's did.
+  g.disp.x += g.disp.dir * DISP_SPEED;
+  if(g.disp.x >= FR-12){ g.disp.dir = -1; g.disp.x = FR-12; }
+  if(g.disp.x <= FL+12){ g.disp.dir =  1; g.disp.x = FL+12; }
+
+  const row = slots(g);
+  if(g.sel >= row.length) g.sel = row.length - 1;
+  if(g.sel < 0) g.sel = 0;
+  if(btn.leftEdge)  g.sel = Math.max(0, g.sel-1);
+  if(btn.rightEdge) g.sel = Math.min(row.length-1, g.sel+1);
+
+  // A drops a coin. That is the verb of the game and it keeps its own button.
+  if(btn.aEdge && g.coinsLeft > 0){
+    g.dropping.push({x: g.disp.x, y: FT-8, ty: FT + rad(4) + g.rnd()*rad(4),
+                     timer: DROP_TIME, h: rad(8), stype: 0});
+    g.coinsLeft--;
+  }
+  // B confirms whatever the row has selected.
+  if(btn.bEdge && row.length){
+    const s = row[g.sel];
+    if(s.kind === 'end'){ finishRound(g); return; }
+    if(s.kind === 'buy'){
+      if(g.gold >= g.buyCost){
+        g.gold -= g.buyCost;
+        g.buyCount++;
+        g.buyCost = BUY_COIN_BASE + g.buyCount*BUY_COIN_BASE;
+        g.coinsLeft += BUY_COIN_AMT;
+        triggerAllFused(g);
+      }
+    }
+    if(s.kind === 'item'){
+      const item = g.inv[s.i];
+      g.dropping.push({x: g.disp.x, y: FT-8, ty: FT + rad(4) + g.rnd()*rad(4),
+                       timer: DROP_TIME, h: rad(8), stype: item.type});
+      g.inv.splice(s.i, 1);
+      g.sel = Math.min(g.sel, slots(g).length-1);
+    }
+  }
+
+  for(let i=g.dropping.length-1;i>=0;i--){
+    const d = g.dropping[i];
+    d.y += (d.ty - d.y) * DROP_LERP;
+    d.h *= DROP_SHRINK;
+    d.timer--;
+    if(d.timer <= 0){
+      const c = makeCoin(g, d.x, d.ty, d.stype);
+      if(d.ty < g.push.y && d.ty > g.push.y - PUSH_H) c.onPusher = true;
+      if(c.stype > 0 && c.stype !== 5) c.fuse = FUSE;
+      if(g.coins.length < MAX_COINS) g.coins.push(c);
+      g.dropping.splice(i,1);
+    }
+  }
+
+  for(const c of g.coins){
+    if(c.fuse > 0){ c.fuse--; if(c.fuse <= 0) activate(g, c); }
+  }
+  if(g.multTimer > 0){ g.multTimer--; if(g.multTimer <= 0) g.scoreMult = 1; }
+  if(g.comboBuffTimer > 0){ g.comboBuffTimer--; if(g.comboBuffTimer <= 0) g.comboMult = 1; }
+
+  updatePusher(g);
+  updateCoins(g);
+  checkScored(g);
+
+  if(g.comboTimer > 0){
+    g.comboTimer--;
+    if(g.comboTimer <= 0){
+      if(g.combo >= COMBO_THRESHOLD && !g.spinnerPending){
+        g.spinnerPending = true;
+        openSpinner(g, Math.floor(g.combo/COMBO_THRESHOLD));
+        g.combo = 0;
+        return;
+      }
+      g.combo = 0;
+    }
+  }
+}
+
+function updatePusher(g){
+  const p = g.push;
+  const prev = p.y;
+  if(p.frozen > 0){ p.frozen--; p.y = PUSH_MAX; }
+  else {
+    p.y += p.dir * PUSH_SPEED;
+    if(p.y >= PUSH_MAX){ p.y = PUSH_MAX; p.dir = -1; }
+    if(p.y <= PUSH_MIN){ p.y = PUSH_MIN; p.dir =  1; }
+  }
+  const dy = p.y - prev, ptop = p.y - PUSH_H, R = g.rnd;
+  for(const c of g.coins){
+    if(c.onPusher){
+      c.y += dy;
+      if(p.dir === -1 && c.y - COIN_R <= FT){
+        c.y = FT + COIN_R; c.vy = vel(0.5 + R()*0.3); c.vx = vel((R()-0.5)*0.3);
+        c.onPusher = false;
+      }
+      if(c.y + COIN_R > p.y){ c.onPusher = false; c.y = p.y + COIN_R; c.vy = vel(0.3); }
+      if(c.y - COIN_R < ptop){ c.onPusher = false; c.y = ptop - COIN_R; }
+    } else {
+      if(p.dir === 1 && dy > 0){
+        if(c.y - COIN_R < p.y && c.y + COIN_R > p.y - rad(4) && c.x > FL && c.x < FR){
+          c.vy += dy*0.8; c.y = p.y + COIN_R; c.vx += vel(R()*0.2 - 0.1);
+        }
+      }
+      if(c.y > ptop && c.y < p.y && c.x > FL && c.x < FR){
+        if(Math.abs(c.vy) < vel(0.3)){ c.onPusher = true; c.vx *= 0.5; c.vy = 0; }
+      }
+    }
+  }
+}
+
+function collide(a, b){
+  const dx = b.x-a.x, dy = b.y-a.y, m = COIN_R*2, dd = dx*dx+dy*dy;
+  if(dd >= m*m || dd <= 0.01) return;        // reject on the square, as the cart does
+  const d = Math.sqrt(dd), nx = dx/d, ny = dy/d, ov = m-d;
+  a.x -= nx*ov*0.5; a.y -= ny*ov*0.5;
+  b.x += nx*ov*0.5; b.y += ny*ov*0.5;
+  const dot = (a.vx-b.vx)*nx + (a.vy-b.vy)*ny;
+  if(dot > 0){
+    a.vx -= nx*dot*0.45; a.vy -= ny*dot*0.45;
+    b.vx += nx*dot*0.45; b.vy += ny*dot*0.45;
+  }
+}
+
+// Counted so the page can report a real pair test figure rather than a guess.
+let PAIR_TESTS = 0;
+
+function updateCoins(g){
+  const p = g.push, ptop = p.y - PUSH_H, pmid = p.y - PUSH_H*0.5;
+  for(const c of g.coins){
+    if(c.onPusher) continue;
+    c.x += c.vx; c.y += c.vy;
+    c.vx *= COIN_DAMP; c.vy *= COIN_DAMP;
+    if(c.x < FL+COIN_R){ c.x = FL+COIN_R; c.vx =  Math.abs(c.vx)*0.3; }
+    if(c.x > FR-COIN_R){ c.x = FR-COIN_R; c.vx = -Math.abs(c.vx)*0.3; }
+    if(c.y < FT+COIN_R){ c.y = FT+COIN_R; c.vy =  Math.abs(c.vy)*0.3; }
+    if(c.y - COIN_R < p.y && c.y + COIN_R > ptop && c.x > FL && c.x < FR){
+      if(c.y > pmid){ c.y = p.y + COIN_R; c.vy = Math.max(c.vy, vel(0.1)); }
+    }
+  }
+  // Spatial hash, one cell per coin diameter, same-cell plus four forward
+  // neighbours. The cart did this over 8 px cells for 5 px coins.
+  const grid = new Map();
+  for(const c of g.coins){
+    const gx = Math.max(0, Math.min(GRID_W-1, ((c.x-FL)/CELL)|0));
+    const gy = Math.max(0, Math.min(GRID_H-1, ((c.y-FT)/CELL)|0));
+    const k = gy*GRID_W + gx;
+    const cell = grid.get(k);
+    if(cell) cell.push(c); else grid.set(k, [c]);
+  }
+  const NBR = [1, GRID_W-1, GRID_W, GRID_W+1];
+  for(const [k, cell] of grid){
+    const gx = k % GRID_W;
+    for(let i=0;i<cell.length;i++)
+      for(let j=i+1;j<cell.length;j++){ PAIR_TESTS++; collide(cell[i], cell[j]); }
+    for(let n=0;n<4;n++){
+      const nk = k + NBR[n];
+      if(Math.abs((nk % GRID_W) - gx) > 1) continue;
+      const nb = grid.get(nk);
+      if(!nb) continue;
+      for(let i=0;i<cell.length;i++)
+        for(let j=0;j<nb.length;j++){ PAIR_TESTS++; collide(cell[i], nb[j]); }
+    }
+  }
+}
+
+function checkScored(g){
+  for(let i=g.coins.length-1;i>=0;i--){
+    const c = g.coins[i];
+    if(c.onPusher || c.y <= FBOT) continue;
+    let val = c.stype === 5 ? 50 : 10;
+    g.combo++;
+    g.comboTimer = COMBO_HOLD;
+    if(g.combo > g.comboBest) g.comboBest = g.combo;
+    const cmult = Math.min(g.combo, 8) * g.comboMult;
+    if(g.combo > 1) val *= cmult;
+    val = Math.floor(val * g.scoreMult);
+    g.roundScore += val;
+    const newG = Math.floor(g.roundScore / g.scorePerGold);
+    const dg = newG - g.roundGoldGiven;
+    if(dg > 0){ g.gold += dg; g.roundGoldGiven = newG; }
+    popup(g, c.x, FBOT-10, val);
+    g.falling.push({x:c.x, y:FBOT+3, vy:vel(0.8+g.rnd()*0.5), vx:vel(g.rnd()*0.6-0.3),
+                    h:0, vh:vel(0.3), life:dur(20)});
+    for(let k=0;k<3;k++) particle(g, c.x, FBOT, c.stype>0 ? SPC_COLS[c.stype-1] : 9, 18);
+    g.coins.splice(i,1);
+  }
+}
+
+function finishRound(g){
+  if(g.roundScore >= g.target){
+    if(g.round >= MAX_ROUNDS) gameWin(g);
+    else openShop(g);
+  } else gameOver(g);
+}
+function gameOver(g){
+  g.state = 'over'; g.t = 0;
+  let total = 0;
+  for(let r=1;r<g.round;r++) total += target_for(r);
+  total += g.roundScore;
+  if(total > g.high) g.high = total;
+}
+function gameWin(g){
+  g.state = 'win'; g.t = 0;
+  let total = 0;
+  for(let r=1;r<=MAX_ROUNDS;r++) total += target_for(r);
+  total += g.roundScore - g.target;
+  if(total > g.high) g.high = total;
+}
+
+/* ---- shop ---- */
+function genShop(g){
+  g.shop = [];
+  const used = {};
+  for(let i=0;i<3;i++){
+    let st;
+    do { st = Math.floor(g.rnd()*NUM_SPC)+1; } while(used[st]);
+    used[st] = true;
+    g.shop.push({type:st, cost: SPC_COSTS[st-1] + g.round*5, sold:false});
+  }
+}
+function openShop(g){
+  g.state = 'shop'; g.t = 0; g.shopSel = 0;
+  g.refreshCost = 10 + g.round*5;
+  genShop(g);
+}
+function updateShop(g, btn){
+  if(btn.upEdge)   g.shopSel = Math.max(0, g.shopSel-1);
+  if(btn.downEdge) g.shopSel = Math.min(4, g.shopSel+1);
+  if(btn.aEdge || btn.bEdge){
+    if(g.shopSel <= 2){
+      const item = g.shop[g.shopSel];
+      if(!item.sold && g.gold >= item.cost && g.inv.length < INV_MAX){
+        g.gold -= item.cost;
+        g.inv.push({type:item.type});
+        item.sold = true;
+      }
+    } else if(g.shopSel === 3){
+      if(g.gold >= g.refreshCost){
+        g.gold -= g.refreshCost;
+        g.refreshCost = Math.floor(g.refreshCost*1.5);
+        genShop(g);
+      }
+    } else {
+      g.round++;
+      startRound(g, false);
+    }
+  }
+}
+
+/* ---- spinner ---- */
+function openSpinner(g, cmult){
+  g.state = 'spin'; g.t = 0;
+  const m = Math.max(1, Math.floor(cmult));
+  const items = [];
+  items.push({kind:'coins', label:'+'+(15*m)+' COINS', col:10, amt:15*m});
+  if(g.rnd() < 0.5) items.push({kind:'gold', label:'+'+(10*m)+' GOLD', col:9, amt:10*m});
+  else              items.push({kind:'coins', label:'+'+(10*m)+' COINS', col:10, amt:10*m});
+  const rs = Math.floor(g.rnd()*NUM_SPC)+1;
+  items.push({kind:'special', label:SPC_NAMES[rs-1]+' COIN', col:SPC_COLS[rs-1], stype:rs});
+  for(let i=items.length-1;i>0;i--){
+    const j = Math.floor(g.rnd()*(i+1));
+    const t = items[i]; items[i] = items[j]; items[j] = t;
+  }
+  g.spin = {items:items, mult:m, sel:0, speed:(0.15+g.rnd()*0.05)*HZ,
+            timer:dur(90)+Math.floor(g.rnd()*dur(40)), result:-1, done:false};
+}
+function updateSpinner(g, btn){
+  const s = g.spin;
+  if(!s.done){
+    s.timer--;
+    s.sel += s.speed;
+    if(s.sel >= s.items.length) s.sel = 0;
+    if(s.timer < dur(40)) s.speed *= damp(0.97);
+    if(s.timer <= 0 || s.speed < 0.02*HZ){
+      s.done = true;
+      s.result = Math.max(0, Math.min(s.items.length-1, Math.floor(s.sel)));
+      const prize = s.items[s.result];
+      if(prize.kind === 'coins') g.coinsLeft += prize.amt;
+      else if(prize.kind === 'gold') g.gold += prize.amt;
+      else if(g.inv.length < INV_MAX) g.inv.push({type:prize.stype});
+      else g.gold += 20;
+    }
+  } else if(btn.any){
+    g.state = 'play';
+  }
+}
+/* ------------------------------------------------------------------ *
+ * Layout, in device pixels. Everything below is measured off these.
+ * ------------------------------------------------------------------ */
+const HUD_Y    = 2;                 // 0..10   round, coins, gold, buffs
+const RAIL_Y   = 41;                // 11..43  the cat and the rail it runs on
+const TRAY_Y   = 142;               // 138..164 the payout well
+const BAR_Y    = 172;               // 172..184 progress toward the target
+const BAR_H    = 12;
+const ROW_Y    = 188;               // 188..214 the one selectable row
+const ROW_H    = 26;
+const SLOT_W   = 24, SLOT_GAP = 2;
+const BUY_X    = 138, BUY_W = 44;
+const END_X    = 186, END_W = 48;
+const DESC_Y   = 219;               // 218..226 what the selected slot does
+
+/* Coin faces. A 5x5 mask inside a 9 px face, which is the thing 240x240 buys
+ * that the cart could not: at r 2.5 several of its eleven specials were the
+ * same three pixels in a different colour. */
+const FACES = {
+  1: ['..#..','.###.','#####','#####','.###.'],   // bomb
+  2: ['..##.','.#..#','..#..','#..#.','.##..'],   // whirl
+  3: ['.###.','#...#','#...#','#...#','.###.'],   // black hole
+  4: ['##.##','##.##','#...#','#####','.....'],   // magnet
+  5: ['.##.#','#####','###.#','.##.#','.....'],   // goldfish
+  6: ['#...#','.#.#.','..#..','.#.#.','#...#'],   // multiplier
+  7: ['..##.','.##..','..##.','.##..','..##.'],   // quake
+  8: ['#.#.#','.###.','#####','.###.','#.#.#'],   // ice
+  9: ['###..','###..','.....','..###','..###'],   // clone
+  10:['#.#.#','#####','#####','#####','.....'],   // crown
+  11:['.###.','##...','.###.','...##','.###.']    // cash
+};
+function drawFace(x, y, mask, col){
+  for(let r=0;r<5;r++) for(let c=0;c<5;c++)
+    if(mask[r][c] === '#') pset((x|0)-2+c, (y|0)-2+r, col);
+}
+
+/* One baked 11x11 coin, not a circfill per coin.
+ *
+ * Two reasons, and the second is the real one. A rasterised circle at r 5 has
+ * visible steps, and 240 of them on green felt read as a flowerbed rather than
+ * as money. And the device would not rasterise 240 circles a frame either: a
+ * coin is one const sprite blitted 240 times, which is both cheaper and the
+ * only way every coin looks like the same coin. The table is generated once
+ * here for the same reason rule 11 keeps models out of source: it is derived,
+ * so it is derived rather than typed. */
+const COIN_SPAN = [[3,7],[1,9],[1,9],[0,10],[0,10],[0,10],[0,10],[0,10],[1,9],[1,9],[3,7]];
+const COIN_SPRITE = (function(){
+  const D = 11, out = [];
+  for(let y=0;y<D;y++){
+    let line = '';
+    for(let x=0;x<D;x++){
+      const s = COIN_SPAN[y];
+      if(x < s[0] || x > s[1]){ line += '.'; continue; }
+      const up = y > 0 ? COIN_SPAN[y-1] : [99,-99];
+      const dn = y < D-1 ? COIN_SPAN[y+1] : [99,-99];
+      const inner = x > s[0] && x < s[1] &&
+                    x > up[0] && x < up[1] && x > dn[0] && x < dn[1];
+      line += inner ? 'f' : 'o';
+    }
+    out.push(line);
+  }
+  return out;
+})();
+
+function drawCoin(x, y, stype){
+  const spc  = stype > 0;
+  const rim   = spc ? SPC_COLS[stype-1] : 4;
+  const face  = spc ? 1  : 10;
+  const shade = spc ? 0  : 9;
+  const ox = (x|0) - 5, oy = (y|0) - 5;
+  for(let r=0;r<11;r++){
+    const row = COIN_SPRITE[r];
+    for(let c=0;c<11;c++){
+      const ch = row[c];
+      if(ch === '.') continue;
+      pset(ox+c, oy+r, ch === 'o' ? rim : ((c + r > 12) ? shade : face));
+    }
+  }
+  if(spc) drawFace(x, y, FACES[stype], SPC_COLS[stype-1]);
+  else    drawFace(x, y, ['.....','.###.','.#.#.','.###.','.....'], 9);
+  pset(ox+3, oy+2, 7);                                   // one specular pixel
+}
+function drawCoinShadow(x, y){
+  const ox = (x|0) - 4, oy = (y|0) - 4;
+  for(let r=0;r<11;r++){
+    const s = COIN_SPAN[r];
+    hline(ox + s[0], ox + s[1], oy + r, 1);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The cat. The cart drew a head from one circfill and four lines at about
+ * 12 px across. It is the game's whole personality, so at 240 it gets the
+ * pixels: ears that twitch, eyes that blink, whiskers, and a paw that is
+ * holding a coin exactly while there are coins left to hold.
+ * ------------------------------------------------------------------ */
+function drawCat(g, x, base){
+  const cy = base - 15;
+  const eo = g.catTwitch > 0 ? -2 : 0;
+
+  // Ears first, so the head overlaps their roots.
+  for(const s of [-1, 1]){
+    line(x + s*7, cy-6, x + s*11, cy-16+eo, 9);
+    line(x + s*11, cy-16+eo, x + s*3, cy-11, 9);
+    line(x + s*8, cy-8, x + s*10, cy-14+eo, 14);
+  }
+  circfill(x, cy, 11, 4);
+  circfill(x, cy, 10, 9);
+  // A lighter crown, so the head is lit from above rather than flat.
+  for(let dy=-10; dy<=-4; dy++){
+    const w = Math.sqrt(100 - dy*dy)|0;
+    hline(x-w+1, x+w-1, cy+dy, 10);
+  }
+  // Eyes.
+  if(g.catBlink > dur(5)){
+    hline(x-6, x-3, cy-1, 4); hline(x+3, x+6, cy-1, 4);
+  } else {
+    circfill(x-5, cy-1, 2, 0); circfill(x+5, cy-1, 2, 0);
+    pset(x-5, cy-2, 7); pset(x+5, cy-2, 7);
+    pset(x-6, cy,   12); pset(x+4, cy,   12);
+  }
+  // Nose and mouth.
+  hline(x-1, x+1, cy+3, 8); pset(x, cy+4, 8);
+  line(x-3, cy+6, x, cy+4, 4); line(x, cy+4, x+3, cy+6, 4);
+  // Whiskers.
+  for(const s of [-1, 1]){
+    line(x + s*8, cy+2, x + s*15, cy+1, 7);
+    line(x + s*8, cy+4, x + s*14, cy+5, 7);
+  }
+  // Paws on the rail, and the coin they are about to let go of.
+  rectfill(x-7, base-4, x-3, base-1, 9);
+  rectfill(x+3, base-4, x+7, base-1, 9);
+  if(g.coinsLeft > 0) drawCoin(x, base-3, 0);
+  // Which way it is travelling, as three pixels rather than a word.
+  const d = g.disp.dir;
+  pset(x + d*16, cy-1, 7); pset(x + d*14, cy-3, 7); pset(x + d*14, cy+1, 7);
+}
+
+/* ------------------------------------------------------------------ *
+ * The field
+ * ------------------------------------------------------------------ */
+function drawField(g){
+  // Cabinet, then felt.
+  rectfill(FL-9, FT-6, FR+8, FBOT+9, 5);
+  rectfill(FL-5, FT-3, FR+4, FBOT+6, 13);
+  rectfill(FL, FT, FR, FBOT, 3);
+  // Felt speckle, fixed rather than reseeded per frame, and sparse: the cart
+  // put 50 bright dots on 4752 px of felt and the same density here would be
+  // 245 of them competing with the coins.
+  for(let i=0;i<44;i++){
+    pset(FL + 3 + (i*47) % (FW-6), FT + 3 + (i*71) % (FH-6), 11);
+  }
+  // Top edge and side rails.
+  rectfill(FL, FT-3, FR, FT-1, 4);
+  hline(FL, FR, FT-1, 9);
+  vline(FL-1, FT, FBOT, 4); vline(FR+1, FT, FBOT, 4);
+}
+
+function drawPusher(g){
+  const p = g.push, ptop = p.y - PUSH_H;
+  rectfill(FL+3, ptop+3, FR-3, p.y+3, 1);
+  rectfill(FL+1, ptop, FR-1, p.y, p.frozen > 0 ? 12 : 4);
+  rect(FL+1, ptop, FR-1, p.y, 9);
+  // Four bolts across the face, spaced from the field width rather than
+  // from four numbers that would only be right at one width.
+  const bw = (FW - 16) / 5;
+  for(let i=1;i<=4;i++){
+    const bx = FL + 8 + i*bw - bw/2;
+    circfill(bx, p.y-5, 3, 8);
+    circfill(bx, p.y-5, 1, 14);
+  }
+  const cx = (FL+FR)/2;
+  circfill(cx, ptop + PUSH_H*0.4, 4, 8);
+  circfill(cx, ptop + PUSH_H*0.4, 2, 14);
+  hline(FL+4, FR-4, p.y, 10);
+  if(p.frozen > 0){
+    for(let i=0;i<5;i++){
+      const fx = FL + 18 + i*44;
+      pset(fx, ptop+3, 7); pset(fx+1, ptop+4, 12); pset(fx-1, ptop+4, 12);
+    }
+  }
+}
+
+function drawLip(g){
+  // The payout edge, pulsing so the place where coins turn into score is the
+  // brightest thing on the cabinet.
+  const gc = [8, 2, 8, 14][((g.t/dur(10))|0) % 4];
+  rectfill(FL, FBOT+1, FR, FBOT+5, gc);
+  hline(FL, FR, FBOT+1, 10);
+}
+
+// The well under the lip. Without it the gap between the field and the
+// progress bar is black nothing, and a coin that scores falls out of the
+// world instead of into a tray.
+function drawTrayWell(g){
+  rectfill(FL-9, FBOT+6, FR+8, TRAY_Y+22, 5);
+  rectfill(FL-5, FBOT+8, FR+4, TRAY_Y+20, 1);
+  hline(FL-5, FR+4, FBOT+8, 0);
+  hline(FL-5, FR+4, TRAY_Y+20, 13);
+  // A shallow pile of already paid out coins, so the tray is never empty.
+  for(let i=0;i<30;i++){
+    const x = FL + 4 + (i*67) % (FW-10);
+    pset(x, TRAY_Y+18, 9); pset(x+1, TRAY_Y+18, 10); pset(x+2, TRAY_Y+18, 9);
+    pset(x+1, TRAY_Y+17, 10);
+  }
+}
+
+function drawTray(g){
+  for(const f of g.falling){
+    if(f.life > dur(15)) circfill(f.x + 1 + f.h*0.4, f.y + 1 + f.h*0.4, COIN_R*0.5 + f.h*0.2, 1);
+    const cr = Math.max(1, COIN_R - f.h*0.2);
+    circfill(f.x, f.y - f.h, cr+1, 4);
+    circfill(f.x, f.y - f.h, cr, 10);
+  }
+  for(const p of g.popups){
+    const col = p.val >= 80 ? 11 : (p.val >= 30 ? 10 : 7);
+    const s = '+' + p.val;
+    print(s, p.x - measure(s)/2 + 1, p.y + 1, 0);
+    print(s, p.x - measure(s)/2,     p.y,     col);
+  }
+  // Combo, where the combo happens rather than in a corner.
+  if(g.combo > 1 && g.comboTimer > 0){
+    const col = [7,10,9,8,11][Math.min(g.combo,5)-1];
+    const txt = 'X' + g.combo + (g.combo >= COMBO_THRESHOLD ? '!' : '');
+    const mw = 90, mx = (W-mw)/2;
+    rectfill(mx, TRAY_Y+9, mx+mw, TRAY_Y+11, 5);
+    const pct = Math.min(1, g.combo/COMBO_THRESHOLD);
+    rectfill(mx, TRAY_Y+9, mx + mw*pct, TRAY_Y+11, pct >= 1 ? 11 : 8);
+    print7c(txt, W/2, TRAY_Y, col, 1);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * HUD, progress bar, and the one selectable row
+ * ------------------------------------------------------------------ */
+function drawHud(g){
+  rectfill(0, 0, W-1, 10, 0);
+  print('R' + g.round, 3, HUD_Y, 7);
+
+  let bx = 26;
+  if(g.multTimer > 0){ print('2X', bx, HUD_Y, 9); bx += measure('2X ') + 3; }
+  if(g.comboBuffTimer > 0){ print('3C', bx, HUD_Y, 10); bx += measure('3C ') + 3; }
+  if(g.push.frozen > 0){ print('ICE', bx, HUD_Y, 12); }
+
+  const gold = 'G' + g.gold;
+  printr(gold, W-3, HUD_Y, 10);
+  printr('C' + g.coinsLeft, W-6-measure(gold), HUD_Y, 12);
+  hline(0, W-1, 10, 5);
+}
+
+function drawProgress(g){
+  const x0 = 4, x1 = W-5;
+  rectfill(x0, BAR_Y, x1, BAR_Y+BAR_H, 1);
+  rect(x0, BAR_Y, x1, BAR_Y+BAR_H, 5);
+  const pct = Math.min(1, g.roundScore / g.target);
+  if(pct > 0){
+    rectfill(x0+1, BAR_Y+1, x0 + 1 + (x1-x0-2)*pct, BAR_Y+BAR_H-1,
+             g.roundScore >= g.target ? 11 : 8);
+  }
+  const s = g.roundScore + '/' + g.target;
+  print(s, (W - measure(s))/2 + 1, BAR_Y+4, 0);
+  print(s, (W - measure(s))/2,     BAR_Y+3, 7);
+}
+
+function slotRect(i){ return {x: 6 + i*(SLOT_W+SLOT_GAP), w: SLOT_W}; }
+
+function drawRow(g){
+  const row = slots(g);
+  const sel = row[Math.min(g.sel, row.length-1)];
+
+  for(let i=0;i<INV_MAX;i++){
+    const r = slotRect(i);
+    const isSel = sel && sel.kind === 'item' && sel.i === i;
+    rectfill(r.x, ROW_Y, r.x+r.w, ROW_Y+ROW_H, isSel ? 1 : 0);
+    rect(r.x, ROW_Y, r.x+r.w, ROW_Y+ROW_H, isSel ? 7 : 5);
+    if(i < g.inv.length) drawCoin(r.x + r.w/2, ROW_Y + ROW_H/2, g.inv[i].type);
+    else { pset(r.x + r.w/2, ROW_Y + ROW_H/2, 5); pset(r.x + r.w/2 - 2, ROW_Y + ROW_H/2, 5);
+           pset(r.x + r.w/2 + 2, ROW_Y + ROW_H/2, 5); }
+  }
+
+  const canBuy = g.gold >= g.buyCost;
+  const buySel = sel && sel.kind === 'buy';
+  rectfill(BUY_X, ROW_Y, BUY_X+BUY_W, ROW_Y+ROW_H, buySel ? 1 : 0);
+  rect(BUY_X, ROW_Y, BUY_X+BUY_W, ROW_Y+ROW_H, buySel ? 7 : 5);
+  print('BUY ' + BUY_COIN_AMT, BUY_X + (BUY_W - measure('BUY ' + BUY_COIN_AMT))/2, ROW_Y+5,
+        buySel ? 7 : 6);
+  const cost = 'G' + g.buyCost;
+  print(cost, BUY_X + (BUY_W - measure(cost))/2, ROW_Y+13, canBuy ? 10 : 8);
+
+  if(canEnd(g)){
+    const endSel = sel && sel.kind === 'end';
+    const ready = g.roundScore >= g.target;
+    rectfill(END_X, ROW_Y, END_X+END_W, ROW_Y+ROW_H, endSel ? (ready ? 3 : 1) : 0);
+    rect(END_X, ROW_Y, END_X+END_W, ROW_Y+ROW_H, endSel ? (ready ? 11 : 7) : 5);
+    print('END', END_X + (END_W - measure('END'))/2, ROW_Y+5, endSel ? 7 : 6);
+    print('ROUND', END_X + (END_W - measure('ROUND'))/2, ROW_Y+13, ready ? 11 : 6);
+  }
+
+  // What the selected slot does, on its own line under the row.
+  if(sel && sel.kind === 'item'){
+    const ty = g.inv[sel.i].type;
+    print(SPC_NAMES[ty-1], 6, DESC_Y, SPC_COLS[ty-1]);
+    print(SPC_DESCS[ty-1], 6 + measure(SPC_NAMES[ty-1]) + 6, DESC_Y, 6);
+  } else if(sel && sel.kind === 'buy'){
+    print('FIVE MORE COINS, AND SETS OFF EVERY FUSE', 6, DESC_Y, 6);
+  } else if(sel && sel.kind === 'end'){
+    print(g.roundScore >= g.target ? 'TARGET MET. TAKE THE SHOP.'
+                                   : 'SHORT OF TARGET. THIS ENDS THE RUN.',
+          6, DESC_Y, g.roundScore >= g.target ? 11 : 8);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Screens
+ * ------------------------------------------------------------------ */
+function drawPlay(g){
+  cls(0);
+  drawField(g);
+  drawPusher(g);
+  for(const c of g.coins) drawCoinShadow(c.x, c.y);
+  for(const c of g.coins){
+    drawCoin(c.x, c.y, c.stype);
+    if(c.fuse > 0){
+      // A ring that tightens as the fuse burns down, plus a dot per second
+      // left, so a fuse is legible without a number.
+      const pulse = 4 + Math.sin(g.t/dur(8)) * 2 + (c.fuse/FUSE) * 4;
+      circ(c.x, c.y, pulse, SPC_COLS[c.stype-1]);
+      const dots = Math.min(3, Math.ceil(c.fuse/dur(30)));
+      for(let d=0; d<dots; d++) pset(c.x - 2 + d*3, c.y - 9, 7);
+    }
+  }
+  for(const d of g.dropping) drawCoin(d.x, d.y - d.h, d.stype);
+  drawLip(g);
+  drawTrayWell(g);
+  for(const p of g.particles){
+    const c = (p.life/p.max > 0.5) ? p.col : 5;
+    pset(p.x, p.y, c); pset(p.x+1, p.y, c);
+  }
+  drawCat(g, g.disp.x, RAIL_Y);
+  rectfill(FL-9, RAIL_Y+1, FR+8, RAIL_Y+3, 5);
+  hline(FL-9, FR+8, RAIL_Y+1, 13);
+  drawTray(g);
+  drawHud(g);
+  drawProgress(g);
+  drawRow(g);
+  if(g.flash > 0){
+    // One frame of edge light when a special goes off, instead of shaking the
+    // whole screen: a coin pusher with 200 loose coins does not need help
+    // looking busy.
+    rect(FL-1, FT-1, FR+1, FBOT+1, 7);
+  }
+}
+
+function drawTitle(g){
+  cls(0);
+  for(let i=0;i<70;i++){
+    const sx = (i*37 + g.t*0.3*HZ) % W;
+    const sy = (i*53 + g.t*0.1*HZ) % H;
+    pset(sx, sy, [1,5,6,13][i%4]);
+  }
+  const ty = 34 + Math.sin(g.t/dur(90)) * 5;
+  drawCat(g, W/2, ty + 34);
+  print7cs('CAT COIN', W/2, ty+42, 10, 0, 3);
+  print7cs('PUSHER',   W/2, ty+70, 9,  0, 3);
+  print7cs('A CART DEMAKE', W/2, ty+98, 5, 0, 1);
+  const cy = ty + 128 + Math.sin(g.t/dur(25)) * 6;
+  drawCoinShadow(W/2, cy);
+  drawCoin(W/2, cy, 0);
+}
+
+function drawShop(g){
+  cls(0);
+  rectfill(0, 0, W-1, 20, 1);
+  print7c('CATS SHOP', W/2, 3, 7, 1);
+  const sub = 'ROUND ' + g.round + ' CLEAR';
+  print(sub, (W - measure(sub))/2, 13, 6);
+  print('GOLD ' + g.gold, 6, 26, 10);
+  printr('BAG ' + g.inv.length + '/' + INV_MAX, W-6, 26, 6);
+
+  for(let i=0;i<g.shop.length;i++){
+    const it = g.shop[i], iy = 38 + i*34, sel = i === g.shopSel;
+    rectfill(6, iy, W-7, iy+30, sel ? 1 : 0);
+    rect(6, iy, W-7, iy+30, sel ? 7 : 5);
+    drawCoin(22, iy+15, it.type);
+    const col = it.sold ? 5 : SPC_COLS[it.type-1];
+    print(SPC_NAMES[it.type-1], 36, iy+7, col);
+    print(SPC_DESCS[it.type-1], 36, iy+18, it.sold ? 5 : 6);
+    const price = it.sold ? 'SOLD' : 'G' + it.cost;
+    printr(price, W-12, iy+12, it.sold ? 5 : (g.gold >= it.cost ? 10 : 8));
+  }
+  const ry = 146, rsel = g.shopSel === 3;
+  rectfill(6, ry, W-7, ry+20, rsel ? 1 : 0);
+  rect(6, ry, W-7, ry+20, rsel ? 7 : 5);
+  print('REFRESH ITEMS', 20, ry+8, rsel ? 7 : 6);
+  printr('G' + g.refreshCost, W-12, ry+8, g.gold >= g.refreshCost ? 10 : 8);
+
+  const cy = 176, csel = g.shopSel === 4;
+  rectfill(56, cy, W-57, cy+20, csel ? 3 : 1);
+  rect(56, cy, W-57, cy+20, csel ? 11 : 5);
+  print7c('CONTINUE', W/2, cy+7, csel ? 7 : 6, 1);
+
+  drawCat(g, W/2, 232);
+}
+
+function drawSpinner(g){
+  cls(0);
+  const s = g.spin;
+  rectfill(0, 0, W-1, 22, 1);
+  print7c('COMBO PRIZE', W/2, 3, 7, 1);
+  const sub = 'X' + s.mult + ' MULTIPLIER';
+  print(sub, (W - measure(sub))/2, 14, 6);
+
+  rectfill(16, 32, W-17, 178, 1);
+  rect(16, 32, W-17, 178, 7);
+  for(let i=0;i<s.items.length;i++){
+    const it = s.items[i], iy = 40 + i*46;
+    const live = !s.done && Math.floor(s.sel) === i;
+    const won  = s.done && s.result === i;
+    if(live) rectfill(20, iy, W-21, iy+38, 2);
+    if(won){
+      rectfill(20, iy, W-21, iy+38, 3);
+      rect(20, iy, W-21, iy+38, (g.t % dur(20)) < dur(10) ? 11 : 10);
+    } else {
+      rect(20, iy, W-21, iy+38, 5);
+    }
+    if(it.kind === 'coins'){ drawCoin(40, iy+19, 0); drawCoin(52, iy+19, 0); }
+    else if(it.kind === 'gold'){ circfill(46, iy+19, 8, 10); circfill(46, iy+19, 6, 9);
+                                 print7c('G', 46, iy+16, 7, 1); }
+    else drawCoin(46, iy+19, it.stype);
+    print7(it.label, 70, iy+15, it.col, 1);
+  }
+  if(s.done){
+    const won = 'YOU WON ' + s.items[s.result].label;
+    print(won, (W - measure(won))/2, 190, 7);
+  } else {
+    print('SPINNING', (W - measure('SPINNING'))/2, 190, 6);
+  }
+  drawCat(g, W/2, 232);
+}
+
+function drawOver(g){
+  cls(0);
+  drawCat(g, W/2, 62);
+  print7cs('GAME OVER', W/2, 76, 8, 2, 3);
+  const lines = [
+    ['REACHED ROUND ' + g.round, 7],
+    ['ROUND SCORE ' + g.roundScore, 6],
+    ['TARGET WAS ' + g.target, g.roundScore >= g.target ? 11 : 8]
+  ];
+  for(let i=0;i<lines.length;i++)
+    print(lines[i][0], (W - measure(lines[i][0]))/2, 118 + i*14, lines[i][1]);
+  if(g.high > 0){
+    const b = 'BEST ' + g.high;
+    print(b, (W - measure(b))/2, 168, 5);
+  }
+}
+
+function drawWin(g){
+  cls(0);
+  for(let i=0;i<80;i++){
+    const sx = (i*23 + g.t*0.5*HZ) % W;
+    const sy = (i*41 + g.t*0.2*HZ) % H;
+    pset(sx, sy, [10,9,11,7][i%4]);
+  }
+  drawCat(g, W/2, 62);
+  print7cs('YOU WIN', W/2, 78, 11, 0, 3);
+  const l1 = 'ALL 10 ROUNDS CLEAR';
+  print(l1, (W - measure(l1))/2, 118, 10);
+  const l2 = 'TOTAL GOLD ' + g.gold;
+  print(l2, (W - measure(l2))/2, 134, 9);
+  if(g.high > 0){
+    const b = 'BEST ' + g.high;
+    print(b, (W - measure(b))/2, 158, 5);
+  }
+}
+
+function drawFrame(g){
+  if(g.state === 'title') drawTitle(g);
+  else if(g.state === 'play') drawPlay(g);
+  else if(g.state === 'shop') drawShop(g);
+  else if(g.state === 'spin') drawSpinner(g);
+  else if(g.state === 'over') drawOver(g);
+  else if(g.state === 'win') drawWin(g);
+}
+/* ------------------------------------------------------------------ *
+ * The bench
+ * ------------------------------------------------------------------ */
+function blank(){
+  return {any:false, aEdge:false, bEdge:false, leftEdge:false, rightEdge:false,
+          upEdge:false, downEdge:false};
+}
+
+const benchCanvas = document.getElementById('bench');
+const benchScreen = makeScreen(benchCanvas);
+const readout = document.getElementById('readout');
+let bench = newGame(20260810);
+
+const KEYMAP = {
+  'KeyZ':'a', 'KeyX':'b', 'KeyC':'x', 'KeyV':'y',
+  'ArrowLeft':'left', 'ArrowRight':'right', 'ArrowUp':'up', 'ArrowDown':'down',
+  'KeyA':'left', 'KeyD':'right', 'KeyW':'up', 'KeyS':'down'
+};
+const held = Object.create(null);
+let pending = blank();
+window.addEventListener('keydown', e => {
+  if(e.code === 'KeyR'){ bench = newGame((Math.random()*1e9)|0); e.preventDefault(); return; }
+  const b = KEYMAP[e.code];
+  if(b === undefined) return;
+  e.preventDefault();
+  if(!held[b]){
+    held[b] = true;
+    pending.any = true;
+    if(b === 'a') pending.aEdge = true;
+    if(b === 'b') pending.bEdge = true;
+    if(b === 'left') pending.leftEdge = true;
+    if(b === 'right') pending.rightEdge = true;
+    if(b === 'up') pending.upEdge = true;
+    if(b === 'down') pending.downEdge = true;
+  }
+});
+window.addEventListener('keyup', e => {
+  const b = KEYMAP[e.code];
+  if(b === undefined) return;
+  e.preventDefault();
+  held[b] = false;
+});
+benchCanvas.tabIndex = 0;
+benchCanvas.addEventListener('mousedown', () => benchCanvas.focus());
+
+// One tick is 10 ms, which is what the SDK's update() runs at on this
+// hardware. Render on rAF, step the sim in whole ticks.
+const TICK_MS = 10;
+let tickAcc = 0, last = performance.now();
+let tickCost = 0, tickPairs = 0;
+function loop(now){
+  let dt = now - last; last = now;
+  if(dt > 250) dt = 250;
+  tickAcc += dt;
+  let steps = 0;
+  const t0 = performance.now();
+  while(tickAcc >= TICK_MS && steps < 30){
+    const before = PAIR_TESTS;
+    tick(bench, pending);
+    tickPairs = PAIR_TESTS - before;
+    pending = blank();
+    tickAcc -= TICK_MS; steps++;
+  }
+  if(steps) tickCost = (performance.now() - t0) / steps;
+
+  useTarget(benchScreen);
+  drawFrame(bench);
+  present(benchScreen);
+  readout.textContent =
+    bench.state + '   coins on the table ' + bench.coins.length +
+    '   pair tests/tick ' + tickPairs +
+    '   score ' + bench.roundScore + '/' + bench.target +
+    '   gold ' + bench.gold;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ------------------------------------------------------------------ *
+ * The gallery. Every frame is the simulation above, driven there by the
+ * same buttons the bench uses, never a picture drawn by hand.
+ * ------------------------------------------------------------------ */
+function play(g, ticks, opts){
+  opts = opts || {};
+  for(let i=0;i<ticks;i++){
+    const b = blank();
+    if(opts.drop && (i % opts.drop) === 0) b.aEdge = true;
+    if(opts.at && opts.at[i]) Object.assign(b, opts.at[i]);
+    tick(g, b);
+    if(opts.until && opts.until(g)) break;
+  }
+  return g;
+}
+function begin(seed, round){
+  const g = newGame(seed);
+  tick(g, {any:true});                 // title -> run
+  if(round && round > 1){
+    g.round = round;
+    startRound(g, true);
+  }
+  return g;
+}
+function figure(id, title, sub, g){
+  const fig = document.createElement('figure');
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.setAttribute('data-shot', id);
+  fig.appendChild(c);
+  const cap = document.createElement('figcaption');
+  cap.innerHTML = '<b>' + title + '</b>' + sub;
+  fig.appendChild(cap);
+  document.getElementById('grid').appendChild(fig);
+  const s = makeScreen(c);
+  useTarget(s);
+  drawFrame(g);
+  present(s);
+}
+
+// 1. Title.
+figure('title', 'Title',
+  'Any button starts it. Nothing on screen says which, which is rule 9. The ' +
+  'cart printed a button prompt here and the whole line disappears by ' +
+  'accepting every button instead.',
+  (function(){ const g = newGame(3); play(g, 260); return g; })());
+
+// 2. Round 1, a sparse table. The caption counts the coins rather than
+// claiming a number, because the seeding was reworked once already and a
+// hand written figure would now be describing the version before it.
+{
+  const g = play(begin(7), 240, {drop: 40});
+  figure('early', 'Round 1',
+    g.coins.length + ' coins, two thirds of what the shelf holds, which is ' +
+    'about where the cart opened. The pusher is partway down its sweep and ' +
+    'the cat is holding the next coin.', g);
+}
+
+// 3. A late round, packed, mid combo.
+figure('packed', 'Round 8, mid combo',
+  'A packed table and a live combo: the meter under the lip fills toward the ' +
+  'five that opens the spinner, and the multiplier rides on top of the score.',
+  (function(){
+    const g = begin(31, 8);
+    play(g, 3000, {drop: 22, until: gg => gg.combo >= 3 && gg.comboTimer > dur(40)});
+    return g;
+  })());
+
+// 4. A special on its fuse.
+figure('fuse', 'A bomb on its fuse',
+  'Two seconds between landing and going off, drawn as a ring that tightens ' +
+  'and a dot per second left. At r 5 a special carries a face, so eleven of ' +
+  'them are eleven things rather than eleven colours.',
+  (function(){
+    const g = begin(12);
+    g.inv = [{type:1}];
+    g.sel = 0;
+    play(g, 6, {at: {2: {bEdge:true}}});
+    play(g, dur(80));
+    return g;
+  })());
+
+// 5. The reworked row.
+figure('row', 'The row that replaced the button prompts',
+  'Bag, BUY and END ROUND are all slots on one row. Left and right move, one ' +
+  'button confirms, and the line under it says what the selection does. ' +
+  'Nothing names a key.',
+  (function(){
+    const g = begin(5);
+    g.inv = [{type:1},{type:8},{type:10}];
+    g.gold = 40;
+    g.roundScore = g.target + 20;      // target met, so END ROUND is reachable
+    g.sel = slots(g).length - 1;
+    play(g, 120, {drop: 30});
+    g.sel = slots(g).length - 1;
+    return g;
+  })());
+
+// 6. The shop.
+figure('shop', "Cat's shop",
+  'Three offers, a refresh and a continue, each with room for the name and ' +
+  'what it actually does. At 128 this screen was four pixel text in five rows ' +
+  'of sixteen pixels.',
+  (function(){
+    const g = begin(9);
+    g.gold = 95; g.round = 3;
+    openShop(g);
+    g.shopSel = 1;
+    play(g, 40);
+    return g;
+  })());
+
+// 7. The spinner.
+figure('spinner', 'Combo prize',
+  'A combo of five or more opens this on the way out. It lands on one of ' +
+  'three, and the multiplier is how many times over the threshold the combo ' +
+  'went.',
+  (function(){
+    const g = begin(17);
+    openSpinner(g, 2);
+    play(g, 400, {until: gg => gg.spin.done});
+    play(g, dur(10));
+    return g;
+  })());
+
+// 8. Missed the target.
+figure('over', 'Short of target',
+  'Ending a round under the target ends the run, which is the whole tension ' +
+  'of the roguelike. The row says so on the END ROUND slot before you pick it.',
+  (function(){
+    const g = begin(23);
+    g.roundScore = Math.floor(g.target * 0.6);
+    gameOver(g);
+    play(g, dur(30));
+    return g;
+  })());
+
+/* The conversion table and the measured cost, both filled from the constants
+ * the simulation is actually running on. */
+{
+  const rows = [
+    ['coin radius', '2.5 px', '2.5 * 2', COIN_R + ' px'],
+    ['field', '108 x 44 px = 21.6 x 8.8 coins', 'same size in coins', FW + ' x ' + FH + ' px'],
+    ['free shelf', '22 px = 4.4 coins', 'same shelf in coins', (FBOT-PUSH_MAX) + ' px'],
+    ['coins seeded, round 1', 'as many as fit', '66 percent of the shelf',
+      Math.round(SEED_CAPACITY*seed_fill(1))],
+    ['coins seeded, round 10', 'as many as fit', 'a full shelf',
+      Math.round(SEED_CAPACITY*seed_fill(10))],
+    ['coin damping', '0.92 / frame', '0.92 ^ 0.6', COIN_DAMP.toFixed(4) + ' / tick'],
+    ['pusher height', '10 px', '10/44 of the field', PUSH_H + ' px'],
+    ['pusher sweep', '16 px', '16/44 of the field', (PUSH_MAX-PUSH_MIN) + ' px'],
+    ['pusher speed', '0.35 px/frame', 'same 0.76 s per sweep', PUSH_SPEED.toFixed(3) + ' px/tick'],
+    ['dispenser speed', '0.6 px/frame', '0.6 * 1.875 * 0.6', DISP_SPEED.toFixed(3) + ' px/tick'],
+    ['special fuse', '120 frames', '120 / 0.6', FUSE + ' ticks'],
+    ['combo hold', '90 frames', '90 / 0.6', COMBO_HOLD + ' ticks'],
+    ['2x buff', '360 frames', '360 / 0.6', MULT_TIME + ' ticks'],
+    ['crown buff', '480 frames', '480 / 0.6', CROWN_TIME + ' ticks'],
+    ['ice freeze', '300 frames', '300 / 0.6', ICE_TIME + ' ticks'],
+    ['bomb radius', '28 px', '28 * 1.875', rad(28).toFixed(1) + ' px'],
+    ['bomb impulse', '4 px/frame', '4 * 1.875 * 0.6', vel(4).toFixed(2) + ' px/tick'],
+    ['grid cell', '8 px', '>= one diameter', CELL + ' px']
+  ];
+  const t = document.getElementById('consts');
+  const head = document.createElement('tr');
+  head.innerHTML = ['what','cart','conversion','device']
+    .map(h => '<td style="color:#ffa300">' + h + '</td>').join('');
+  t.appendChild(head);
+  for(const r of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = r.map(v => '<td>' + v + '</td>').join('');
+    t.appendChild(tr);
+  }
+}
+
+/* Measure the collision load rather than estimating it: run a full round 10
+ * table for a second of ticks and report what it actually cost. */
+{
+  const g = begin(99, 10);
+  play(g, 200, {drop: 10});
+  const before = PAIR_TESTS;
+  const t0 = performance.now();
+  for(let i=0;i<100;i++) tick(g, blank());
+  const ms = performance.now() - t0;
+  const pairs = (PAIR_TESTS - before) / 100;
+  document.getElementById('perf').innerHTML =
+    'Measured on a round 10 table of <b>' + g.coins.length + ' coins</b>: ' +
+    '<b>' + pairs.toFixed(0) + ' pair tests per tick</b>, of which the great ' +
+    'majority are rejected on the squared distance before any square root, ' +
+    'which is what the cart already did. One second of simulation (100 ticks) ' +
+    'took ' + ms.toFixed(1) + ' ms in this browser. That is not the RP2040, ' +
+    'but the pair count is the number that carries over, and it is the one ' +
+    'the C++ has to budget against.';
+}
+
+</script>
+</body>
+</html>
