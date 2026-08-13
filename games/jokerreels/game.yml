@@ -23,11 +23,14 @@ rules:
   - "Chips and mult: The best line sets the multiplier, and every other paying line adds its chips to the same pile. The score is the chips times the mult, counted out one line at a time."
   - "The dial: The faster the reels turn the harder a symbol is to read, and the more a stop you time yourself is worth. Leave them alone and they stop themselves, for nothing, which is the floor and what one joker pays double for."
   - "Jokers: Bought in the back room, and they fire while the score counts. The one firing shakes in its slot and the number it added pops over the side of the sum it went into."
+  - "Consumables: One shot items, two slots to hold them. Some fire the moment you spend one, some load the next spin and pay as their own line in the count. The shop sells them beside the jokers, and it will reroll its whole shelf for gold if none of it is what you wanted."
 
 controls:
   - "A: pull, then stop the next drum still turning"
+  - "X: spend the consumable you have picked"
+  - "Y: pick the other consumable"
+  - "B: how to play, from the table or the shop. Next reel, while one is open"
   - "up: raise the speed dial, and move up the shop"
   - "down: lower the speed dial, and move down the shop"
-  - "B: how to play, from the table or the shop. Next reel, while one is open"
-  - "left: back a page, through the shop, turn an opened drum"
-  - "right: forward a page, through the shop, turn an opened drum"
+  - "left: lower the dial, back a page, move through the shop"
+  - "right: raise the dial, forward a page, move through the shop"

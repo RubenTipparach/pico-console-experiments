@@ -50,6 +50,20 @@ const JokerDef k_jokers_table[k_jokers] = {
     {"UNDERSTUDY", "COPIES THE JOKER ON ITS LEFT",   9},
 };
 
+struct ItemDef { const char* name; const char* text; int8_t cost;
+                 int16_t chips; int16_t mult; };
+// Chips and mult are what the consumable loads onto the NEXT spin. Both zero
+// means it does its work the moment it is used, and use_item is where that
+// work is: this table is only what the shop and the panel need to say.
+const ItemDef k_items_table[k_items] = {
+    {"HOT STREAK",  "+4 MULT ON THE NEXT SPIN",     4,   0, 4},
+    {"DOUBLE DOWN", "+150 CHIPS ON THE NEXT SPIN",  4, 150, 0},
+    {"SPARE SPIN",  "ONE MORE SPIN THIS ANTE",      5,   0, 0},
+    {"LUCKY COIN",  "+6 GOLD, RIGHT NOW",           3,   0, 0},
+    {"POLISH",      "IMPROVES A SYMBOL ON A DRUM",  5,   0, 0},
+    {"BLUEPRINT",   "LEVELS THE LAST HAND YOU MADE", 6,  0, 0},
+};
+
 // Every drum stops itself eventually, in order, unless you stop it first.
 // Without this a spin never ends, and the whole "leave them alone" line of
 // play, which one joker pays x2 for, is unreachable.
@@ -275,6 +289,20 @@ void score(World& w) {
         if (w.line_hand[line] != kNothing) paying++;
     }
 
+    /* Anything a consumable loaded onto this spin, as its own line.
+     *
+     * Applied here rather than when the button was pressed, because the count
+     * IS the explanation: a bonus that had already landed before the tally
+     * started would be a number that moved with no line to account for it,
+     * which is the one thing this scoring display exists to prevent.
+     */
+    for (int i = 0; i < w.loaded_count; i++) {
+        const uint8_t which = w.loaded[i];
+        push_tally(w, item_name(which), item_chips(which), item_mult(which),
+                   k_no_slot, false);
+    }
+    w.loaded_count = 0;
+
     for (int j = 0; j < w.joker_count; j++) {
         uint8_t which = w.jokers[j];
         // UNDERSTUDY copies whatever is to its left, which is why it resolves
@@ -350,6 +378,23 @@ void start_spin(World& w) {
     for (uint8_t line = 0; line < k_lines; line++) w.line_hand[line] = kNothing;
 }
 
+/* The speed dial, on BOTH axes.
+ *
+ * It is drawn as three boxes in a row, SLOW FAIR WILD across the panel, and
+ * it only read up and down: the same shape of mistake the shop had, in a
+ * mirror. A control laid out along one axis has to answer to that axis, and
+ * taking the other one away to prove the point would only move the complaint.
+ */
+void turn_dial(World& w, const Buttons& btn) {
+    if (btn.up || btn.right) {
+        w.speed = static_cast<uint8_t>(w.speed + 1 < k_speeds ? w.speed + 1
+                                                              : k_speeds - 1);
+    }
+    if (btn.down || btn.left) {
+        w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
+    }
+}
+
 bool stop_next(World& w) {
     for (int d = 0; d < k_drums; d++) {
         if (!w.spinning[d]) continue;
@@ -361,6 +406,72 @@ bool stop_next(World& w) {
     return false;
 }
 
+/* Spending a consumable.
+ *
+ * Two shapes, and the table says which: an entry with chips or mult LOADS the
+ * next spin and is pushed onto `loaded` for score() to find, and an entry with
+ * neither does its work here and now.
+ *
+ * A loaded one is not applied here on purpose. The count is the animation, and
+ * a bonus that had already happened before the tally started would be a number
+ * that changed with no line to explain it, which is the one thing this whole
+ * scoring display exists to avoid.
+ */
+void use_item(World& w) {
+    if (w.item_count == 0) return;
+    if (w.item_sel >= w.item_count) w.item_sel = 0;
+    const uint8_t which = w.items[w.item_sel];
+
+    if (item_chips(which) != 0 || item_mult(which) != 0) {
+        if (w.loaded_count >= k_max_items) return;
+        w.loaded[w.loaded_count++] = which;
+        w.msg = "LOADED";
+    } else {
+        switch (which) {
+            case kSpareSpin:
+                w.spins++;
+                w.msg = "ONE MORE SPIN";
+                break;
+            case kLuckyCoin:
+                w.gold = static_cast<uint16_t>(w.gold + 6);
+                w.msg = "+6 GOLD";
+                break;
+            case kPolish: {
+                // One entry on one drum, one tier better. It reaches the
+                // deckbuilding rather than the score, which is what makes it
+                // worth holding past the spin in front of you.
+                const int d = random_below(w, k_drums);
+                const int n = w.strip_len[d];
+                const int e = random_below(w, n);
+                uint8_t& face = w.strip[d][e];
+                if (face + 1 < k_symbols) face++;
+                set_facets_from_strip(w, d, w.cursor[d]);
+                for (int r = 0; r < k_rows; r++) {
+                    w.grid[d][r] = face_at(w, d, facet_in_row(w, d, r));
+                }
+                w.landed[d] = w.grid[d][1];
+                w.msg = "A DRUM IMPROVED";
+                break;
+            }
+            case kBlueprint:
+                w.hand_level[w.hand_index % k_hands]++;
+                w.msg = hand_name(w.hand_index);
+                break;
+            default:
+                return;
+        }
+    }
+
+    // Spent. The row closes up so the slots are always the ones you hold.
+    for (int i = w.item_sel; i + 1 < w.item_count; i++) {
+        w.items[i] = w.items[i + 1];
+    }
+    w.item_count--;
+    if (w.item_sel >= w.item_count) {
+        w.item_sel = w.item_count ? static_cast<uint8_t>(w.item_count - 1) : 0;
+    }
+}
+
 void buy(World& w) {
     if (w.shop_sel >= w.shop_len) return;
     ShopItem& item = w.shop[w.shop_sel];
@@ -370,6 +481,9 @@ void buy(World& w) {
         w.jokers[w.joker_count++] = item.which;
     } else if (item.kind == kShopHand) {
         w.hand_level[item.which]++;
+    } else if (item.kind == kShopItem) {
+        if (w.item_count >= k_max_items) return;
+        w.items[w.item_count++] = item.which;
     } else {
         w.state = kSwap;
         w.swap_drum = 0;
@@ -424,6 +538,20 @@ const char* speed_name(uint8_t s) { return k_speeds_table[s % k_speeds].name; }
 const char* joker_name(uint8_t j) { return k_jokers_table[j % k_jokers].name; }
 const char* joker_text(uint8_t j) { return k_jokers_table[j % k_jokers].text; }
 int joker_cost(uint8_t j) { return k_jokers_table[j % k_jokers].cost; }
+const char* item_name(uint8_t i) { return k_items_table[i % k_items].name; }
+const char* item_text(uint8_t i) { return k_items_table[i % k_items].text; }
+int item_cost(uint8_t i) { return k_items_table[i % k_items].cost; }
+int item_chips(uint8_t i) { return k_items_table[i % k_items].chips; }
+int item_mult(uint8_t i) { return k_items_table[i % k_items].mult; }
+
+int reroll_cost(const World& w) {
+    return k_reroll_base + k_reroll_step * w.rerolls;
+}
+
+uint8_t shop_reroll_index(const World& w) { return w.shop_len; }
+uint8_t shop_next_index(const World& w) {
+    return static_cast<uint8_t>(w.shop_len + 1);
+}
 
 /* How long the count holds on the entry showing, in ticks.
  *
@@ -600,13 +728,16 @@ uint8_t hand_groups(const uint8_t landed[k_drums], uint8_t groups[k_drums]) {
     return count;
 }
 
-void world_open_shop(World& w) {
-    w.state = kShop;
-    w.shop_sel = 0;
+// The shelf itself, without touching the selection or the reroll price. Both
+// opening the shop and rerolling it want this, and they want different things
+// done around it.
+static void stock_shop(World& w) {
     w.shop_len = 0;
 
-    // Two jokers, a hand to level, and a drum to open. Four things, because a
-    // 240 wide panel holds four and a choice between four is still a choice.
+    // Two jokers, a consumable, a hand to level, and a drum to open. Five
+    // things: the panel holds five rows, and a shop with nothing in it that
+    // you can spend on the spin in front of you is a shop about the run and
+    // never about the game.
     uint8_t pool[k_jokers];
     int pool_len = 0;
     for (uint8_t j = 0; j < k_jokers; j++) {
@@ -624,6 +755,13 @@ void world_open_shop(World& w) {
         item.cost = static_cast<uint8_t>(joker_cost(pool[k]));
         item.sold = false;
         pool[k] = pool[--pool_len];
+    }
+    {
+        ShopItem& item = w.shop[w.shop_len++];
+        item.kind = kShopItem;
+        item.which = static_cast<uint8_t>(random_below(w, k_items));
+        item.cost = static_cast<uint8_t>(item_cost(item.which));
+        item.sold = false;
     }
     {
         ShopItem& item = w.shop[w.shop_len++];
@@ -645,6 +783,21 @@ void world_open_shop(World& w) {
     }
 }
 
+void world_open_shop(World& w) {
+    w.state = kShop;
+    w.shop_sel = 0;
+    w.rerolls = 0;              // the price starts over with the shelf
+    stock_shop(w);
+}
+
+void world_reroll_shop(World& w) {
+    const int cost = reroll_cost(w);
+    if (w.gold < cost) return;
+    w.gold = static_cast<uint16_t>(w.gold - cost);
+    w.rerolls++;
+    stock_shop(w);
+}
+
 void world_init(World& w, uint32_t seed) {
     w = World{};
     w.rng = seed ? seed : 1u;
@@ -658,6 +811,10 @@ void world_init(World& w, uint32_t seed) {
     w.speed = kFair;
     w.hand_index = kNothing;
     w.learn_return = kIdle;
+    w.item_count = 0;
+    w.item_sel = 0;
+    w.loaded_count = 0;
+    w.rerolls = 0;
     w.msg = nullptr;
 
     for (int h = 0; h < k_hands; h++) w.hand_level[h] = 1;
@@ -737,8 +894,7 @@ void world_tick(World& w, const Buttons& btn) {
                 w.angle[d] += speed_rate(w.speed);
                 refresh_facets(w, d);
             }
-            if (btn.up) w.speed = static_cast<uint8_t>(w.speed + 1 < k_speeds ? w.speed + 1 : k_speeds - 1);
-            if (btn.down) w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
+            turn_dial(w, btn);
             if (btn.a) stop_next(w);
             if (!any) {
                 for (int d = 0; d < k_drums; d++) snap_drum(w, d);
@@ -760,12 +916,17 @@ void world_tick(World& w, const Buttons& btn) {
         }
 
         case kIdle: {
-            if (btn.up) w.speed = static_cast<uint8_t>(w.speed + 1 < k_speeds ? w.speed + 1 : k_speeds - 1);
-            if (btn.down) w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
+            turn_dial(w, btn);
             // The instructions, for the moment a player wants to know what
-            // they are aiming at. B is the only button here with nothing else
-            // to do between spins.
+            // they are aiming at.
             if (btn.b) open_learn(w, kIdle);
+            // X spends a consumable and Y picks which one. They are the two
+            // buttons this game had never used, and between spins is the only
+            // moment spending one is a decision rather than a reflex.
+            if (btn.y && w.item_count > 1) {
+                w.item_sel = static_cast<uint8_t>((w.item_sel + 1) % w.item_count);
+            }
+            if (btn.x) use_item(w);
             if (btn.a) start_spin(w);
             return;
         }
@@ -788,13 +949,15 @@ void world_tick(World& w, const Buttons& btn) {
              */
             const bool back = btn.left || btn.up;
             const bool on = btn.right || btn.down;
+            const uint8_t last = shop_next_index(w);
             if (back && w.shop_sel > 0) w.shop_sel--;
-            if (on && w.shop_sel < w.shop_len) w.shop_sel++;
+            if (on && w.shop_sel < last) w.shop_sel++;
             // The instructions, from the one screen where a player is spending
             // gold on a hand and wants to know what the hand is worth.
             if (btn.b) open_learn(w, kShop);
             if (btn.a) {
-                if (w.shop_sel >= w.shop_len) next_ante(w);
+                if (w.shop_sel == shop_reroll_index(w)) world_reroll_shop(w);
+                else if (w.shop_sel >= w.shop_len) next_ante(w);
                 else buy(w);
             }
             return;

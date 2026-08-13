@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""Draw Joker Reels' eight joker icons, as one sheet.
+"""Draw Joker Reels' icons: the jokers, the consumables, the hands, the extras.
 
-20x20 a cell, eight cells across, written out as a single RGBA PNG and
-committed. The build turns it into a pse::Sprite through add_sprite, so nothing
-here runs in CI. Re-run it when an icon changes.
+20x20 a cell, one sheet per family, written out as RGBA PNGs and committed. The
+build turns each into a pse::Sprite through add_sprite, so nothing here runs in
+CI. Re-run it when an icon changes.
+
+Four sheets rather than one, because a cell index has to mean something: on
+`jokers.png` the cell IS the Joker enum value, on `items.png` it is the Item
+enum value, and on `hands.png` it is the Hand enum value. One sheet with
+everything on it would need an offset table in render.cpp, which is the table
+this whole arrangement exists to not have.
+
+**The hand icons are generated from the hand's own shape**, not drawn. A hand
+is a pattern across five reels, so its icon is five pips with the matching ones
+lit: three of a kind is three of one colour and two greys, two pair is two and
+two and a grey. Drawing eight of those by hand would be eight chances to draw
+the wrong pattern for the name beside it.
 
 Three things about this are not decoration:
 
@@ -42,6 +54,15 @@ CELL = 20
 # k stripped and lowercased, which is exactly what the test compares.
 ORDER = ["greaser", "twin", "ratchet", "blur", "collector", "metronome",
          "sunkcost", "understudy"]
+
+# The same, for sim.hpp's Item enum.
+ITEM_ORDER = ["hotstreak", "doubledown", "sparespin", "luckycoin", "polish",
+              "blueprint"]
+
+# And the extras, which are the two shop rows that are not a thing you own: a
+# drum to open and a shelf to reroll. Their order is render.cpp's, and it is
+# named here so there is one list rather than two.
+EXTRA_ORDER = ["swap", "reroll"]
 
 # The console's own palette, so an icon is a colour the panel can actually
 # show rather than one that gets quantised on the way to it.
@@ -250,12 +271,214 @@ ART = {
         '....................',
         '....................',
     ],
+
+    # ---- the consumables ----
+    # A flame: the next spin runs hot.
+    "hotstreak": [
+        '....................',
+        '....................',
+        '...........oo.......',
+        '..........oooo......',
+        '.........ooooo......',
+        '........oooooo......',
+        '.......oooyyoo......',
+        '......oooyyyyoo.....',
+        '.....oooyyyyyoo.....',
+        '....oooyyyyyyooo....',
+        '....oooyyyyyyooo....',
+        '....oooyyyyyyooo....',
+        '....oooyyyyyyooo....',
+        '.....oooyyyyooo.....',
+        '.....oooyyyyooo.....',
+        '......oooyyooo......',
+        '.......oooooo.......',
+        '........oooo........',
+        '....................',
+        '....................',
+    ],
+    # Two stacks of chips, one taller. The chips half of the sum, doubled.
+    "doubledown": [
+        '....................',
+        '....................',
+        '....................',
+        '....................',
+        '....................',
+        '....................',
+        '...........ccccccc..',
+        '...........bbbbbbb..',
+        '...........ccccccc..',
+        '...........bbbbbbb..',
+        '...........ccccccc..',
+        '...........bbbbbbb..',
+        '..ccccccc..ccccccc..',
+        '..bbbbbbb..bbbbbbb..',
+        '..ccccccc..ccccccc..',
+        '..bbbbbbb..bbbbbbb..',
+        '..ccccccc..ccccccc..',
+        '..bbbbbbb..bbbbbbb..',
+        '....................',
+        '....................',
+    ],
+    # A plus in a disc: one more of the thing you are running out of.
+    "sparespin": [
+        '....................',
+        '....................',
+        '.......gggggg.......',
+        '.....gggggggggg.....',
+        '....gggggggggggg....',
+        '...gggggg..gggggg...',
+        '...gggggg..gggggg...',
+        '..ggggggg..ggggggg..',
+        '..ggggggg..ggggggg..',
+        '..ggg..........ggg..',
+        '..ggg..........ggg..',
+        '..ggggggg..ggggggg..',
+        '..ggggggg..ggggggg..',
+        '...gggggg..gggggg...',
+        '...gggggg..gggggg...',
+        '....gggggggggggg....',
+        '.....gggggggggg.....',
+        '.......gggggg.......',
+        '....................',
+        '....................',
+    ],
+    # One coin, rimmed, with a glint. Gold, right now.
+    "luckycoin": [
+        '....................',
+        '....................',
+        '.......oooooo.......',
+        '.....oyyyyyyyyo.....',
+        '....oyyyyyyyyyyo....',
+        '...oywwyyyyyyyyyo...',
+        '...oywyyyyyyyyyyo...',
+        '..oyyyyyyyyyyyyyyo..',
+        '..oyyyyyyyyyyyyyyo..',
+        '..oyyyyyyyyyyyyyyo..',
+        '..oyyyyyyyyyyyyyyo..',
+        '..oyyyyyyyyyyyyyyo..',
+        '..oyyyyyyyyyyyyyyo..',
+        '...oyyyyyyyyyyyyo...',
+        '...oyyyyyyyyyyyyo...',
+        '....oyyyyyyyyyyo....',
+        '.....oyyyyyyyyo.....',
+        '.......oooooo.......',
+        '....................',
+        '....................',
+    ],
+    # An arrow up, with sparkles: a symbol on a drum becomes a better one.
+    "polish": [
+        '....................',
+        '....................',
+        '...y................',
+        '..yyy....gg.........',
+        '...y....gggg........',
+        '.......gggggg.......',
+        '......gggggggg......',
+        '.....gggggggggg.....',
+        '....gggggggggggg....',
+        '.......gggggg.......',
+        '.......gggggg.......',
+        '.......gggggg...y...',
+        '.......gggggg..yyy..',
+        '.......gggggg...y...',
+        '.......gggggg.......',
+        '.......gggggg.......',
+        '....................',
+        '....................',
+        '....................',
+        '....................',
+    ],
+    # A ruled plan: the shape you already made, drawn up again a level better.
+    "blueprint": [
+        '....................',
+        '....................',
+        '....................',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...wwwwwwwwwwwwww...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...wwwwwwwwwwwwww...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '...ccccwccccwcccc...',
+        '....................',
+        '....................',
+        '....................',
+    ],
+
+    # ---- the two shop rows that are not a thing you own ----
+    # A drum with two faces showing: the one screen where you change what a
+    # reel is able to land on.
+    "swap": [
+        '....................',
+        '....................',
+        '....................',
+        '.......ssssss.......',
+        '.....ssssssssss.....',
+        '.....ssssssssss.....',
+        '.....ssyyyyyyss.....',
+        '.....ssyyyyyyss.....',
+        '.....ssyyyyyyss.....',
+        '.....ssssssssss.....',
+        '.....ssssssssss.....',
+        '.....ssooooooss.....',
+        '.....ssooooooss.....',
+        '.....ssooooooss.....',
+        '.....ssssssssss.....',
+        '.....ssssssssss.....',
+        '.......ssssss.......',
+        '....................',
+        '....................',
+        '....................',
+    ],
+    # Two dice: the shelf, thrown again.
+    "reroll": [
+        '....................',
+        '....................',
+        '..wwwwwwww..........',
+        '..wwwwwwww..........',
+        '..wbwwwwbw..........',
+        '..wwwwwwww..........',
+        '..wwwbbwww..........',
+        '..wwwbbwww..........',
+        '..wwwwwwww..........',
+        '..wbwwwwbw..........',
+        '..wwwwwwww..........',
+        '..........wwwwwwww..',
+        '..........wbwwwwww..',
+        '..........wwwwwwww..',
+        '..........wwwbwwww..',
+        '..........wwwwbwww..',
+        '..........wwwwwwww..',
+        '..........wwwwwwbw..',
+        '..........wwwwwwww..',
+        '....................',
+    ],
 }
 
 
 def validate():
     problems = []
-    for name, art in ART.items():
+    missing = [n for n in HAND_ORDER if n not in HANDS]
+    if missing:
+        problems.append("no pattern for hand: %s" % ", ".join(missing))
+    for name in HAND_ORDER:
+        if name not in HANDS:
+            continue
+        if len(HANDS[name]) != 5:
+            problems.append("%s covers %d reels, not five"
+                            % (name, len(HANDS[name])))
+    art_of = dict(ART)
+    for name in HAND_ORDER:
+        if name in HANDS and len(HANDS[name]) == 5:
+            art_of["hand:" + name] = hand_art(HANDS[name])
+    for name, art in art_of.items():
         if len(art) != CELL:
             problems.append("%s: %d rows" % (name, len(art)))
             continue
@@ -272,12 +495,13 @@ def validate():
                     problems.append(
                         "%s: paints the edge of its cell at %d,%d, so the "
                         "outline has nowhere to go" % (name, x, y))
-    missing = [n for n in ORDER if n not in ART]
+    drawn = ORDER + ITEM_ORDER + EXTRA_ORDER
+    missing = [n for n in drawn if n not in ART]
     if missing:
         problems.append("no art for: %s" % ", ".join(missing))
-    extra = [n for n in ART if n not in ORDER]
+    extra = [n for n in ART if n not in drawn]
     if extra:
-        problems.append("art with no place in ORDER: %s" % ", ".join(extra))
+        problems.append("art with no place in any order: %s" % ", ".join(extra))
     return problems
 
 
@@ -305,9 +529,13 @@ def render(art):
     return out
 
 
-def sheet():
-    """Every icon side by side, in ORDER. Cell n is joker n."""
-    cells = [render(ART[name]) for name in ORDER]
+def sheet(order=None):
+    """Every icon of one family side by side. Cell n is enum value n."""
+    cells = [render(ART[name]) for name in (order or ORDER)]
+    return join(cells)
+
+
+def join(cells):
     rows = []
     for y in range(CELL):
         row = []
@@ -315,6 +543,60 @@ def sheet():
             row.extend(cell[y])
         rows.append(row)
     return rows
+
+
+# ---------------------------------------------------------------------------
+# The hands, drawn from the hand rather than by hand
+# ---------------------------------------------------------------------------
+#
+# A hand is a pattern across five reels, so its icon is five bars: the reels
+# that matched stand tall in the group's colour, the ones that took no part sit
+# low in grey, and a run climbs. That makes the picture the pattern, which is
+# the only thing an icon this small can usefully be, and it means the eight of
+# them cannot disagree with the eight names beside them.
+#
+# The order is sim.hpp's Hand enum, best to worst, and
+# tools/tests/test_jokerreels_art.py is what keeps the two in step.
+HAND_ORDER = ["five", "four", "fullhouse", "run", "three", "twopair", "pair",
+              "nothing"]
+
+# Per hand: one entry a reel, (group, height). Group 0 and 1 are the two match
+# groups, 2 is a run, and -1 is a reel that took no part.
+TALL = 11
+SHORT = 4
+HANDS = {
+    "five":      [(0, TALL)] * 5,
+    "four":      [(0, TALL)] * 4 + [(-1, SHORT)],
+    "fullhouse": [(0, TALL)] * 3 + [(1, TALL)] * 2,
+    "run":       [(2, 3), (2, 5), (2, 7), (2, 9), (2, 11)],
+    "three":     [(0, TALL)] * 3 + [(-1, SHORT)] * 2,
+    "twopair":   [(0, TALL)] * 2 + [(1, TALL)] * 2 + [(-1, SHORT)],
+    "pair":      [(0, TALL)] * 2 + [(-1, SHORT)] * 3,
+    "nothing":   [(-1, SHORT)] * 5,
+}
+GROUP_COLOUR = {0: 'o', 1: 'c', 2: 'g', -1: 'e'}
+
+# Two wide with two clear between, which lands the five bars on 1..18 and
+# leaves the dilated outline a column to live in on both sides.
+BAR_W = 2
+BAR_PITCH = 4
+BAR_X0 = 1
+BASELINE = 16
+
+
+def hand_art(bars):
+    grid = [['.'] * CELL for _ in range(CELL)]
+    for i, (group, height) in enumerate(bars):
+        colour = GROUP_COLOUR[group]
+        x0 = BAR_X0 + i * BAR_PITCH
+        for y in range(BASELINE - height + 1, BASELINE + 1):
+            for x in range(x0, x0 + BAR_W):
+                grid[y][x] = colour
+    return ["".join(row) for row in grid]
+
+
+def hand_sheet():
+    return join([render(hand_art(HANDS[name])) for name in HAND_ORDER])
 
 
 def write_png(path, pixels):
@@ -352,10 +634,17 @@ def main(argv):
         return 1
 
     os.makedirs(args.out, exist_ok=True)
-    path = os.path.join(args.out, "jokers.png")
-    write_png(path, sheet())
-    sys.stderr.write("wrote %s (%d cells of %dx%d)\n"
-                     % (path, len(ORDER), CELL, CELL))
+    families = [
+        ("jokers.png", sheet(ORDER), len(ORDER)),
+        ("items.png", sheet(ITEM_ORDER), len(ITEM_ORDER)),
+        ("extras.png", sheet(EXTRA_ORDER), len(EXTRA_ORDER)),
+        ("hands.png", hand_sheet(), len(HAND_ORDER)),
+    ]
+    for name, pixels, count in families:
+        path = os.path.join(args.out, name)
+        write_png(path, pixels)
+        sys.stderr.write("wrote %s (%d cells of %dx%d)\n"
+                         % (path, count, CELL, CELL))
     return 0
 
 

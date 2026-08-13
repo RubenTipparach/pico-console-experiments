@@ -452,18 +452,22 @@ void test_the_shop_moves_on_both_axes() {
         on.any = true;
         back.any = true;
 
-        // All the way down, one press at a time, and one past the last card
-        // onto NEXT ANTE.
-        for (int i = 0; i < w.shop_len; i++) {
+        // All the way down, one press at a time, through the cards and on to
+        // REROLL and NEXT ANTE. The shop is one list and every row of it has
+        // to be reachable on the axis the list runs along.
+        const int rows = jr::shop_next_index(w);
+        for (int i = 0; i < rows; i++) {
             const uint8_t before = w.shop_sel;
             jr::world_tick(w, on);
-            check(w.shop_sel == before + 1, "a press moves one card");
+            check(w.shop_sel == before + 1, "a press moves one row");
         }
-        check(w.shop_sel == w.shop_len, "and stops on NEXT ANTE");
+        check(w.shop_sel == jr::shop_reroll_index(w) + 1,
+              "and REROLL is a row of its own before NEXT ANTE");
+        check(w.shop_sel == jr::shop_next_index(w), "and stops on NEXT ANTE");
         jr::world_tick(w, on);
-        check(w.shop_sel == w.shop_len, "and goes no further");
+        check(w.shop_sel == jr::shop_next_index(w), "and goes no further");
 
-        for (int i = 0; i < w.shop_len; i++) jr::world_tick(w, back);
+        for (int i = 0; i < rows; i++) jr::world_tick(w, back);
         check(w.shop_sel == 0, "and all the way back to the first card");
         jr::world_tick(w, back);
         check(w.shop_sel == 0, "and no further than that either");
@@ -592,6 +596,199 @@ void test_a_joker_entry_names_its_slot() {
           "a joker is held longer than a payline is");
 }
 
+/* The speed dial answers the axis it is drawn along.
+ *
+ * Three boxes in a row, SLOW FAIR WILD, and it only read up and down: the
+ * shop's bug in a mirror. Both axes work, and both are checked, because making
+ * left and right work by taking up and down away would be the same complaint
+ * pointing the other way.
+ */
+void test_the_dial_turns_on_both_axes() {
+    for (int axis = 0; axis < 2; axis++) {
+        jr::Buttons faster{};
+        jr::Buttons slower{};
+        if (axis == 0) { faster.up = true; slower.down = true; }
+        else { faster.right = true; slower.left = true; }
+        faster.any = true;
+        slower.any = true;
+
+        // Between spins.
+        jr::World w = started(41u);
+        w.speed = jr::kSlow;
+        for (int i = 1; i < jr::k_speeds; i++) {
+            jr::world_tick(w, faster);
+            check(w.speed == i, "a press moves the dial one notch up");
+        }
+        jr::world_tick(w, faster);
+        check(w.speed == jr::k_speeds - 1, "and stops at the top");
+        for (int i = jr::k_speeds - 2; i >= 0; i--) {
+            jr::world_tick(w, slower);
+            check(w.speed == i, "and one notch down");
+        }
+        jr::world_tick(w, slower);
+        check(w.speed == 0, "and stops at the bottom");
+        check(w.state == jr::kIdle, "without pulling anything");
+
+        // And MID SPIN, which is the whole point of the dial: the risk is a
+        // decision you can still change while the reels are turning.
+        jr::World spin = started(41u);
+        spin.speed = jr::kSlow;
+        jr::world_tick(spin, press_a());
+        check(spin.state == jr::kSpin, "the reels are turning");
+        jr::world_tick(spin, faster);
+        check(spin.speed == jr::kFair, "and the dial still moves");
+    }
+}
+
+/* Rerolling the shelf, and the price climbing.
+ *
+ * The price is what makes it a decision, so it is the thing worth pinning: a
+ * flat one turns the shop into a slot machine inside a slot machine.
+ */
+void test_the_reroll_costs_more_every_time() {
+    jr::World w = started(53u);
+    w.banked = w.target;
+    w.state = jr::kCleared;
+    jr::world_tick(w, press_a());
+    check(w.state == jr::kShop, "the shop opened");
+    check(jr::reroll_cost(w) == jr::k_reroll_base, "at the base price");
+
+    w.gold = 200;
+    uint8_t before[jr::k_shop_items];
+    for (int i = 0; i < w.shop_len; i++) before[i] = w.shop[i].which;
+
+    int last = 0;
+    bool changed = false;
+    for (int n = 0; n < 4; n++) {
+        const int cost = jr::reroll_cost(w);
+        check(cost > last, "each reroll is dearer than the one before");
+        last = cost;
+        const uint16_t gold = w.gold;
+        w.shop_sel = jr::shop_reroll_index(w);
+        jr::world_tick(w, press_a());
+        check(w.gold == gold - cost, "and it charges what it says");
+        check(w.shop_len == jr::k_shop_items, "and the shelf is refilled");
+        check(w.state == jr::kShop, "and stays in the shop");
+        for (int i = 0; i < w.shop_len; i++) {
+            if (w.shop[i].which != before[i]) changed = true;
+        }
+    }
+    check(changed, "and the shelf actually changes");
+
+    // Too poor is a no-op rather than a debt.
+    w.gold = 0;
+    const uint8_t len = w.shop_len;
+    w.shop_sel = jr::shop_reroll_index(w);
+    jr::world_tick(w, press_a());
+    check(w.gold == 0 && w.shop_len == len,
+          "a reroll you cannot afford does nothing");
+
+    // And the price starts over with the next shelf, or the feature stops
+    // existing around ante three.
+    jr::world_open_shop(w);
+    check(jr::reroll_cost(w) == jr::k_reroll_base,
+          "a new shop starts at the base price again");
+}
+
+/* Consumables: bought, held, spent, gone.
+ *
+ * The two shapes are checked separately because they fail differently. One
+ * that fires at once has to change the world on the press. One that loads the
+ * next spin has to change NOTHING until the count reaches it, or the score
+ * moves with no line to account for it.
+ */
+void test_a_consumable_is_spent_once() {
+    jr::Buttons use{};
+    use.x = true;
+    use.any = true;
+
+    // The immediate kind.
+    jr::World w = started(67u);
+    w.item_count = 1;
+    w.items[0] = jr::kLuckyCoin;
+    const uint16_t gold = w.gold;
+    jr::world_tick(w, use);
+    check(w.gold == gold + 6, "LUCKY COIN pays on the press");
+    check(w.item_count == 0, "and is gone");
+    jr::world_tick(w, use);
+    check(w.gold == gold + 6, "and pressing again spends nothing");
+
+    // The loaded kind, which must not touch the score until the count does.
+    jr::World load = started(67u);
+    load.item_count = 1;
+    load.items[0] = jr::kHotStreak;
+    jr::world_tick(load, use);
+    check(load.item_count == 0, "HOT STREAK leaves the row");
+    check(load.chips == 0 && load.mult == 0,
+          "and changes nothing yet, because the count is the explanation");
+
+    jr::world_tick(load, press_a());        // pull
+    for (int t = 0; t < 900 && load.state != jr::kCount; t++) play(load, 1);
+    check(load.state == jr::kCount, "the spin landed");
+    bool found = false;
+    for (int i = 0; i < load.tally_len; i++) {
+        if (std::strcmp(load.tally[i].what, jr::item_name(jr::kHotStreak)) != 0) {
+            continue;
+        }
+        found = true;
+        check(load.tally[i].mult == jr::item_mult(jr::kHotStreak),
+              "and its line pays what the table says");
+    }
+    check(found, "and it has a line of its own in the count");
+
+    // One spin only: the next one has no line for it.
+    for (int t = 0; t < 2000 && load.state == jr::kCount; t++) play(load, 1);
+    if (load.state == jr::kIdle) {
+        jr::world_tick(load, press_a());
+        for (int t = 0; t < 900 && load.state != jr::kCount; t++) play(load, 1);
+        bool again = false;
+        for (int i = 0; i < load.tally_len; i++) {
+            if (std::strcmp(load.tally[i].what,
+                            jr::item_name(jr::kHotStreak)) == 0) {
+                again = true;
+            }
+        }
+        check(!again, "and it does not pay a second time");
+    }
+
+    // Y picks between them, and only matters when there are two.
+    jr::Buttons pick{};
+    pick.y = true;
+    pick.any = true;
+    jr::World two = started(67u);
+    two.item_count = 2;
+    two.items[0] = jr::kLuckyCoin;
+    two.items[1] = jr::kSpareSpin;
+    two.item_sel = 0;
+    jr::world_tick(two, pick);
+    check(two.item_sel == 1, "Y moves the pick");
+    const uint8_t spins = two.spins;
+    jr::world_tick(two, use);
+    check(two.spins == spins + 1, "and X spends the one picked, not the first");
+    check(two.item_count == 1 && two.items[0] == jr::kLuckyCoin,
+          "and the row closes up around the one that is gone");
+
+    // Buying one is what puts it there in the first place.
+    jr::World shop = started(67u);
+    shop.banked = shop.target;
+    shop.state = jr::kCleared;
+    jr::world_tick(shop, press_a());
+    shop.gold = 60;
+    int card = -1;
+    for (int i = 0; i < shop.shop_len; i++) {
+        if (shop.shop[i].kind == jr::kShopItem) card = i;
+    }
+    check(card >= 0, "the shelf offers a consumable");
+    if (card >= 0) {
+        shop.shop_sel = static_cast<uint8_t>(card);
+        const uint8_t which = shop.shop[card].which;
+        jr::world_tick(shop, press_a());
+        check(shop.item_count == 1 && shop.items[0] == which,
+              "and buying it puts that one in the row");
+        check(shop.shop[card].sold, "and marks the card sold");
+    }
+}
+
 /* The difficulty curve, measured rather than hoped for.
  *
  * Two autopilots: one that pulls and never touches anything, and one that
@@ -616,7 +813,12 @@ void run_autopilot(uint32_t seed, bool skilled, int& reached, bool& won) {
                          w.state == jr::kShop ||
                          (skilled && w.state == jr::kSpin);
         if (act) b = press_a();
-        if (w.state == jr::kShop) w.shop_sel = w.shop_len;   // straight on
+        // Straight past the shelf. Asked for by name rather than computed as
+        // shop_len, which is what this said and which is now the REROLL row:
+        // the autopilot rerolled the shop forever and every run died on ante
+        // one, which is the whole difficulty measurement quietly reading a
+        // game nobody was playing.
+        if (w.state == jr::kShop) w.shop_sel = jr::shop_next_index(w);
         if (skilled) w.speed = jr::kWild;
         jr::world_tick(w, b);
         if (w.state == jr::kOver || w.state == jr::kWin) break;
@@ -691,6 +893,9 @@ int main() {
     test_the_shop_moves_on_both_axes();
     test_the_instructions_come_back_to_where_they_opened();
     test_a_joker_entry_names_its_slot();
+    test_the_dial_turns_on_both_axes();
+    test_the_reroll_costs_more_every_time();
+    test_a_consumable_is_spent_once();
     test_the_floor_loses_and_skill_wins();
     test_the_run_is_deterministic();
     test_the_budget();

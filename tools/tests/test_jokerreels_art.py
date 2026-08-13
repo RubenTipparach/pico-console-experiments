@@ -168,6 +168,87 @@ if os.path.isfile(sheet_path):
 for problem in jokers.validate():
     check(False, "joker art: %s" % problem)
 
+
+# ---------------------------------------------------------------------------
+# The other three sheets, each with the same seam and the same failure.
+#
+# items.png is indexed by sim.hpp's Item enum and hands.png by its Hand enum,
+# so a sheet drawn in a different order puts LUCKY COIN's picture on SPARE
+# SPIN's card, at SPARE SPIN's price, doing SPARE SPIN's job. Everything still
+# adds up and the shop is simply lying about what it sells.
+#
+# extras.png has no enum: the two cells are render.cpp's own Extra, so that is
+# what it is checked against.
+# ---------------------------------------------------------------------------
+
+def enum_order(name, source):
+    block = re.search(r"enum %s : uint8_t \{(.*?)\};" % name, source, re.S)
+    check(block is not None, "sim.hpp has a %s enum" % name)
+    if not block:
+        return []
+    return [n.lower() for n in re.findall(r"k([A-Z][A-Za-z]*)", block.group(1))]
+
+
+sim_hpp = read(GAME, "src", "sim.hpp")
+render_cpp = read(GAME, "src", "render.cpp")
+
+check(enum_order("Item", sim_hpp) == list(jokers.ITEM_ORDER),
+      "sim.hpp's Item enum is in the generator's order:\n"
+      "      enum: %s\n generator: %s"
+      % (enum_order("Item", sim_hpp), jokers.ITEM_ORDER))
+
+check(enum_order("Hand", sim_hpp) == list(jokers.HAND_ORDER),
+      "sim.hpp's Hand enum is in the generator's order:\n"
+      "      enum: %s\n generator: %s"
+      % (enum_order("Hand", sim_hpp), jokers.HAND_ORDER))
+
+extras_enum = re.search(r"enum Extra : uint8_t \{(.*?)\};", render_cpp, re.S)
+check(extras_enum is not None, "render.cpp names the extras")
+if extras_enum:
+    found = [n.lower() for n in
+             re.findall(r"kExtra([A-Z][A-Za-z]*)", extras_enum.group(1))]
+    check(found == list(jokers.EXTRA_ORDER),
+          "render.cpp's Extra order is the generator's:\n"
+          "    render: %s\n generator: %s" % (found, jokers.EXTRA_ORDER))
+
+for sheet_name, order, pixels in (
+        ("items", jokers.ITEM_ORDER, jokers.sheet(jokers.ITEM_ORDER)),
+        ("extras", jokers.EXTRA_ORDER, jokers.sheet(jokers.EXTRA_ORDER)),
+        ("hands", jokers.HAND_ORDER, jokers.hand_sheet())):
+    path = os.path.join(GAME, "assets", "%s.png" % sheet_name)
+    check(os.path.isfile(path), "%s.png is committed" % sheet_name)
+    if not os.path.isfile(path):
+        continue
+    with open(path, "rb") as handle:
+        data = handle.read()
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    check(width == jokers.CELL * len(order) and height == jokers.CELL,
+          "%s.png is %d cells of %d, not %dx%d"
+          % (sheet_name, len(order), jokers.CELL, width, height))
+    check(data[25] == 6, "%s.png carries alpha" % sheet_name)
+
+    scratch = path + ".check"
+    jokers.write_png(scratch, pixels)
+    with open(path, "rb") as a_f, open(scratch, "rb") as b_f:
+        same = a_f.read() == b_f.read()
+    os.remove(scratch)
+    check(same, "%s.png is what gen_jokerreels_jokers.py draws today"
+          % sheet_name)
+
+# Every sheet the game blits has to be in the build's list, or the header it
+# includes simply does not exist. Cheap to check and impossible to notice from
+# a screenshot, because a missing sheet is a build error and a sheet listed but
+# never drawn is a silent 12 KB of flash.
+cmake_src = re.search(r"set\(jokerreels_sprite_files(.*?)\)",
+                      read(GAME, "sprites.cmake"), re.S)
+check(cmake_src is not None, "sprites.cmake lists the sheets")
+if cmake_src:
+    listed = sorted(os.path.splitext(f)[0]
+                    for f in cmake_src.group(1).split() if f.endswith(".png"))
+    check(listed == ["extras", "hands", "items", "jokers"],
+          "sprites.cmake lists every sheet: %s" % listed)
+
 # The cell size the game cuts the sheet with. render.hpp names it once and the
 # sheet is drawn to it; the two agreeing is the whole reason a cell lands on an
 # icon rather than half way between two.
