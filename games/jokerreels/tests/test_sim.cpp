@@ -463,14 +463,19 @@ void test_the_shop_moves_on_both_axes() {
         }
         check(w.shop_sel == jr::shop_reroll_index(w) + 1,
               "and REROLL is a row of its own before NEXT ANTE");
-        check(w.shop_sel == jr::shop_next_index(w), "and stops on NEXT ANTE");
-        jr::world_tick(w, on);
-        check(w.shop_sel == jr::shop_next_index(w), "and goes no further");
+        check(w.shop_sel == jr::shop_next_index(w), "and reaches NEXT ANTE");
 
-        for (int i = 0; i < rows; i++) jr::world_tick(w, back);
-        check(w.shop_sel == 0, "and all the way back to the first card");
+        // And WRAPS, rather than stopping dead. Nothing in this list is
+        // ordered, so there is no bottom to fall off, and a held direction
+        // that stops answering on a list of seven is a button doing nothing
+        // several times a visit.
+        jr::world_tick(w, on);
+        check(w.shop_sel == 0, "one more press wraps to the first card");
         jr::world_tick(w, back);
-        check(w.shop_sel == 0, "and no further than that either");
+        check(w.shop_sel == jr::shop_next_index(w),
+              "and back the other way wraps to the last row");
+        for (int i = 0; i < rows; i++) jr::world_tick(w, back);
+        check(w.shop_sel == 0, "and it walks back round to the first card");
         check(w.state == jr::kShop, "without leaving the shop");
     }
 }

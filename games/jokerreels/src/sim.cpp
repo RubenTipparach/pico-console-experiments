@@ -1006,8 +1006,20 @@ void world_tick(World& w, const Buttons& btn) {
             const bool back = btn.left || btn.up;
             const bool on = btn.right || btn.down;
             const uint8_t last = shop_next_index(w);
-            if (back && w.shop_sel > 0) w.shop_sel--;
-            if (on && w.shop_sel < last) w.shop_sel++;
+            /* And it WRAPS.
+             *
+             * It stopped dead at both ends, which on a list this short is a
+             * button that does nothing several times a visit: from the first
+             * card to NEXT ANTE was six presses the wrong way round, and the
+             * seventh press of a held direction simply did not answer. Nothing
+             * here is ordered, so there is no bottom to fall off.
+             */
+            if (back) w.shop_sel = w.shop_sel > 0
+                                       ? static_cast<uint8_t>(w.shop_sel - 1)
+                                       : last;
+            if (on) w.shop_sel = w.shop_sel < last
+                                     ? static_cast<uint8_t>(w.shop_sel + 1)
+                                     : 0;
             // The instructions, from the one screen where a player is spending
             // gold on a hand and wants to know what the hand is worth.
             if (btn.b) open_learn(w, kShop);
