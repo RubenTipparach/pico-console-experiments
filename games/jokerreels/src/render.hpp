@@ -87,9 +87,26 @@ void render_shop(const jr::World& world, const pse::RenderTarget& screen);
 void render_learn(const jr::World& world, const pse::RenderTarget& screen);
 void render_end(const jr::World& world, const pse::RenderTarget& screen);
 
-// What a joker's name is shortened to for its HUD slot. Exposed so the string
-// check measures what is actually drawn rather than its own copy of the rule.
-const char* joker_slot_name(uint8_t joker);
+// One cell of the joker sheet, which is what a joker looks like everywhere it
+// appears: the HUD row, its shop card, the instructions, the end screen.
+constexpr int k_joker_icon = 20;
+
+// Where joker slot `index` sits on the panel, and how big its box is. Exposed
+// for the same reason the text measurements are: an icon that does not fit the
+// box it is drawn in should fail a check rather than be noticed on a device.
+void joker_slot(int index, int& x, int& y);
+constexpr int k_slot_w = 44;
+constexpr int k_slot_h = 26;
+
+// Where a shop card's text starts, past the icon column. Exposed so the string
+// check measures from where the words are actually drawn.
+constexpr int k_shop_text_x = 34;
+
+// What a shop card says it is. Exposed so the checks read what is drawn rather
+// than their own copy of it: a card that stopped naming itself would otherwise
+// still be a card, at the right price, in the right place.
+const char* shop_title(const jr::ShopItem& item);
+const char* shop_body(const jr::ShopItem& item);
 
 // Where the three visible rows land vertically, in window rows, and how tall
 // each is. Projected rather than measured off a screenshot, so the payline

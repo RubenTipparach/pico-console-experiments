@@ -27,6 +27,8 @@ GAME = os.path.join(REPO_ROOT, "games", "jokerreels")
 
 sys.path.insert(0, TOOLS)
 
+import gen_jokerreels_diagrams as diagrams  # noqa: E402
+import gen_jokerreels_jokers as jokers  # noqa: E402
 import gen_jokerreels_symbols as gen  # noqa: E402
 
 failures = []
@@ -113,6 +115,126 @@ for name in order:
 #    side quietly.
 for problem in gen.validate():
     check(False, "symbol art: %s" % problem)
+
+
+# ---------------------------------------------------------------------------
+# The jokers, which have the same problem in a smaller shape.
+#
+# One sheet rather than eight files, so there is no cmake list and no table in
+# render.cpp to keep in order: render.cpp asks for cell `joker * 20` and the
+# cell IS the enum value. That leaves exactly one seam, the generator's ORDER
+# against sim.hpp's Joker enum, and it fails the same way the symbols would.
+# A player would see GREASER's oil can sitting in RATCHET's slot, shaking when
+# RATCHET fired, and everything would still add up.
+# ---------------------------------------------------------------------------
+
+joker_order = list(jokers.ORDER)
+check(len(joker_order) == 8, "eight jokers")
+
+joker_enum = re.search(r"enum Joker : uint8_t \{(.*?)\};",
+                       read(GAME, "src", "sim.hpp"), re.S)
+check(joker_enum is not None, "sim.hpp has a Joker enum")
+if joker_enum:
+    names = re.findall(r"k([A-Z][A-Za-z]*)", joker_enum.group(1))
+    enum_order = [n.lower() for n in names]
+    check(enum_order == joker_order,
+          "sim.hpp's Joker enum is in the generator's order:\n"
+          "      enum: %s\n generator: %s" % (enum_order, joker_order))
+
+sheet_path = os.path.join(GAME, "assets", "jokers.png")
+check(os.path.isfile(sheet_path), "jokers.png is committed")
+if os.path.isfile(sheet_path):
+    with open(sheet_path, "rb") as handle:
+        data = handle.read()
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    colour_type = data[25]
+    check(width == jokers.CELL * len(joker_order) and height == jokers.CELL,
+          "jokers.png is %d cells of %d, not %dx%d"
+          % (len(joker_order), jokers.CELL, width, height))
+    # Colour type 6 is RGBA. pse::Sprite carries alpha as a mask and these are
+    # drawn over a dark panel, a lit card and a black end screen, so an opaque
+    # sheet would put a white box round every icon on all three.
+    check(colour_type == 6, "jokers.png carries alpha (colour type %d)"
+          % colour_type)
+
+    scratch = sheet_path + ".check"
+    jokers.write_png(scratch, jokers.sheet())
+    with open(sheet_path, "rb") as a, open(scratch, "rb") as b:
+        same = a.read() == b.read()
+    os.remove(scratch)
+    check(same, "jokers.png is what gen_jokerreels_jokers.py draws today")
+
+for problem in jokers.validate():
+    check(False, "joker art: %s" % problem)
+
+# The cell size the game cuts the sheet with. render.hpp names it once and the
+# sheet is drawn to it; the two agreeing is the whole reason a cell lands on an
+# icon rather than half way between two.
+icon_src = re.search(r"constexpr int k_joker_icon = (\d+);",
+                     read(GAME, "src", "render.hpp"))
+check(icon_src is not None, "render.hpp names the icon size")
+if icon_src:
+    check(int(icon_src.group(1)) == jokers.CELL,
+          "render.hpp cuts the sheet at %s, the sheet is drawn at %d"
+          % (icon_src.group(1), jokers.CELL))
+
+
+# ---------------------------------------------------------------------------
+# The how to play diagrams, which are the art that carries NUMBERS.
+#
+# A symbol that is drawn wrong looks wrong. A diagram that says TWO PAIR pays
+# 45 chips at 4 mult after somebody rebalanced the ladder looks exactly right
+# and teaches the wrong game, on the page a player reads before their first
+# spin. So none of those numbers is typed into the generator: they are parsed
+# out of sim.cpp and drawn from there, and this fails when the committed SVG
+# stops being what the generator would draw today.
+# ---------------------------------------------------------------------------
+
+tables = diagrams.parse_tables()
+for name, draw in sorted(diagrams.DIAGRAMS.items()):
+    path = os.path.join(GAME, "tutorial", "%s.svg" % name)
+    check(os.path.isfile(path), "tutorial/%s.svg is committed" % name)
+    if not os.path.isfile(path):
+        continue
+    with open(path, encoding="utf-8") as handle:
+        committed = handle.read()
+    check(committed == draw(tables),
+          "tutorial/%s.svg is what gen_jokerreels_diagrams.py draws today "
+          "(rerun it)" % name)
+
+# The worked example, bound to the C++ that proves it.
+#
+# The generator computes the example's hands and its total by reimplementing
+# the SHAPE of score() in Python, which keeps the numbers right when the ladder
+# moves and does nothing about the shape being wrong. preview.cpp puts the same
+# grid through the real scorer. That is only worth anything while the two grids
+# are the same grid, which is what this checks.
+preview = read(GAME, "tests", "preview.cpp")
+grid_src = re.search(
+    r"const uint8_t example\[jr::k_drums\]\[jr::k_rows\] = \{(.*?)\};",
+    preview, re.S)
+check(grid_src is not None, "preview.cpp has the worked example grid")
+if grid_src:
+    reels = [re.findall(r"jr::k([A-Z][a-z]+)", row)
+             for row in re.findall(r"\{([^{}]*)\}", grid_src.group(1))]
+    # preview.cpp lists a reel at a time, top to bottom; the generator lists a
+    # row at a time, left to right. Same grid, read the other way round.
+    from_preview = [[reel[row].upper() for reel in reels]
+                    for row in range(len(reels[0]))] if reels else []
+    check(from_preview == diagrams.EXAMPLE,
+          "the grid on the page and the grid the rules score are the same:\n"
+          "   preview.cpp: %s\n     generator: %s"
+          % (from_preview, diagrams.EXAMPLE))
+
+_, _, mult, pile, total = diagrams.score_example(tables)
+for field, value in (("pile", pile), ("mult", mult), ("total", total)):
+    found = re.search(r"const int k_example_%s = (\d+);" % field, preview)
+    check(found is not None, "preview.cpp names the example's %s" % field)
+    if found:
+        check(int(found.group(1)) == value,
+              "the picture's %s is %d, preview.cpp checks %s"
+              % (field, value, found.group(1)))
 
 if failures:
     print("\n%d check(s) failed" % len(failures))

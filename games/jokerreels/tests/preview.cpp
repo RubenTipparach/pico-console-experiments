@@ -357,6 +357,41 @@ int main(int argc, char** argv) {
         play(mid, 400);                    // let it land and start counting
         capture(mid, out, "preview_7_midrun");
         check(mid.joker_count == 3, "the jokers survived the spin");
+
+        /* And on to the frame where one of them FIRES.
+         *
+         * COLLECTOR is in the row on purpose: it pays per different symbol on
+         * the grid, so it fires on every spin there has ever been, and a frame
+         * that shows the shake and the pop can be captured without waiting for
+         * a hand that may not come. Stopped part way through the hold rather
+         * than at its start, so the pop has actually risen off the score box
+         * and the shake is somewhere other than zero.
+         */
+        bool fired = false;
+        for (int guard = 0; guard < 1200 && mid.state == jr::kCount; guard++) {
+            play(mid, 1);
+            if (mid.tally_step == 0) continue;
+            const jr::TallyEntry& e = mid.tally[mid.tally_step - 1];
+            if (e.joker && e.slot < jr::k_max_jokers && mid.count_wait >= 12) {
+                fired = true;
+                break;
+            }
+        }
+        check(fired, "a joker fired, so there is a shake to photograph");
+        if (fired) {
+            const jr::TallyEntry& e = mid.tally[mid.tally_step - 1];
+            check(mid.jokers[e.slot] == jr::kTwin ||
+                      mid.jokers[e.slot] == jr::kUnderstudy ||
+                      mid.jokers[e.slot] == jr::kCollector,
+                  "and the slot it names is one this run actually holds");
+            check(jr::tally_hold(mid) > 22,
+                  "and the count holds longer on it than on a payline");
+            std::printf("joker fired: slot %d, %+d chips %+d mult, "
+                        "tick %u of %d\n",
+                        e.slot, e.chips, e.mult, mid.count_wait,
+                        jr::tally_hold(mid));
+            capture(mid, out, "preview_11_joker");
+        }
     }
 
     /* The window, checked on the pixels rather than asserted in a comment.
@@ -428,9 +463,13 @@ int main(int argc, char** argv) {
 
         for (int j = 0; j < jr::k_jokers; j++) {
             const uint8_t which = static_cast<uint8_t>(j);
-            fits(jr::joker_name(which), 12, 200, "shop joker name");
-            fits(jr::joker_text(which), 12, 228, "shop joker text");
-            fits(jrr::joker_slot_name(which), 0, 39, "joker slot");
+            fits(jr::joker_name(which), jrr::k_shop_text_x, 200,
+                 "shop joker name");
+            fits(jr::joker_text(which), jrr::k_shop_text_x, 228,
+                 "shop joker text");
+            // The instructions page puts both on one row, past the icon.
+            fits(jr::joker_name(which), 32, 234, "joker page name");
+            fits(jr::joker_text(which), 32, 234, "joker page text");
         }
         for (int h = 0; h < jr::k_hands; h++) {
             const uint8_t which = static_cast<uint8_t>(h);
@@ -451,8 +490,41 @@ int main(int argc, char** argv) {
                          "speed dial");
         }
         fits("A DRUM LANDS ONLY ON WHAT IS ON IT", 6, k_w, "swap hint");
-        fits("SWAP ONE FACE FOR ANY SYMBOL", 12, 228, "swap card");
-        fits("LEVEL IT UP", 12, 228, "hand card");
+        /* Every kind of shop card names itself, and no two kinds say the same
+         * thing.
+         *
+         * Measured off shop_title and shop_body rather than off literals here,
+         * so this reads what the screen draws. The hand card lost its title
+         * once to a refactor that added an icon to the joker branch and took
+         * the branch underneath with it, and the resulting shop looked
+         * perfectly normal: four cards, four prices, two of them offering to
+         * open a drum.
+         */
+        const char* seen[3] = {nullptr, nullptr, nullptr};
+        for (int kind = 0; kind < 3; kind++) {
+            jr::ShopItem item{static_cast<uint8_t>(kind),
+                              static_cast<uint8_t>(kind == jr::kShopHand
+                                                       ? jr::kTwoPair : 0),
+                              5, false};
+            const char* title = jrr::shop_title(item);
+            const char* body = jrr::shop_body(item);
+            fits(title, jrr::k_shop_text_x, 200, "shop card title");
+            fits(body, jrr::k_shop_text_x, 228, "shop card body");
+            for (int other = 0; other < kind; other++) {
+                check(std::strcmp(seen[other], title) != 0,
+                      "two kinds of shop card say the same thing");
+            }
+            seen[kind] = title;
+        }
+        // The instructions are the longest lines in the game and they are the
+        // ones nobody would notice overflowing, because a page of prose that
+        // loses its last two characters still reads.
+        fits("FIVE REELS STOP, THREE ROWS DEEP.", 8, k_w, "learn 1");
+        fits("EVERY LINE THAT MAKES A HAND PAYS.", 8, k_w, "learn 2");
+        fits("OPENING A DRUM CHANGES ITS SYMBOLS.", 8, k_w, "learn 3");
+        fits("THE ONE FIRING SHAKES, AND ITS", 8, k_w, "learn 4");
+        fits("+5 MULT A REEL YOU STOP", 58, k_w, "speed row");
+        fits("READABLE, AND WORTH NOTHING", 58, k_w, "speed row 2");
         fits("DRUM 3  SYMBOL 24/24", 6, k_w, "swap counter");
         fits("ANTE 8/8", 4, 100, "ante");
         fits("SPINS 5", 236 - pse::text_width("SPINS 5"), 236, "spins");
@@ -463,6 +535,108 @@ int main(int argc, char** argv) {
         fits_centred("THE BACK ROOM", k_w / 2, 0, k_w, "shop heading");
         fits_centred("NEXT ANTE", 120, 70, 170, "next ante");
         std::printf("text: %d strings measured against their boxes\n", measured);
+    }
+
+    /* The worked example on the web page, put through the REAL scorer.
+     *
+     * tools/gen_jokerreels_diagrams.py draws a grid, names the lines that pay
+     * and shows the sum they make, and it works all of that out itself: it
+     * parses sim.cpp's tables and reimplements the shape of score() in Python.
+     * That keeps the NUMBERS honest when the ladder is rebalanced and does
+     * nothing at all about the SHAPE. A diagram of a sum this game does not do
+     * would be the most convincing wrong thing on the page, because it is the
+     * one thing a player would take on trust.
+     *
+     * So the same grid goes through the same path a real spin takes, and the
+     * total is checked against what the picture claims. The grid below and the
+     * generator's EXAMPLE are bound together by
+     * tools/tests/test_jokerreels_art.py, which fails if they drift.
+     */
+    {
+        // gen_jokerreels_diagrams.py's EXAMPLE, per reel: top, payline,
+        // bottom. Two lines pay and they pay differently, which is what lets
+        // the picture show the best line carrying the mult while the other
+        // one only adds its chips.
+        const uint8_t example[jr::k_drums][jr::k_rows] = {
+            {jr::kSeven,   jr::kBell,  jr::kClover},
+            {jr::kSeven,   jr::kBell,  jr::kPlum},
+            {jr::kDiamond, jr::kBell,  jr::kDiamond},
+            {jr::kPlum,    jr::kCrown, jr::kBar},
+            {jr::kBar,     jr::kPlum,  jr::kCherry},
+        };
+        const int k_example_pile = 220;
+        const int k_example_mult = 6;
+        const int k_example_total = 1320;
+
+        jr::World w;
+        jr::world_init(w, 8123u);
+        to_table(w);
+        play(w, 1, 0);                     // pull
+        play(w, 700);                      // let it land and count out
+        force_grid(w, example);
+        w.state = jr::kSpin;
+        w.spin_ticks = 9999;               // every auto stop already passed
+        for (int d = 0; d < jr::k_drums; d++) {
+            w.spinning[d] = true;
+            w.stopped_at[d] = -1;          // no speed bonus, so the tally is
+        }                                  // the paying lines and nothing else
+        play(w, 1);
+        check(w.state == jr::kCount, "the example grid was scored");
+
+        int lines = 0, pile = 0, mult = 0;
+        for (int i = 0; i < w.tally_len; i++) {
+            const jr::TallyEntry& e = w.tally[i];
+            check(!e.joker, "the example run holds no jokers");
+            check(e.line != jr::k_no_line, "so every entry is a payline");
+            lines++;
+            pile += e.chips;
+            mult += e.mult;
+        }
+        check(lines == 2, "exactly two lines pay, as the picture shows");
+        check(w.hand_index == jr::kThree,
+              "and the best of them is three of a kind");
+        if (pile != k_example_pile || mult != k_example_mult) {
+            std::printf("FAIL the picture says %d x %d, the rules say %d x %d\n",
+                        k_example_pile, k_example_mult, pile, mult);
+            g_failures++;
+        }
+
+        for (int guard = 0; guard < 900 && w.state == jr::kCount; guard++) {
+            play(w, 1);
+        }
+        check(w.state != jr::kCount, "the count finished");
+        if (w.scored != k_example_total) {
+            std::printf("FAIL the picture says the spin is worth %d, the rules "
+                        "paid %d\n", k_example_total, w.scored);
+            g_failures++;
+        }
+        std::printf("worked example: %d x %d = %d, scored by the rules\n",
+                    pile, mult, w.scored);
+    }
+
+    /* The joker row: five icons, on screen, and not on top of each other.
+     *
+     * The same measure-it rule the strings get, applied to a picture. A slot
+     * that grew, an icon that grew, or a sixth joker would all put art off the
+     * right edge of a 240 wide panel, and every one of those still compiles.
+     */
+    {
+        int prev_right = -1;
+        for (int i = 0; i < jr::k_max_jokers; i++) {
+            int x, y;
+            jrr::joker_slot(i, x, y);
+            // Room for the shake, which moves a slot up to three pixels.
+            check(x - 3 >= 0 && x + jrr::k_slot_w + 3 <= k_w,
+                  "a joker slot is on screen, shake included");
+            check(y + jrr::k_slot_h <= k_h, "and inside the panel");
+            check(jrr::k_joker_icon <= jrr::k_slot_w - 4 &&
+                      jrr::k_joker_icon <= jrr::k_slot_h - 4,
+                  "and its icon fits it");
+            check(x > prev_right, "and the slots do not overlap");
+            prev_right = x + jrr::k_slot_w - 1;
+        }
+        std::printf("joker row: %d slots of %d, last ends at %d\n",
+                    jr::k_max_jokers, jrr::k_slot_w, prev_right);
     }
 
     // The bezel has to frame the drums rather than cover them or miss them.

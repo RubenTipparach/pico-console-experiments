@@ -27,6 +27,7 @@ add_test(NAME jokerreels_sim_tests COMMAND jokerreels_sim_tests)
 # and main red the last time somebody tried.
 include(${CMAKE_CURRENT_LIST_DIR}/../models.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../textures.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../sprites.cmake)
 
 set(jokerreels_generated "")
 foreach(model ${jokerreels_model_files})
@@ -35,6 +36,10 @@ foreach(model ${jokerreels_model_files})
 endforeach()
 foreach(picture ${jokerreels_texture_files})
     add_texture(jokerreels
+        ${CMAKE_CURRENT_SOURCE_DIR}/../assets/${picture} jokerreels_generated)
+endforeach()
+foreach(picture ${jokerreels_sprite_files})
+    add_sprite(jokerreels
         ${CMAKE_CURRENT_SOURCE_DIR}/../assets/${picture} jokerreels_generated)
 endforeach()
 
@@ -49,3 +54,13 @@ target_include_directories(jokerreels_preview PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 target_link_libraries(jokerreels_preview pse-core)
+
+# And it is a TEST, not only a camera.
+#
+# It was not registered, so everything it proves ran only when somebody ran the
+# binary by hand: that no triangle is dropped, that the 3D stays inside its
+# window, that every string fits the box it is drawn in, that the joker row
+# fits the panel. All of that was outside CI, which is the same as not being
+# checked. catcoin_preview has been in ctest since the day it was written;
+# this one was simply missed.
+add_test(NAME jokerreels_preview COMMAND jokerreels_preview)

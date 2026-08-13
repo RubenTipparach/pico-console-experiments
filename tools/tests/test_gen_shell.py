@@ -99,6 +99,89 @@ def test_a_control_without_a_colon_survives():
     check("<kbd>" not in html, "and is not forced into a key column")
 
 
+def test_rules_get_their_own_panels():
+    """A game with a scoring system explains it, and does it between the
+    objective and the controls rather than inside the objective."""
+    html = panels_for(BASE + 'objective: "Go."\nrules:\n'
+                      '  - "Hands: five of a kind beats four."\n'
+                      '  - "Lines: all five of them pay."\n')
+    check(html.count("data-panel") == 3, "two rules make two more panels")
+    check("<h2>Hands</h2>" in html, "a rule's label becomes its heading")
+    check("five of a kind beats four." in html, "and the rest is the body")
+    check(html.index("Objective") < html.index("Hands") < html.index("Lines"),
+          "rules follow the objective, in the order game.yml gives them")
+
+    with_controls = panels_for(BASE + 'objective: "Go."\nrules:\n'
+                               '  - "Hands: five beats four."\n'
+                               'controls:\n  - "A: pull"\n')
+    check(with_controls.index("Hands") < with_controls.index("Controls"),
+          "and come before the controls")
+
+
+def test_a_rule_without_a_colon_still_gets_a_panel():
+    html = panels_for(BASE + 'rules:\n  - "Just keep the ball up."\n')
+    check("Just keep the ball up." in html, "the prose is kept")
+    check("<h2>How to play</h2>" in html, "under a heading of its own")
+
+
+def test_no_rules_is_the_normal_case():
+    """Most games do not need this. A missing rules list has to cost nothing,
+    or every game pays for the one game that wanted it."""
+    html = panels_for(BASE + 'objective: "Go."\ncontrols:\n  - "A: jump"\n')
+    check(html.count("data-panel") == 2, "objective and controls, and no more")
+
+
+def test_a_rule_can_carry_a_picture():
+    """Some rules are shapes and sums, and a paragraph is the worst way to hand
+    somebody either. A picture is a file named after the rule's own heading."""
+    check(gen_shell.diagram_name("Chips and mult") == "chips-and-mult",
+          "a heading names its file")
+    check(gen_shell.diagram_name("Paylines") == "paylines",
+          "and a one word heading is just the word")
+
+    tmp = tempfile.mkdtemp()
+    try:
+        game_dir = write_game(os.path.join(tmp, "testgame"),
+                              BASE + 'rules:\n  - "Chips and mult: A sum."\n'
+                              '  - "Hands: No picture for this one."\n')
+        os.makedirs(os.path.join(game_dir, "tutorial"))
+        with open(os.path.join(game_dir, "tutorial", "chips-and-mult.svg"),
+                  "w", encoding="utf-8") as handle:
+            handle.write('<?xml version="1.0"?>\n'
+                         '<svg xmlns="http://www.w3.org/2000/svg" '
+                         'viewBox="0 0 10 10"><rect id="picture"/></svg>')
+        html = gen_shell.render_panels(Game(game_dir))
+        check('<rect id="picture"/>' in html, "the picture is inlined")
+        check("<?xml" not in html,
+              "and its XML declaration is stripped, or it prints as text")
+        check(html.count("<svg") == 1,
+              "the rule with no picture gets none rather than a blank figure")
+        # The picture belongs to its own rule, not to whichever panel is first.
+        chips = html[html.index("Chips and mult"):html.index("Hands")]
+        check("<svg" in chips, "and it lands in the panel whose heading it is")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_every_picture_is_claimed_by_a_rule():
+    """A picture is found by its rule's heading, so renaming a heading orphans
+    the file and the panel silently loses its diagram.
+
+    Walked over the real repo, like the objective check below: nothing else
+    would notice, because a missing picture renders as a game that never had
+    one. An orphan here is a build failure instead.
+    """
+    for game in discover_games():
+        rules = game.manifest.get("rules") or []
+        wanted = {gen_shell.diagram_name(str(r).partition(":")[0])
+                  for r in rules if str(r).strip()}
+        for name in gen_shell.diagrams_of(game.directory):
+            check(name in wanted,
+                  "%s ships tutorial/%s.svg, which no rule heading claims "
+                  "(headings: %s)" % (game.slug, name,
+                                      ", ".join(sorted(wanted)) or "none"))
+
+
 def test_controls_split_across_panels():
     lines = "".join('  - "%d: does a thing"\n' % i for i in range(9))
     html = panels_for(BASE + "objective: \"Go.\"\ncontrols:\n" + lines)
@@ -185,6 +268,47 @@ def test_the_pad_dispatches_what_sdl_reads():
           "and does it in the capture phase, before the SDL port's listener")
 
 
+def test_the_guide_owns_the_keyboard_while_it_is_open():
+    """The arrows page the tutorial, and nothing reaches the game behind it.
+
+    Neither was true. The only thing that turned a page was clicking an arrow,
+    so a keyboard player could not reach panel two at all, and pressing left or
+    right instead sent the press straight through to the game, which moved its
+    speed dial behind a modal the player was reading.
+
+    Checked against the shell's source the way the WASD interception is: this
+    file has no browser, and the mechanism vanishing silently is the failure
+    worth catching. The behaviour itself was driven with real key presses in a
+    real browser when it was written.
+    """
+    with open(SHELL, encoding="utf-8") as handle:
+        shell = handle.read()
+
+    guide = shell[shell.index("var GAME_KEYS"):] if "var GAME_KEYS" in shell \
+        else ""
+    check(bool(guide), "the shell has the guide's key handler")
+    if not guide:
+        return
+    for code in ("ArrowLeft", "ArrowRight", "Escape"):
+        check(code in guide, "the guide handles %s" % code)
+    check("stopImmediatePropagation" in guide,
+          "and stops what it handles, so the game never sees it")
+    check(re.search(r"addEventListener\('keydown'[\s\S]{0,600}?\}, true\)",
+                    guide) is not None,
+          "in the capture phase, ahead of the SDL port's own listener")
+    # The swallowed set is read off the pad rather than typed, so a remapped
+    # button changes one place and this follows.
+    check("querySelectorAll('#pad button[data-key]')" in guide,
+          "the keys it swallows come from the pad's own markup")
+
+    # And the other half: the pad bridge stands down while the guide is up, or
+    # WASD would still be pressed into the game from under the modal.
+    bridge = shell[shell.index("function kbdTarget"):
+                   shell.index("window.addEventListener('keydown'")]
+    check("guideIsOpen()" in bridge,
+          "the pad bridge sends nothing to the game while the guide is open")
+
+
 def test_a_control_carries_its_keyboard_key():
     mapping = {"a": "Z", "b": "X", "left": "←", "right": "→"}
     check(gen_shell.keyboard_hint("hold A", mapping) == "Z",
@@ -263,10 +387,16 @@ def main():
     test_the_blurb_stands_in_for_a_missing_objective()
     test_a_control_becomes_a_key_and_a_meaning()
     test_a_control_without_a_colon_survives()
+    test_rules_get_their_own_panels()
+    test_a_rule_without_a_colon_still_gets_a_panel()
+    test_no_rules_is_the_normal_case()
+    test_a_rule_can_carry_a_picture()
+    test_every_picture_is_claimed_by_a_rule()
     test_controls_split_across_panels()
     test_no_arrows_for_a_single_panel()
     test_the_keyboard_keys_come_from_the_pad()
     test_the_pad_dispatches_what_sdl_reads()
+    test_the_guide_owns_the_keyboard_while_it_is_open()
     test_a_control_carries_its_keyboard_key()
     test_the_shell_is_filled_in()
     test_a_shell_without_the_placeholder_is_an_error()

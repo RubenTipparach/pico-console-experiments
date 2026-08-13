@@ -199,21 +199,6 @@ body {
 .tag.web { color: var(--play); }
 .tag.device { color: var(--device); }
 
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  font-size: 0.625rem;
-  color: var(--muted);
-  letter-spacing: 0.05em;
-}
-
-.controls span {
-  border: 1px solid var(--line);
-  background: var(--ground);
-  padding: 0.1rem 0.35rem;
-}
-
 .actions {
   display: flex;
   gap: 0.4rem;

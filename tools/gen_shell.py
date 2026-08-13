@@ -119,12 +119,95 @@ def split_controls(controls, per_panel=CONTROLS_PER_PANEL):
             for i in range(0, len(controls), per_panel)]
 
 
+def diagram_name(heading):
+    """The file a rule's picture would live in, from the rule's own heading.
+
+    "Chips and mult" is chips-and-mult.svg. The heading is the key on purpose:
+    adding a picture is adding a file, the same way adding a game is adding a
+    directory, so nothing has to be listed anywhere and there is no second
+    name to keep in step with the first.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", heading.strip().lower())
+    return slug.strip("-")
+
+
+def find_diagram(game_dir, heading):
+    """A rule's picture, inlined, or None.
+
+    Inline SVG rather than an <img>: the panels are written into the page at
+    configure time and the page is opened off a phone, so a picture that is
+    part of the markup is a picture that is already there. It also inherits
+    the panel's colour through currentColor, which a linked image cannot, so
+    one file is right in whatever the page's palette turns out to be.
+
+    Silently missing would be the wrong failure: a renamed heading would drop
+    a picture and read as a game that never had one. test_gen_shell.py walks
+    the repo and fails on an SVG in tutorial/ that no rule heading claims, so
+    a rename breaks the build rather than the page.
+    """
+    name = diagram_name(heading)
+    if not name:
+        return None
+    path = os.path.join(game_dir, "tutorial", "%s.svg" % name)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as handle:
+        svg = handle.read()
+    # The XML declaration is for a standalone file. Inlined into HTML it is
+    # not markup, it is text, and it prints.
+    svg = re.sub(r"<\?xml[^>]*\?>\s*", "", svg).strip()
+    return '<figure class="diagram">%s</figure>' % svg
+
+
+def diagrams_of(game_dir):
+    """Every picture a game ships, by file stem."""
+    directory = os.path.join(game_dir, "tutorial")
+    if not os.path.isdir(directory):
+        return []
+    return sorted(os.path.splitext(f)[0] for f in os.listdir(directory)
+                  if f.endswith(".svg"))
+
+
+def render_rules(rules, game_dir=None):
+    """A game's rules, one panel each.
+
+    Optional, and most games do not want it: knowing what the buttons do is
+    enough to play a lander. A game with a SCORING SYSTEM is the case this
+    exists for. Joker Reels asks a player to pick a payline, read a hand, and
+    weigh a multiplier against how hard a symbol is to read, and none of that
+    is discoverable from a control list. The alternative was one enormous
+    objective paragraph, which is a wall of text in the panel a player meets
+    first and is therefore a wall of text nobody reads.
+
+    Each entry is "Heading: what it means", the same shape a control takes,
+    because a rule and a control are the same thing to this file: a label and
+    a sentence. An entry with no colon becomes a panel of prose with the
+    game's own name as its heading, for a rule that does not want a label.
+
+    A rule can also carry a PICTURE, at games/<slug>/tutorial/<heading>.svg.
+    Some rules are diagrams pretending to be sentences: "the middle row, the
+    top, the bottom and the two diagonals" is a shape, and a paragraph is the
+    worst way to hand somebody a shape.
+    """
+    panels = []
+    for entry in rules:
+        heading, sep, body = str(entry).partition(":")
+        if not sep:
+            heading, body = "How to play", str(entry)
+        picture = find_diagram(game_dir, heading) if game_dir else None
+        panels.append('<article class="panel" data-panel><h2>%s</h2>'
+                      '<p>%s</p>%s</article>'
+                      % (escape(heading.strip()), escape(body.strip()),
+                         picture or ""))
+    return panels
+
+
 def render_panels(game, mapping=None):
     """The tutorial panels for one game, innermost markup only.
 
-    Panel one is what the game is for. The rest are its controls, in the order
-    game.yml lists them, because that order is the game's own idea of which
-    button matters most.
+    Panel one is what the game is for, then any rules it wants to explain,
+    then its controls, in the order game.yml lists them, because that order is
+    the game's own idea of which button matters most.
 
     mapping turns the console buttons a game names into the keys a keyboard
     player actually presses. A game says "A: throttle" because that is the
@@ -139,6 +222,12 @@ def render_panels(game, mapping=None):
         panels.append(
             '<article class="panel" data-panel>'
             '<h2>Objective</h2><p>%s</p></article>' % escape(objective))
+
+    rules = game.manifest.get("rules") or []
+    if not isinstance(rules, list):
+        rules = []
+    panels.extend(render_rules([r for r in rules if str(r).strip()],
+                               game.directory))
 
     controls = game.manifest.get("controls") or []
     if not isinstance(controls, list):

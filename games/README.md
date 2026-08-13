@@ -27,7 +27,8 @@ games/<slug>/
 | `title` | yes | Shown on the gallery card. |
 | `blurb` | yes | One line. One. The card has room for one. |
 | `objective` | yes for web | What the player is trying to do, a sentence or two. Panel one of the tutorial. |
-| `controls` | yes for web | `"key: what it does"`, one a line. Shown on the card and paged into the tutorial. |
+| `controls` | yes for web | `"key: what it does"`, one a line. Paged into the game's own tutorial, not onto the gallery card. |
+| `rules` | no | `"Heading: what it means"`, one a line, one tutorial panel each. For a game with a scoring system to explain. |
 | `target` | no | CMake target name. Defaults to the slug. |
 | `sdk` | no | `32blit` (default). See the note below. |
 | `web` | no | Build for the browser. Defaults to true for the 32blit SDK. |
@@ -86,6 +87,25 @@ The keyboard key beside each one is added for you, read out of the on-screen
 gamepad in `web/shell.html`, which is what those buttons actually dispatch. Do
 not write `Z` in a control string: the console has no Z, and the mapping would
 then have two homes to drift between.
+
+A rule can carry a **picture**, at `games/<slug>/tutorial/<heading>.svg`, and
+"Chips and mult" looks for `chips-and-mult.svg`. Adding one is adding a file:
+nothing is listed anywhere, and the SVG is inlined into the panel rather than
+linked, so it is already there when the page opens and it inherits the panel's
+colour through `currentColor`. Some rules are shapes and sums, and a paragraph
+is the worst way to hand somebody either. `test_gen_shell.py` fails on an SVG
+that no rule heading claims, so renaming a heading breaks the build instead of
+quietly dropping its diagram.
+
+`rules` is optional and most games should not have it. Knowing what the buttons
+do is enough to play a lander, and a panel per rule on a game that has none is
+padding. It exists for a game with a SCORING SYSTEM: Joker Reels asks a player
+to pick a payline, read a hand and weigh a multiplier against how hard a symbol
+is to read, and none of that is discoverable from a control list. The
+alternative was one enormous `objective`, which is a wall of text in the panel
+a player meets first and is therefore a wall of text nobody reads. Each entry
+is `"Heading: what it means"`, the same shape a control takes, and the panels
+land between the objective and the controls.
 
 `tools/tests/test_gen_shell.py` walks every game in the repo and fails if one
 that ships to the web has no objective or no controls. A page a player cannot

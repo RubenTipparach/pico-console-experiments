@@ -115,6 +115,52 @@ def test_held_games_leave_the_shelf_for_the_archive():
         shutil.rmtree(site, ignore_errors=True)
 
 
+def test_a_card_is_a_picture_a_name_and_a_line():
+    """The shelf answers "do I want to play this", and nothing else.
+
+    Cards used to carry every control the game has, one boxed line each under
+    the blurb. That is a manual for a game you have not chosen yet, and it made
+    the shelf ragged: a card's height became a function of how many buttons its
+    game happens to use. The controls are on the game's own page now, beside
+    what each does.
+
+    Checked against the real game.yml strings rather than a fixture, because
+    the failure to catch is a control string turning up on the front page, and
+    only the real ones can do that.
+    """
+    site = tempfile.mkdtemp()
+    try:
+        page = render(site, [])
+        check("Outrun the screen through cactus country." in page,
+              "the blurb, which is the description, is on the card")
+        check("Dust Rider" in page, "and so is the title")
+
+        # Every control of every game, from the manifests themselves. A card
+        # that starts printing one of these again fails.
+        #
+        # The WHOLE control string, as the card used to escape it, not the half
+        # after the colon: the first version of this looked for the meaning on
+        # its own and reported that the shelf was printing chicken's "jump",
+        # which is a substring of kingfisher's blurb, and pico-santa's "turn",
+        # which is a substring of "return" in the page's own script.
+        sys.path.insert(0, TOOLS)
+        from build_plan import discover_games  # noqa: E402
+        from gen_gallery import escape  # noqa: E402
+        measured = 0
+        for game in discover_games():
+            for control in game.manifest.get("controls") or []:
+                if not str(control).strip():
+                    continue
+                measured += 1
+                check(escape(str(control)) not in page,
+                      "%s's card does not print \"%s\""
+                      % (game.slug, control))
+        check(measured > 10, "there were controls to look for (%d)" % measured)
+        check('class="controls"' not in page, "and no empty box left behind")
+    finally:
+        shutil.rmtree(site, ignore_errors=True)
+
+
 def test_the_mockups_door_follows_the_site_not_the_repo():
     """The front page links the mockups only when a page is there to link.
 
@@ -154,6 +200,7 @@ def main():
     test_an_empty_title_still_derives_one()
     test_a_given_title_is_left_alone()
     test_held_games_leave_the_shelf_for_the_archive()
+    test_a_card_is_a_picture_a_name_and_a_line()
     test_the_mockups_door_follows_the_site_not_the_repo()
     if failures:
         print("gen_gallery: %d check(s) failed" % len(failures))

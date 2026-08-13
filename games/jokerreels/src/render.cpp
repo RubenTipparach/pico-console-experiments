@@ -16,6 +16,7 @@
 #include "jokerreels/crown.hpp"
 #include "jokerreels/diamond.hpp"
 #include "jokerreels/facet.hpp"
+#include "jokerreels/jokers.hpp"
 #include "jokerreels/plum.hpp"
 #include "jokerreels/seven.hpp"
 
@@ -192,13 +193,23 @@ const char* pair_line(int32_t a, const char* mid, int32_t b) {
     return g_line;
 }
 
-// A joker slot is 43 px, which is seven characters of a 5x7 font. Truncated
-// rather than shrunk: a name at half scale is a name nobody can read.
-const char* short_name(const char* name, int chars) {
-    int n = 0;
-    while (name[n] && n < chars && n < 15) { g_line[n] = name[n]; n++; }
-    g_line[n] = '\0';
-    return g_line;
+/* A joker's icon, cut out of the one sheet.
+ *
+ * The cell IS the enum value. Eight separate sprites would need a table here
+ * listing them in the Joker order, which is a fourth place that order is
+ * written down and a fourth place it can go wrong; with a sheet there is
+ * nothing to misorder, only an offset.
+ *
+ * The HUD slot carries the picture and no name. It used to carry six
+ * characters of one, which is what a 43 px box holds, and GREASER, RATCHET,
+ * COLLECTOR, METRONOME and UNDERSTUDY all arrive at that box too long: a row
+ * of truncations is a row of words a player has to decode rather than
+ * recognise. A silhouette is read at a glance and does not get shorter.
+ */
+void draw_joker(const pse::RenderTarget& t, uint8_t joker, int x, int y) {
+    const int cell = (joker % jr::k_jokers) * k_joker_icon;
+    pse::blit_sprite(t, models::jokerreels::jokers, cell, 0, k_joker_icon,
+                     k_joker_icon, x, y);
 }
 
 /* The line that says WHY a hand scored.
@@ -255,6 +266,87 @@ void draw_payline(const jr::World& world, const pse::RenderTarget& screen) {
 
 void render_title_panel(const jr::World& w, const pse::RenderTarget& s);
 void render_swap_panel(const jr::World& w, const pse::RenderTarget& s);
+
+/* The equation, as named positions rather than as five literals.
+ *
+ * `chips X mult` is drawn on the panel and the joker pops are aimed at the
+ * halves of it, so the two have to agree about where those halves are. This is
+ * rule 9's measure-it rule applied to a layout rather than to a string: a pop
+ * centred on a hand tuned x is over the right number only until somebody
+ * nudges the box it belongs to.
+ */
+constexpr int k_score_l = 4;
+constexpr int k_score_r = 112;
+constexpr int k_chips_x = 8;
+constexpr int k_times_x = 62;
+constexpr int k_mult_x = 74;
+
+/* Which joker is firing right now, and how far through its moment it is.
+ *
+ * The entry showing is tally[tally_step - 1], and count_wait is how long it
+ * has been showing, so phase runs 0 to span across exactly the ticks the rules
+ * hold that entry for. The rules own the duration (a joker is held longer than
+ * a payline is), and asking them rather than keeping a copy is what stops the
+ * animation running past its entry or finishing early.
+ */
+struct Firing {
+    bool on;
+    const jr::TallyEntry* entry;
+    int phase;
+    int span;
+};
+
+Firing firing_joker(const jr::World& w) {
+    Firing f{false, nullptr, 0, 1};
+    if (w.state != jr::kCount) return f;
+    if (w.tally_step == 0 || w.tally_step > w.tally_len) return f;
+    const jr::TallyEntry& e = w.tally[w.tally_step - 1];
+    if (!e.joker || e.slot >= jr::k_max_jokers) return f;
+    f.on = true;
+    f.entry = &e;
+    f.span = jr::tally_hold(w);
+    if (f.span < 1) f.span = 1;
+    f.phase = static_cast<int>(w.count_wait);
+    if (f.phase > f.span) f.phase = f.span;
+    return f;
+}
+
+// One period of a shake, and it is damped: biggest the instant the joker
+// fires and gone by the time the count moves on, so the row is still by the
+// time the next entry needs to be read.
+const int8_t k_shake[8] = {0, 2, 3, 2, 0, -2, -3, -2};
+
+int shake(const Firing& f, int offset) {
+    const int amp = k_shake[(((f.phase + offset) / 2) & 7)];
+    return amp * (f.span - f.phase) / f.span;
+}
+
+/* The number a joker just put into the score, over the half of the equation it
+ * went into.
+ *
+ * Rising and drawn last, over whatever is underneath. A number that appeared
+ * where the score already is would be one more thing in a box that is already
+ * two numbers; one that lifts out of the box is read as having come FROM it,
+ * which is the whole point: this is the answer to "why did the mult jump".
+ *
+ * Backed and outlined rather than drawn bare, because it crosses the progress
+ * bar on its way up and a bare number over a bar is neither.
+ *
+ * It starts ABOVE the box rather than on it. Starting on it put a +120 in a
+ * blue box exactly over the chips, so the one frame that explained why the
+ * number changed was also the one frame you could not read the number in.
+ */
+void draw_pop(const pse::RenderTarget& s, const char* text, int centre,
+              int base_y, const Firing& f, Rgb colour) {
+    const int rise = 12 * f.phase / f.span;
+    const int w = pse::text_width(text, 2);
+    const int h = pse::text_height() * 2;
+    const int x = centre - w / 2;
+    const int y = base_y - rise;
+    fill(s, x - 4, y - 3, x + w + 3, y + h + 2, k_ink);
+    pse::draw_rect(s, x - 4, y - 3, w + 8, h + 6, colour.r, colour.g, colour.b);
+    text_centred(s, text, centre, y, colour, 2);
+}
 
 void draw_drums(const jr::World& world) {
     for (int d = 0; d < jr::k_drums; d++) {
@@ -521,7 +613,7 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
             text(s, jr::payline_name(static_cast<uint8_t>(line)), gx,
                  gy + 40, k_dim);
         }
-    } else {
+    } else if (page == 3) {
         text_centred(s, "THE DIAL AND THE JOKERS", k_screen_w / 2, 8, k_paper);
         text(s, "THE SPEED DIAL IS THE RISK.", 8, 34, k_paper);
         for (int i = 0; i < jr::k_speeds; i++) {
@@ -539,8 +631,27 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
         text(s, "THEMSELVES, FOR NOTHING.", 8, 136, k_dim);
 
         text(s, "JOKERS FIRE WHILE IT COUNTS.", 8, 160, k_paper);
-        text(s, "OPENING A DRUM CHANGES WHAT", 8, 184, k_paper);
-        text(s, "THAT REEL CAN EVER LAND ON.", 8, 196, k_paper);
+        text(s, "THE ONE FIRING SHAKES, AND ITS", 8, 172, k_dim);
+        text(s, "NUMBER POPS OVER THE SIDE OF", 8, 184, k_dim);
+        text(s, "THE SUM IT WENT INTO.", 8, 196, k_dim);
+        text(s, "OPENING A DRUM CHANGES ITS SYMBOLS.", 8, 214, k_paper);
+    } else {
+        /* Every joker, its picture and what it does.
+         *
+         * This page is why the HUD row can be five pictures with no names
+         * under them. A silhouette is only quicker to read than a word once
+         * you have been shown it, and there is exactly one place in the game
+         * with the room to show all eight at once.
+         */
+        text_centred(s, "JOKERS", k_screen_w / 2, 8, k_paper);
+        for (int j = 0; j < jr::k_jokers; j++) {
+            const uint8_t which = static_cast<uint8_t>(j);
+            const int y = 30 + j * 24;
+            fill(s, 4, y, k_screen_w - 5, y + 22, (j & 1) ? k_ink : k_panel);
+            draw_joker(s, which, 6, y + 1);
+            text(s, jr::joker_name(which), 32, y + 3, k_select);
+            text(s, jr::joker_text(which), 32, y + 13, k_dim);
+        }
     }
 
     // Which page, as dots. Three characters of text would say the same thing
@@ -571,10 +682,37 @@ void row_band(int row, int& centre_y, int& height) {
 
 const Stats& stats() { return g_stats; }
 
-// Six characters, which is 35 px of a 39 px slot. Truncated rather than
-// shrunk: a name at half scale is a name nobody can read.
-const char* joker_slot_name(uint8_t joker) {
-    return short_name(jr::joker_name(joker), 6);
+// Five slots across the panel, laid out from the screen rather than typed:
+// five boxes and the gaps between them come to 240 exactly, so a slot that
+// grew would fail to fit here rather than run off the right edge on a device.
+/* What a shop card says it is, as a function rather than as a chain inside the
+ * drawing loop.
+ *
+ * It was that chain, and adding the joker icon to the top branch of it dropped
+ * the branch underneath: the hand card fell through to the swap card's default
+ * and the shop offered OPEN A DRUM twice, at two different prices, one of
+ * which levelled a hand. The frame still looked exactly like a shop. Pulled
+ * out here so the preview can ask each kind what it says and notice when two
+ * of them say the same thing.
+ */
+const char* shop_title(const jr::ShopItem& item) {
+    if (item.kind == jr::kShopJoker) return jr::joker_name(item.which);
+    if (item.kind == jr::kShopHand) return jr::hand_name(item.which);
+    return "OPEN A DRUM";
+}
+
+const char* shop_body(const jr::ShopItem& item) {
+    if (item.kind == jr::kShopJoker) return jr::joker_text(item.which);
+    if (item.kind == jr::kShopHand) return "LEVEL IT UP";
+    return "SWAP ONE FACE FOR ANY SYMBOL";
+}
+
+void joker_slot(int index, int& x, int& y) {
+    constexpr int k_margin = 4;
+    constexpr int k_pitch =
+        (k_screen_w - 2 * k_margin - k_slot_w) / (jr::k_max_jokers - 1);
+    x = k_margin + index * k_pitch;
+    y = k_window_h + 83;
 }
 
 void render_machine(const jr::World& world, const pse::RenderTarget& screen) {
@@ -652,12 +790,13 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
 
     // Chips and mult, separately and large. Watching one of them grow is the
     // whole feel this is borrowing, and a single total would throw it away.
-    fill(screen, 4, top + 35, 112, top + 57, k_panel);
-    pse::draw_rect(screen, 4, top + 35, 109, 23, k_dim.r, k_dim.g, k_dim.b);
-    text(screen, num_line("", world.chips, ""), 8, top + 39, k_chip, 2);
-    text(screen, "X", 62, top + 42, k_paper);
-    text(screen, num_line("", world.mult, ""), 74, top + 39, k_mult, 2);
-    text(screen, num_line("SCORE ", world.chips * world.mult, ""), 4,
+    fill(screen, k_score_l, top + 35, k_score_r, top + 57, k_panel);
+    pse::draw_rect(screen, k_score_l, top + 35, k_score_r - k_score_l - 3, 23,
+                   k_dim.r, k_dim.g, k_dim.b);
+    text(screen, num_line("", world.chips, ""), k_chips_x, top + 39, k_chip, 2);
+    text(screen, "X", k_times_x, top + 42, k_paper);
+    text(screen, num_line("", world.mult, ""), k_mult_x, top + 39, k_mult, 2);
+    text(screen, num_line("SCORE ", world.chips * world.mult, ""), k_score_l,
          top + 61, k_payline);
 
     // The speed dial: the only thing you set before pulling, and the whole
@@ -691,19 +830,36 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
         }
     }
 
-    // Five joker slots, showing what you have rather than what it does. What
-    // a joker does is on its shop card and in the tally when it fires, which
-    // is the two moments you need it.
+    /* Five joker slots, each showing what it IS rather than what it does.
+     *
+     * What a joker does is on its shop card, on the instructions page, and in
+     * the tally line when it fires, which are the three moments you need it.
+     * The slot itself has 44 px and a picture is what fits in 44 px.
+     *
+     * The one that is firing shakes. It is the only reason a player has to
+     * look at this row mid count: five slots that never move are furniture,
+     * and one of them jumping is the game pointing at the thing that just
+     * changed the number above it.
+     */
+    const Firing fire = firing_joker(world);
     for (int i = 0; i < jr::k_max_jokers; i++) {
-        const int bx = 4 + i * 46;
+        int bx, by;
+        joker_slot(i, bx, by);
         const bool has = i < world.joker_count;
-        fill(screen, bx, top + 85, bx + 42, top + 105, has ? k_panel : k_ink);
-        pse::draw_rect(screen, bx, top + 85, 43, 21,
-                       has ? 0xC2 : k_dim.r, has ? 0xC3 : k_dim.g,
-                       has ? 0xC7 : k_dim.b);
+        const bool firing = fire.on && fire.entry->slot == i;
+        if (firing) {
+            bx += shake(fire, 0);
+            by += shake(fire, 4) / 2;
+        }
+        fill(screen, bx, by, bx + k_slot_w - 1, by + k_slot_h - 1,
+             has ? k_panel : k_ink);
+        const Rgb edge = firing ? k_select : (has ? Rgb{0xC2, 0xC3, 0xC7}
+                                                  : k_dim);
+        pse::draw_rect(screen, bx, by, k_slot_w, k_slot_h,
+                       edge.r, edge.g, edge.b);
         if (!has) continue;
-        text(screen, joker_slot_name(world.jokers[i]), bx + 3, top + 92,
-             k_select);
+        draw_joker(screen, world.jokers[i], bx + (k_slot_w - k_joker_icon) / 2,
+                   by + (k_slot_h - k_joker_icon) / 2);
     }
 
     if (world.msg) {
@@ -711,6 +867,26 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
     } else if (world.state == jr::kCount) {
         text_centred(screen, jr::hand_name(world.hand_index), k_screen_w / 2,
                      top + 113, k_select);
+    }
+
+    /* And the number it put in, over the half of the equation it went into.
+     *
+     * Last, so it lifts over the bar and the score box rather than under them,
+     * and on whichever side it actually touched: a joker can add chips, add
+     * mult, or double the mult, and one of those three is not the other two.
+     */
+    if (fire.on) {
+        if (fire.entry->chips != 0) {
+            draw_pop(screen, num_line("+", fire.entry->chips, ""),
+                     (k_chips_x + k_times_x) / 2, top + 19, fire, k_chip);
+        }
+        if (fire.entry->mult == -1) {
+            draw_pop(screen, "X2", (k_mult_x + k_score_r) / 2, top + 19, fire,
+                     k_mult);
+        } else if (fire.entry->mult != 0) {
+            draw_pop(screen, num_line("+", fire.entry->mult, ""),
+                     (k_mult_x + k_score_r) / 2, top + 19, fire, k_mult);
+        }
     }
 }
 
@@ -740,17 +916,19 @@ void render_shop(const jr::World& world, const pse::RenderTarget& screen) {
                        sel ? 0xC2 : k_dim.r, sel ? 0xC3 : k_dim.g,
                        sel ? 0xC7 : k_dim.b);
 
-        const char* title = "OPEN A DRUM";
-        const char* body = "SWAP ONE FACE FOR ANY SYMBOL";
         if (item.kind == jr::kShopJoker) {
-            title = jr::joker_name(item.which);
-            body = jr::joker_text(item.which);
-        } else if (item.kind == jr::kShopHand) {
-            title = jr::hand_name(item.which);
-            body = "LEVEL IT UP";
+            // The icon beside the name, which is where a player learns which
+            // picture is which. The HUD row has no room to teach it, so this
+            // card has to: buying a joker is the one moment its name and its
+            // silhouette are on screen together.
+            draw_joker(screen, item.which, 10, y + 9);
         }
-        text(screen, title, 12, y + 8, item.sold ? k_dim : k_paper);
-        text(screen, body, 12, y + 22, k_dim);
+        // Every card indents past the icon column, joker or not. A ragged
+        // left edge to save 24 px on two of the four cards is a worse trade
+        // than an empty gutter on those two.
+        text(screen, shop_title(item), k_shop_text_x, y + 8,
+             item.sold ? k_dim : k_paper);
+        text(screen, shop_body(item), k_shop_text_x, y + 22, k_dim);
         text_right(screen, item.sold ? "SOLD" : num_line("G", item.cost, ""),
                    228, y + 8,
                    item.sold ? k_dim
@@ -780,11 +958,17 @@ void render_end(const jr::World& world, const pse::RenderTarget& screen) {
                  k_screen_w / 2, 90, k_paper);
     text_centred(screen, pair_line(world.banked, " OF ", world.target),
                  k_screen_w / 2, 104, k_dim);
-    int y = 130;
+    // What the run was built out of, icon beside name. Centred as one block
+    // rather than as two, so the picture and the word it belongs to sit
+    // together whatever the word is.
+    int y = 126;
     for (int i = 0; i < world.joker_count; i++) {
-        text_centred(screen, jr::joker_name(world.jokers[i]), k_screen_w / 2, y,
-                     k_select);
-        y += 12;
+        const char* name = jr::joker_name(world.jokers[i]);
+        const int block = k_joker_icon + 5 + pse::text_width(name);
+        const int x = (k_screen_w - block) / 2;
+        draw_joker(screen, world.jokers[i], x, y - 6);
+        text(screen, name, x + k_joker_icon + 5, y, k_select);
+        y += 22;
     }
 }
 
