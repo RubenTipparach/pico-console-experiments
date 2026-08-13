@@ -115,6 +115,33 @@ constexpr int k_antes = 8;
 constexpr int k_spins_per_round = 5;
 
 // ---------------------------------------------------------------------------
+// Consumables: bought once, used once, gone
+// ---------------------------------------------------------------------------
+//
+// A joker is a rule that keeps firing. A consumable is a single decision about
+// a single spin, which is a different kind of thing to own: a joker is what
+// the run IS, and a consumable is what you do about the spin in front of you.
+// Two slots, because holding a hand of them turns every spin into an
+// inventory screen and this game has 128 rows of panel.
+//
+// Some fire the moment they are used and some load the NEXT spin and pay as
+// their own line in the count. The difference is in the table: an entry with
+// chips or mult is a loaded one, and an entry with neither happens at once.
+enum Item : uint8_t {
+    kHotStreak = 0, kDoubleDown, kSpareSpin, kLuckyCoin, kPolish, kBlueprint,
+    k_items,
+};
+constexpr int k_max_items = 2;
+
+const char* item_name(uint8_t item);
+const char* item_text(uint8_t item);
+int item_cost(uint8_t item);
+// What it adds to the spin it is used before. Both zero for one that fires
+// straight away.
+int item_chips(uint8_t item);
+int item_mult(uint8_t item);
+
+// ---------------------------------------------------------------------------
 // Scoring, built as a list of steps rather than one number
 // ---------------------------------------------------------------------------
 //
@@ -183,23 +210,38 @@ enum State : uint8_t {
 // shop, which are the two moments a player is deciding what a hand is worth.
 // It returns to wherever it was opened from, so reading the hand table in the
 // shop does not cost the shop.
-constexpr int k_learn_pages = 5;
+constexpr int k_learn_pages = 6;
 
 // What the player pressed this tick. Edge triggered by the caller.
 struct Buttons {
-    bool a, b, up, down, left, right;
+    bool a, b, x, y, up, down, left, right;
     bool any;
 };
 
-enum ShopKind : uint8_t { kShopJoker = 0, kShopHand, kShopSwap };
+enum ShopKind : uint8_t { kShopJoker = 0, kShopHand, kShopItem, kShopSwap };
 
 struct ShopItem {
     uint8_t kind;
-    uint8_t which;      // joker index, or hand index
+    uint8_t which;      // joker index, hand index, or consumable index
     uint8_t cost;
     bool sold;
 };
-constexpr int k_shop_items = 4;
+constexpr int k_shop_items = 5;
+
+// Rerolling the shelf, and why it gets dearer.
+//
+// A flat price is not a decision: with gold to spare you reroll until the
+// shelf says what you wanted, which makes the shop a slot machine inside a
+// slot machine and takes the choice out of both. Climbing means the first
+// reroll is cheap enough to take and the third is a real trade against the
+// thing you could have bought with it.
+//
+// It resets each time the shop opens, rather than climbing across the whole
+// run. A price that never comes down is a feature that stops existing around
+// ante three, and a feature you cannot use is worse than one you never had.
+constexpr int k_reroll_base = 3;
+constexpr int k_reroll_step = 2;
+int reroll_cost(const struct World& w);
 
 struct World {
     uint32_t rng;
@@ -246,6 +288,14 @@ struct World {
     uint8_t joker_count;
     uint8_t hand_level[k_hands];
 
+    // The consumables held, which one is picked, and the ones already spent
+    // on the spin about to be counted.
+    uint8_t items[k_max_items];
+    uint8_t item_count;
+    uint8_t item_sel;
+    uint8_t loaded[k_max_items];
+    uint8_t loaded_count;
+
     int32_t chips;
     int32_t mult;
     uint8_t hand_index;
@@ -259,6 +309,7 @@ struct World {
     ShopItem shop[k_shop_items];
     uint8_t shop_len;
     uint8_t shop_sel;
+    uint8_t rerolls;            // this visit, which is what sets the price
 
     uint8_t learn_page;
     uint8_t learn_return;       // the state the instructions were opened from
@@ -326,5 +377,12 @@ void line_symbols(const World& w, uint8_t line, uint8_t out[k_drums]);
 // top one is a fact about how the drum turns, so it lives here.
 int facet_in_row(const World& w, int drum, int row);
 void world_open_shop(World& w);
+void world_reroll_shop(World& w);
+
+// The shop is ONE list: the cards, then REROLL, then NEXT ANTE. Naming the
+// two indices past the last card here rather than writing shop_len + 1 in the
+// renderer and in the rules keeps them agreeing about which row is which.
+uint8_t shop_reroll_index(const World& w);
+uint8_t shop_next_index(const World& w);
 
 }  // namespace jr

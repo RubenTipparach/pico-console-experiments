@@ -329,6 +329,49 @@ int main(int argc, char** argv) {
         jr::world_open_shop(shop);
         shop.shop_sel = 1;
         capture(shop, out, "preview_6_shop");
+        check(shop.shop_len == jr::k_shop_items, "the shelf is full");
+
+        // And on the reroll, which is the row that is not a thing to buy.
+        shop.shop_sel = jr::shop_reroll_index(shop);
+        capture(shop, out, "preview_12_reroll");
+        check(jr::reroll_cost(shop) == jr::k_reroll_base,
+              "the first reroll of a visit is the base price");
+
+        /* EVERY card actually draws a picture, checked on the pixels.
+         *
+         * The shop used to give one only to jokers, and the fix is a switch
+         * with a default: a kind that stopped matching would fall through to
+         * something, and a card that drew nothing at all would still lay out,
+         * still price and still sell. Nothing above this looks at the icon
+         * column, so this counts what is in it.
+         *
+         * Coloured pixels rather than any pixels, because the card's own fill
+         * is black and so is the icons' outline: only the art has colour.
+         */
+        draw(shop);
+        for (int i = 0; i < shop.shop_len; i++) {
+            int ix, iy;
+            jrr::shop_card_icon(i, ix, iy);
+            int coloured = 0;
+            for (int y = iy; y < iy + jrr::k_joker_icon; y++) {
+                for (int x = ix; x < ix + jrr::k_joker_icon; x++) {
+                    const size_t o = (static_cast<size_t>(y) * k_w + x) * 3;
+                    const int r = buffer()[o], g = buffer()[o + 1],
+                              b = buffer()[o + 2];
+                    // Not the ink the card is filled with, not the navy of a
+                    // selected one, and not the grey of its border.
+                    if (r + g + b > 60 && !(r == 0x1D && g == 0x2B && b == 0x53)) {
+                        coloured++;
+                    }
+                }
+            }
+            if (coloured < 30) {
+                std::printf("FAIL shop card %d (kind %d) drew %d coloured "
+                            "pixels where its icon goes\n", i,
+                            shop.shop[i].kind, coloured);
+                g_failures++;
+            }
+        }
     }
 
     /* A run part way in: jokers held, a hand counting, gold spent.
@@ -353,6 +396,12 @@ int main(int argc, char** argv) {
         mid.jokers[0] = jr::kTwin;
         mid.jokers[1] = jr::kUnderstudy;   // the longest name there is
         mid.jokers[2] = jr::kCollector;
+        // And both consumable slots filled, for the same reason the jokers
+        // are: a slot nothing is ever put into is a slot nobody has looked at.
+        mid.item_count = 2;
+        mid.items[0] = jr::kHotStreak;
+        mid.items[1] = jr::kBlueprint;
+        mid.item_sel = 1;
         play(mid, 1, 0);                   // pull
         play(mid, 400);                    // let it land and start counting
         capture(mid, out, "preview_7_midrun");
@@ -471,6 +520,20 @@ int main(int argc, char** argv) {
             fits(jr::joker_name(which), 32, 234, "joker page name");
             fits(jr::joker_text(which), 32, 234, "joker page text");
         }
+        for (int i = 0; i < jr::k_items; i++) {
+            const uint8_t which = static_cast<uint8_t>(i);
+            fits(jr::item_name(which), jrr::k_shop_text_x, 200,
+                 "shop item name");
+            fits(jr::item_text(which), jrr::k_shop_text_x, 228,
+                 "shop item text");
+            fits(jr::item_name(which), 32, 234, "item page name");
+            fits(jr::item_text(which), 32, 234, "item page text");
+        }
+        fits("REROLL", 33, 88, "reroll label");
+        fits("G99", 110 - pse::text_width("G99"), 110, "reroll cost");
+        fits_centred("NEXT ANTE", 180, 126, 234, "next ante");
+        fits("X SPENDS THE ONE PICKED,", 8, k_w, "item page hint");
+        fits("Y PICKS THE OTHER. TWO SLOTS,", 8, k_w, "item page hint 2");
         for (int h = 0; h < jr::k_hands; h++) {
             const uint8_t which = static_cast<uint8_t>(h);
             fits(jr::hand_name(which), 12, 200, "shop hand name");
@@ -533,7 +596,6 @@ int main(int argc, char** argv) {
         fits_centred("A DRUM LANDS ON WHAT YOU PUT ON IT", k_w / 2, 0, k_w,
                      "title 2");
         fits_centred("THE BACK ROOM", k_w / 2, 0, k_w, "shop heading");
-        fits_centred("NEXT ANTE", 120, 70, 170, "next ante");
         std::printf("text: %d strings measured against their boxes\n", measured);
     }
 
@@ -622,12 +684,13 @@ int main(int argc, char** argv) {
      */
     {
         int prev_right = -1;
-        for (int i = 0; i < jr::k_max_jokers; i++) {
+        for (int i = 0; i < jr::k_max_jokers + jr::k_max_items; i++) {
             int x, y;
-            jrr::joker_slot(i, x, y);
+            if (i < jr::k_max_jokers) jrr::joker_slot(i, x, y);
+            else jrr::item_slot(i - jr::k_max_jokers, x, y);
             // Room for the shake, which moves a slot up to three pixels.
             check(x - 3 >= 0 && x + jrr::k_slot_w + 3 <= k_w,
-                  "a joker slot is on screen, shake included");
+                  "a slot is on screen, shake included");
             check(y + jrr::k_slot_h <= k_h, "and inside the panel");
             check(jrr::k_joker_icon <= jrr::k_slot_w - 4 &&
                       jrr::k_joker_icon <= jrr::k_slot_h - 4,
@@ -635,8 +698,16 @@ int main(int argc, char** argv) {
             check(x > prev_right, "and the slots do not overlap");
             prev_right = x + jrr::k_slot_w - 1;
         }
-        std::printf("joker row: %d slots of %d, last ends at %d\n",
-                    jr::k_max_jokers, jrr::k_slot_w, prev_right);
+        // The divider needs somewhere to be, so the consumables cannot start
+        // where the jokers stop.
+        int last_joker_x, item_x, row_y;
+        jrr::joker_slot(jr::k_max_jokers - 1, last_joker_x, row_y);
+        jrr::item_slot(0, item_x, row_y);
+        check(item_x - (last_joker_x + jrr::k_slot_w) >= 6,
+              "and there is a gap wide enough to read as a divider");
+        std::printf("slot row: %d jokers + %d consumables of %d, "
+                    "last ends at %d\n", jr::k_max_jokers, jr::k_max_items,
+                    jrr::k_slot_w, prev_right);
     }
 
     // The bezel has to frame the drums rather than cover them or miss them.

@@ -10,4 +10,7 @@
 # what keeps the sheet and the enum in step.
 set(jokerreels_sprite_files
     jokers.png
+    items.png
+    extras.png
+    hands.png
 )

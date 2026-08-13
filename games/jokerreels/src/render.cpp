@@ -15,7 +15,10 @@
 #include "jokerreels/clover.hpp"
 #include "jokerreels/crown.hpp"
 #include "jokerreels/diamond.hpp"
+#include "jokerreels/extras.hpp"
 #include "jokerreels/facet.hpp"
+#include "jokerreels/hands.hpp"
+#include "jokerreels/items.hpp"
 #include "jokerreels/jokers.hpp"
 #include "jokerreels/plum.hpp"
 #include "jokerreels/seven.hpp"
@@ -206,10 +209,46 @@ const char* pair_line(int32_t a, const char* mid, int32_t b) {
  * of truncations is a row of words a player has to decode rather than
  * recognise. A silhouette is read at a glance and does not get shorter.
  */
-void draw_joker(const pse::RenderTarget& t, uint8_t joker, int x, int y) {
-    const int cell = (joker % jr::k_jokers) * k_joker_icon;
-    pse::blit_sprite(t, models::jokerreels::jokers, cell, 0, k_joker_icon,
+void draw_cell(const pse::RenderTarget& t, const pse::Sprite& sheet,
+               int index, int x, int y) {
+    pse::blit_sprite(t, sheet, index * k_joker_icon, 0, k_joker_icon,
                      k_joker_icon, x, y);
+}
+
+void draw_joker(const pse::RenderTarget& t, uint8_t joker, int x, int y) {
+    draw_cell(t, models::jokerreels::jokers, joker % jr::k_jokers, x, y);
+}
+
+void draw_item(const pse::RenderTarget& t, uint8_t item, int x, int y) {
+    draw_cell(t, models::jokerreels::items, item % jr::k_items, x, y);
+}
+
+// A hand's icon is its PATTERN: five bars, the reels that matched standing
+// tall in the group's colour and the ones that took no part sitting low in
+// grey. Generated from the hand rather than drawn, so the picture beside
+// TWO PAIR cannot be three of a kind's.
+void draw_hand(const pse::RenderTarget& t, uint8_t hand, int x, int y) {
+    draw_cell(t, models::jokerreels::hands, hand % jr::k_hands, x, y);
+}
+
+// The two shop rows that are not a thing you own.
+enum Extra : uint8_t { kExtraSwap = 0, kExtraReroll };
+
+void draw_extra(const pse::RenderTarget& t, uint8_t extra, int x, int y) {
+    draw_cell(t, models::jokerreels::extras, extra, x, y);
+}
+
+// Whatever a shop row is a picture of. Every kind has one: a card with a
+// gutter where the others have art reads as a card that failed to load rather
+// than as a card of a different sort.
+void draw_shop_icon(const pse::RenderTarget& t, const jr::ShopItem& item,
+                    int x, int y) {
+    switch (item.kind) {
+        case jr::kShopJoker: draw_joker(t, item.which, x, y); break;
+        case jr::kShopHand:  draw_hand(t, item.which, x, y); break;
+        case jr::kShopItem:  draw_item(t, item.which, x, y); break;
+        default:             draw_extra(t, kExtraSwap, x, y); break;
+    }
 }
 
 /* The line that says WHY a hand scored.
@@ -635,7 +674,7 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
         text(s, "NUMBER POPS OVER THE SIDE OF", 8, 184, k_dim);
         text(s, "THE SUM IT WENT INTO.", 8, 196, k_dim);
         text(s, "OPENING A DRUM CHANGES ITS SYMBOLS.", 8, 214, k_paper);
-    } else {
+    } else if (page == 4) {
         /* Every joker, its picture and what it does.
          *
          * This page is why the HUD row can be five pictures with no names
@@ -652,6 +691,23 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
             text(s, jr::joker_name(which), 32, y + 3, k_select);
             text(s, jr::joker_text(which), 32, y + 13, k_dim);
         }
+    } else {
+        // The consumables, and the two buttons that spend them. A joker is
+        // what the run is; one of these is what you do about the spin in front
+        // of you, and that difference is the whole reason they are a separate
+        // page rather than six more rows on the last one.
+        text_centred(s, "CONSUMABLES", k_screen_w / 2, 8, k_paper);
+        for (int i = 0; i < jr::k_items; i++) {
+            const uint8_t which = static_cast<uint8_t>(i);
+            const int y = 28 + i * 24;
+            fill(s, 4, y, k_screen_w - 5, y + 22, (i & 1) ? k_ink : k_panel);
+            draw_item(s, which, 6, y + 1);
+            text(s, jr::item_name(which), 32, y + 3, k_select);
+            text(s, jr::item_text(which), 32, y + 13, k_dim);
+        }
+        text(s, "X SPENDS THE ONE PICKED,", 8, 180, k_paper);
+        text(s, "Y PICKS THE OTHER. TWO SLOTS,", 8, 192, k_dim);
+        text(s, "AND THE SHOP SELLS THEM.", 8, 204, k_dim);
     }
 
     // Which page, as dots. Three characters of text would say the same thing
@@ -698,21 +754,35 @@ const Stats& stats() { return g_stats; }
 const char* shop_title(const jr::ShopItem& item) {
     if (item.kind == jr::kShopJoker) return jr::joker_name(item.which);
     if (item.kind == jr::kShopHand) return jr::hand_name(item.which);
+    if (item.kind == jr::kShopItem) return jr::item_name(item.which);
     return "OPEN A DRUM";
 }
 
 const char* shop_body(const jr::ShopItem& item) {
     if (item.kind == jr::kShopJoker) return jr::joker_text(item.which);
     if (item.kind == jr::kShopHand) return "LEVEL IT UP";
+    if (item.kind == jr::kShopItem) return jr::item_text(item.which);
     return "SWAP ONE FACE FOR ANY SYMBOL";
 }
 
+// Seven slots across the panel, laid out from the screen rather than typed:
+// five jokers, a gap wide enough to read as a divider, and two consumables,
+// all of it inside 240 with room for the shake at either end.
+namespace {
+constexpr int k_slot_margin = 4;
+constexpr int k_slot_pitch = 33;
+constexpr int k_slot_row_y = k_window_h + 83;
+constexpr int k_items_x = k_slot_margin + jr::k_max_jokers * k_slot_pitch + 7;
+}  // namespace
+
 void joker_slot(int index, int& x, int& y) {
-    constexpr int k_margin = 4;
-    constexpr int k_pitch =
-        (k_screen_w - 2 * k_margin - k_slot_w) / (jr::k_max_jokers - 1);
-    x = k_margin + index * k_pitch;
-    y = k_window_h + 83;
+    x = k_slot_margin + index * k_slot_pitch;
+    y = k_slot_row_y;
+}
+
+void item_slot(int index, int& x, int& y) {
+    x = k_items_x + index * k_slot_pitch;
+    y = k_slot_row_y;
 }
 
 void render_machine(const jr::World& world, const pse::RenderTarget& screen) {
@@ -862,6 +932,40 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
                    by + (k_slot_h - k_joker_icon) / 2);
     }
 
+    /* And the consumables, past a divider.
+     *
+     * Same size and same shape as a joker slot, because they answer the same
+     * question: what am I holding. The divider is what says the two halves are
+     * spent differently, a joker firing on its own and a consumable only when
+     * you press X.
+     *
+     * The picked one is ringed, and only while there is more than one to pick
+     * between: a ring round the single thing you own is decoration.
+     */
+    {
+        int dx, dy;
+        item_slot(0, dx, dy);
+        // Two pixels of chrome, the full height of a slot. One dim pixel was
+        // not a divider, it was a scratch: the row read as seven identical
+        // boxes and nothing said the last two were spent by hand.
+        fill(screen, dx - 6, dy, dx - 5, dy + k_slot_h - 1, k_chrome);
+    }
+    for (int i = 0; i < jr::k_max_items; i++) {
+        int bx, by;
+        item_slot(i, bx, by);
+        const bool has = i < world.item_count;
+        const bool picked = has && world.item_count > 1 && i == world.item_sel;
+        fill(screen, bx, by, bx + k_slot_w - 1, by + k_slot_h - 1,
+             has ? k_panel : k_ink);
+        const Rgb edge = picked ? k_select : (has ? Rgb{0xC2, 0xC3, 0xC7}
+                                                  : k_dim);
+        pse::draw_rect(screen, bx, by, k_slot_w, k_slot_h,
+                       edge.r, edge.g, edge.b);
+        if (!has) continue;
+        draw_item(screen, world.items[i], bx + (k_slot_w - k_joker_icon) / 2,
+                  by + (k_slot_h - k_joker_icon) / 2);
+    }
+
     if (world.msg) {
         text_centred(screen, world.msg, k_screen_w / 2, top + 113, k_good);
     } else if (world.state == jr::kCount) {
@@ -898,6 +1002,18 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
  * a rectangle drawn there is not. It also keeps game.cpp to the one thing only
  * the SDK can do, which is text.
  */
+// Five cards and the reroll row, which is what 240 rows holds once the header
+// has taken 30 of them. Named here so the preview can measure a card rather
+// than assume one.
+constexpr int k_card_y0 = 32;
+constexpr int k_card_h = 32;
+constexpr int k_card_pitch = 34;
+
+void shop_card_icon(int index, int& x, int& y) {
+    x = 10;
+    y = k_card_y0 + index * k_card_pitch + 6;
+}
+
 void render_shop(const jr::World& world, const pse::RenderTarget& screen) {
     fill(screen, 0, 0, k_screen_w - 1, k_screen_h - 1, k_ink);
     fill(screen, 0, 0, k_screen_w - 1, 28, k_panel);
@@ -909,39 +1025,58 @@ void render_shop(const jr::World& world, const pse::RenderTarget& screen) {
 
     for (int i = 0; i < world.shop_len; i++) {
         const jr::ShopItem& item = world.shop[i];
-        const int y = 34 + i * 42;
+        const int y = k_card_y0 + i * k_card_pitch;
         const bool sel = i == world.shop_sel;
-        fill(screen, 6, y, k_screen_w - 7, y + 37, sel ? k_panel : k_ink);
-        pse::draw_rect(screen, 6, y, k_screen_w - 12, 38,
+        fill(screen, 6, y, k_screen_w - 7, y + k_card_h - 1,
+             sel ? k_panel : k_ink);
+        pse::draw_rect(screen, 6, y, k_screen_w - 12, k_card_h,
                        sel ? 0xC2 : k_dim.r, sel ? 0xC3 : k_dim.g,
                        sel ? 0xC7 : k_dim.b);
 
-        if (item.kind == jr::kShopJoker) {
-            // The icon beside the name, which is where a player learns which
-            // picture is which. The HUD row has no room to teach it, so this
-            // card has to: buying a joker is the one moment its name and its
-            // silhouette are on screen together.
-            draw_joker(screen, item.which, 10, y + 9);
-        }
-        // Every card indents past the icon column, joker or not. A ragged
-        // left edge to save 24 px on two of the four cards is a worse trade
-        // than an empty gutter on those two.
-        text(screen, shop_title(item), k_shop_text_x, y + 8,
+        // EVERY card carries a picture, whatever kind it is. It was jokers
+        // only, and a card with a gutter where the others have art reads as
+        // one that failed to load rather than as one of a different sort.
+        // A hand's icon is its own pattern, so the shelf teaches the shape it
+        // is selling a level in.
+        draw_shop_icon(screen, item, 10, y + 6);
+        text(screen, shop_title(item), k_shop_text_x, y + 5,
              item.sold ? k_dim : k_paper);
-        text(screen, shop_body(item), k_shop_text_x, y + 22, k_dim);
+        text(screen, shop_body(item), k_shop_text_x, y + 17, k_dim);
         text_right(screen, item.sold ? "SOLD" : num_line("G", item.cost, ""),
-                   228, y + 8,
+                   228, y + 5,
                    item.sold ? k_dim
                              : (world.gold >= item.cost ? k_select : k_warn));
     }
 
-    const int y = 34 + world.shop_len * 42;
-    const bool sel = world.shop_sel >= world.shop_len;
-    fill(screen, 70, y, 169, y + 17, sel ? k_cabinet : k_panel);
-    pse::draw_rect(screen, 70, y, 100, 18,
-                   sel ? k_good.r : k_dim.r, sel ? k_good.g : k_dim.g,
-                   sel ? k_good.b : k_dim.b);
-    text_centred(screen, "NEXT ANTE", 120, y + 6, sel ? k_paper : k_dim);
+    /* The two rows that are not a thing to buy.
+     *
+     * REROLL beside NEXT ANTE, both selectable, both part of the same one
+     * dimensional list the cards are in: pressing down off the last card
+     * reaches the reroll and pressing down again reaches the way out. A
+     * separate axis for "the buttons" would be a second thing to learn on a
+     * screen that already has one.
+     */
+    const int y = k_card_y0 + world.shop_len * k_card_pitch + 2;
+    const bool on_reroll = world.shop_sel == jr::shop_reroll_index(world);
+    const bool on_next = world.shop_sel == jr::shop_next_index(world);
+    const int cost = jr::reroll_cost(world);
+    const bool afford = world.gold >= cost;
+
+    fill(screen, 6, y, 114, y + 21, on_reroll ? k_panel : k_ink);
+    pse::draw_rect(screen, 6, y, 109, 22,
+                   on_reroll ? k_select.r : k_dim.r,
+                   on_reroll ? k_select.g : k_dim.g,
+                   on_reroll ? k_select.b : k_dim.b);
+    draw_extra(screen, kExtraReroll, 9, y + 1);
+    text(screen, "REROLL", 33, y + 7, on_reroll ? k_paper : k_dim);
+    text_right(screen, num_line("G", cost, ""), 110, y + 7,
+               afford ? k_select : k_warn);
+
+    fill(screen, 126, y, 234, y + 21, on_next ? k_cabinet : k_panel);
+    pse::draw_rect(screen, 126, y, 109, 22,
+                   on_next ? k_good.r : k_dim.r, on_next ? k_good.g : k_dim.g,
+                   on_next ? k_good.b : k_dim.b);
+    text_centred(screen, "NEXT ANTE", 180, y + 7, on_next ? k_paper : k_dim);
 }
 
 void render_end(const jr::World& world, const pse::RenderTarget& screen) {

@@ -91,11 +91,20 @@ void render_end(const jr::World& world, const pse::RenderTarget& screen);
 // appears: the HUD row, its shop card, the instructions, the end screen.
 constexpr int k_joker_icon = 20;
 
-// Where joker slot `index` sits on the panel, and how big its box is. Exposed
-// for the same reason the text measurements are: an icon that does not fit the
-// box it is drawn in should fail a check rather than be noticed on a device.
+/* Where a slot sits on the panel, and how big its box is.
+ *
+ * One row, five jokers and then two consumables past a divider. They are the
+ * same size and the same shape because they are the same question, "what am I
+ * holding", and the divider is what says the two halves are answered
+ * differently: a joker fires on its own and a consumable is spent.
+ *
+ * Exposed for the same reason the text measurements are: a row that ran off
+ * the panel, or an icon too big for its box, should fail a check rather than
+ * be noticed on a device.
+ */
 void joker_slot(int index, int& x, int& y);
-constexpr int k_slot_w = 44;
+void item_slot(int index, int& x, int& y);
+constexpr int k_slot_w = 26;
 constexpr int k_slot_h = 26;
 
 // Where a shop card's text starts, past the icon column. Exposed so the string
@@ -107,6 +116,11 @@ constexpr int k_shop_text_x = 34;
 // still be a card, at the right price, in the right place.
 const char* shop_title(const jr::ShopItem& item);
 const char* shop_body(const jr::ShopItem& item);
+
+// Where shop card `index` draws its icon. Exposed so a check can look at the
+// pixels rather than trust that something was blitted there: a card that
+// stopped drawing its picture still lays out, still prices, still sells.
+void shop_card_icon(int index, int& x, int& y);
 
 // Where the three visible rows land vertically, in window rows, and how tall
 // each is. Projected rather than measured off a screenshot, so the payline

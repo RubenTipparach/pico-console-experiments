@@ -50,6 +50,8 @@ void game_update(uint32_t time) {
     jr::Buttons btn{};
     btn.a = buttons.pressed & Button::A;
     btn.b = buttons.pressed & Button::B;
+    btn.x = buttons.pressed & Button::X;
+    btn.y = buttons.pressed & Button::Y;
     btn.up = buttons.pressed & Button::DPAD_UP;
     btn.down = buttons.pressed & Button::DPAD_DOWN;
     btn.left = buttons.pressed & Button::DPAD_LEFT;
