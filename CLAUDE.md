@@ -387,6 +387,13 @@ source when a real model would do.
     and rare, and it exists because the alternative is one enormous
     `objective`, which is a wall of text in the panel a player meets first.
     Do not use it for a game whose controls already explain it.
+  - A rule can carry a picture, at `games/<slug>/tutorial/<heading>.svg`,
+    inlined into that panel. Adding one is adding a file. Where the picture
+    states NUMBERS, generate it from the game's own tables rather than typing
+    them: a diagram that survives a rebalance still draws, still looks right,
+    and teaches the wrong game. `gen_jokerreels_diagrams.py` parses them out
+    of `sim.cpp`, and its worked example is put through the real scorer by the
+    preview harness so the picture cannot show a sum the game does not do.
   - Controls are `"key: what it does"`. A key on its own is noise; the half
     after the colon is the whole point. A line with no colon is kept whole,
     for what a game needs to say that is not one button.

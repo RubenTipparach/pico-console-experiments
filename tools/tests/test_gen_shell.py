@@ -131,6 +131,57 @@ def test_no_rules_is_the_normal_case():
     check(html.count("data-panel") == 2, "objective and controls, and no more")
 
 
+def test_a_rule_can_carry_a_picture():
+    """Some rules are shapes and sums, and a paragraph is the worst way to hand
+    somebody either. A picture is a file named after the rule's own heading."""
+    check(gen_shell.diagram_name("Chips and mult") == "chips-and-mult",
+          "a heading names its file")
+    check(gen_shell.diagram_name("Paylines") == "paylines",
+          "and a one word heading is just the word")
+
+    tmp = tempfile.mkdtemp()
+    try:
+        game_dir = write_game(os.path.join(tmp, "testgame"),
+                              BASE + 'rules:\n  - "Chips and mult: A sum."\n'
+                              '  - "Hands: No picture for this one."\n')
+        os.makedirs(os.path.join(game_dir, "tutorial"))
+        with open(os.path.join(game_dir, "tutorial", "chips-and-mult.svg"),
+                  "w", encoding="utf-8") as handle:
+            handle.write('<?xml version="1.0"?>\n'
+                         '<svg xmlns="http://www.w3.org/2000/svg" '
+                         'viewBox="0 0 10 10"><rect id="picture"/></svg>')
+        html = gen_shell.render_panels(Game(game_dir))
+        check('<rect id="picture"/>' in html, "the picture is inlined")
+        check("<?xml" not in html,
+              "and its XML declaration is stripped, or it prints as text")
+        check(html.count("<svg") == 1,
+              "the rule with no picture gets none rather than a blank figure")
+        # The picture belongs to its own rule, not to whichever panel is first.
+        chips = html[html.index("Chips and mult"):html.index("Hands")]
+        check("<svg" in chips, "and it lands in the panel whose heading it is")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_every_picture_is_claimed_by_a_rule():
+    """A picture is found by its rule's heading, so renaming a heading orphans
+    the file and the panel silently loses its diagram.
+
+    Walked over the real repo, like the objective check below: nothing else
+    would notice, because a missing picture renders as a game that never had
+    one. An orphan here is a build failure instead.
+    """
+    for game in discover_games():
+        rules = game.manifest.get("rules") or []
+        wanted = {gen_shell.diagram_name(str(r).partition(":")[0])
+                  for r in rules if str(r).strip()}
+        for name in gen_shell.diagrams_of(game.directory):
+            check(name in wanted,
+                  "%s ships tutorial/%s.svg, which no rule heading claims "
+                  "(headings: %s)" % (game.slug, name,
+                                      ", ".join(sorted(wanted)) or "none"))
+
+
 def test_controls_split_across_panels():
     lines = "".join('  - "%d: does a thing"\n' % i for i in range(9))
     html = panels_for(BASE + "objective: \"Go.\"\ncontrols:\n" + lines)
@@ -298,6 +349,8 @@ def main():
     test_rules_get_their_own_panels()
     test_a_rule_without_a_colon_still_gets_a_panel()
     test_no_rules_is_the_normal_case()
+    test_a_rule_can_carry_a_picture()
+    test_every_picture_is_claimed_by_a_rule()
     test_controls_split_across_panels()
     test_no_arrows_for_a_single_panel()
     test_the_keyboard_keys_come_from_the_pad()

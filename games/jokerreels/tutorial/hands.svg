@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 94" role="img" width="100%" style="height:auto;display:block">
+<title>A five by three grid where two lines pay: middle makes three of a kind, top makes pair</title>
+<defs><image id="s-cherry" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAYElEQVR42mP4TyJgwC6KCghogKp6YgZF+DUgVBNjA4pqmB6cfsBiNjY9DFhVYxVBaMA0G5edCMH/DL5whOJdrOIg/scXmHK4xFGMQdeATZwOGkjzNGZSQw9WVHEGUpM3AMe2dky/+4EiAAAAAElFTkSuQmCC" style="image-rendering:pixelated"/><image id="s-bell" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAXklEQVR42mP4TyJgwCKEBAhrgKpbDEJY9TBgUf1GHY4w9aBrQFYN14NdA6bxWC1hQDf+4wv8ljDgNx7TEgaCxqNZwkDQeDRLGIhRjawHEU3EILIA1rQEN48GiY8gAACrxv4k+AYtJwAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/><image id="s-plum" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAXklEQVR42mP4TyJgwC6KCghogKp6YgZFeDQgzASrw2cDXK5ONRgNoWljgKvGVIqpDaEBIvr/4wsgwqMH4Ra4BoKWEHYMFj0kayBSDyKwiNdAbrCSHHG40hyxiQ8/AAD6gm/n9SnGkgAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/><image id="s-bar" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAN0lEQVR42mP4TyJgoL0GcsD/jy+IRAgNstrBBBG6BvxmY9eAx2wqaSDNSaR5mrRgJTHWBl3iAwCi1vIADb482wAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/><image id="s-clover" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAW0lEQVR42mP4TyJgQLCQAC4RhAao8BMzEEIGSCIIDShyyHowRJA0IMvhQpRpIKgH2UmE9RD2NH4bBsTT+OMBS0y3B4IQrpjGTDkIDbjSEkp6RNKAL7XiSbbIAABTV2hST087eAAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/><image id="s-seven" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAATklEQVR42mP4TyJgAGGiAULD/8WEEZ014HQ0kmqEBixBgUM1dg14VGPRgF81ugaCqrFowK8aRQOm8TiTBvHG49OAL/EhOwk5nRHQQCQAAATo62jshPXIAAAAAElFTkSuQmCC" style="image-rendering:pixelated"/><image id="s-diamond" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAWElEQVR42mP4TyJgwCKEBAhrgKjTXPsfiLDqYcClGpceBjTV/z++ACI8ehjQzEZTjamHAatL8OiBasCvGq6HXBsI6kH3A3492EOJnHggJ6bJSUvkpFb8AABoWhd+bOZ4zwAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/><image id="s-crown" width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAUklEQVR42mP4TyJgAGEkQJgLEfr/Rh2I4CrwcdGEoCbh4GLXAGFjimDRABVF1YDCxtSABw2MBgZfEEJWhySCEi1E2gBTvZhYRK4G0gA5qZUkAAA2BbYyTOqqJQAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/></defs>
+<rect x="14" y="8" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-seven" x="16" y="10" width="20" height="20"/>
+<rect x="40" y="8" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-seven" x="42" y="10" width="20" height="20"/>
+<rect x="66" y="8" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-diamond" x="68" y="10" width="20" height="20"/>
+<rect x="92" y="8" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-plum" x="94" y="10" width="20" height="20"/>
+<rect x="118" y="8" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-bar" x="120" y="10" width="20" height="20"/>
+<rect x="14" y="34" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-bell" x="16" y="36" width="20" height="20"/>
+<rect x="40" y="34" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-bell" x="42" y="36" width="20" height="20"/>
+<rect x="66" y="34" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-bell" x="68" y="36" width="20" height="20"/>
+<rect x="92" y="34" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-crown" x="94" y="36" width="20" height="20"/>
+<rect x="118" y="34" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-plum" x="120" y="36" width="20" height="20"/>
+<rect x="14" y="60" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-clover" x="16" y="62" width="20" height="20"/>
+<rect x="40" y="60" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-plum" x="42" y="62" width="20" height="20"/>
+<rect x="66" y="60" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-diamond" x="68" y="62" width="20" height="20"/>
+<rect x="92" y="60" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-bar" x="94" y="62" width="20" height="20"/>
+<rect x="118" y="60" width="24" height="24" fill="currentColor" opacity="0.10"/>
+<use href="#s-cherry" x="120" y="62" width="20" height="20"/>
+<polyline points="26,46 52,46 78,46 104,46 130,46" fill="none" stroke="#ffb300" stroke-width="2"/>
+<rect x="14" y="34" width="24" height="24" fill="none" stroke="#ffb300" stroke-width="2"/>
+<rect x="40" y="34" width="24" height="24" fill="none" stroke="#ffb300" stroke-width="2"/>
+<rect x="66" y="34" width="24" height="24" fill="none" stroke="#ffb300" stroke-width="2"/>
+<rect x="158" y="13" width="8" height="8" fill="#ffb300"/>
+<text x="171.0" y="20.0" textLength="32.4" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9px;font-weight:700" fill="#ffb300" text-anchor="start">MIDDLE</text>
+<text x="171.0" y="30.0" textLength="72" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:8px;font-weight:400" fill="#7a7590" text-anchor="start">THREE OF A KIND</text>
+<polyline points="26,20 52,20 78,20 104,20 130,20" fill="none" stroke="#8b7fd4" stroke-width="2"/>
+<rect x="14" y="8" width="24" height="24" fill="none" stroke="#8b7fd4" stroke-width="2"/>
+<rect x="40" y="8" width="24" height="24" fill="none" stroke="#8b7fd4" stroke-width="2"/>
+<rect x="158" y="31" width="8" height="8" fill="#8b7fd4"/>
+<text x="171.0" y="38.0" textLength="16.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:9px;font-weight:700" fill="#8b7fd4" text-anchor="start">TOP</text>
+<text x="171.0" y="48.0" textLength="19.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:8px;font-weight:400" fill="#7a7590" text-anchor="start">PAIR</text>
+</svg>

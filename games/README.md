@@ -88,6 +88,15 @@ gamepad in `web/shell.html`, which is what those buttons actually dispatch. Do
 not write `Z` in a control string: the console has no Z, and the mapping would
 then have two homes to drift between.
 
+A rule can carry a **picture**, at `games/<slug>/tutorial/<heading>.svg`, and
+"Chips and mult" looks for `chips-and-mult.svg`. Adding one is adding a file:
+nothing is listed anywhere, and the SVG is inlined into the panel rather than
+linked, so it is already there when the page opens and it inherits the panel's
+colour through `currentColor`. Some rules are shapes and sums, and a paragraph
+is the worst way to hand somebody either. `test_gen_shell.py` fails on an SVG
+that no rule heading claims, so renaming a heading breaks the build instead of
+quietly dropping its diagram.
+
 `rules` is optional and most games should not have it. Knowing what the buttons
 do is enough to play a lander, and a panel per rule on a game that has none is
 padding. It exists for a game with a SCORING SYSTEM: Joker Reels asks a player

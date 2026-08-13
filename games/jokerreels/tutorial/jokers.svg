@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 112" role="img" width="100%" style="height:auto;display:block">
+<title>A joker adds to one side of the sum: +30 chips or +4 mult</title>
+<defs><clipPath id="jcell"><rect x="0" y="0" width="20" height="20"/></clipPath><image id="jsheet" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAAAUCAYAAAAKlDZOAAACPklEQVR42u2aTU7EMAyFexGWCCH2cws2zH24EOISsJiLsGDBhhMYtahVf+LEz7HTZKaRvJhRmqbOl+c4Sdcd5ZYLMdZk52tx3t5OJND29Dt9fF4W1gqAQ0fp52GwnQZ94zwHJ2rAobeXk8gU/Ryeeb0/D2bg97m/LHxHpYRhgm8FYdEJkACQvN6RaN8VwBG+FYQ1APgvSr/frFlCuCeAUfgMIZS0zyoA0D/SqF/fhkIFg6rE9AluOwbfCkIbeU2EYOnHIB8tGlwBhJIwgQI4/Pf4TpABg7xQvhFAUAXFvlMsZ1wB3Ax8AhiKqCQp6lk7MAWECkAUvsA7ReqXoYJNKmAMvmSCEoELqoeqX2KiuCigJ4Br+DJUkJ3UuUuWEbK7p/MCuvlv9B0ofF0MqjVc0noIYJqwaQ0gdc+DrUGbfxsAIHEAZqwFLQDcikkGgGLFkczWydH9SyUAJuoBIGSrVo0AcvDN28tQQRTAoIDkhmBtSGsewMpDMCkAJG8AubEqAqCgsy2EYPc1YPd1miwHQA6+EIARFRQldsJn/RRwrJQLYAtJiHcWbAAgpQCMJCMU2XCGAZRGDxMAjfaHqt+GaSALFsEnzIg9AAxmwX3CwVmpENzCRrTHSYglgGQAIHFHbgCAhAJYwxrwVo/iTAFE4AsZl5yhG9Go4GjPglsCsNbLCJZHceYAhkBL+U/hTxbCVBslQ9s1X8eCIIwtS4wBhMc4Y6zVR3reFyldVLC7zgupZGQlb+sc5Sjmk8S9/AEqkRTH009WjwAAAABJRU5ErkJggg==" style="image-rendering:pixelated"/></defs>
+<rect x="44" y="6" width="52" height="21" fill="none" stroke="#5bc8ff" stroke-width="1.5"/>
+<text x="70" y="21" textLength="19.8" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:700" fill="#5bc8ff" text-anchor="middle">+30</text>
+<path d="M70 27 L 70 39" fill="none" stroke="#5bc8ff" stroke-width="1.5" opacity="0.6"/>
+<rect x="188" y="6" width="52" height="21" fill="none" stroke="#ff4d7d" stroke-width="1.5"/>
+<text x="214" y="21" textLength="13.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:700" fill="#ff4d7d" text-anchor="middle">+4</text>
+<path d="M214 27 L 214 39" fill="none" stroke="#ff4d7d" stroke-width="1.5" opacity="0.6"/>
+<text x="44" y="45" textLength="24" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:8px;font-weight:400" fill="#7a7590" text-anchor="start">chips</text>
+<text x="44" y="58" textLength="25.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700" fill="#5bc8ff" text-anchor="start">220</text>
+<text x="126" y="58" textLength="8.4" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:400" fill="currentColor" text-anchor="start">x</text>
+<text x="188" y="45" textLength="19.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:8px;font-weight:400" fill="#7a7590" text-anchor="start">mult</text>
+<text x="188" y="58" textLength="8.4" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700" fill="#ff4d7d" text-anchor="start">6</text>
+<text x="314" y="58" textLength="43.2" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:700" fill="#ffb300" text-anchor="end">= 1320</text>
+<g transform="translate(59,74)" clip-path="url(#jcell)"><use href="#jsheet" x="0" y="0"/></g>
+<g transform="translate(85,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-20" y="0"/></g>
+<g transform="translate(111,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-40" y="0"/></g>
+<g transform="translate(137,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-60" y="0"/></g>
+<g transform="translate(163,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-80" y="0"/></g>
+<g transform="translate(189,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-100" y="0"/></g>
+<g transform="translate(215,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-120" y="0"/></g>
+<g transform="translate(241,74)" clip-path="url(#jcell)"><use href="#jsheet" x="-140" y="0"/></g>
+<text x="160" y="106" textLength="148.8" lengthAdjust="spacing" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:8px;font-weight:400" fill="#7a7590" text-anchor="middle">8 of them, 5 slots to hold them</text>
+</svg>

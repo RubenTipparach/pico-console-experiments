@@ -27,6 +27,7 @@ GAME = os.path.join(REPO_ROOT, "games", "jokerreels")
 
 sys.path.insert(0, TOOLS)
 
+import gen_jokerreels_diagrams as diagrams  # noqa: E402
 import gen_jokerreels_jokers as jokers  # noqa: E402
 import gen_jokerreels_symbols as gen  # noqa: E402
 
@@ -177,6 +178,63 @@ if icon_src:
     check(int(icon_src.group(1)) == jokers.CELL,
           "render.hpp cuts the sheet at %s, the sheet is drawn at %d"
           % (icon_src.group(1), jokers.CELL))
+
+
+# ---------------------------------------------------------------------------
+# The how to play diagrams, which are the art that carries NUMBERS.
+#
+# A symbol that is drawn wrong looks wrong. A diagram that says TWO PAIR pays
+# 45 chips at 4 mult after somebody rebalanced the ladder looks exactly right
+# and teaches the wrong game, on the page a player reads before their first
+# spin. So none of those numbers is typed into the generator: they are parsed
+# out of sim.cpp and drawn from there, and this fails when the committed SVG
+# stops being what the generator would draw today.
+# ---------------------------------------------------------------------------
+
+tables = diagrams.parse_tables()
+for name, draw in sorted(diagrams.DIAGRAMS.items()):
+    path = os.path.join(GAME, "tutorial", "%s.svg" % name)
+    check(os.path.isfile(path), "tutorial/%s.svg is committed" % name)
+    if not os.path.isfile(path):
+        continue
+    with open(path, encoding="utf-8") as handle:
+        committed = handle.read()
+    check(committed == draw(tables),
+          "tutorial/%s.svg is what gen_jokerreels_diagrams.py draws today "
+          "(rerun it)" % name)
+
+# The worked example, bound to the C++ that proves it.
+#
+# The generator computes the example's hands and its total by reimplementing
+# the SHAPE of score() in Python, which keeps the numbers right when the ladder
+# moves and does nothing about the shape being wrong. preview.cpp puts the same
+# grid through the real scorer. That is only worth anything while the two grids
+# are the same grid, which is what this checks.
+preview = read(GAME, "tests", "preview.cpp")
+grid_src = re.search(
+    r"const uint8_t example\[jr::k_drums\]\[jr::k_rows\] = \{(.*?)\};",
+    preview, re.S)
+check(grid_src is not None, "preview.cpp has the worked example grid")
+if grid_src:
+    reels = [re.findall(r"jr::k([A-Z][a-z]+)", row)
+             for row in re.findall(r"\{([^{}]*)\}", grid_src.group(1))]
+    # preview.cpp lists a reel at a time, top to bottom; the generator lists a
+    # row at a time, left to right. Same grid, read the other way round.
+    from_preview = [[reel[row].upper() for reel in reels]
+                    for row in range(len(reels[0]))] if reels else []
+    check(from_preview == diagrams.EXAMPLE,
+          "the grid on the page and the grid the rules score are the same:\n"
+          "   preview.cpp: %s\n     generator: %s"
+          % (from_preview, diagrams.EXAMPLE))
+
+_, _, mult, pile, total = diagrams.score_example(tables)
+for field, value in (("pile", pile), ("mult", mult), ("total", total)):
+    found = re.search(r"const int k_example_%s = (\d+);" % field, preview)
+    check(found is not None, "preview.cpp names the example's %s" % field)
+    if found:
+        check(int(found.group(1)) == value,
+              "the picture's %s is %d, preview.cpp checks %s"
+              % (field, value, found.group(1)))
 
 if failures:
     print("\n%d check(s) failed" % len(failures))

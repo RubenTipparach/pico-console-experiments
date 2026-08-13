@@ -537,6 +537,83 @@ int main(int argc, char** argv) {
         std::printf("text: %d strings measured against their boxes\n", measured);
     }
 
+    /* The worked example on the web page, put through the REAL scorer.
+     *
+     * tools/gen_jokerreels_diagrams.py draws a grid, names the lines that pay
+     * and shows the sum they make, and it works all of that out itself: it
+     * parses sim.cpp's tables and reimplements the shape of score() in Python.
+     * That keeps the NUMBERS honest when the ladder is rebalanced and does
+     * nothing at all about the SHAPE. A diagram of a sum this game does not do
+     * would be the most convincing wrong thing on the page, because it is the
+     * one thing a player would take on trust.
+     *
+     * So the same grid goes through the same path a real spin takes, and the
+     * total is checked against what the picture claims. The grid below and the
+     * generator's EXAMPLE are bound together by
+     * tools/tests/test_jokerreels_art.py, which fails if they drift.
+     */
+    {
+        // gen_jokerreels_diagrams.py's EXAMPLE, per reel: top, payline,
+        // bottom. Two lines pay and they pay differently, which is what lets
+        // the picture show the best line carrying the mult while the other
+        // one only adds its chips.
+        const uint8_t example[jr::k_drums][jr::k_rows] = {
+            {jr::kSeven,   jr::kBell,  jr::kClover},
+            {jr::kSeven,   jr::kBell,  jr::kPlum},
+            {jr::kDiamond, jr::kBell,  jr::kDiamond},
+            {jr::kPlum,    jr::kCrown, jr::kBar},
+            {jr::kBar,     jr::kPlum,  jr::kCherry},
+        };
+        const int k_example_pile = 220;
+        const int k_example_mult = 6;
+        const int k_example_total = 1320;
+
+        jr::World w;
+        jr::world_init(w, 8123u);
+        to_table(w);
+        play(w, 1, 0);                     // pull
+        play(w, 700);                      // let it land and count out
+        force_grid(w, example);
+        w.state = jr::kSpin;
+        w.spin_ticks = 9999;               // every auto stop already passed
+        for (int d = 0; d < jr::k_drums; d++) {
+            w.spinning[d] = true;
+            w.stopped_at[d] = -1;          // no speed bonus, so the tally is
+        }                                  // the paying lines and nothing else
+        play(w, 1);
+        check(w.state == jr::kCount, "the example grid was scored");
+
+        int lines = 0, pile = 0, mult = 0;
+        for (int i = 0; i < w.tally_len; i++) {
+            const jr::TallyEntry& e = w.tally[i];
+            check(!e.joker, "the example run holds no jokers");
+            check(e.line != jr::k_no_line, "so every entry is a payline");
+            lines++;
+            pile += e.chips;
+            mult += e.mult;
+        }
+        check(lines == 2, "exactly two lines pay, as the picture shows");
+        check(w.hand_index == jr::kThree,
+              "and the best of them is three of a kind");
+        if (pile != k_example_pile || mult != k_example_mult) {
+            std::printf("FAIL the picture says %d x %d, the rules say %d x %d\n",
+                        k_example_pile, k_example_mult, pile, mult);
+            g_failures++;
+        }
+
+        for (int guard = 0; guard < 900 && w.state == jr::kCount; guard++) {
+            play(w, 1);
+        }
+        check(w.state != jr::kCount, "the count finished");
+        if (w.scored != k_example_total) {
+            std::printf("FAIL the picture says the spin is worth %d, the rules "
+                        "paid %d\n", k_example_total, w.scored);
+            g_failures++;
+        }
+        std::printf("worked example: %d x %d = %d, scored by the rules\n",
+                    pile, mult, w.scored);
+    }
+
     /* The joker row: five icons, on screen, and not on top of each other.
      *
      * The same measure-it rule the strings get, applied to a picture. A slot

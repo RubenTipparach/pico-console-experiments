@@ -401,6 +401,22 @@
 
   #tutorial p { margin: 0; color: var(--ink); line-height: 1.35; }
 
+  /* A rule's picture, inlined by tools/gen_shell.py from the game's own
+     tutorial/ directory. Some rules are shapes and sums, and a paragraph is
+     the worst way to hand somebody either.
+
+     `color` rather than a palette of its own: the diagrams draw their grids
+     and rules with currentColor and reserve real colours for the things that
+     mean something, so one file is right in whatever the page turns out to
+     be. The width is capped because a diagram authored at 320 wide blown up
+     to a desktop panel is a diagram with four pixel strokes. */
+  #tutorial .diagram {
+    margin: 0.55rem auto 0;
+    max-width: 20rem;
+    color: var(--ink);
+  }
+  #tutorial .diagram svg { width: 100%; height: auto; display: block; }
+
   #tutorial .keys {
     margin: 0;
     padding: 0;
