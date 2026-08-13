@@ -394,7 +394,7 @@ void test_a_run_is_finite_and_a_shop_is_a_choice() {
     jr::World w = started(3u);
     // The opening target is about one spin of the hands off floor, which is
     // measured in test_the_floor_loses_and_skill_wins rather than assumed.
-    check(jr::target_for_ante(1) == 4000, "the first ante wants 4000");
+    check(jr::target_for_ante(1) == 2500, "the first ante wants 2500");
     check(jr::target_for_ante(8) > jr::target_for_ante(7) * 3 / 2,
           "and each one wants half again more");
 
@@ -789,17 +789,134 @@ void test_a_consumable_is_spent_once() {
     }
 }
 
+/* Where a reel comes to rest is a DRAW.
+ *
+ * It was not one, and nothing noticed for the life of the game. Every drum
+ * started at the same angle, turned at the same rate and stopped itself on a
+ * fixed tick count, so a hands off spin landed on the same facets in every run
+ * ever played: over 200 seeds, drum 0 stopped on facet 9 two hundred times.
+ * The seed chose what was PAINTED on the reels and had no say in where they
+ * stopped.
+ *
+ * The strips made it worse rather than covering it: they were built as a ramp,
+ * `i % 6` with a chance of a bump, and every drum got the same one, so two
+ * drums carried the same symbol at the same strip position 63% of the time
+ * against about 18% by chance. A fixed offset into five copies of one ramp is
+ * a machine with a handful of outcomes.
+ *
+ * Both halves are checked, because fixing either one alone would leave the
+ * other still able to flatten the game.
+ */
+void test_where_a_reel_stops_is_a_draw() {
+    // 1. The landing varies with the seed.
+    const int seeds = 200;
+    bool seen[jr::k_drums][jr::k_facets] = {{false}};
+    for (int i = 0; i < seeds; i++) {
+        jr::World w = started(static_cast<uint32_t>(i + 1) * 2654435761u);
+        jr::world_tick(w, press_a());               // pull, then hands off
+        for (int t = 0; t < 900 && w.state == jr::kSpin; t++) play(w, 1);
+        if (w.state != jr::kCount) continue;
+        for (int d = 0; d < jr::k_drums; d++) {
+            seen[d][jr::front_facet(w, d)] = true;
+        }
+    }
+    for (int d = 0; d < jr::k_drums; d++) {
+        int distinct = 0;
+        for (int f = 0; f < jr::k_facets; f++) if (seen[d][f]) distinct++;
+        if (distinct < 8) {
+            std::printf("  drum %d stopped on only %d of %d facets across %d "
+                        "seeds\n", d, distinct, jr::k_facets, seeds);
+        }
+        check(distinct >= 8, "a drum's landing varies with the seed");
+    }
+
+    // 2. And within one run, spin to spin.
+    {
+        jr::World w = started(1234u);
+        uint8_t prev[jr::k_drums][jr::k_rows];
+        std::memset(prev, 0xFF, sizeof(prev));
+        int spins = 0, repeats = 0;
+        for (int s = 0; s < 5 && w.state == jr::kIdle; s++) {
+            jr::world_tick(w, press_a());
+            for (int t = 0; t < 900 && w.state == jr::kSpin; t++) play(w, 1);
+            if (w.state != jr::kCount) break;
+            spins++;
+            if (std::memcmp(prev, w.grid, sizeof(prev)) == 0) repeats++;
+            std::memcpy(prev, w.grid, sizeof(prev));
+            for (int t = 0; t < 4000 && w.state == jr::kCount; t++) play(w, 1);
+            // Kept at the table rather than let the run end. A spin averages
+            // more than the opening ante wants, so without this the second
+            // pull never happens and the check passes by measuring one spin.
+            w.banked = 0;
+            w.spins = jr::k_spins_per_round;
+            if (w.state == jr::kCleared) w.state = jr::kIdle;
+        }
+        check(spins >= 3, "the run got several spins in");
+        check(repeats == 0, "and no spin landed the grid the last one did");
+    }
+
+    // 3. The drums are not five copies of one reel.
+    {
+        int same = 0, total = 0;
+        for (int i = 0; i < 200; i++) {
+            jr::World w;
+            jr::world_init(w, static_cast<uint32_t>(i + 1) * 7919u);
+            for (int a2 = 0; a2 < jr::k_drums; a2++) {
+                for (int b2 = a2 + 1; b2 < jr::k_drums; b2++) {
+                    for (int e = 0; e < w.strip_len[a2]; e++) {
+                        total++;
+                        if (w.strip[a2][e] == w.strip[b2][e]) same++;
+                    }
+                }
+            }
+        }
+        const int percent = total ? 100 * same / total : 0;
+        std::printf("  two drums match at the same strip position %d%% of the "
+                    "time\n", percent);
+        check(percent < 30,
+              "two drums are not the same reel in the same order");
+    }
+
+    // 4. Every opening reel is the same ODDS, whatever order it is in: a reel
+    //    a player cannot reason about is not a reel they can aim at.
+    {
+        jr::World w;
+        jr::world_init(w, 99u);
+        int first[jr::k_symbols] = {0};
+        for (int d = 0; d < jr::k_drums; d++) {
+            int count[jr::k_symbols] = {0};
+            for (int e = 0; e < w.strip_len[d]; e++) count[w.strip[d][e]]++;
+            for (int sym = 0; sym < jr::k_symbols; sym++) {
+                if (d == 0) first[sym] = count[sym];
+                else check(count[sym] == first[sym],
+                           "every opening drum holds the same symbols");
+            }
+        }
+        check(first[jr::kDiamond] == 0 && first[jr::kCrown] == 0,
+              "and no opening drum carries a DIAMOND or a CROWN");
+    }
+}
+
 /* The difficulty curve, measured rather than hoped for.
  *
  * Two autopilots: one that pulls and never touches anything, and one that
  * plays the dial at WILD and stops every reel. The floor has to lose and the
  * skilled line has to mostly win, and the gap between them is the game.
  *
- * This is here because the numbers have already been wrong twice, both times
- * invisibly. Giving every payline its own mult and adding them up multiplied
- * everything by everything, and 300 hands off runs cleared all eight antes
- * without a button being pressed. Then the targets, written for three reels
- * and one line, survived the change to five of each and did it again.
+ * This is here because the numbers have already been wrong three times, every
+ * time invisibly. Giving every payline its own mult and adding them up
+ * multiplied everything by everything, and 300 hands off runs cleared all
+ * eight antes without a button being pressed. Then the targets, written for
+ * three reels and one line, survived the change to five of each and did it
+ * again.
+ *
+ * The third is the one this shape of test is really for. It PASSED, happily,
+ * with the skilled line winning 88% of runs, while that line was winning by
+ * an exploit: every drum started at the same angle and carried the same ramp
+ * of symbols, so stopping all five instantly landed five cherries almost
+ * every spin. The measurement was honest and the thing it measured was not.
+ * Randomising where a reel comes to rest dropped the skilled line to 4% and
+ * this failed, which is the only reason anybody found out.
  */
 void run_autopilot(uint32_t seed, bool skilled, int& reached, bool& won) {
     jr::World w;
@@ -893,6 +1010,7 @@ int main() {
     test_the_shop_moves_on_both_axes();
     test_the_instructions_come_back_to_where_they_opened();
     test_a_joker_entry_names_its_slot();
+    test_where_a_reel_stops_is_a_draw();
     test_the_dial_turns_on_both_axes();
     test_the_reroll_costs_more_every_time();
     test_a_consumable_is_spent_once();

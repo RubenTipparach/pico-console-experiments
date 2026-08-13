@@ -367,6 +367,27 @@ void start_spin(World& w) {
     for (int d = 0; d < k_drums; d++) {
         w.spinning[d] = true;
         w.stopped_at[d] = -1;
+        /* Where a reel comes to rest is a DRAW, and it was not one.
+         *
+         * Every drum started at the same angle, turned at the same rate, and
+         * stopped itself on a fixed tick count, so a hands off spin landed on
+         * the same facets in every run that has ever been played: measured
+         * over 200 seeds, drum 0 stopped on facet 9 two hundred times out of
+         * two hundred. The seed picked what was PAINTED on the reels and had
+         * no say at all in where they stopped, so a run's spins walked the
+         * same short cycle and the same few shapes kept coming up.
+         *
+         * A whole turn of offset, taken per spin per drum. It costs nothing to
+         * see: the drums are stationary on the frame the pull is pressed and
+         * turning on the next one, and a cylinder that jumped a third of a
+         * revolution while starting to spin looks exactly like a cylinder
+         * starting to spin.
+         *
+         * It does not touch the skill: stop_next snaps a drum where it IS, so
+         * a reel you time yourself lands where you saw it. Only the ones you
+         * leave alone are luck now, which is what leaving them alone means.
+         */
+        w.angle[d] += random_below(w, k_turn);
     }
     w.chips = 0;
     w.mult = 0;
@@ -628,16 +649,28 @@ int32_t angle_for_facet(int facet) {
 }
 
 int32_t target_for_ante(int ante) {
-    /* 4,000 and 1.6 times that each ante, in integers rather than a pow.
+    /* 2,500 and 1.6 times that each ante, in integers rather than a pow.
      *
-     * Measured, not picked. A hands off run, taking no risk on the dial and
-     * buying nothing, averages 3,944 a spin over 300 runs, so ante 1 is about
-     * one spin of the floor and ante 8 is 107,374, which five floor spins
-     * cannot reach. The old 300 was written for three reels and one payline
-     * and it survived the change to five of each: every one of those 300 runs
-     * cleared all eight antes without a button being pressed.
+     * Measured, not picked, and measured a THIRD time because the second
+     * measurement was of a game nobody was playing.
+     *
+     * A hands off run, taking no risk on the dial and buying nothing, averages
+     * 4,035 a spin, so five of them come to about 20,000 and stall at ante 6.
+     * Stopping every reel at WILD averages 16,945 a spin, so five of those
+     * reach about 85,000 against ante 8's 67,107: it wins most runs and not
+     * all of them, which is what the dial is for.
+     *
+     * The 4,000 this replaces was calibrated when a hands off spin landed on
+     * the same facets in every run and every drum carried the same ramp of
+     * symbols. Stopping every reel the instant it started put facet 0 under
+     * the payline on all five drums, and facet 0 was a CHERRY on all five, so
+     * the "skilled" autopilot landed five of a kind on essentially every spin
+     * and cleared 88% of runs. That was not a difficulty curve, it was an
+     * exploit with a number written under it. Randomising where a reel comes
+     * to rest took it away and left the skilled line winning 4% of runs, so
+     * the targets come down to meet an honest game.
      */
-    int32_t target = 4000;
+    int32_t target = 2500;
     for (int i = 1; i < ante; i++) target = target * 8 / 5;
     return target;
 }
@@ -819,15 +852,38 @@ void world_init(World& w, uint32_t seed) {
 
     for (int h = 0; h < k_hands; h++) w.hand_level[h] = 1;
 
+    /* The opening reels: one pool, shuffled per drum.
+     *
+     * They used to be built as `i % 6` with a one in three chance of a bump,
+     * which is a RAMP, and every drum got the same one: two drums carried the
+     * same symbol at the same strip position 63% of the time against 17% by
+     * chance. With the drums at fixed offsets that made the landed symbols a
+     * function of the offsets, and the offsets never changed, so the machine
+     * had a handful of outcomes and cycled them.
+     *
+     * Weighted low, which was the intent all along and survives the change:
+     * cherries are common and sevens are scarce, and DIAMOND and CROWN are on
+     * no opening reel at all. They are what a swap is for.
+     */
+    static const uint8_t k_opening_pool[k_strip_start] = {
+        kCherry, kCherry, kCherry, kCherry,
+        kBell,   kBell,   kBell,
+        kPlum,   kPlum,   kPlum,
+        kBar,    kBar,
+        kClover, kClover,
+        kSeven,  kSeven,
+    };
     for (int d = 0; d < k_drums; d++) {
         w.strip_len[d] = k_strip_start;
-        for (int i = 0; i < k_strip_start; i++) {
-            // Opening strips are weighted low: the good symbols are things you
-            // put on later.
-            int s = i % 6;
-            if (random_below(w, 10) < 3) s++;
-            if (s > 5) s = 5;
-            w.strip[d][i] = static_cast<uint8_t>(s);
+        for (int i = 0; i < k_strip_start; i++) w.strip[d][i] = k_opening_pool[i];
+        // Fisher and Yates, so every drum is the same odds in a different
+        // order. Same odds matters: a reel a player cannot reason about is
+        // not a reel they can aim at.
+        for (int i = k_strip_start - 1; i > 0; i--) {
+            const int j = random_below(w, i + 1);
+            const uint8_t t = w.strip[d][i];
+            w.strip[d][i] = w.strip[d][j];
+            w.strip[d][j] = t;
         }
         w.angle[d] = 0;
         w.spinning[d] = false;
