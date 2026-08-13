@@ -133,10 +133,18 @@ struct TallyEntry {
     // -1 marks a x2 rather than an addition, which is the one multiplicative
     // joker and not worth a second field.
     int16_t mult;
-    uint8_t colour;
+    // Which joker slot fired this, or k_no_slot for everything else.
+    //
+    // The name is already in `what`, so this looks redundant. It is not: the
+    // screen has to shake the SLOT the joker sits in, and the alternative is
+    // a name comparison against all five slots on every frame of the count,
+    // to recover something the tally knew when it was written down. The entry
+    // says where it came from because that is what it is: a slot did this.
+    uint8_t slot;
     bool joker;
 };
 constexpr int k_max_tally = 20;
+constexpr uint8_t k_no_slot = 255;
 
 // Which reels made the hand, so the screen can draw a line through them.
 //
@@ -168,9 +176,14 @@ enum State : uint8_t {
 // How many pages the how to play screen has. Rule 9 keeps text off the screen
 // by default and says in as many words that an explicit request for more text
 // wins, which this is: a scoring system nobody can see is not sparse, it is
-// opaque. Shown once on the way out of the title, and reachable again from
-// the shop, which is the moment a player is deciding what a hand is worth.
-constexpr int k_learn_pages = 4;
+// opaque.
+//
+// It is a MENU rather than a thing that happens to you once. It plays on the
+// way out of the title, and B opens it again from between spins and from the
+// shop, which are the two moments a player is deciding what a hand is worth.
+// It returns to wherever it was opened from, so reading the hand table in the
+// shop does not cost the shop.
+constexpr int k_learn_pages = 5;
 
 // What the player pressed this tick. Edge triggered by the caller.
 struct Buttons {
@@ -248,6 +261,7 @@ struct World {
     uint8_t shop_sel;
 
     uint8_t learn_page;
+    uint8_t learn_return;       // the state the instructions were opened from
     uint8_t swap_drum;
     uint8_t swap_face;
     uint8_t swap_to;
@@ -286,6 +300,15 @@ int32_t angle_for_facet(int facet);
 // ---------------------------------------------------------------------------
 void world_init(World& w, uint32_t seed);
 void world_tick(World& w, const Buttons& btn);
+
+// How long the count holds on the entry that is showing, in ticks.
+//
+// A joker gets longer than a payline does. It is the only entry with anything
+// to watch: the slot shakes and the number it contributed pops over the side
+// of the equation it touched, and at the payline's own pace that animation
+// starts and is gone before a player has found it. The renderer asks rather
+// than keeping a copy, so an animation cannot outlast its own entry.
+int tally_hold(const World& w);
 
 // Exposed for the tests and the renderer. Not part of playing a run.
 int32_t target_for_ante(int ante);

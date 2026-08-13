@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "render.hpp"
 #include "sim.hpp"
@@ -427,6 +428,170 @@ void test_a_run_is_finite_and_a_shop_is_a_choice() {
     }
 }
 
+/* The shop is a column, so it has to move on the column's axis.
+ *
+ * It only read left and right, which is the one axis the cards do not run
+ * along: four of them stacked down the screen, with NEXT ANTE under the last,
+ * driven sideways. Both axes work now, and this checks BOTH, because making
+ * up and down work by taking left and right away would be a different bug
+ * with the same shape.
+ */
+void test_the_shop_moves_on_both_axes() {
+    for (int axis = 0; axis < 2; axis++) {
+        jr::World w = started(19u);
+        w.banked = w.target;
+        w.state = jr::kCleared;
+        jr::world_tick(w, press_a());
+        check(w.state == jr::kShop, "the shop opened");
+        check(w.shop_sel == 0, "on the first card");
+
+        jr::Buttons on{};
+        jr::Buttons back{};
+        if (axis == 0) { on.right = true; back.left = true; }
+        else { on.down = true; back.up = true; }
+        on.any = true;
+        back.any = true;
+
+        // All the way down, one press at a time, and one past the last card
+        // onto NEXT ANTE.
+        for (int i = 0; i < w.shop_len; i++) {
+            const uint8_t before = w.shop_sel;
+            jr::world_tick(w, on);
+            check(w.shop_sel == before + 1, "a press moves one card");
+        }
+        check(w.shop_sel == w.shop_len, "and stops on NEXT ANTE");
+        jr::world_tick(w, on);
+        check(w.shop_sel == w.shop_len, "and goes no further");
+
+        for (int i = 0; i < w.shop_len; i++) jr::world_tick(w, back);
+        check(w.shop_sel == 0, "and all the way back to the first card");
+        jr::world_tick(w, back);
+        check(w.shop_sel == 0, "and no further than that either");
+        check(w.state == jr::kShop, "without leaving the shop");
+    }
+}
+
+/* The instructions are a menu, and a menu you can get out of.
+ *
+ * B opens them from the table and from the shop, and closing them puts the
+ * player back where they were. Landing on the machine instead is not a
+ * cosmetic difference: the shop is the only place gold can be spent, and it
+ * is built once per ante, so being dropped out of it silently ends the round's
+ * shopping with the gold still in your pocket.
+ */
+void test_the_instructions_come_back_to_where_they_opened() {
+    jr::Buttons b{};
+    b.b = true;
+    b.any = true;
+
+    jr::World table = started(23u);
+    check(table.state == jr::kIdle, "at the table");
+    jr::world_tick(table, b);
+    check(table.state == jr::kLearn, "B opens the instructions");
+    check(table.learn_page == 0, "at the first page");
+    for (int i = 0; i < jr::k_learn_pages; i++) jr::world_tick(table, press_a());
+    check(table.state == jr::kIdle, "and paging off the end goes back");
+
+    jr::World shop = started(23u);
+    shop.banked = shop.target;
+    shop.state = jr::kCleared;
+    jr::world_tick(shop, press_a());
+    const uint16_t gold = shop.gold;
+    const uint8_t len = shop.shop_len;
+    jr::world_tick(shop, b);
+    check(shop.state == jr::kLearn, "and B opens them from the shop too");
+    for (int i = 0; i < jr::k_learn_pages; i++) jr::world_tick(shop, press_a());
+    check(shop.state == jr::kShop, "which is where paging off the end returns");
+    check(shop.gold == gold && shop.shop_len == len,
+          "with the same gold and the same shelf");
+
+    // Left goes back, and off the front of page one it closes.
+    jr::Buttons left{};
+    left.left = true;
+    left.any = true;
+    jr::World page = started(23u);
+    jr::world_tick(page, b);
+    jr::world_tick(page, press_a());
+    check(page.learn_page == 1, "a press turns the page");
+    jr::world_tick(page, left);
+    check(page.learn_page == 0 && page.state == jr::kLearn, "left turns it back");
+    jr::world_tick(page, left);
+    check(page.state == jr::kIdle, "and left off page one closes the menu");
+}
+
+/* A joker's tally entry names the SLOT it came from, and is held longer.
+ *
+ * The screen shakes a slot and pops a number over the equation, and it can
+ * only do either if the entry says which of the five did the work. So this
+ * checks the slot against the entry's own NAME: an off by one would shake the
+ * neighbour of the joker that scored, which is not a crash, not a wrong total,
+ * and not something anybody would catch by playing.
+ *
+ * Run over many seeds rather than one, because which jokers fire depends on
+ * what landed, and a single spin can easily be one where only one of them
+ * does. UNDERSTUDY is the slot worth reaching: it scores whatever is on its
+ * left and pays under its own name, so it is the one where the slot and the
+ * effect genuinely come from different places.
+ */
+void test_a_joker_entry_names_its_slot() {
+    int entries = 0;
+    bool slot_seen[3] = {false, false, false};
+    for (int seed = 1; seed <= 40; seed++) {
+        jr::World w = started(static_cast<uint32_t>(seed) * 3557u);
+        w.joker_count = 3;
+        w.jokers[0] = jr::kTwin;
+        w.jokers[1] = jr::kUnderstudy;   // scores as TWIN, pays as itself
+        w.jokers[2] = jr::kCollector;    // fires on every spin there has been
+        jr::world_tick(w, press_a());    // pull
+        for (int t = 0; t < 900 && w.state != jr::kCount; t++) play(w, 1);
+        if (w.state != jr::kCount) continue;
+
+        for (int i = 0; i < w.tally_len; i++) {
+            const jr::TallyEntry& e = w.tally[i];
+            if (!e.joker) {
+                check(e.slot == jr::k_no_slot,
+                      "an entry that is not a joker names no slot");
+                continue;
+            }
+            entries++;
+            if (e.slot >= w.joker_count) {
+                check(false, "a joker entry names a slot this run holds");
+                continue;
+            }
+            slot_seen[e.slot] = true;
+            // The entry carries the name of the joker in the slot it names.
+            // That is the whole invariant, and it is checked against the
+            // WORLD's row rather than against the order score() happened to
+            // walk in.
+            check(std::strcmp(jr::joker_name(w.jokers[e.slot]), e.what) == 0,
+                  "and the joker in that slot is the one the entry names");
+        }
+    }
+    check(entries > 0, "jokers fired across those spins");
+    check(slot_seen[0] && slot_seen[1] && slot_seen[2],
+          "and all three slots were exercised, the understudy included");
+
+    // The count lingers on a joker. Stepped rather than asserted against a
+    // literal, because the duration lives in the rules and the renderer reads
+    // it from there: a check with its own copy would pass while the two
+    // disagreed.
+    jr::World w = started(101u);
+    w.joker_count = 1;
+    w.jokers[0] = jr::kCollector;
+    jr::world_tick(w, press_a());
+    for (int t = 0; t < 900 && w.state != jr::kCount; t++) play(w, 1);
+    int joker_hold = 0, line_hold = 0;
+    for (int guard = 0; guard < 2000 && w.state == jr::kCount; guard++) {
+        play(w, 1);
+        if (w.tally_step == 0) continue;
+        const jr::TallyEntry& e = w.tally[w.tally_step - 1];
+        if (e.joker) joker_hold = jr::tally_hold(w);
+        else line_hold = jr::tally_hold(w);
+    }
+    check(joker_hold > line_hold && line_hold > 0,
+          "a joker is held longer than a payline is");
+}
+
 /* The difficulty curve, measured rather than hoped for.
  *
  * Two autopilots: one that pulls and never touches anything, and one that
@@ -523,6 +688,9 @@ int main() {
     test_a_swap_changes_what_a_drum_can_land_on();
     test_a_strip_longer_than_the_drum_still_reaches_every_symbol();
     test_a_run_is_finite_and_a_shop_is_a_choice();
+    test_the_shop_moves_on_both_axes();
+    test_the_instructions_come_back_to_where_they_opened();
+    test_a_joker_entry_names_its_slot();
     test_the_floor_loses_and_skill_wins();
     test_the_run_is_deterministic();
     test_the_budget();

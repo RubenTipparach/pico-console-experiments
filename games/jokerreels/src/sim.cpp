@@ -158,14 +158,14 @@ void snap_drum(World& w, int drum) {
 }
 
 void push_tally(World& w, const char* what, int chips, int mult,
-                uint8_t colour, bool joker, uint8_t line = k_no_line) {
+                uint8_t slot, bool joker, uint8_t line = k_no_line) {
     if (w.tally_len >= k_max_tally) return;
     TallyEntry& e = w.tally[w.tally_len++];
     e.what = what;
     e.line = line;
     e.chips = static_cast<int16_t>(chips);
     e.mult = static_cast<int16_t>(mult);
-    e.colour = colour;
+    e.slot = slot;
     e.joker = joker;
 }
 
@@ -227,19 +227,21 @@ void score(World& w) {
                    line_chips[best_line],
                    hand_mult(static_cast<uint8_t>(best_hand),
                              w.hand_level[best_hand]),
-                   7, false, best_line);
+                   k_no_slot, false, best_line);
         for (uint8_t line = 0; line < k_lines; line++) {
             if (line == best_line || w.line_hand[line] == kNothing) continue;
-            push_tally(w, hand_name(w.line_hand[line]), line_chips[line], 0, 6,
-                       false, line);
+            push_tally(w, hand_name(w.line_hand[line]), line_chips[line], 0,
+                       k_no_slot, false, line);
         }
     }
 
     // Nothing anywhere still pays the floor, so a spin is never worth zero and
     // the count always has something to play.
     if (w.tally_len == 0) {
-        push_tally(w, hand_name(kNothing), hand_chips(kNothing, w.hand_level[kNothing]),
-                   hand_mult(kNothing, w.hand_level[kNothing]), 7, false, kMiddle);
+        push_tally(w, hand_name(kNothing),
+                   hand_chips(kNothing, w.hand_level[kNothing]),
+                   hand_mult(kNothing, w.hand_level[kNothing]), k_no_slot,
+                   false, kMiddle);
     }
 
     // The speed dial pays here, once per reel you stopped yourself.
@@ -256,7 +258,7 @@ void score(World& w) {
         if (at == kWild) fast_stops++;
         if (k_speeds_table[at].mult > 0) {
             push_tally(w, k_speeds_table[at].name, 0, k_speeds_table[at].mult,
-                       9, false);
+                       k_no_slot, false);
         }
     }
 
@@ -290,8 +292,8 @@ void score(World& w) {
             default: break;
         }
         if (chips || mult) {
-            push_tally(w, k_jokers_table[w.jokers[j]].name, chips, mult, 10,
-                       true);
+            push_tally(w, k_jokers_table[w.jokers[j]].name, chips, mult,
+                       static_cast<uint8_t>(j), true);
         }
     }
 }
@@ -378,6 +380,13 @@ void buy(World& w) {
     item.sold = true;
 }
 
+// The instructions, and where to put the player back afterwards.
+void open_learn(World& w, uint8_t from) {
+    w.state = kLearn;
+    w.learn_page = 0;
+    w.learn_return = from;
+}
+
 void next_ante(World& w) {
     w.ante++;
     if (w.ante > k_antes) {
@@ -415,6 +424,22 @@ const char* speed_name(uint8_t s) { return k_speeds_table[s % k_speeds].name; }
 const char* joker_name(uint8_t j) { return k_jokers_table[j % k_jokers].name; }
 const char* joker_text(uint8_t j) { return k_jokers_table[j % k_jokers].text; }
 int joker_cost(uint8_t j) { return k_jokers_table[j % k_jokers].cost; }
+
+/* How long the count holds on the entry showing, in ticks.
+ *
+ * A payline entry is a name and a number, and it is read as fast as it can be
+ * read. A joker entry is the only one with anything to WATCH: its slot shakes
+ * and the number it contributed pops over the side of the equation it touched.
+ * At the payline's own pace that animation began and ended inside a fifth of a
+ * second, which is not long enough to find something at the other end of the
+ * panel from where you were looking.
+ */
+int tally_hold(const World& w) {
+    constexpr int k_step_ticks = 22;
+    constexpr int k_joker_ticks = 40;
+    if (w.tally_step == 0 || w.tally_step > w.tally_len) return k_step_ticks;
+    return w.tally[w.tally_step - 1].joker ? k_joker_ticks : k_step_ticks;
+}
 
 int32_t facet_mid(int32_t angle, int facet) {
     return angle + facet * k_step_one + k_step_one / 2;
@@ -632,6 +657,7 @@ void world_init(World& w, uint32_t seed) {
     w.gold = 4;
     w.speed = kFair;
     w.hand_index = kNothing;
+    w.learn_return = kIdle;
     w.msg = nullptr;
 
     for (int h = 0; h < k_hands; h++) w.hand_level[h] = 1;
@@ -666,19 +692,31 @@ void world_tick(World& w, const Buttons& btn) {
                 refresh_facets(w, d);
             }
             if (btn.any) {
-                w.state = kLearn;
-                w.learn_page = 0;
+                open_learn(w, kIdle);
                 for (int d = 0; d < k_drums; d++) snap_drum(w, d);
             }
             return;
         }
 
         case kLearn: {
-            // Any button turns the page, and the last page starts the run.
-            // Nothing on screen names a button, so no press is the wrong one.
-            if (btn.any) {
+            /* Any button turns the page, and left turns it back.
+             *
+             * Nothing on screen names a button, so no press is the wrong one,
+             * which is the half of rule 9 that survives a screen made entirely
+             * of text. Left going backwards is the one thing worth knowing and
+             * the dots along the bottom are what say there is somewhere to go.
+             *
+             * Past the last page it returns to WHERE IT WAS OPENED FROM rather
+             * than to the machine. It used to always land on the machine, so
+             * checking the hand table from the shop closed the shop, and the
+             * next ante started with whatever gold was still in your pocket.
+             */
+            if (btn.left) {
+                if (w.learn_page > 0) w.learn_page--;
+                else w.state = w.learn_return;
+            } else if (btn.any) {
                 w.learn_page++;
-                if (w.learn_page >= k_learn_pages) w.state = kIdle;
+                if (w.learn_page >= k_learn_pages) w.state = w.learn_return;
             }
             return;
         }
@@ -714,7 +752,7 @@ void world_tick(World& w, const Buttons& btn) {
 
         case kCount: {
             w.count_wait++;
-            if (w.count_wait >= 22) {
+            if (w.count_wait >= static_cast<uint16_t>(tally_hold(w))) {
                 w.count_wait = 0;
                 if (!apply_tally_step(w)) finish_score(w);
             }
@@ -724,10 +762,10 @@ void world_tick(World& w, const Buttons& btn) {
         case kIdle: {
             if (btn.up) w.speed = static_cast<uint8_t>(w.speed + 1 < k_speeds ? w.speed + 1 : k_speeds - 1);
             if (btn.down) w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
-            // The hand table again, for the moment a player wants to know what
+            // The instructions, for the moment a player wants to know what
             // they are aiming at. B is the only button here with nothing else
             // to do between spins.
-            if (btn.b) { w.state = kLearn; w.learn_page = 1; }
+            if (btn.b) open_learn(w, kIdle);
             if (btn.a) start_spin(w);
             return;
         }
@@ -738,8 +776,23 @@ void world_tick(World& w, const Buttons& btn) {
         }
 
         case kShop: {
-            if (btn.left && w.shop_sel > 0) w.shop_sel--;
-            if (btn.right && w.shop_sel < w.shop_len) w.shop_sel++;
+            /* Up and down, because the shop is a COLUMN.
+             *
+             * It only ever read left and right, which is the axis the cards do
+             * not run along: four cards stacked down the screen with NEXT ANTE
+             * under them, moved through sideways. Both axes work now rather
+             * than one replacing the other, so a player who learned left and
+             * right on the swap screen is not told they were wrong, and a
+             * player reaching for the direction the list actually goes in gets
+             * what they reached for.
+             */
+            const bool back = btn.left || btn.up;
+            const bool on = btn.right || btn.down;
+            if (back && w.shop_sel > 0) w.shop_sel--;
+            if (on && w.shop_sel < w.shop_len) w.shop_sel++;
+            // The instructions, from the one screen where a player is spending
+            // gold on a hand and wants to know what the hand is worth.
+            if (btn.b) open_learn(w, kShop);
             if (btn.a) {
                 if (w.shop_sel >= w.shop_len) next_ante(w);
                 else buy(w);
