@@ -99,6 +99,38 @@ def test_a_control_without_a_colon_survives():
     check("<kbd>" not in html, "and is not forced into a key column")
 
 
+def test_rules_get_their_own_panels():
+    """A game with a scoring system explains it, and does it between the
+    objective and the controls rather than inside the objective."""
+    html = panels_for(BASE + 'objective: "Go."\nrules:\n'
+                      '  - "Hands: five of a kind beats four."\n'
+                      '  - "Lines: all five of them pay."\n')
+    check(html.count("data-panel") == 3, "two rules make two more panels")
+    check("<h2>Hands</h2>" in html, "a rule's label becomes its heading")
+    check("five of a kind beats four." in html, "and the rest is the body")
+    check(html.index("Objective") < html.index("Hands") < html.index("Lines"),
+          "rules follow the objective, in the order game.yml gives them")
+
+    with_controls = panels_for(BASE + 'objective: "Go."\nrules:\n'
+                               '  - "Hands: five beats four."\n'
+                               'controls:\n  - "A: pull"\n')
+    check(with_controls.index("Hands") < with_controls.index("Controls"),
+          "and come before the controls")
+
+
+def test_a_rule_without_a_colon_still_gets_a_panel():
+    html = panels_for(BASE + 'rules:\n  - "Just keep the ball up."\n')
+    check("Just keep the ball up." in html, "the prose is kept")
+    check("<h2>How to play</h2>" in html, "under a heading of its own")
+
+
+def test_no_rules_is_the_normal_case():
+    """Most games do not need this. A missing rules list has to cost nothing,
+    or every game pays for the one game that wanted it."""
+    html = panels_for(BASE + 'objective: "Go."\ncontrols:\n  - "A: jump"\n')
+    check(html.count("data-panel") == 2, "objective and controls, and no more")
+
+
 def test_controls_split_across_panels():
     lines = "".join('  - "%d: does a thing"\n' % i for i in range(9))
     html = panels_for(BASE + "objective: \"Go.\"\ncontrols:\n" + lines)
@@ -263,6 +295,9 @@ def main():
     test_the_blurb_stands_in_for_a_missing_objective()
     test_a_control_becomes_a_key_and_a_meaning()
     test_a_control_without_a_colon_survives()
+    test_rules_get_their_own_panels()
+    test_a_rule_without_a_colon_still_gets_a_panel()
+    test_no_rules_is_the_normal_case()
     test_controls_split_across_panels()
     test_no_arrows_for_a_single_panel()
     test_the_keyboard_keys_come_from_the_pad()

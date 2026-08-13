@@ -7,12 +7,27 @@ target: jokerreels
 sdk: 32blit
 web: true
 
-objective: "Five reels stop three rows deep, and five paylines cross the grid: the middle row, the top, the bottom and both diagonals. Every line that makes a hand pays, from a pair up to five of a kind, and the game draws each line through the cells that made it as it counts. The best line sets the multiplier and the rest add their chips. Stop the reels yourself if you dare: the faster they are turning the harder a symbol is to read and the more the stop is worth. Clear the ante's target in five spins, eight times over, and the back room sells you jokers, hand levels, and the thing the run is really about: opening a reel and changing what it is able to land on at all."
+objective: "Bank the ante's target in five spins, eight antes in a row. Five reels stop three rows deep and five paylines cross the grid, so one pull can pay several times over. Between antes the back room sells you the run: jokers, hand levels, and the thing it is really about, opening a reel and changing what it is able to land on."
+
+# The scoring, split into panels rather than crammed into the objective.
+#
+# This game asks a player to pick a payline, read a hand and weigh a
+# multiplier against how hard a symbol is to read, and none of that is
+# discoverable from a control list. It was one enormous objective paragraph,
+# which is a wall of text in the panel a player meets first and therefore a
+# wall of text nobody reads. The same ground is covered in the game behind B,
+# which is where a player who is already playing will look for it.
+rules:
+  - "Paylines: Five lines cross the grid. The middle row, the top, the bottom, and the two diagonals. Every one of them is one cell per reel, so every one of them is five symbols and can make a hand."
+  - "Hands: A pair, two pair, three of a kind, a run, a full house, four, five. Every line that makes anything pays, and the game draws each line through the cells that made it while it counts, so you can see what you were paid for."
+  - "Chips and mult: The best line sets the multiplier, and every other paying line adds its chips to the same pile. The score is the chips times the mult, counted out one line at a time."
+  - "The dial: The faster the reels turn the harder a symbol is to read, and the more a stop you time yourself is worth. Leave them alone and they stop themselves, for nothing, which is the floor and what one joker pays double for."
+  - "Jokers: Bought in the back room, and they fire while the score counts. The one firing shakes in its slot and the number it added pops over the side of the sum it went into."
 
 controls:
   - "A: pull, then stop the next drum still turning"
-  - "up: raise the speed dial, worth more mult and harder to read"
-  - "down: lower the speed dial"
-  - "left: move through the shop, turn an opened drum"
-  - "right: move through the shop, turn an opened drum"
-  - "B: the hand table, between spins. Next reel, while one is open"
+  - "up: raise the speed dial, and move up the shop"
+  - "down: lower the speed dial, and move down the shop"
+  - "B: how to play, from the table or the shop. Next reel, while one is open"
+  - "left: back a page, through the shop, turn an opened drum"
+  - "right: forward a page, through the shop, turn an opened drum"

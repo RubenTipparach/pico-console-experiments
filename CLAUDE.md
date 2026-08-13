@@ -382,6 +382,11 @@ source when a real model would do.
     `tools/gen_shell.py` builds the panels into that game's page at configure
     time, so the shell in `web/` stays game agnostic and there is no second
     copy of the text to keep in sync.
+  - A game with a scoring system gets `rules` as well: `"Heading: what it
+    means"`, one panel each, between the objective and the controls. Optional
+    and rare, and it exists because the alternative is one enormous
+    `objective`, which is a wall of text in the panel a player meets first.
+    Do not use it for a game whose controls already explain it.
   - Controls are `"key: what it does"`. A key on its own is noise; the half
     after the colon is the whole point. A line with no colon is kept whole,
     for what a game needs to say that is not one button.

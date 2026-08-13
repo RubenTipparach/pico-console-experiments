@@ -119,12 +119,39 @@ def split_controls(controls, per_panel=CONTROLS_PER_PANEL):
             for i in range(0, len(controls), per_panel)]
 
 
+def render_rules(rules):
+    """A game's rules, one panel each.
+
+    Optional, and most games do not want it: knowing what the buttons do is
+    enough to play a lander. A game with a SCORING SYSTEM is the case this
+    exists for. Joker Reels asks a player to pick a payline, read a hand, and
+    weigh a multiplier against how hard a symbol is to read, and none of that
+    is discoverable from a control list. The alternative was one enormous
+    objective paragraph, which is a wall of text in the panel a player meets
+    first and is therefore a wall of text nobody reads.
+
+    Each entry is "Heading: what it means", the same shape a control takes,
+    because a rule and a control are the same thing to this file: a label and
+    a sentence. An entry with no colon becomes a panel of prose with the
+    game's own name as its heading, for a rule that does not want a label.
+    """
+    panels = []
+    for entry in rules:
+        heading, sep, body = str(entry).partition(":")
+        if not sep:
+            heading, body = "How to play", str(entry)
+        panels.append('<article class="panel" data-panel><h2>%s</h2>'
+                      '<p>%s</p></article>'
+                      % (escape(heading.strip()), escape(body.strip())))
+    return panels
+
+
 def render_panels(game, mapping=None):
     """The tutorial panels for one game, innermost markup only.
 
-    Panel one is what the game is for. The rest are its controls, in the order
-    game.yml lists them, because that order is the game's own idea of which
-    button matters most.
+    Panel one is what the game is for, then any rules it wants to explain,
+    then its controls, in the order game.yml lists them, because that order is
+    the game's own idea of which button matters most.
 
     mapping turns the console buttons a game names into the keys a keyboard
     player actually presses. A game says "A: throttle" because that is the
@@ -139,6 +166,11 @@ def render_panels(game, mapping=None):
         panels.append(
             '<article class="panel" data-panel>'
             '<h2>Objective</h2><p>%s</p></article>' % escape(objective))
+
+    rules = game.manifest.get("rules") or []
+    if not isinstance(rules, list):
+        rules = []
+    panels.extend(render_rules([r for r in rules if str(r).strip()]))
 
     controls = game.manifest.get("controls") or []
     if not isinstance(controls, list):

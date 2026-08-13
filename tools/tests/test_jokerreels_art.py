@@ -27,6 +27,7 @@ GAME = os.path.join(REPO_ROOT, "games", "jokerreels")
 
 sys.path.insert(0, TOOLS)
 
+import gen_jokerreels_jokers as jokers  # noqa: E402
 import gen_jokerreels_symbols as gen  # noqa: E402
 
 failures = []
@@ -113,6 +114,69 @@ for name in order:
 #    side quietly.
 for problem in gen.validate():
     check(False, "symbol art: %s" % problem)
+
+
+# ---------------------------------------------------------------------------
+# The jokers, which have the same problem in a smaller shape.
+#
+# One sheet rather than eight files, so there is no cmake list and no table in
+# render.cpp to keep in order: render.cpp asks for cell `joker * 20` and the
+# cell IS the enum value. That leaves exactly one seam, the generator's ORDER
+# against sim.hpp's Joker enum, and it fails the same way the symbols would.
+# A player would see GREASER's oil can sitting in RATCHET's slot, shaking when
+# RATCHET fired, and everything would still add up.
+# ---------------------------------------------------------------------------
+
+joker_order = list(jokers.ORDER)
+check(len(joker_order) == 8, "eight jokers")
+
+joker_enum = re.search(r"enum Joker : uint8_t \{(.*?)\};",
+                       read(GAME, "src", "sim.hpp"), re.S)
+check(joker_enum is not None, "sim.hpp has a Joker enum")
+if joker_enum:
+    names = re.findall(r"k([A-Z][A-Za-z]*)", joker_enum.group(1))
+    enum_order = [n.lower() for n in names]
+    check(enum_order == joker_order,
+          "sim.hpp's Joker enum is in the generator's order:\n"
+          "      enum: %s\n generator: %s" % (enum_order, joker_order))
+
+sheet_path = os.path.join(GAME, "assets", "jokers.png")
+check(os.path.isfile(sheet_path), "jokers.png is committed")
+if os.path.isfile(sheet_path):
+    with open(sheet_path, "rb") as handle:
+        data = handle.read()
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    colour_type = data[25]
+    check(width == jokers.CELL * len(joker_order) and height == jokers.CELL,
+          "jokers.png is %d cells of %d, not %dx%d"
+          % (len(joker_order), jokers.CELL, width, height))
+    # Colour type 6 is RGBA. pse::Sprite carries alpha as a mask and these are
+    # drawn over a dark panel, a lit card and a black end screen, so an opaque
+    # sheet would put a white box round every icon on all three.
+    check(colour_type == 6, "jokers.png carries alpha (colour type %d)"
+          % colour_type)
+
+    scratch = sheet_path + ".check"
+    jokers.write_png(scratch, jokers.sheet())
+    with open(sheet_path, "rb") as a, open(scratch, "rb") as b:
+        same = a.read() == b.read()
+    os.remove(scratch)
+    check(same, "jokers.png is what gen_jokerreels_jokers.py draws today")
+
+for problem in jokers.validate():
+    check(False, "joker art: %s" % problem)
+
+# The cell size the game cuts the sheet with. render.hpp names it once and the
+# sheet is drawn to it; the two agreeing is the whole reason a cell lands on an
+# icon rather than half way between two.
+icon_src = re.search(r"constexpr int k_joker_icon = (\d+);",
+                     read(GAME, "src", "render.hpp"))
+check(icon_src is not None, "render.hpp names the icon size")
+if icon_src:
+    check(int(icon_src.group(1)) == jokers.CELL,
+          "render.hpp cuts the sheet at %s, the sheet is drawn at %d"
+          % (icon_src.group(1), jokers.CELL))
 
 if failures:
     print("\n%d check(s) failed" % len(failures))
