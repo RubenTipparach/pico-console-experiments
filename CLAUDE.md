@@ -280,7 +280,8 @@ and expensive to draw.
 - **No button prompts.** Do not spend a line telling the player which button
   starts, retries, or continues. Accept any button instead: with nothing on
   screen naming one, no press can be the wrong guess, and the line disappears.
-  The gallery card already lists the controls for anyone who wants them.
+  The game's own web page lists the controls for anyone who wants them, in
+  its how to play, beside what each one does.
 - Debug overlays (frame time, triangle count, CPU split) are opt in behind a
   build flag, not on by default in a published build.
 - Same rule for the web gallery: short labels, no marketing copy.
@@ -347,6 +348,14 @@ source when a real model would do.
 ### 12. Every game gets its own URL, a gallery entry, and touch controls
 
 - The gallery lives at the Pages root and lists every game.
+- **A card is a picture, a name, a line about it, and a way in.** It is a
+  shelf: the only question it answers is "do I want to play this". It used to
+  print every control the game has under the blurb, one boxed line each, which
+  is a manual for a game nobody has chosen yet, and it made the shelf ragged
+  because a card's height became a function of how many buttons its game
+  happens to use. Anything longer than the blurb belongs on the game's own
+  page. `test_gen_gallery.py` walks every game's `controls` and fails if one
+  turns up on the front page again.
 - Each game is published at `/<slug>/`, where `slug` comes from `game.yml`.
 - Games buildable for web get a "Play" link. Games that are device only get a
   "Download .uf2" link and say so on the card.

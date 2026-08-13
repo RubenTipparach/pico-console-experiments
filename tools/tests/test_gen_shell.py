@@ -268,6 +268,47 @@ def test_the_pad_dispatches_what_sdl_reads():
           "and does it in the capture phase, before the SDL port's listener")
 
 
+def test_the_guide_owns_the_keyboard_while_it_is_open():
+    """The arrows page the tutorial, and nothing reaches the game behind it.
+
+    Neither was true. The only thing that turned a page was clicking an arrow,
+    so a keyboard player could not reach panel two at all, and pressing left or
+    right instead sent the press straight through to the game, which moved its
+    speed dial behind a modal the player was reading.
+
+    Checked against the shell's source the way the WASD interception is: this
+    file has no browser, and the mechanism vanishing silently is the failure
+    worth catching. The behaviour itself was driven with real key presses in a
+    real browser when it was written.
+    """
+    with open(SHELL, encoding="utf-8") as handle:
+        shell = handle.read()
+
+    guide = shell[shell.index("var GAME_KEYS"):] if "var GAME_KEYS" in shell \
+        else ""
+    check(bool(guide), "the shell has the guide's key handler")
+    if not guide:
+        return
+    for code in ("ArrowLeft", "ArrowRight", "Escape"):
+        check(code in guide, "the guide handles %s" % code)
+    check("stopImmediatePropagation" in guide,
+          "and stops what it handles, so the game never sees it")
+    check(re.search(r"addEventListener\('keydown'[\s\S]{0,600}?\}, true\)",
+                    guide) is not None,
+          "in the capture phase, ahead of the SDL port's own listener")
+    # The swallowed set is read off the pad rather than typed, so a remapped
+    # button changes one place and this follows.
+    check("querySelectorAll('#pad button[data-key]')" in guide,
+          "the keys it swallows come from the pad's own markup")
+
+    # And the other half: the pad bridge stands down while the guide is up, or
+    # WASD would still be pressed into the game from under the modal.
+    bridge = shell[shell.index("function kbdTarget"):
+                   shell.index("window.addEventListener('keydown'")]
+    check("guideIsOpen()" in bridge,
+          "the pad bridge sends nothing to the game while the guide is open")
+
+
 def test_a_control_carries_its_keyboard_key():
     mapping = {"a": "Z", "b": "X", "left": "←", "right": "→"}
     check(gen_shell.keyboard_hint("hold A", mapping) == "Z",
@@ -355,6 +396,7 @@ def main():
     test_no_arrows_for_a_single_panel()
     test_the_keyboard_keys_come_from_the_pad()
     test_the_pad_dispatches_what_sdl_reads()
+    test_the_guide_owns_the_keyboard_while_it_is_open()
     test_a_control_carries_its_keyboard_key()
     test_the_shell_is_filled_in()
     test_a_shell_without_the_placeholder_is_an_error()

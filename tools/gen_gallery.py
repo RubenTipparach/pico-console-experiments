@@ -65,13 +65,6 @@ class Card:
                 '<circle cx="8" cy="8.5" r="2.5"/></svg>'
                 '<span>no capture yet</span></div></div>')
 
-    def render_controls(self):
-        controls = self.game.manifest.get("controls") or []
-        if not isinstance(controls, list) or not controls:
-            return ""
-        items = "".join("<span>%s</span>" % escape(c) for c in controls)
-        return '<div class="controls">%s</div>' % items
-
     def render_actions(self, base=""):
         """base prefixes every link, for pages that are not at the site root."""
         actions = []
@@ -114,6 +107,21 @@ class Card:
         ])
 
     def render(self):
+        """A picture, a name, a line about it, and a way in.
+
+        The card used to print every control the game has under the blurb, one
+        boxed line each. It is the wrong page for them twice over. It is a
+        SHELF: the question a card answers is "do I want to play this", and a
+        list of six keys is not an answer to that, it is a manual for a game
+        you have not chosen yet. And it made the shelf ragged, because a card's
+        height became a function of how many buttons its game happens to use,
+        so a three control game sat next to a six control game with a hole
+        under it.
+
+        The controls have a better home now. Rule 12's mini tutorial puts them
+        on the game's own page, beside what each one does, in front of the
+        player at the moment they are about to press one.
+        """
         tag = ('<span class="tag web">web</span>' if self.game.web
                else '<span class="tag device">device</span>')
         return "\n".join([
@@ -124,7 +132,6 @@ class Card:
             % (escape(self.game.title), tag),
             '    <p class="blurb">%s</p>'
             % escape(self.game.manifest.get("blurb") or ""),
-            "    " + self.render_controls(),
             "    " + self.render_actions(),
             "  </div>",
             "</article>",

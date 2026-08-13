@@ -27,7 +27,7 @@ games/<slug>/
 | `title` | yes | Shown on the gallery card. |
 | `blurb` | yes | One line. One. The card has room for one. |
 | `objective` | yes for web | What the player is trying to do, a sentence or two. Panel one of the tutorial. |
-| `controls` | yes for web | `"key: what it does"`, one a line. Shown on the card and paged into the tutorial. |
+| `controls` | yes for web | `"key: what it does"`, one a line. Paged into the game's own tutorial, not onto the gallery card. |
 | `rules` | no | `"Heading: what it means"`, one a line, one tutorial panel each. For a game with a scoring system to explain. |
 | `target` | no | CMake target name. Defaults to the slug. |
 | `sdk` | no | `32blit` (default). See the note below. |

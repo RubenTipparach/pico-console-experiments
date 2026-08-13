@@ -727,10 +727,19 @@
     KBD[button.getAttribute('data-kbd')] = button;
   });
 
+  function guideIsOpen() {
+    var guide = document.getElementById('guide');
+    return !!guide && !guide.hidden;
+  }
+
   function kbdTarget(event) {
     // Never swallow a browser shortcut: ctrl+w closes the tab, and a player
     // who meant that should get it.
     if (event.ctrlKey || event.metaKey || event.altKey) return null;
+    // Nothing reaches the game while the how to play is over it. The modal
+    // owns the keyboard for as long as it is up, which is what lets it page
+    // on the arrows without the same press also moving something behind it.
+    if (guideIsOpen()) return null;
     var node = event.target;
     if (node && (node.isContentEditable || node.tagName === 'INPUT' ||
                  node.tagName === 'TEXTAREA')) return null;
@@ -810,7 +819,12 @@
 
     function setGuide(open) {
       guide.hidden = !open;
-      if (open) show(0);
+      if (open) {
+        show(0);
+        // Whatever was being held when it opened is not being held any more,
+        // because the game stops receiving keys from here on.
+        releaseAll();
+      }
     }
 
     if (openButton) {
@@ -826,13 +840,39 @@
     guide.addEventListener('click', function (event) {
       if (event.target === guide) setGuide(false);
     });
-    // Escape closes it too. Registered on the capture phase ahead of the
-    // keyboard-to-gamepad bridge, so it cannot be swallowed on the way past.
+    /* The keyboard, while the guide is open.
+     *
+     * The arrows page it. They did not, and there was no way to reach panel
+     * two from a keyboard at all: the only thing that turned a page was
+     * clicking an arrow, and pressing left or right instead sent the press
+     * straight through to the game, which moved its speed dial behind a modal
+     * the player was reading. Two bugs wearing one coat, and this fixes both
+     * ends of it: the arrows do the obvious thing, and NOTHING the pad bridges
+     * reaches the game while the guide is up.
+     *
+     * Capture on window, so it runs before the SDL port's own listener on
+     * document, which is how z x c v get stopped: those keys never go through
+     * the pad bridge, they go straight to SDL.
+     *
+     * The set of keys to swallow is read off the pad's markup, the same source
+     * tools/gen_shell.py reads to label the tutorial. A remapped button
+     * changes one place and both follow.
+     */
+    var GAME_KEYS = Object.create(null);
+    document.querySelectorAll('#pad button[data-key]').forEach(function (b) {
+      GAME_KEYS[b.getAttribute('data-key')] = true;
+      if (b.getAttribute('data-kbd')) GAME_KEYS[b.getAttribute('data-kbd')] = true;
+    });
+
     window.addEventListener('keydown', function (event) {
-      if (event.key !== 'Escape' || guide.hidden) return;
+      if (guide.hidden) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === 'Escape') setGuide(false);
+      else if (event.code === 'ArrowLeft') show(at - 1);
+      else if (event.code === 'ArrowRight') show(at + 1);
+      else if (!GAME_KEYS[event.code]) return;   // Tab, Enter, anything else
       event.preventDefault();
       event.stopImmediatePropagation();
-      setGuide(false);
     }, true);
   })();
 
