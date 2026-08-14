@@ -64,6 +64,30 @@ int distinct_colours() {
     return seen;
 }
 
+// Pixels wearing a given racer's paint. The hull, the trim and the binder are
+// per racer and nothing on any of these four tracks is coloured out of the same
+// table, so this is a reliable "is that pod in the picture" for a still frame.
+//
+// A tolerance rather than an exact match, because a lit face is its base colour
+// scaled by the lambert term and only a face square on to the light is the
+// colour in the roster.
+int livery_pixels(const Racer& rc) {
+    const uint8_t* wanted[3] = {rc.colour[0], rc.colour[1], rc.arc};
+    int hits = 0;
+    for (int i = 0; i < k_w * k_h; ++i) {
+        for (int c = 0; c < 3; ++c) {
+            const int dr = g_pixels[i * 3] - wanted[c][0];
+            const int dg = g_pixels[i * 3 + 1] - wanted[c][1];
+            const int db = g_pixels[i * 3 + 2] - wanted[c][2];
+            if (dr > -26 && dr < 26 && dg > -26 && dg < 26 && db > -26 && db < 26) {
+                ++hits;
+                break;
+            }
+        }
+    }
+    return hits;
+}
+
 void drive(const Race& race, const Track& t, Input& in) {
     const Pod& p = race.pod;
     const int n = t.node_count;
@@ -143,6 +167,136 @@ int main(int argc, char** argv) {
         chrome.screen = Screen::Paused;
         render_frame(race, chrome, target());
         write_ppm(dir, "screen_paused");
+    }
+
+    // The grid, at each of the three numbers and at GO, with the charge partway
+    // up. Four frames rather than one because the whole screen is a number that
+    // changes and a single shot cannot show it changing.
+    {
+        Race race;
+        race_init(race, 0, 0);
+        Chrome chrome;
+        chrome.screen = Screen::Race;
+        Input flat{};
+        flat.throttle = true;
+        const Input idle{};
+        static const char* k_shots[4] = {"grid_3", "grid_2", "grid_1", "grid_go"};
+        int shot = 0;
+        int last = countdown_number(race);
+        render_frame(race, chrome, target());
+        write_ppm(dir, k_shots[shot++]);
+        while (race.phase == Phase::Countdown && shot < 4) {
+            // Wound up from the second number on, which is the shot worth
+            // having: a charge bar with something in it and the mark it must
+            // not reach.
+            race_tick(race, countdown_number(race) <= 2 ? flat : idle);
+            const int n = countdown_number(race);
+            if (n == last && race.phase == Phase::Countdown) continue;
+            last = n;
+            render_frame(race, chrome, target());
+            if (distinct_colours() < 4) {
+                std::printf("FAIL: %s rendered flat\n", k_shots[shot]);
+                ++failures;
+            }
+            write_ppm(dir, k_shots[shot++]);
+        }
+        if (shot < 4) {
+            std::printf("FAIL: the countdown only produced %d of 4 frames\n", shot);
+            ++failures;
+        }
+    }
+
+    // The run in: the board over a live race, at two of the four camera angles,
+    // and a pod with a hurt engine so the smoke and the sparks are in a picture
+    // somebody can look at.
+    {
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        const Track& t = track(0);
+        int guard = 0;
+        while (!race.finished && guard++ < 40000) { drive(race, t, in); race_tick(race, in); }
+        // Hurt, so the frames show what damage looks like from the chase
+        // camera. Set rather than driven into, because arranging a specific
+        // amount of damage by crashing is a test of the crash.
+        race.pod.engine[0] = static_cast<int16_t>(race.pod.engine_max / 5);
+        race.pod.hit[1] = k_hit_ticks;
+        Chrome chrome;
+        chrome.screen = Screen::Race;
+        const Input hands_off{};
+        for (int mode = 0; mode < k_cam_modes; ++mode) {
+            while (race.cam_mode != mode && guard++ < 60000) {
+                race.pod.engine[0] = static_cast<int16_t>(race.pod.engine_max / 5);
+                race.pod.hit[1] = k_hit_ticks;
+                race_tick(race, hands_off);
+            }
+            render_frame(race, chrome, target());
+            char name[16] = {'f','i','n','i','s','h','_','0','\0'};
+            name[7] = static_cast<char>('0' + mode);
+            if (distinct_colours() < 8) {
+                std::printf("FAIL: %s rendered flat\n", name);
+                ++failures;
+            }
+            // AND THE POD IS IN THE SHOT. A cinematic angle that has framed
+            // scenery is a frame that is not flat, has the right number of
+            // colours, and is of nothing: the plain chase angle drew ZERO
+            // pixels of pod, because it puts the subject dead centre and the
+            // results board is dead centre. Counted in the racer's own livery,
+            // which nothing else on a desert wears.
+            const int pod_px = livery_pixels(racer(race.pod.racer_index));
+            std::printf("  %-9s pod pixels %3d\n", name, pod_px);
+            if (pod_px < 20) {
+                std::printf("FAIL: %s frames the pod out of the shot\n", name);
+                ++failures;
+            }
+            write_ppm(dir, name);
+        }
+        // And the panel it lands on, which now carries the whole field.
+        chrome.screen = Screen::Results;
+        render_frame(race, chrome, target());
+        write_ppm(dir, "screen_board");
+    }
+
+    // Damage, from the chase camera, which is the angle the game is played at
+    // and the one the smoke exists for. Three frames: healthy, one engine
+    // smoking, and one engine smoking while the other is being struck.
+    {
+        static const char* k_names[3] = {"hurt_none", "hurt_smoke", "hurt_both"};
+        for (int shot = 0; shot < 3; ++shot) {
+            Race race;
+            race_start(race, 0, 0);
+            Input in{};
+            const Track& t = track(0);
+            for (int i = 0; i < 900; ++i) { drive(race, t, in); race_tick(race, in); }
+            // Held across the frames the effects run over, because both are
+            // animated off the race clock and one still frame of a plume is a
+            // plume at one instant of its life.
+            for (int i = 0; i < 40; ++i) {
+                if (shot >= 1) race.pod.engine[0] =
+                    static_cast<int16_t>(race.pod.engine_max / 6);
+                if (shot >= 2) race.pod.hit[1] = k_hit_ticks;
+                drive(race, t, in);
+                race_tick(race, in);
+            }
+            Chrome chrome;
+            chrome.screen = Screen::Race;
+            render_frame(race, chrome, target());
+            const RenderStats& s = render_stats();
+            // The counters, because a plume that is submitted and never lands a
+            // pixel looks exactly like a plume that was never submitted, and
+            // that has happened here before with the sparks.
+            std::printf("  %-10s smoke %u sparks %u\n", k_names[shot], s.smoke,
+                        s.sparks);
+            if ((shot >= 1) != (s.smoke > 0)) {
+                std::printf("FAIL: %s smoke count is wrong\n", k_names[shot]);
+                ++failures;
+            }
+            if ((shot >= 2) != (s.sparks > 0)) {
+                std::printf("FAIL: %s spark count is wrong\n", k_names[shot]);
+                ++failures;
+            }
+            write_ppm(dir, k_names[shot]);
+        }
     }
 
     std::printf("twinflare preview wrote frames to %s (queue peak %u of %d)\n",

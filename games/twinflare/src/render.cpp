@@ -50,6 +50,11 @@ constexpr float k_cam_dist = 8.4f;
 constexpr float k_cam_high = 2.4f;
 constexpr float k_cam_lift = 1.2f;
 constexpr float k_boost_pull = 4.2f;
+// How far above centre a cinematic shot puts the pod, in radians of aim. The
+// results board takes the bottom half of the screen, so a camera aimed straight
+// at the pod puts the subject behind the table. A fifth of a radian is about a
+// quarter of the frame at this field of view.
+constexpr float k_finish_aim_lift = 0.21f;
 
 // How much of the pod's bank the horizon takes. A third: enough that a corner
 // visibly rolls the world, not so much that the player loses which way is up.
@@ -165,6 +170,83 @@ Camera follow(const Pod& pod, float dt) {
     c.yaw = g_cam.yaw;
     c.pitch = g_cam.pitch;
     c.roll = g_cam.roll;
+    return c;
+}
+
+// Where the camera goes once the player's race is over.
+//
+// A chase camera on a pod nobody is steering is a screensaver, so the shot
+// changes every two seconds while the rest of the field comes in. Four angles,
+// cycled by the sim (which owns the clock) rather than by a counter in here,
+// because the results table and the camera have to agree about how far into the
+// sequence they are.
+//
+// Every mode is derived FROM the chase camera rather than written out
+// separately: the chase shot already solves the hard parts (an eased yaw that
+// does not snap, a tunnel roof it stays under, a pull that grows with speed),
+// and four independent cameras would be four places to solve them again. What
+// each mode does is move the eye and re-aim it at the pod.
+Camera cinematic(const Camera& chase, const Pod& pod, uint8_t mode, uint32_t tick) {
+    const float px = to_world(pod.x), py = to_world(pod.y), pz = to_world(pod.z);
+    Camera c = chase;
+    switch (mode) {
+        case 0:
+            // The chase shot, unmoved. It still falls through to the aim below
+            // rather than returning here, and it has to: the plain chase camera
+            // puts the pod dead centre, which is exactly where the results
+            // board is, and this angle drew zero pixels of pod. Every angle
+            // gets the lift.
+            break;
+        case 1: {
+            // Ahead and low, looking back down the road at the pod arriving.
+            // Nine units rather than thirteen: further out the pod is eleven
+            // pixels on a 120 pixel screen, which is a dot rather than a shot.
+            const float ahead = 9.0f;
+            c.x = px + std::sin(chase.yaw) * ahead;
+            c.y = py + 1.6f;
+            c.z = pz + std::cos(chase.yaw) * ahead;
+            break;
+        }
+        case 2: {
+            // A slow orbit, high enough to show the road the pod is on. The
+            // period is prime against the two second cut so the shot is never
+            // the same twice running.
+            const float a = chase.yaw + (tick % 1100) * (6.2831853f / 1100.0f);
+            c.x = px + std::sin(a) * 11.0f;
+            c.y = py + 6.5f;
+            c.z = pz + std::cos(a) * 11.0f;
+            break;
+        }
+        default: {
+            // Trackside: off to one flank at pod height, so the pod crosses the
+            // frame rather than sitting in the middle of it. Nine units out,
+            // measured: at fourteen the pod was sixteen pixels of a 120 pixel
+            // frame, which is a shot of a desert with something in it.
+            const float side = (tick / 400) % 2 ? 1.0f : -1.0f;
+            c.x = px + std::cos(chase.yaw) * 9.0f * side - std::sin(chase.yaw) * 3.0f;
+            c.y = py + 2.0f;
+            c.z = pz - std::sin(chase.yaw) * 9.0f * side - std::cos(chase.yaw) * 3.0f;
+            break;
+        }
+    }
+    // Aimed at the pod, whatever the eye ended up doing. Without this a mode is
+    // a camera pointing wherever the chase shot was pointing, which for the
+    // front shot is a camera looking away from the thing it was moved in front
+    // of.
+    //
+    // Aimed HIGH by a fixed offset, so the pod sits in the top half of the
+    // frame and the results board underneath it covers ground rather than the
+    // subject. Applied as a lift on the aim point rather than as a pitch, so it
+    // is the same amount of framing whether the camera is two units away or
+    // fourteen.
+    const float dx = px - c.x, dy = py + 1.0f - c.y, dz = pz - c.z;
+    const float flat = std::sqrt(dx * dx + dz * dz);
+    c.yaw = std::atan2(dx, dz);
+    c.pitch = flat > 0.01f ? std::atan2(dy, flat) - k_finish_aim_lift : 0.0f;
+    // Level. A cinematic angle inheriting the chase camera's bank reads as the
+    // world tilting rather than as the pod cornering, because the pod is no
+    // longer the thing in the middle of the frame.
+    c.roll = 0.0f;
     return c;
 }
 
@@ -1132,6 +1214,13 @@ struct PodPose {
     bool spray;         // the surface under this pod is water
     float surface;      // world y of that surface
     int8_t scrape;      // grinding a wall on this side: -1 left, +1 right
+    // Ticks of sparks left on each engine, whatever hit it. A wall used to be
+    // the only damage source that could be seen, because it was the only one
+    // that said which side; everything else took health off both engines and
+    // showed nothing at all.
+    int16_t hit[2];
+    // And which engines are hurt badly enough to trail smoke.
+    bool smoking[2];
 };
 
 // A unit vector across a strand, perpendicular to it and to the line of sight,
@@ -1327,6 +1416,83 @@ void sparks(const PodPose& p, const float at[3], float side, uint32_t tick) {
         };
         quad(q[0], q[1], q[2], q[3], age < 0.45f ? hot : cool, false);
         ++g_stats.sparks;
+    }
+}
+
+// Smoke, off an engine that is nearly out.
+//
+// The pod already dims a worn engine's hull and its flame, which reads from the
+// cockpit and not at all from behind at speed, where a chase camera sees two
+// dark shapes against dark scenery. A trail is the one damage cue that is
+// visible from the angle the game is actually played at.
+//
+// Not the sparks with different numbers, and the difference is the point. A
+// spark is a struck event: hot, small, fast, gone. Smoke is a plume: it starts
+// at the nozzle, GROWS as it ages, drifts up and back, and fades toward the
+// sky rather than toward black, because a dark puff on a dark track is a hole
+// in the picture. Four quads, at full detail only, and it costs nothing when
+// both engines are healthy because it is not called.
+// SIX PUFFS, and they go UP rather than back. Four of them streaming two to
+// five units aft was the obvious shape and it is wrong for exactly the reason
+// the sparks' own comment gives: the chase camera is behind the pod, so aft is
+// toward the viewer, and a puff five units back sits a couple of units from the
+// eye. Measured, that drew one pale square forty pixels across beside the
+// engine and three specks nobody could see: not a trail, a bag over the pod.
+//
+// A plume that rises out of the engine and drifts back a little keeps its whole
+// length in front of the hull, where the camera can see all six.
+constexpr int k_smoke_count = 6;
+
+void smoke(const PodPose& p, const float at[3], uint32_t tick, const uint8_t sky[3]) {
+    const float fx = std::sin(p.yaw), fz = std::cos(p.yaw);
+    for (int k = 0; k < k_smoke_count; ++k) {
+        const uint32_t seed = static_cast<uint32_t>(k) * 2246822519u;
+        const int period = 30 + (seed >> 30) * 5;
+        const float age = ((tick + k * 7) % period) / static_cast<float>(period);
+        // Back a little and up a lot, and slower than the sparks: a puff that
+        // keeps pace with the pod is not a trail, it is a hat.
+        const float back = 0.2f + age * 1.2f;
+        const float rise = 0.15f + age * 1.5f;
+        // AND IT SPREADS AS IT AGES. Rising with a fixed jitter, six puffs at
+        // six heights over one point is a grey COLUMN: from directly behind, up
+        // is the only axis with any separation on it, and the six merged into
+        // one solid bar standing on the engine. A plume widens, so the scatter
+        // grows with age and the trail comes apart as it climbs.
+        const float spread = 0.12f + age * 0.85f;
+        const float wob_x = ((static_cast<int>(seed >> 9) & 7) - 3.5f) / 3.5f * spread;
+        const float wob_z = ((static_cast<int>(seed >> 14) & 7) - 3.5f) / 3.5f * spread;
+        // GROWING, which is what makes it read as smoke rather than as a row of
+        // dots. The first version kept one size and shrank like a spark, and at
+        // 120 pixels that is indistinguishable from a spark in a different
+        // colour.
+        const float sz = 0.11f + age * 0.20f;
+        // Dirty grey at the nozzle, thinning toward whatever the sky is. Toward
+        // black it disappears into the scenery on three of the four tracks and
+        // sits as a bruise on the fourth; all the way to the sky it goes white,
+        // so the fade stops at two thirds and the oldest puff is still smoke.
+        const float fade = age * 0.66f;
+        const uint8_t puff[3] = {
+            static_cast<uint8_t>(52 + (sky[0] - 52) * fade),
+            static_cast<uint8_t>(50 + (sky[1] - 50) * fade),
+            static_cast<uint8_t>(54 + (sky[2] - 54) * fade),
+        };
+        const float base[3] = {
+            at[0] - fx * back + wob_x,
+            at[1] + rise,
+            at[2] - fz * back + wob_z,
+        };
+        float rx = base[2], rz = -base[0];
+        const float m = std::sqrt(rx * rx + rz * rz);
+        if (m < 0.0001f) continue;
+        rx = rx / m * sz; rz = rz / m * sz;
+        const float q[4][3] = {
+            {base[0] - rx, base[1] + sz, base[2] - rz},
+            {base[0] + rx, base[1] + sz, base[2] + rz},
+            {base[0] + rx, base[1] - sz, base[2] + rz},
+            {base[0] - rx, base[1] - sz, base[2] - rz},
+        };
+        quad(q[0], q[1], q[2], q[3], puff, false);
+        ++g_stats.smoke;
     }
 }
 
@@ -1604,6 +1770,19 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         }
     }
 
+    // Smoke BEFORE the engines, so a plume sits behind the hull it is coming
+    // off rather than in front of it: everything shares one depth buffer, and a
+    // billboard drawn after the mesh at the same distance wins the tie and
+    // paints over the engine.
+    //
+    // A dead engine smokes too, which is why this is not inside the loop below:
+    // that one skips a dead engine entirely, and an engine that has gone out is
+    // exactly the one that ought to be trailing something.
+    if (lod == 0 && g_palette) {
+        for (int i = 0; i < 2; ++i)
+            if (p.smoking[i]) smoke(p, i ? right : left, p.tick, g_palette->sky_bottom);
+    }
+
     for (int i = 0; i < 2; ++i) {
         if ((p.dead >> i) & 1) continue;
         const float wear = p.engine_max ? static_cast<float>(p.engine[i]) / p.engine_max : 1.0f;
@@ -1625,9 +1804,21 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
             };
             flare(at, eng.yaw, eng.pitch, eng.roll, tail,
                   p.boosting ? 1.45f : 0.85f, fire);
-            // And sparks, off whichever engine is against the rock.
+            // And sparks, off whichever engine was hit, by anything. This used
+            // to read p.scrape alone, so a wall was the only damage in the game
+            // that could be seen: a landing, an overheat and a touch from a
+            // rival all showed a bar going down in the corner and nothing else.
+            //
+            // Struck outward from the side they happened on. A scrape has a
+            // side of its own (the rock is on one flank and the sparks stream
+            // along it) and a hit does not, so a hit throws them outboard of
+            // the engine that took it, which is the same direction for the same
+            // engine either way.
+            const float side = i ? 1.0f : -1.0f;
             if (p.scrape != 0 && (i == 0) == (p.scrape < 0))
                 sparks(p, at, p.scrape > 0 ? 1.0f : -1.0f, p.tick);
+            else if (p.hit[i] > 0)
+                sparks(p, at, side, p.tick);
         }
     }
 
@@ -1655,6 +1846,12 @@ PodPose pose_of(const Pod& pod, uint32_t tick) {
     p.spray = pod.over_water && pod.grounded;
     p.surface = to_world(pod.y - pod.clearance);
     p.scrape = pod.scraping ? pod.scrape : 0;
+    for (int i = 0; i < 2; ++i) {
+        p.hit[i] = pod.hit[i];
+        // The sim owns the threshold, so what smokes and what the health bar
+        // shows cannot drift apart.
+        p.smoking[i] = engine_critical(pod, i);
+    }
     return p;
 }
 
@@ -1968,21 +2165,187 @@ void draw_pause(const Chrome& chrome, const pse::RenderTarget& target) {
     }
 }
 
+// A time as M:SS.t, into a buffer, and the width it came out. Every clock on
+// screen goes through here: the player's total, each rival's, and the lap
+// times. They used to be formatted at each site in slightly different ways, and
+// a results table where one column reads 96.5 and the next 1:36.5 is a table
+// nobody can compare down.
+int clock_text(char* out, uint32_t ticks) {
+    const uint32_t tenths = ticks / 10;
+    const uint32_t mins = tenths / 600;
+    const uint32_t secs = (tenths / 10) % 60;
+    int n = 0;
+    if (mins > 0) {
+        out[n++] = static_cast<char>('0' + (mins > 9 ? 9 : mins));
+        out[n++] = ':';
+        out[n++] = static_cast<char>('0' + secs / 10);
+    } else {
+        if (secs >= 10) out[n++] = static_cast<char>('0' + secs / 10);
+    }
+    out[n++] = static_cast<char>('0' + secs % 10);
+    out[n++] = '.';
+    out[n++] = static_cast<char>('0' + tenths % 10);
+    out[n] = '\0';
+    return n;
+}
+
+// The lights. Three seconds of held pod is three seconds of blank screen
+// unless something says why, and the number is the whole of it: one glyph at
+// quadruple size in the middle of the frame, with the charge under it.
+//
+// The charge bar is the only instrument here that is not already on the HUD,
+// and it is drawn as a bar with a MARK on it rather than as a number, because
+// what the player needs to know is not how much charge they have, it is how
+// close it is to the line that blows it.
+void draw_countdown(const Race& race, const pse::RenderTarget& target) {
+    const int n = countdown_number(race);
+    char buf[2] = {static_cast<char>(n > 0 ? '0' + n : '\0'), '\0'};
+    const char* text = n > 0 ? buf : "GO";
+    // Measured, never placed: "GO" and "3" are different widths and a hand
+    // tuned x is only ever correct for the string it was tuned against.
+    const int scale = 4;
+    const int w = pse::text_width(text) * scale;
+    const int x = 60 - w / 2;
+    const int y = 30;
+    // A shadow, because the number sits over whatever the track happens to be
+    // and a light glyph on pale ice is a glyph nobody can read.
+    pse::draw_text(target, text, x + 2, y + 2, 10, 10, 14, scale);
+    if (n > 0)
+        pse::draw_text(target, text, x, y, 255, 214, 96, scale);
+    else
+        pse::draw_text(target, text, x, y, 120, 255, 150, scale);
+
+    // The charge, and it only appears once there is some: an empty bar in
+    // front of a player who has not touched anything is an instrument for a
+    // mechanic they have not met. It goes on green whatever its state, because
+    // by then it has been spent and the instruments underneath it are the ones
+    // that matter.
+    if (race.phase != Phase::Countdown) return;
+    if (race.charge <= 0 && !race.flooded) return;
+    const int bw = 60, bx = 60 - bw / 2, by = 84;
+    pse::fill_rect(target, bx - 1, by - 1, bw + 2, 7, 14, 16, 24);
+    const int fill = bw * race.charge / k_charge_one;
+    const bool over = race.charge > k_charge_flood * 4 / 5;
+    pse::fill_rect(target, bx, by, fill, 5,
+                   race.flooded ? 90 : (over ? 255 : 96),
+                   race.flooded ? 40 : (over ? 150 : 220),
+                   race.flooded ? 40 : (over ? 60 : 140));
+    // Where it blows, which is the number the bar exists to show.
+    pse::fill_rect(target, bx + bw * k_charge_flood / k_charge_one, by - 1, 1, 7,
+                   255, 90, 90);
+}
+
+// The finishing order, drawn OVER the race while the rest of the field comes
+// in. Over rather than instead of, because the ask was for the camera to cut
+// around as the times come up, and a full screen panel is a panel: whatever the
+// camera is doing behind it cannot be seen.
+//
+// Rows arrive as their racers do. A row for somebody still out on the circuit
+// shows the lap they are on instead of a time, so the table is never a list of
+// blanks waiting to fill in.
+void draw_finish_board(const Race& race, const pse::RenderTarget& target) {
+    Standing st[k_racer_count];
+    standings(race, st);
+
+    // Sized from the widest row rather than from a guess, so a nine character
+    // pilot name cannot print through the edge of its own panel.
+    char buf[16];
+    int widest = 0;
+    for (int i = 0; i < k_racer_count; ++i) {
+        int w = pse::text_width(racer(st[i].racer_index).name) + 12;
+        if (st[i].finished) { clock_text(buf, st[i].ticks); w += pse::text_width(buf) + 4; }
+        else w += pse::text_width("LAP 3") + 4;
+        if (w > widest) widest = w;
+    }
+    const int rows = k_racer_count;
+    const int pad = 3;
+    const int row_h = 9;
+    const int panel_w = widest + pad * 2;
+    const int panel_h = rows * row_h + pad * 2;
+    const int px = 60 - panel_w / 2;
+    // AT THE BOTTOM, and that is the whole reason the camera is worth cutting
+    // around. Six rows is half a 120 pixel screen, and centred at the top the
+    // board sat exactly where the cinematic camera puts the pod: four different
+    // angles, all of them showing the same panel over a strip of ground with
+    // the pod underneath it. The board goes below and the camera aims high (see
+    // cinematic()), so the shot is the pod and the table is under it.
+    const int py = k_h - panel_h - 2;
+    pse::fill_rect(target, px, py, panel_w, panel_h, 12, 14, 22);
+    pse::fill_rect(target, px, py, panel_w, 1, 90, 100, 130);
+
+    for (int i = 0; i < rows; ++i) {
+        const Standing& s = st[i];
+        const int y = py + pad + i * row_h;
+        // The player's own row is picked out, because six names one of which is
+        // yours is six names.
+        if (s.player) pse::fill_rect(target, px + 1, y - 1, panel_w - 2, row_h, 44, 34, 12);
+        const uint8_t r = s.player ? 255 : 190;
+        const uint8_t g = s.player ? 214 : 198;
+        const uint8_t b = s.player ? 96 : 214;
+        buf[0] = static_cast<char>('0' + i + 1);
+        buf[1] = '\0';
+        pse::draw_text(target, buf, px + pad, y, r, g, b);
+        pse::draw_text(target, racer(s.racer_index).name, px + pad + 8, y, r, g, b);
+        if (s.finished) {
+            clock_text(buf, s.ticks);
+        } else {
+            buf[0] = 'L'; buf[1] = 'A'; buf[2] = 'P'; buf[3] = ' ';
+            buf[4] = static_cast<char>('0' + (s.lap > 9 ? 9 : s.lap));
+            buf[5] = '\0';
+        }
+        pse::draw_text(target, buf, px + panel_w - pad - pse::text_width(buf), y,
+                       s.finished ? r : 120, s.finished ? g : 128,
+                       s.finished ? b : 150);
+    }
+}
+
 void draw_results(const Race& race, const pse::RenderTarget& target) {
     char buf[16];
     static const char* k_place[6] = {"1ST", "2ND", "3RD", "4TH", "5TH", "6TH"};
-    pse::draw_text_centred(target, k_place[(race.place - 1) % 6], 60, 12,
-                           255, 214, 96, 2);
-    pse::draw_text_centred(target, track(race.track_index).name, 60, 36,
-                           180, 188, 206);
-    pse::draw_text(target, "BEST", 12, 56, 150, 158, 176);
+    // The player's own finishing position, which is where they finished rather
+    // than where they were when the sequence ended: standings orders finishers
+    // by time, so the row the player is on IS the result.
+    Standing st[k_racer_count];
+    standings(race, st);
+    int mine = 0;
+    for (int i = 0; i < k_racer_count; ++i) if (st[i].player) mine = i;
+    pse::draw_text_centred(target, k_place[mine % 6], 60, 3, 255, 214, 96, 2);
+
+    // The player's total, which is the number the ask was actually about and
+    // which this screen did not have: it showed a best LAP and called it the
+    // result.
+    const int tw = clock_text(buf, race.finish_tick ? race.finish_tick : race.ticks);
+    (void)tw;
+    pse::draw_text_centred(target, buf, 60, 20, 236, 240, 248);
+
+    pse::draw_text(target, "BEST", 4, 32, 120, 128, 150);
     const uint32_t best = race.best_lap ? race.best_lap : race.ticks;
-    number(buf, (best / 100) % 100, 2);
-    buf[2] = '.';
-    number(buf + 3, (best / 10) % 10, 1);
-    buf[4] = '\0';
-    pse::draw_text(target, buf, 108 - pse::text_width(buf), 56, 236, 240, 248);
-    pse::draw_text(target, racer(race.pod.racer_index).name, 12, 72, 150, 158, 176);
+    clock_text(buf, best);
+    pse::draw_text(target, buf, 116 - pse::text_width(buf), 32, 180, 188, 206);
+
+    // And the whole field under it, so the times that came up during the
+    // sequence are still there to read once it has stopped.
+    for (int i = 0; i < k_racer_count; ++i) {
+        const Standing& s = st[i];
+        const int y = 44 + i * 12;
+        if (s.player) pse::fill_rect(target, 2, y - 2, 116, 11, 44, 34, 12);
+        const uint8_t r = s.player ? 255 : 176;
+        const uint8_t g = s.player ? 214 : 184;
+        const uint8_t b = s.player ? 96 : 204;
+        buf[0] = static_cast<char>('0' + i + 1);
+        buf[1] = '\0';
+        pse::draw_text(target, buf, 4, y, r, g, b);
+        pse::draw_text(target, racer(s.racer_index).name, 14, y, r, g, b);
+        if (s.finished) {
+            clock_text(buf, s.ticks);
+            pse::draw_text(target, buf, 116 - pse::text_width(buf), y, r, g, b);
+        } else {
+            // A racer still out when the sequence ended has no time, and saying
+            // so is better than leaving the column blank: a blank reads as a
+            // formatting bug and a dash reads as a fact.
+            pse::draw_text(target, "-", 116 - pse::text_width("-"), y, 110, 116, 134);
+        }
+    }
 }
 
 }  // namespace
@@ -2048,7 +2411,10 @@ void render_frame(const Race& race, const Chrome& chrome,
     queue.reset();
     raster.begin_frame_collect(target, queue);
 
-    const Camera cam = follow(race.pod, 1.0f / 60.0f);
+    const Camera chase = follow(race.pod, 1.0f / 60.0f);
+    const Camera cam = race.phase == Phase::Finished
+        ? cinematic(chase, race.pod, race.cam_mode, race.ticks)
+        : chase;
     renderer.set_depth_range(k_near, k_far);
     renderer.set_fov(k_fov);
     // At the origin, because every vertex handed to it is camera relative.
@@ -2102,7 +2468,20 @@ void render_frame(const Race& race, const Chrome& chrome,
     // Immediate mode from here: overlays and text, after the split workers have
     // finished, because drawing while a split is in flight would race them.
     draw_speed_lines(race, target);
-    draw_hud(race, target);
+    // The HUD is the racing instruments, and neither the grid nor the finish is
+    // racing: a speed readout over a pod that is being held on the line, or a
+    // lap counter over a race the player has already finished, is an instrument
+    // reading something nobody is doing.
+    if (race.phase == Phase::Racing) draw_hud(race, target);
+    // GO is drawn OVER the first moments of the race, not as a fourth held
+    // frame, because green means the pod is already moving. Written as a fourth
+    // countdown state it was a number nobody ever saw: the tick the countdown
+    // reaches zero is the tick the phase becomes Racing, so the 1 flicked
+    // straight to a speed readout and the light never went green on screen.
+    if (race.phase == Phase::Countdown
+        || (race.phase == Phase::Racing && race.ticks < k_go_ticks))
+        draw_countdown(race, target);
+    if (race.phase == Phase::Finished) draw_finish_board(race, target);
     if (race.pod.flash_ticks > 0) {
         for (int i = 0; i < 200; ++i) {
             const uint32_t h = static_cast<uint32_t>(i * 2654435761u + race.ticks);

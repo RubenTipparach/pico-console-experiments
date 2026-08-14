@@ -68,9 +68,18 @@ void update_menu(twinflare::Screen next, uint8_t& value, int count) {
 }
 
 void update_play(uint32_t elapsed) {
-    // Pause. In the default scheme A is only ever the pause button; in the
-    // other one it is a hold, so a boost tap does not open a menu.
-    if (k_boost_on_a) {
+    // Past the flag the race runs itself: the sim flies the pod, the camera
+    // cuts around it, and the finishing times come up over the top. The only
+    // thing a button does here is cut it short, because a player who has seen
+    // enough should not have to wait out the rest of the field.
+    if (g_race.phase == twinflare::Phase::Finished) {
+        if (buttons.pressed) {
+            g_chrome.screen = twinflare::Screen::Results;
+            return;
+        }
+    } else if (k_boost_on_a) {
+        // Pause. In the default scheme A is only ever the pause button; in the
+        // other one it is a hold, so a boost tap does not open a menu.
         if (buttons & Button::A) {
             if (g_a_held_since == 0) g_a_held_since = 1;
             else if (g_a_held_since < k_hold_pause_ms) g_a_held_since += elapsed;
@@ -95,7 +104,12 @@ void update_play(uint32_t elapsed) {
         g_accumulator -= twinflare::k_tick_ms;
         twinflare::race_tick(g_race, in);
     }
-    if (g_race.finished) g_chrome.screen = twinflare::Screen::Results;
+    // `done`, not `finished`. Finished is the moment the player crosses, and
+    // this used to switch to the results panel on it, which threw away the
+    // whole of the run in: the flat panel appeared the instant the pod passed
+    // the line and nobody else's time was ever on it. Done is when the field is
+    // in, or thirty seconds later, whichever comes first.
+    if (g_race.done) g_chrome.screen = twinflare::Screen::Results;
 }
 
 void update_paused() {

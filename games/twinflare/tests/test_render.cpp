@@ -676,7 +676,18 @@ void test_scraping_a_wall_throws_sparks() {
         if ((race.pod.scrape > 0) != (s.lateral > 0)) ++wrong_side;
         // And the pod stays down at the foot of the wall rather than riding up
         // over it. The wall is eleven units; half of it is the report.
-        const float over = (race.pod.y - s.y) / 65536.0f;
+        //
+        // MEASURED AGAINST THE ROAD, and after the tick. It used to be the
+        // pod's height above `s`, which is the surface sampled BEFORE the tick
+        // at the position the pod had before it moved: on a slope the two
+        // disagree by a couple of units for reasons that have nothing to do
+        // with walls, and one frame in eighty five duly reported a pod riding
+        // up a wall while the sim had it 1.97 units off the ground. The road at
+        // the node is a fixed reference, and being up on the plateau is
+        // precisely being high above THAT.
+        const Surface after = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+        const float over =
+            (race.pod.y - node_y(t.nodes[after.node])) / 65536.0f;
         if (over > k_wall_height / 65536.0f * 0.5f) ++high;
     }
     check(scraped > 20, "the pod really did grind along a wall");
