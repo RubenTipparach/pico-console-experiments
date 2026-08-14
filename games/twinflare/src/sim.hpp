@@ -245,11 +245,16 @@ int32_t pod_top_speed(const Pod& pod);        // fp16 per tick
 bool boost_armed(const Pod& pod);
 inline bool engine_dead(const Pod& pod, int i) { return (pod.dead >> i) & 1; }
 
-// An engine low enough to smoke. Derived rather than stored, because a flag
-// and a health bar are two answers to one question and only one of them is
+// An engine still running and nearly out. Derived rather than stored, because a
+// flag and a health bar are two answers to one question and only one of them is
 // the one the thrust is calculated from.
+//
+// A DEAD ENGINE IS NOT CRITICAL, it is over, and the difference is not
+// pedantry: this is what the renderer trails smoke off, and the renderer draws
+// no mesh and no cable for a dead engine at all. Counting dead as critical put
+// a plume in the empty air where an engine used to be.
 inline bool engine_critical(const Pod& pod, int i) {
-    if (engine_dead(pod, i)) return true;
+    if (engine_dead(pod, i)) return false;
     return pod.engine_max > 0
         && pod.engine[i] * 1000 / pod.engine_max < k_engine_critical;
 }

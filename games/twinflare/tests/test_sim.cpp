@@ -1351,9 +1351,13 @@ void test_a_damaged_engine_smokes_before_it_dies() {
     p.engine[0] = static_cast<int16_t>(p.engine_max * k_engine_critical / 1000 - 1);
     check(engine_critical(p, 0), "just below it, it is");
     check(!engine_critical(p, 1), "and the other engine is its own question");
+    // AND A DEAD ENGINE IS NOT CRITICAL, it is over. This predicate is what the
+    // renderer trails smoke off, and it draws no mesh and no cable for a dead
+    // engine at all: counting dead as critical put a plume in the empty air
+    // where an engine used to be.
     p.engine[0] = 0;
     p.dead |= 1;
-    check(engine_critical(p, 0), "a dead engine counts as critical");
+    check(!engine_critical(p, 0), "a dead engine is past smoking, not smoking");
 }
 
 void test_a_hit_says_which_engine_took_it() {

@@ -261,8 +261,9 @@ int main(int argc, char** argv) {
     // and the one the smoke exists for. Three frames: healthy, one engine
     // smoking, and one engine smoking while the other is being struck.
     {
-        static const char* k_names[3] = {"hurt_none", "hurt_smoke", "hurt_both"};
-        for (int shot = 0; shot < 3; ++shot) {
+        static const char* k_names[4] = {"hurt_none", "hurt_smoke", "hurt_both",
+                                         "hurt_dead"};
+        for (int shot = 0; shot < 4; ++shot) {
             Race race;
             race_start(race, 0, 0);
             Input in{};
@@ -274,7 +275,8 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 40; ++i) {
                 if (shot >= 1) race.pod.engine[0] =
                     static_cast<int16_t>(race.pod.engine_max / 6);
-                if (shot >= 2) race.pod.hit[1] = k_hit_ticks;
+                if (shot == 2) race.pod.hit[1] = k_hit_ticks;
+                if (shot == 3) { race.pod.engine[0] = 0; race.pod.dead = 1; }
                 drive(race, t, in);
                 race_tick(race, in);
             }
@@ -287,11 +289,19 @@ int main(int argc, char** argv) {
             // that has happened here before with the sparks.
             std::printf("  %-10s smoke %u sparks %u\n", k_names[shot], s.smoke,
                         s.sparks);
-            if ((shot >= 1) != (s.smoke > 0)) {
+            // A healthy pod trails nothing; a hurt one trails smoke; a hurt one
+            // being struck trails both. A DEAD engine trails nothing either,
+            // and that last case is the one worth a frame of its own: the
+            // renderer draws no mesh and no cable for a dead engine, so smoke
+            // off one is a plume pouring out of a hole in the air, and it read
+            // as working because the counter went up.
+            const bool want_smoke = (shot == 1 || shot == 2);
+            const bool want_sparks = (shot == 2);
+            if (want_smoke != (s.smoke > 0)) {
                 std::printf("FAIL: %s smoke count is wrong\n", k_names[shot]);
                 ++failures;
             }
-            if ((shot >= 2) != (s.sparks > 0)) {
+            if (want_sparks != (s.sparks > 0)) {
                 std::printf("FAIL: %s spark count is wrong\n", k_names[shot]);
                 ++failures;
             }

@@ -1775,9 +1775,9 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     // billboard drawn after the mesh at the same distance wins the tie and
     // paints over the engine.
     //
-    // A dead engine smokes too, which is why this is not inside the loop below:
-    // that one skips a dead engine entirely, and an engine that has gone out is
-    // exactly the one that ought to be trailing something.
+    // Only off engines that are still THERE. A dead one is not drawn at all,
+    // neither its mesh nor its cable, so a plume off one is smoke pouring out of
+    // a hole in the air. engine_critical answers exactly that question.
     if (lod == 0 && g_palette) {
         for (int i = 0; i < 2; ++i)
             if (p.smoking[i]) smoke(p, i ? right : left, p.tick, g_palette->sky_bottom);
