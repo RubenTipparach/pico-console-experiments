@@ -64,6 +64,32 @@ int distinct_colours() {
     return seen;
 }
 
+// The median luminance of a band of the frame.
+//
+// The median rather than the mean or the maximum, and that choice is the whole
+// usefulness of it: the results board's rows are mostly background with text
+// over them, so the median IS the background and the text cannot drag it. A
+// maximum would report the brightest text pixel and a mean would move with how
+// many characters a name happens to have.
+int median_luma(int y0, int y1) {
+    int hist[256] = {0};
+    int n = 0;
+    for (int y = y0; y < y1; ++y) {
+        for (int x = 0; x < k_w; ++x) {
+            const uint8_t* p = g_pixels + (y * k_w + x) * 3;
+            const int luma = (p[0] * 77 + p[1] * 151 + p[2] * 28) >> 8;
+            ++hist[luma < 0 ? 0 : (luma > 255 ? 255 : luma)];
+            ++n;
+        }
+    }
+    int seen = 0;
+    for (int i = 0; i < 256; ++i) {
+        seen += hist[i];
+        if (seen * 2 >= n) return i;
+    }
+    return 255;
+}
+
 // Pixels wearing a given racer's paint. The hull, the trim and the binder are
 // per racer and nothing on any of these four tracks is coloured out of the same
 // table, so this is a reliable "is that pod in the picture" for a still frame.
@@ -255,6 +281,60 @@ int main(int argc, char** argv) {
         chrome.screen = Screen::Results;
         render_frame(race, chrome, target());
         write_ppm(dir, "screen_board");
+    }
+
+    // The results board is BLENDED over the live race now, and the thing that
+    // buys is also the thing that can break it: the race showing through is
+    // scenery behind text.
+    //
+    // HOARFROST is the case that matters and the reason this runs on all four
+    // circuits rather than on the desert the other finish frames use. It is
+    // white ice under white cloud, the brightest ground in the game, and a
+    // board mixed too far toward see-through is white rows on a white hill.
+    // Measured as the median luminance of the board's own rows, which is its
+    // background, against the 236 the text is drawn at.
+    {
+        static const char* k_names[k_track_count] = {
+            "board_dune", "board_tide", "board_ash", "board_frost"};
+        for (int ti = 0; ti < k_track_count; ++ti) {
+            Race race;
+            race_start(race, ti, 0);
+            const Track& t = track(ti);
+            Input in{};
+            int guard = 0;
+            while (!race.finished && guard++ < 40000) {
+                drive(race, t, in);
+                race_tick(race, in);
+            }
+            Chrome chrome;
+            chrome.screen = Screen::Race;
+            const Input hands_off{};
+            for (int i = 0; i < 30; ++i) race_tick(race, hands_off);
+            render_frame(race, chrome, target());
+            // The board sits at the bottom of the screen. Its rows are the band
+            // under the header rule.
+            const int luma = median_luma(k_h - 50, k_h - 4);
+            std::printf("  %-11s board rows median luma %3d (text is 236)\n",
+                        k_names[ti], luma);
+            // Dark enough that light text on it is still light text. A ratio of
+            // two is the usual floor for legibility and 236/2 is 118.
+            if (luma > 118) {
+                std::printf("FAIL: %s board is too pale to read text on\n",
+                            k_names[ti]);
+                ++failures;
+            }
+            // AND NOT OPAQUE, which is the other half and the easy one to lose:
+            // a board that passed the check above by being solid black would be
+            // the wall this stopped being. The race behind it has to still be
+            // getting through, so the board cannot be the flat 14 its own fill
+            // colour would give.
+            if (luma < 20) {
+                std::printf("FAIL: %s board is solid, nothing shows through\n",
+                            k_names[ti]);
+                ++failures;
+            }
+            write_ppm(dir, k_names[ti]);
+        }
     }
 
     // Damage, from the chase camera, which is the angle the game is played at

@@ -22,6 +22,28 @@ inline void store(uint8_t* dst, PixelFormat format, uint8_t r, uint8_t g,
     }
 }
 
+// And read one back, which nothing else in the engine does. See blend_rect's
+// comment in the header for why the rasterizer must not learn this trick.
+inline void load(const uint8_t* src, PixelFormat format, uint8_t& r, uint8_t& g,
+                 uint8_t& b) {
+    switch (format) {
+        case PixelFormat::rgb565: Rgb565::load(src, r, g, b); break;
+        case PixelFormat::bgr555: Bgr555::load(src, r, g, b); break;
+        case PixelFormat::rgb888: Rgb888::load(src, r, g, b); break;
+        default: Rgba8888::load(src, r, g, b); break;
+    }
+}
+
+// One channel of `src` over `dst` at `a`, rounded rather than truncated.
+//
+// The rounding is not a nicety. Truncating, a half blend of a colour with
+// itself comes back one darker than it went in, so a panel drawn over its own
+// colour drifts. `+ 128` costs one add and makes the identity hold.
+inline uint8_t mix(uint8_t dst, uint8_t src, uint8_t a) {
+    const int v = dst * (255 - a) + src * a + 128;
+    return static_cast<uint8_t>((v + (v >> 8)) >> 8);
+}
+
 inline void order(int& a, int& b) {
     if (a > b) {
         const int t = a;
@@ -54,6 +76,34 @@ void fill_rect(const RenderTarget& target, int x, int y, int w, int h,
                        static_cast<size_t>(x0) * bpp;
         for (int px = x0; px < x1; px++) {
             store(dst, target.format, r, g, b);
+            dst += bpp;
+        }
+    }
+}
+
+void blend_rect(const RenderTarget& target, int x, int y, int w, int h,
+                uint8_t r, uint8_t g, uint8_t b, uint8_t alpha) {
+    if (w <= 0 || h <= 0 || alpha == 0) return;
+    // Opaque is a fill, and this line is PURELY the read being skipped rather
+    // than done and thrown away. It is not what makes the two agree: the
+    // rounding in mix() already gives exactly fill_rect's pixels at 255, which
+    // is why deleting this line changes no output and is caught by nothing.
+    // Said the other way round, it is safe to delete and there is no reason to.
+    if (alpha == 255) { fill_rect(target, x, y, w, h, r, g, b); return; }
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w > target.width ? target.width : x + w;
+    int y1 = y + h > target.height ? target.height : y + h;
+    const int bpp = bytes_per_pixel(target.format);
+    for (int py = y0; py < y1; py++) {
+        uint8_t* dst = target.pixels +
+                       static_cast<size_t>(py) * target.row_stride +
+                       static_cast<size_t>(x0) * bpp;
+        for (int px = x0; px < x1; px++) {
+            uint8_t dr = 0, dg = 0, db = 0;
+            load(dst, target.format, dr, dg, db);
+            store(dst, target.format, mix(dr, r, alpha), mix(dg, g, alpha),
+                  mix(db, b, alpha));
             dst += bpp;
         }
     }

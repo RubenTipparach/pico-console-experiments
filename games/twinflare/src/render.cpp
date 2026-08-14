@@ -55,6 +55,11 @@ constexpr float k_boost_pull = 4.2f;
 // at the pod puts the subject behind the table. A fifth of a radian is about a
 // quarter of the frame at this field of view.
 constexpr float k_finish_aim_lift = 0.21f;
+// How opaque the results board is over the live race. 255 is the solid panel it
+// used to be and 128 is an even mix; 170 is two thirds, which is the point
+// where a row stays readable over the brightest ground on any of the four
+// tracks and the road is still plainly visible under it.
+constexpr uint8_t k_board_alpha = 170;
 
 // How much of the pod's bank the horizon takes. A third: enough that a corner
 // visibly rolls the world, not so much that the player loses which way is up.
@@ -2270,15 +2275,29 @@ void draw_finish_board(const Race& race, const pse::RenderTarget& target) {
     // the pod underneath it. The board goes below and the camera aims high (see
     // cinematic()), so the shot is the pod and the table is under it.
     const int py = k_h - panel_h - 2;
-    pse::fill_rect(target, px, py, panel_w, panel_h, 12, 14, 22);
-    pse::fill_rect(target, px, py, panel_w, 1, 90, 100, 130);
+    // BLENDED, not filled. The whole reason the camera cuts around out here is
+    // that there is something to look at, and a solid panel over the bottom
+    // half of a 120 pixel screen is most of the picture: the race carried on
+    // behind a wall. Mixed at a bit over half, the road, the pod and the rest
+    // of the field read through it and the text on top still holds.
+    //
+    // Half exactly was tried first and it is not enough: the names sit over
+    // moving scenery, and a row that is legible against the road is illegible
+    // the moment a rock goes under it. Two thirds keeps the panel the darker
+    // partner everywhere while still showing what is behind.
+    pse::blend_rect(target, px, py, panel_w, panel_h, 12, 14, 22, k_board_alpha);
+    pse::blend_rect(target, px, py, panel_w, 1, 90, 100, 130, 220);
 
     for (int i = 0; i < rows; ++i) {
         const Standing& s = st[i];
         const int y = py + pad + i * row_h;
         // The player's own row is picked out, because six names one of which is
-        // yours is six names.
-        if (s.player) pse::fill_rect(target, px + 1, y - 1, panel_w - 2, row_h, 44, 34, 12);
+        // yours is six names. Blended like the panel under it: left solid it is
+        // the one opaque band on a see-through board, which reads as a bar
+        // across the picture rather than as a highlight on a row.
+        if (s.player)
+            pse::blend_rect(target, px + 1, y - 1, panel_w - 2, row_h,
+                            74, 56, 18, k_board_alpha);
         const uint8_t r = s.player ? 255 : 190;
         const uint8_t g = s.player ? 214 : 198;
         const uint8_t b = s.player ? 96 : 214;
