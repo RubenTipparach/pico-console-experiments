@@ -200,6 +200,29 @@ enum State : uint8_t {
     kWin,
 };
 
+// ---------------------------------------------------------------------------
+// The cursor on the panel, between spins
+// ---------------------------------------------------------------------------
+//
+// Three rows of things, and up and down hop between them: the dial, the
+// jokers, the consumables. Left and right then act on whichever row the
+// cursor is in, which is what lets one D-pad drive three controls without any
+// of them needing a button of its own.
+//
+// The dial keeps both axes MID SPIN, where there is nothing else to point at
+// and the dial is the only decision left.
+enum Focus : uint8_t { kFocusDial = 0, kFocusJokers, kFocusItems, k_focuses };
+
+// What A offers on a joker: shuffle it along the row, or sell it back.
+//
+// Order matters to a joker: UNDERSTUDY copies whatever is on its LEFT, so
+// moving one is a real play and not tidying.
+enum JokerAct : uint8_t { kActLeft = 0, kActRight, kActSell, k_joker_acts };
+
+// Half what it cost, rounded down, and never less than two. Selling at cost
+// would make the shop a place to park gold.
+int joker_sale(uint8_t joker);
+
 // How many pages the how to play screen has. Rule 9 keeps text off the screen
 // by default and says in as many words that an explicit request for more text
 // wins, which this is: a scoring system nobody can see is not sparse, it is
@@ -298,6 +321,11 @@ struct World {
 
     int32_t chips;
     int32_t mult;
+    // What they were before the entry now showing was applied. The screen
+    // counts from these to the ones above across the entry's hold, which is
+    // the whole reason a tally is played back rather than summed.
+    int32_t chips_from;
+    int32_t mult_from;
     uint8_t hand_index;
     int32_t scored;
 
@@ -305,11 +333,21 @@ struct World {
     uint8_t tally_len;
     uint8_t tally_step;
     uint16_t count_wait;
+    // Set by pressing A while the count runs. It does not skip anything: the
+    // same entries play in the same order, faster. A count you cannot hurry is
+    // a count you resent by the fiftieth spin, and one you can skip outright
+    // is one nobody ever reads.
+    uint8_t rush;
 
     ShopItem shop[k_shop_items];
     uint8_t shop_len;
     uint8_t shop_sel;
     uint8_t rerolls;            // this visit, which is what sets the price
+
+    uint8_t focus;              // which row of the panel the cursor is in
+    uint8_t joker_sel;
+    uint8_t joker_menu;         // 0 closed, else the actions are showing
+    uint8_t joker_act;
 
     uint8_t learn_page;
     uint8_t learn_return;       // the state the instructions were opened from

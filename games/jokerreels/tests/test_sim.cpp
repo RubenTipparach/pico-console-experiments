@@ -394,7 +394,7 @@ void test_a_run_is_finite_and_a_shop_is_a_choice() {
     jr::World w = started(3u);
     // The opening target is about one spin of the hands off floor, which is
     // measured in test_the_floor_loses_and_skill_wins rather than assumed.
-    check(jr::target_for_ante(1) == 4000, "the first ante wants 4000");
+    check(jr::target_for_ante(1) == 2500, "the first ante wants 2500");
     check(jr::target_for_ante(8) > jr::target_for_ante(7) * 3 / 2,
           "and each one wants half again more");
 
@@ -463,14 +463,19 @@ void test_the_shop_moves_on_both_axes() {
         }
         check(w.shop_sel == jr::shop_reroll_index(w) + 1,
               "and REROLL is a row of its own before NEXT ANTE");
-        check(w.shop_sel == jr::shop_next_index(w), "and stops on NEXT ANTE");
-        jr::world_tick(w, on);
-        check(w.shop_sel == jr::shop_next_index(w), "and goes no further");
+        check(w.shop_sel == jr::shop_next_index(w), "and reaches NEXT ANTE");
 
-        for (int i = 0; i < rows; i++) jr::world_tick(w, back);
-        check(w.shop_sel == 0, "and all the way back to the first card");
+        // And WRAPS, rather than stopping dead. Nothing in this list is
+        // ordered, so there is no bottom to fall off, and a held direction
+        // that stops answering on a list of seven is a button doing nothing
+        // several times a visit.
+        jr::world_tick(w, on);
+        check(w.shop_sel == 0, "one more press wraps to the first card");
         jr::world_tick(w, back);
-        check(w.shop_sel == 0, "and no further than that either");
+        check(w.shop_sel == jr::shop_next_index(w),
+              "and back the other way wraps to the last row");
+        for (int i = 0; i < rows; i++) jr::world_tick(w, back);
+        check(w.shop_sel == 0, "and it walks back round to the first card");
         check(w.state == jr::kShop, "without leaving the shop");
     }
 }
@@ -604,16 +609,19 @@ void test_a_joker_entry_names_its_slot() {
  * pointing the other way.
  */
 void test_the_dial_turns_on_both_axes() {
-    for (int axis = 0; axis < 2; axis++) {
+    // Between spins the dial answers left and right, because up and down are
+    // the cursor's now: they hop between the dial, the jokers and the
+    // consumables, and the row the cursor is in is what left and right act on.
+    {
         jr::Buttons faster{};
         jr::Buttons slower{};
-        if (axis == 0) { faster.up = true; slower.down = true; }
-        else { faster.right = true; slower.left = true; }
+        faster.right = true;
+        slower.left = true;
         faster.any = true;
         slower.any = true;
 
-        // Between spins.
         jr::World w = started(41u);
+        check(w.focus == jr::kFocusDial, "the cursor starts on the dial");
         w.speed = jr::kSlow;
         for (int i = 1; i < jr::k_speeds; i++) {
             jr::world_tick(w, faster);
@@ -628,9 +636,15 @@ void test_the_dial_turns_on_both_axes() {
         jr::world_tick(w, slower);
         check(w.speed == 0, "and stops at the bottom");
         check(w.state == jr::kIdle, "without pulling anything");
+    }
 
-        // And MID SPIN, which is the whole point of the dial: the risk is a
-        // decision you can still change while the reels are turning.
+    // MID SPIN both axes work, because there is nothing else to point at and
+    // the dial is the only decision left. That is the whole point of the dial:
+    // the risk is a thing you can still change while the reels are turning.
+    for (int axis = 0; axis < 2; axis++) {
+        jr::Buttons faster{};
+        if (axis == 0) faster.up = true; else faster.right = true;
+        faster.any = true;
         jr::World spin = started(41u);
         spin.speed = jr::kSlow;
         jr::world_tick(spin, press_a());
@@ -638,6 +652,175 @@ void test_the_dial_turns_on_both_axes() {
         jr::world_tick(spin, faster);
         check(spin.speed == jr::kFair, "and the dial still moves");
     }
+}
+
+/* The cursor, and what A means where it is standing.
+ *
+ * A is context sensitive, which is only safe because the cursor goes back to
+ * the dial every time the machine does: the pull is always A from where the
+ * player was left. That is the thing worth pinning, because getting it wrong
+ * means a player who inspected a joker last round cannot start the next spin.
+ */
+void test_the_cursor_walks_the_panel() {
+    jr::Buttons down{};   down.down = true;   down.any = true;
+    jr::Buttons up{};     up.up = true;       up.any = true;
+    jr::Buttons right{};  right.right = true; right.any = true;
+
+    jr::World w = started(71u);
+    w.joker_count = 3;
+    w.jokers[0] = jr::kTwin;
+    w.jokers[1] = jr::kRatchet;
+    w.jokers[2] = jr::kBlur;
+    w.item_count = 2;
+    w.items[0] = jr::kLuckyCoin;
+    w.items[1] = jr::kHotStreak;
+
+    check(w.focus == jr::kFocusDial, "it starts on the dial");
+    jr::world_tick(w, down);
+    check(w.focus == jr::kFocusJokers, "down reaches the jokers");
+    jr::world_tick(w, down);
+    check(w.focus == jr::kFocusItems, "and the consumables");
+    jr::world_tick(w, down);
+    check(w.focus == jr::kFocusDial, "and wraps back to the dial");
+    jr::world_tick(w, up);
+    check(w.focus == jr::kFocusItems, "and up goes the other way");
+
+    // Left and right pick within the row rather than moving the dial.
+    jr::world_tick(w, up);                      // back to the jokers
+    check(w.focus == jr::kFocusJokers, "on the jokers");
+    const uint8_t speed = w.speed;
+    jr::world_tick(w, right);
+    check(w.joker_sel == 1, "right picks the next joker");
+    check(w.speed == speed, "and leaves the dial alone");
+    jr::world_tick(w, right);
+    jr::world_tick(w, right);
+    check(w.joker_sel == 0, "and the row wraps");
+
+    // A on a joker opens its actions rather than pulling.
+    jr::world_tick(w, press_a());
+    check(w.joker_menu != 0, "A on a joker opens what can be done with it");
+    check(w.state == jr::kIdle, "and does not pull");
+
+    // Move it right, which is a real play: UNDERSTUDY copies its left
+    // neighbour, so the order of the row is part of the run.
+    w.joker_act = jr::kActRight;
+    jr::world_tick(w, press_a());
+    check(w.joker_menu == 0, "the menu closes on the action");
+    check(w.jokers[0] == jr::kRatchet && w.jokers[1] == jr::kTwin,
+          "and the two jokers swapped places");
+    check(w.joker_sel == 1, "with the cursor following the one that moved");
+
+    // Sell it back for half.
+    jr::Buttons b_only{};
+    b_only.b = true;
+    b_only.any = true;
+    const uint16_t gold = w.gold;
+    const uint8_t sold = w.jokers[w.joker_sel];
+    jr::world_tick(w, press_a());               // open
+    w.joker_act = jr::kActSell;
+    jr::world_tick(w, press_a());
+    check(w.joker_count == 2, "selling takes it out of the row");
+    check(w.gold == gold + jr::joker_sale(sold), "and pays half of it back");
+    check(jr::joker_sale(sold) < jr::joker_cost(sold),
+          "which is less than it cost, or the shop is a piggy bank");
+
+    // B backs out without doing anything.
+    w.focus = jr::kFocusJokers;
+    jr::world_tick(w, press_a());
+    check(w.joker_menu != 0, "the menu is open");
+    jr::world_tick(w, b_only);
+    check(w.joker_menu == 0, "and B closes it");
+    check(w.joker_count == 2, "having changed nothing");
+
+    // A on the consumables spends one rather than pulling.
+    w.focus = jr::kFocusItems;
+    jr::world_tick(w, press_a());
+    check(w.state == jr::kIdle, "A on the consumables does not pull");
+    w.focus = jr::kFocusDial;
+    jr::world_tick(w, press_a());
+    check(w.state == jr::kSpin, "A on the dial pulls");
+
+    /* And the cursor comes back to the dial when the machine does.
+     *
+     * Left somewhere else on purpose before the spin ends, because that is the
+     * only way this can fail: A is context sensitive, so a cursor still parked
+     * on the joker row after a spin is a player who presses A to pull and gets
+     * a menu instead. Setting it to the dial first and checking it is the dial
+     * afterwards checks nothing at all, which is exactly what the first
+     * version of this did.
+     */
+    w.focus = jr::kFocusJokers;
+    for (int t = 0; t < 900 && w.state == jr::kSpin; t++) play(w, 1);
+    for (int t = 0; t < 6000 && w.state == jr::kCount; t++) play(w, 1);
+    check(w.focus == jr::kFocusDial,
+          "and the cursor is back on the dial when the machine is");
+    if (w.state == jr::kIdle) {
+        jr::world_tick(w, press_a());
+        check(w.state == jr::kSpin, "so the next A pulls");
+    }
+}
+
+/* The count is watchable, and hurryable.
+ *
+ * Every entry now counts the number from where it was to where it is going,
+ * so chips_from has to be the value before the entry landed. And A rushes the
+ * rest of it rather than skipping it: the same entries in the same order,
+ * faster.
+ */
+void test_the_count_climbs_and_can_be_hurried() {
+    jr::World w = started(83u);
+    jr::world_tick(w, press_a());
+    for (int t = 0; t < 900 && w.state != jr::kCount; t++) play(w, 1);
+    check(w.state == jr::kCount, "counting");
+
+    /* chips_from is where the number was BEFORE the entry that is showing.
+     *
+     * Checked against the value this test watched go past a tick earlier, not
+     * against anything the rules say about it. Setting it to zero would leave
+     * "it climbs" true and every number on the panel counting up from nothing
+     * on every line, which is the failure a looser check sailed through.
+     */
+    const int unhurried = jr::tally_hold(w);
+    int steps = 0;
+    int32_t prev_chips = w.chips, prev_mult = w.mult;
+    uint8_t prev_step = w.tally_step;
+    for (int t = 0; t < 6000 && w.state == jr::kCount; t++) {
+        play(w, 1);
+        if (w.tally_step != prev_step && w.tally_step > 0) {
+            const jr::TallyEntry& e = w.tally[w.tally_step - 1];
+            steps++;
+            check(w.chips_from == prev_chips,
+                  "the count starts from the number that was on screen");
+            check(w.mult_from == prev_mult, "and the same for the mult");
+            check(w.chips == w.chips_from + e.chips,
+                  "and ends at where the entry takes it");
+            if (e.mult == -1) {
+                check(w.mult == w.mult_from * 2, "a x2 doubles the mult");
+            } else {
+                check(w.mult == w.mult_from + e.mult, "and a bonus adds to it");
+            }
+        }
+        prev_step = w.tally_step;
+        prev_chips = w.chips;
+        prev_mult = w.mult;
+    }
+    check(steps > 0, "and the count had entries to play");
+
+    // The same spin again, hurried.
+    jr::World fast = started(83u);
+    jr::world_tick(fast, press_a());
+    for (int t = 0; t < 900 && fast.state != jr::kCount; t++) play(fast, 1);
+    jr::world_tick(fast, press_a());
+    check(fast.rush != 0, "A during the count sets it running");
+    check(jr::tally_hold(fast) < unhurried, "and the holds get shorter");
+
+    int hurried_ticks = 0;
+    for (; hurried_ticks < 6000 && fast.state == jr::kCount; hurried_ticks++) {
+        play(fast, 1);
+    }
+    check(fast.state != jr::kCount, "the hurried count finished");
+    check(fast.scored == w.scored,
+          "and paid exactly what the unhurried one paid");
 }
 
 /* Rerolling the shelf, and the price climbing.
@@ -789,17 +972,134 @@ void test_a_consumable_is_spent_once() {
     }
 }
 
+/* Where a reel comes to rest is a DRAW.
+ *
+ * It was not one, and nothing noticed for the life of the game. Every drum
+ * started at the same angle, turned at the same rate and stopped itself on a
+ * fixed tick count, so a hands off spin landed on the same facets in every run
+ * ever played: over 200 seeds, drum 0 stopped on facet 9 two hundred times.
+ * The seed chose what was PAINTED on the reels and had no say in where they
+ * stopped.
+ *
+ * The strips made it worse rather than covering it: they were built as a ramp,
+ * `i % 6` with a chance of a bump, and every drum got the same one, so two
+ * drums carried the same symbol at the same strip position 63% of the time
+ * against about 18% by chance. A fixed offset into five copies of one ramp is
+ * a machine with a handful of outcomes.
+ *
+ * Both halves are checked, because fixing either one alone would leave the
+ * other still able to flatten the game.
+ */
+void test_where_a_reel_stops_is_a_draw() {
+    // 1. The landing varies with the seed.
+    const int seeds = 200;
+    bool seen[jr::k_drums][jr::k_facets] = {{false}};
+    for (int i = 0; i < seeds; i++) {
+        jr::World w = started(static_cast<uint32_t>(i + 1) * 2654435761u);
+        jr::world_tick(w, press_a());               // pull, then hands off
+        for (int t = 0; t < 900 && w.state == jr::kSpin; t++) play(w, 1);
+        if (w.state != jr::kCount) continue;
+        for (int d = 0; d < jr::k_drums; d++) {
+            seen[d][jr::front_facet(w, d)] = true;
+        }
+    }
+    for (int d = 0; d < jr::k_drums; d++) {
+        int distinct = 0;
+        for (int f = 0; f < jr::k_facets; f++) if (seen[d][f]) distinct++;
+        if (distinct < 8) {
+            std::printf("  drum %d stopped on only %d of %d facets across %d "
+                        "seeds\n", d, distinct, jr::k_facets, seeds);
+        }
+        check(distinct >= 8, "a drum's landing varies with the seed");
+    }
+
+    // 2. And within one run, spin to spin.
+    {
+        jr::World w = started(1234u);
+        uint8_t prev[jr::k_drums][jr::k_rows];
+        std::memset(prev, 0xFF, sizeof(prev));
+        int spins = 0, repeats = 0;
+        for (int s = 0; s < 5 && w.state == jr::kIdle; s++) {
+            jr::world_tick(w, press_a());
+            for (int t = 0; t < 900 && w.state == jr::kSpin; t++) play(w, 1);
+            if (w.state != jr::kCount) break;
+            spins++;
+            if (std::memcmp(prev, w.grid, sizeof(prev)) == 0) repeats++;
+            std::memcpy(prev, w.grid, sizeof(prev));
+            for (int t = 0; t < 4000 && w.state == jr::kCount; t++) play(w, 1);
+            // Kept at the table rather than let the run end. A spin averages
+            // more than the opening ante wants, so without this the second
+            // pull never happens and the check passes by measuring one spin.
+            w.banked = 0;
+            w.spins = jr::k_spins_per_round;
+            if (w.state == jr::kCleared) w.state = jr::kIdle;
+        }
+        check(spins >= 3, "the run got several spins in");
+        check(repeats == 0, "and no spin landed the grid the last one did");
+    }
+
+    // 3. The drums are not five copies of one reel.
+    {
+        int same = 0, total = 0;
+        for (int i = 0; i < 200; i++) {
+            jr::World w;
+            jr::world_init(w, static_cast<uint32_t>(i + 1) * 7919u);
+            for (int a2 = 0; a2 < jr::k_drums; a2++) {
+                for (int b2 = a2 + 1; b2 < jr::k_drums; b2++) {
+                    for (int e = 0; e < w.strip_len[a2]; e++) {
+                        total++;
+                        if (w.strip[a2][e] == w.strip[b2][e]) same++;
+                    }
+                }
+            }
+        }
+        const int percent = total ? 100 * same / total : 0;
+        std::printf("  two drums match at the same strip position %d%% of the "
+                    "time\n", percent);
+        check(percent < 30,
+              "two drums are not the same reel in the same order");
+    }
+
+    // 4. Every opening reel is the same ODDS, whatever order it is in: a reel
+    //    a player cannot reason about is not a reel they can aim at.
+    {
+        jr::World w;
+        jr::world_init(w, 99u);
+        int first[jr::k_symbols] = {0};
+        for (int d = 0; d < jr::k_drums; d++) {
+            int count[jr::k_symbols] = {0};
+            for (int e = 0; e < w.strip_len[d]; e++) count[w.strip[d][e]]++;
+            for (int sym = 0; sym < jr::k_symbols; sym++) {
+                if (d == 0) first[sym] = count[sym];
+                else check(count[sym] == first[sym],
+                           "every opening drum holds the same symbols");
+            }
+        }
+        check(first[jr::kDiamond] == 0 && first[jr::kCrown] == 0,
+              "and no opening drum carries a DIAMOND or a CROWN");
+    }
+}
+
 /* The difficulty curve, measured rather than hoped for.
  *
  * Two autopilots: one that pulls and never touches anything, and one that
  * plays the dial at WILD and stops every reel. The floor has to lose and the
  * skilled line has to mostly win, and the gap between them is the game.
  *
- * This is here because the numbers have already been wrong twice, both times
- * invisibly. Giving every payline its own mult and adding them up multiplied
- * everything by everything, and 300 hands off runs cleared all eight antes
- * without a button being pressed. Then the targets, written for three reels
- * and one line, survived the change to five of each and did it again.
+ * This is here because the numbers have already been wrong three times, every
+ * time invisibly. Giving every payline its own mult and adding them up
+ * multiplied everything by everything, and 300 hands off runs cleared all
+ * eight antes without a button being pressed. Then the targets, written for
+ * three reels and one line, survived the change to five of each and did it
+ * again.
+ *
+ * The third is the one this shape of test is really for. It PASSED, happily,
+ * with the skilled line winning 88% of runs, while that line was winning by
+ * an exploit: every drum started at the same angle and carried the same ramp
+ * of symbols, so stopping all five instantly landed five cherries almost
+ * every spin. The measurement was honest and the thing it measured was not.
+ * Randomising where a reel comes to rest dropped the skilled line to 4% and
+ * this failed, which is the only reason anybody found out.
  */
 void run_autopilot(uint32_t seed, bool skilled, int& reached, bool& won) {
     jr::World w;
@@ -893,7 +1193,10 @@ int main() {
     test_the_shop_moves_on_both_axes();
     test_the_instructions_come_back_to_where_they_opened();
     test_a_joker_entry_names_its_slot();
+    test_where_a_reel_stops_is_a_draw();
     test_the_dial_turns_on_both_axes();
+    test_the_cursor_walks_the_panel();
+    test_the_count_climbs_and_can_be_hurried();
     test_the_reroll_costs_more_every_time();
     test_a_consumable_is_spent_once();
     test_the_floor_loses_and_skill_wins();
