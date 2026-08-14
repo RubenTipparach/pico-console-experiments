@@ -31,6 +31,16 @@ using namespace twinflare;
 
 namespace {
 
+// Every test below is about the RACE, not the grid, so they all start from the
+// green light. race_init holds the pod on the line for a three second
+// countdown now, and a test that ticks two hundred times and then asks how far
+// the pod has travelled would otherwise be measuring the countdown.
+void race_start(Race& race, int track_index, int racer_index) {
+    race_init(race, track_index, racer_index);
+    const Input idle{};
+    while (race.phase == Phase::Countdown) race_tick(race, idle);
+}
+
 int g_failures = 0;
 uint8_t g_pixels[120 * 120 * 3];
 
@@ -87,7 +97,7 @@ void test_the_projector_only_ever_sees_small_numbers() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         Chrome chrome;
         chrome.screen = Screen::Race;
@@ -120,7 +130,7 @@ void test_near_geometry_is_cut_and_not_dropped() {
     // polygons should be CLIPPED regularly and the frame should stay covered.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -150,7 +160,7 @@ void test_there_is_ground_when_the_pod_runs_wide() {
     // nothing.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -182,7 +192,7 @@ void test_the_parts_of_the_pod_disagree_in_a_corner() {
     // rate rather than track it exactly.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     for (int i = 0; i < 500; ++i) { drive(race, t, in); race_tick(race, in); }
 
@@ -229,7 +239,7 @@ void test_the_cables_are_attached_to_something() {
     // covers every attitude the pod actually reaches, not just a straight.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -271,7 +281,7 @@ void test_the_sea_is_drawn_where_it_is_driven() {
     const Track& t = track(tide);
 
     Race race;
-    race_init(race, tide, 0);
+    race_start(race, tide, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -303,7 +313,7 @@ void test_the_sea_is_drawn_where_it_is_driven() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         if (ti == tide) continue;
         Race dry;
-        race_init(dry, ti, 0);
+        race_start(dry, ti, 0);
         Input drive_in{};
         for (int i = 0; i < 900; ++i) { drive(dry, track(ti), drive_in); race_tick(dry, drive_in); }
         render_frame(dry, chrome, target());
@@ -324,7 +334,7 @@ void test_the_binder_arc_moves() {
     // the mistake the cables already made once.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -480,7 +490,7 @@ void test_a_hole_in_the_road_is_drawn_as_a_hole() {
     // And the walls are actually emitted, on every frame where one is in view.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -516,7 +526,7 @@ void test_pod_select_shows_the_pod() {
     // settle: that a pod is drawn at all, that it TURNS, and that picking a
     // different racer shows a different pod.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Chrome chrome;
     chrome.screen = Screen::PodSelect;
 
@@ -581,7 +591,7 @@ void test_the_rocks_belong_to_the_track() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         Chrome chrome;
         chrome.screen = Screen::Race;
@@ -621,7 +631,7 @@ void test_scraping_a_wall_throws_sparks() {
     // at the foot of the wall instead of riding up over it.
     const Track& t = track(3);   // HOARFROST, 624 units of canyon
     Race race;
-    race_init(race, 3, 0);
+    race_start(race, 3, 0);
     Input in{};
     Chrome chrome;
     chrome.screen = Screen::Race;
@@ -705,7 +715,7 @@ void test_the_world_is_closed_when_you_look_off_the_side() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         float highest = 0.0f;
         for (int i = 0; i < 8000; ++i) {

@@ -23,6 +23,16 @@ using namespace twinflare;
 
 namespace {
 
+// Every test below is about the RACE, not the grid, so they all start from the
+// green light. race_init holds the pod on the line for a three second
+// countdown now, and a test that ticks two hundred times and then asks how far
+// the pod has travelled would otherwise be measuring the countdown.
+void race_start(Race& race, int track_index, int racer_index) {
+    race_init(race, track_index, racer_index);
+    const Input idle{};
+    while (race.phase == Phase::Countdown) race_tick(race, idle);
+}
+
 constexpr int k_w = 120;
 constexpr int k_h = 120;
 uint8_t g_pixels[k_w * k_h * 3];
@@ -83,7 +93,7 @@ int main(int argc, char** argv) {
     static const char* k_names[k_track_count] = {"dune", "tide", "ash", "frost"};
     for (int ti = 0; ti < k_track_count; ++ti) {
         Race race;
-        race_init(race, ti, ti % k_racer_count);
+        race_start(race, ti, ti % k_racer_count);
         Input in{};
         const Track& t = track(ti);
         for (int i = 0; i < 1400; ++i) { drive(race, t, in); race_tick(race, in); }
@@ -107,7 +117,7 @@ int main(int argc, char** argv) {
     // One frame of each screen, so a menu change can be looked at.
     {
         Race race;
-        race_init(race, 0, 0);
+        race_start(race, 0, 0);
         Chrome chrome;
         struct { Screen s; const char* name; } shots[] = {
             {Screen::PodSelect, "screen_pod"},
