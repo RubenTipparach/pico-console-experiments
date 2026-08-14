@@ -133,7 +133,7 @@ void update_paused() {
 }
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
     g_chrome = twinflare::Chrome{};
     g_chrome.boost_on_a = k_boost_on_a;
     twinflare::race_init(g_race, 0, 0);

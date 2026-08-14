@@ -466,6 +466,9 @@ games/picomon/art/PROPORTIONS.md  the character art blueprint: row budget,
                    what the references measure, what is wrong today
 STORAGE.md         the 16 MB flash: persistence, game library, larger games
 CONSOLE.md         the console: one binary, every game in it, a menu
+TUFTY.md           the Tufty 2350 as a second board: what it costs, what is
+                   still wrong, and why the RP2350 reopens CONSOLE.md's
+                   settled question
 ```
 
 ## Adding a game

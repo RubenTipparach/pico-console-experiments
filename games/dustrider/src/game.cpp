@@ -147,7 +147,7 @@ void start_run() {
 
 void game_init() {
     DIAG_LED_RED();
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     // Every entry, not once per boot: the console calls this each time the
     // game is picked, so the shell goes back to its title and attract run

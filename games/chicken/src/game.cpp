@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cmath>
 
+#include "pse/blit_target.hpp"
 #include "pse/game.hpp"
 
 using namespace blit;
@@ -315,7 +316,7 @@ void generate_chunk(int chunk_id, int buffer_chunk_index) {
     }
     
     void game_init() {
-        set_screen_mode(ScreenMode::hires);
+        pse::set_screen_mode(pse::ScreenMode::hires);
 
         // Back to a fresh run every time. The console calls this each time the
         // game is picked, not once per boot, so anything carried in a global

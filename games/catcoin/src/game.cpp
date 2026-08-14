@@ -22,7 +22,7 @@ cc::World g_world;
 void game_init() {
     // 240x240. The cart was 128x128 and this is the demake's whole point.
     // 115 KB of the 264 KB goes to the framebuffer, and the world is 9 KB.
-    set_screen_mode(ScreenMode::hires);
+    pse::set_screen_mode(pse::ScreenMode::hires);
     cc::world_init(g_world, static_cast<uint32_t>(now()) | 1u);
 }
 

@@ -43,7 +43,7 @@ void save_if_safe() {
 }
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     pm::SaveData data;
     const bool have_save = blit::read_save(data);

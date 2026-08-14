@@ -66,6 +66,18 @@ target_include_directories(pse-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Which board this is, for pse/board.hpp.
+#
+# Read from PICO_BOARD rather than from the SDK's own BLIT_BOARD_* define,
+# because that one travels with BlitHalPico and the engine deliberately does
+# not link it (see pico_multicore_headers above for the same distinction).
+# PUBLIC so pse-engine and the games compile against the same answer: a header
+# whose constants mean one thing in one translation unit and another in the
+# next is worse than no header.
+if(PICO_BOARD STREQUAL "pimoroni_tufty2350")
+    target_compile_definitions(pse-core PUBLIC PSE_BOARD_TUFTY2350=1)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(pse-core PRIVATE
         -Wall -Wextra -Wno-unused-parameter

@@ -59,7 +59,7 @@ void reset_player() {
 }
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
     g_city.reset(12345);
     reset_player();
 }

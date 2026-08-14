@@ -449,7 +449,7 @@ void draw_pause() {
 }
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     // Every entry, not once per boot: the console calls this each time the
     // game is picked, so it goes back to its title rather than resuming a

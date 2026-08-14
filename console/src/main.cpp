@@ -91,12 +91,18 @@ bool just_pressed(uint32_t button) { return (buttons.pressed & button) != 0; }
 }  // namespace
 
 void init() {
-    set_screen_mode(ScreenMode::hires);
+    pse::set_screen_mode(pse::ScreenMode::hires);
     g_menu.reset(last_played());
     g_running = -1;
 }
 
 void update(uint32_t time) {
+    // The console is its own SDK entry point rather than a generated
+    // standalone_main, so it puts the board's button mapping in place itself.
+    // The menu needs it as much as any game does: on a board with no dpad the
+    // list would not scroll either.
+    pse::MappedButtons buttons;
+
     if (g_running < 0) {
         // Read every frame while the menu is up: the ADC is only actually
         // touched once a second, and the charge pins have to be watched at
@@ -133,6 +139,8 @@ void update(uint32_t time) {
 }
 
 void render(uint32_t time) {
+    pse::MappedButtons buttons;
+
     if (g_running < 0) {
         const pse::RenderTarget target = pse::target_from_screen();
         g_menu.draw(target, time);
