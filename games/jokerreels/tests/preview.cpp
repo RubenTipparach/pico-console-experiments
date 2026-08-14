@@ -519,6 +519,10 @@ int main(int argc, char** argv) {
             // The instructions page puts both on one row, past the icon.
             fits(jr::joker_name(which), 32, 234, "joker page name");
             fits(jr::joker_text(which), 32, 234, "joker page text");
+            // The panel's own two lines, which is where a cursor standing on
+            // this joker says what it is and what it does.
+            fits(jr::joker_name(which), 4, k_w, "panel joker name");
+            fits(jr::joker_text(which), 4, k_w, "panel joker rule");
         }
         for (int i = 0; i < jr::k_items; i++) {
             const uint8_t which = static_cast<uint8_t>(i);
@@ -528,12 +532,30 @@ int main(int argc, char** argv) {
                  "shop item text");
             fits(jr::item_name(which), 32, 234, "item page name");
             fits(jr::item_text(which), 32, 234, "item page text");
+            fits(jr::item_name(which), 4, k_w, "panel item name");
+            fits(jr::item_text(which), 4, k_w, "panel item rule");
         }
         fits("REROLL", 33, 88, "reroll label");
-        fits("G99", 110 - pse::text_width("G99"), 110, "reroll cost");
+        // The joker menu, laid out left to right by measuring each box.
+        {
+            static const char* const k_acts[] = {
+                "MOVE LEFT", "MOVE RIGHT", "SELL",
+            };
+            int x = 4;
+            for (const char* label : k_acts) {
+                fits(label, x + 4, x + pse::text_width(label) + 8,
+                     "joker action");
+                x += pse::text_width(label) + 12;
+            }
+            fits("$9", 236 - pse::text_width("$9"), 236, "joker sale price");
+            check(x < 236 - pse::text_width("$9") - 4,
+                  "the joker actions and the sale price fit one line");
+        }
+        fits("$99", 110 - pse::text_width("$99"), 110, "reroll cost");
         fits_centred("NEXT ANTE", 180, 126, 234, "next ante");
-        fits("X SPENDS THE ONE PICKED,", 8, k_w, "item page hint");
-        fits("Y PICKS THE OTHER. TWO SLOTS,", 8, k_w, "item page hint 2");
+        fits("UP AND DOWN MOVE THE CURSOR", 8, k_w, "item page hint");
+        fits("BETWEEN THE DIAL, THE JOKERS AND", 8, k_w, "item page hint 2");
+        fits("THESE. X SPENDS THE ONE PICKED.", 8, k_w, "item page hint 3");
         for (int h = 0; h < jr::k_hands; h++) {
             const uint8_t which = static_cast<uint8_t>(h);
             fits(jr::hand_name(which), 12, 200, "shop hand name");
@@ -597,6 +619,41 @@ int main(int argc, char** argv) {
                      "title 2");
         fits_centred("THE BACK ROOM", k_w / 2, 0, k_w, "shop heading");
         std::printf("text: %d strings measured against their boxes\n", measured);
+    }
+
+    /* The panel's cursor, on a joker and then on its actions.
+     *
+     * The row is five pictures with no names under it, and this is the screen
+     * that makes that affordable: point at one and the panel says what it is
+     * and what it does. A frame nobody has looked at would be a row nobody
+     * could learn.
+     */
+    {
+        jr::World cur;
+        jr::world_init(cur, 4141u);
+        to_table(cur);
+        cur.gold = 9;
+        cur.joker_count = 4;
+        cur.jokers[0] = jr::kGreaser;
+        cur.jokers[1] = jr::kSunkCost;      // the longest rule there is
+        cur.jokers[2] = jr::kBlur;
+        cur.jokers[3] = jr::kUnderstudy;
+        cur.item_count = 2;
+        cur.items[0] = jr::kDoubleDown;
+        cur.items[1] = jr::kPolish;
+        cur.focus = jr::kFocusJokers;
+        cur.joker_sel = 1;
+        capture(cur, out, "preview_13_cursor");
+
+        cur.joker_menu = 1;
+        cur.joker_act = jr::kActRight;
+        capture(cur, out, "preview_14_jokermenu");
+
+        cur.joker_menu = 0;
+        cur.focus = jr::kFocusItems;
+        cur.item_sel = 0;
+        capture(cur, out, "preview_15_item");
+        check(cur.focus == jr::kFocusItems, "the cursor stayed put");
     }
 
     /* The worked example on the web page, put through the REAL scorer.

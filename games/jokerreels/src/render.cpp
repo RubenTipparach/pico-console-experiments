@@ -262,6 +262,36 @@ void draw_shop_icon(const pse::RenderTarget& t, const jr::ShopItem& item,
  * Markers go on the cells that actually made the hand, which on TWO PAIR is
  * four of the five.
  */
+/* Did this cell take part: a green tick, or a red cross.
+ *
+ * Drawn rather than sprited. It is two strokes and a disc, it has to scale
+ * with the marker, and the two colours are the whole message: a sheet would
+ * be 3,200 bytes of flash to say the same thing in a fixed size.
+ */
+constexpr int k_verdict_r = 6;
+
+void draw_verdict(const pse::RenderTarget& s, int cx, int cy, bool matched) {
+    const Rgb c = matched ? k_good : k_warn;
+    pse::fill_circle(s, cx, cy, k_verdict_r, k_ink.r, k_ink.g, k_ink.b);
+    pse::draw_circle(s, cx, cy, k_verdict_r, c.r, c.g, c.b);
+    if (matched) {
+        // Two strokes, drawn twice with a pixel of offset so the tick has the
+        // weight of the cross beside it.
+        for (int o = 0; o <= 1; o++) {
+            pse::draw_line(s, cx - 3, cy + o, cx - 1, cy + 2 + o, c.r, c.g, c.b);
+            pse::draw_line(s, cx - 1, cy + 2 + o, cx + 3, cy - 2 + o,
+                           c.r, c.g, c.b);
+        }
+    } else {
+        for (int o = 0; o <= 1; o++) {
+            pse::draw_line(s, cx - 2 + o, cy - 2, cx + 2 + o, cy + 2,
+                           c.r, c.g, c.b);
+            pse::draw_line(s, cx + 2 - o, cy - 2, cx - 2 - o, cy + 2,
+                           c.r, c.g, c.b);
+        }
+    }
+}
+
 void draw_payline(const jr::World& world, const pse::RenderTarget& screen) {
     if (world.state != jr::kCount) return;
     if (world.tally_step == 0 || world.tally_step > world.tally_len) return;
@@ -291,15 +321,18 @@ void draw_payline(const jr::World& world, const pse::RenderTarget& screen) {
     }
 
     // Markers second, so a line never draws over one.
+    //
+    // A tick or a cross, not two sizes of the same square. The square said
+    // "this cell counted" only to somebody who had already worked out that the
+    // big ones were the ones that counted; a tick says it to everybody, and a
+    // cross on the others says the line was looked at and they were not part
+    // of it. Both sit on a black disc so they read over a lit symbol.
     for (int d = 0; d < jr::k_drums; d++) {
         int left, right, cy, h;
         drum_window(d, left, right);
         row_band(rows[d], cy, h);
         const int cx = (left + right) / 2;
-        const bool made_it = groups[d] != jr::k_no_group;
-        const int r = made_it ? 4 : 2;
-        fill(screen, cx - r, cy - r, cx + r, cy + r, c);
-        fill(screen, cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2, k_ink);
+        draw_verdict(screen, cx, cy, groups[d] != jr::k_no_group);
     }
 }
 
@@ -335,19 +368,42 @@ struct Firing {
     int span;
 };
 
-Firing firing_joker(const jr::World& w) {
+// Whatever entry the count is showing, joker or not.
+Firing showing(const jr::World& w) {
     Firing f{false, nullptr, 0, 1};
     if (w.state != jr::kCount) return f;
     if (w.tally_step == 0 || w.tally_step > w.tally_len) return f;
-    const jr::TallyEntry& e = w.tally[w.tally_step - 1];
-    if (!e.joker || e.slot >= jr::k_max_jokers) return f;
     f.on = true;
-    f.entry = &e;
+    f.entry = &w.tally[w.tally_step - 1];
     f.span = jr::tally_hold(w);
     if (f.span < 1) f.span = 1;
     f.phase = static_cast<int>(w.count_wait);
     if (f.phase > f.span) f.phase = f.span;
     return f;
+}
+
+// The subset of that which is a joker sitting in a slot, which is the only
+// thing with a box on the panel to shake.
+Firing firing_joker(const jr::World& w) {
+    Firing f = showing(w);
+    if (!f.on) return f;
+    if (!f.entry->joker || f.entry->slot >= jr::k_max_jokers) f.on = false;
+    return f;
+}
+
+/* The number, counting up.
+ *
+ * Balatro's whole feel is the total ARRIVING rather than appearing, and a
+ * count that cuts from 115 to 220 is a count nobody watched. The climb runs
+ * over the first two thirds of the entry's hold and then sits, so the last
+ * third is time to read what it landed on before the next line replaces it.
+ */
+int32_t climbing(int32_t from, int32_t to, const Firing& f) {
+    if (!f.on || f.span <= 0) return to;
+    const int ramp = f.span * 2 / 3 > 0 ? f.span * 2 / 3 : 1;
+    if (f.phase >= ramp) return to;
+    return from + static_cast<int32_t>(
+        static_cast<int64_t>(to - from) * f.phase / ramp);
 }
 
 // One period of a shake, and it is damped: biggest the instant the joker
@@ -705,9 +761,9 @@ void render_learn(const jr::World& w, const pse::RenderTarget& s) {
             text(s, jr::item_name(which), 32, y + 3, k_select);
             text(s, jr::item_text(which), 32, y + 13, k_dim);
         }
-        text(s, "X SPENDS THE ONE PICKED,", 8, 180, k_paper);
-        text(s, "Y PICKS THE OTHER. TWO SLOTS,", 8, 192, k_dim);
-        text(s, "AND THE SHOP SELLS THEM.", 8, 204, k_dim);
+        text(s, "UP AND DOWN MOVE THE CURSOR", 8, 180, k_paper);
+        text(s, "BETWEEN THE DIAL, THE JOKERS AND", 8, 192, k_dim);
+        text(s, "THESE. X SPENDS THE ONE PICKED.", 8, 204, k_dim);
     }
 
     // Which page, as dots. Three characters of text would say the same thing
@@ -843,7 +899,7 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
     text(screen, num_line("ANTE ", world.ante, "/8"), 4, top + 4, k_paper);
     text_right(screen, pair_line(world.banked, "/", world.target), 176,
                top + 4, world.banked >= world.target ? k_good : k_dim);
-    text_right(screen, num_line("G", world.gold, ""), 236, top + 4, k_select);
+    text_right(screen, num_line("$", world.gold, ""), 236, top + 4, k_select);
     text_right(screen, num_line("SPINS ", world.spins, ""), 236, top + 14,
                world.spins > 1 ? k_dim : k_warn);
 
@@ -860,18 +916,25 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
 
     // Chips and mult, separately and large. Watching one of them grow is the
     // whole feel this is borrowing, and a single total would throw it away.
+    const Firing show = showing(world);
+    const int32_t chips = climbing(world.chips_from, world.chips, show);
+    const int32_t mult = climbing(world.mult_from, world.mult, show);
     fill(screen, k_score_l, top + 35, k_score_r, top + 57, k_panel);
     pse::draw_rect(screen, k_score_l, top + 35, k_score_r - k_score_l - 3, 23,
                    k_dim.r, k_dim.g, k_dim.b);
-    text(screen, num_line("", world.chips, ""), k_chips_x, top + 39, k_chip, 2);
+    text(screen, num_line("", chips, ""), k_chips_x, top + 39, k_chip, 2);
     text(screen, "X", k_times_x, top + 42, k_paper);
-    text(screen, num_line("", world.mult, ""), k_mult_x, top + 39, k_mult, 2);
-    text(screen, num_line("SCORE ", world.chips * world.mult, ""), k_score_l,
+    text(screen, num_line("", mult, ""), k_mult_x, top + 39, k_mult, 2);
+    text(screen, num_line("SCORE ", chips * mult, ""), k_score_l,
          top + 61, k_payline);
 
     // The speed dial: the only thing you set before pulling, and the whole
     // risk of the game on one control.
-    text(screen, "SPEED", 120, top + 35, k_dim);
+    // The dial, and whether the cursor is standing on it. A cursor that only
+    // showed on the rows it was not on would be a cursor nobody could find.
+    const bool dial_here = world.state == jr::kIdle &&
+                           world.focus == jr::kFocusDial;
+    text(screen, "SPEED", 120, top + 35, dial_here ? k_select : k_dim);
     for (int i = 0; i < jr::k_speeds; i++) {
         const bool on = i == world.speed;
         const int bx = 120 + i * 39;
@@ -882,9 +945,32 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
         text_centred(screen, jr::speed_name(static_cast<uint8_t>(i)),
                      bx + 18, top + 48, on ? k_ink : k_dim);
     }
+    if (dial_here) {
+        pse::draw_rect(screen, 117, top + 42, 3 * 39 + 2, 19,
+                       k_select.r, k_select.g, k_select.b);
+    }
     const int bonus = jr::speed_mult(world.speed);
     text_right(screen, bonus > 0 ? num_line("+", bonus, " MULT") : "READABLE",
                236, top + 61, bonus > 0 ? k_payline : k_good);
+
+    /* The tally line, or between spins the NAME of whatever the cursor is on.
+     *
+     * Two lines rather than one because one does not fit: SUNK COST's name and
+     * its rule come to 248 px of a 240 px panel. This row is empty between
+     * spins and the row below it is empty during them, so the pair of them
+     * carry a name and a rule without either ever crowding the other.
+     */
+    if (world.state == jr::kIdle && world.focus == jr::kFocusJokers &&
+        world.joker_count > 0) {
+        text(screen, jr::joker_name(
+                 world.jokers[world.joker_sel % jr::k_max_jokers]),
+             4, top + 73, k_select);
+    } else if (world.state == jr::kIdle && world.focus == jr::kFocusItems &&
+               world.item_count > 0) {
+        text(screen, jr::item_name(
+                 world.items[world.item_sel % jr::k_max_items]),
+             4, top + 73, k_select);
+    }
 
     // One tally line at a time. The count is the animation.
     if (world.tally_step > 0 && world.tally_step <= world.tally_len) {
@@ -923,10 +1009,18 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
         }
         fill(screen, bx, by, bx + k_slot_w - 1, by + k_slot_h - 1,
              has ? k_panel : k_ink);
-        const Rgb edge = firing ? k_select : (has ? Rgb{0xC2, 0xC3, 0xC7}
-                                                  : k_dim);
+        const bool picked = has && world.state == jr::kIdle &&
+                            world.focus == jr::kFocusJokers &&
+                            i == world.joker_sel;
+        const Rgb edge = (firing || picked)
+                             ? k_select
+                             : (has ? Rgb{0xC2, 0xC3, 0xC7} : k_dim);
         pse::draw_rect(screen, bx, by, k_slot_w, k_slot_h,
                        edge.r, edge.g, edge.b);
+        if (picked) {
+            pse::draw_rect(screen, bx - 2, by - 2, k_slot_w + 4, k_slot_h + 4,
+                           k_select.r, k_select.g, k_select.b);
+        }
         if (!has) continue;
         draw_joker(screen, world.jokers[i], bx + (k_slot_w - k_joker_icon) / 2,
                    by + (k_slot_h - k_joker_icon) / 2);
@@ -950,27 +1044,72 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
         // boxes and nothing said the last two were spent by hand.
         fill(screen, dx - 6, dy, dx - 5, dy + k_slot_h - 1, k_chrome);
     }
+    const bool items_here = world.state == jr::kIdle &&
+                            world.focus == jr::kFocusItems;
     for (int i = 0; i < jr::k_max_items; i++) {
         int bx, by;
         item_slot(i, bx, by);
         const bool has = i < world.item_count;
-        const bool picked = has && world.item_count > 1 && i == world.item_sel;
+        const bool picked = has && i == world.item_sel &&
+                            (items_here || world.item_count > 1);
         fill(screen, bx, by, bx + k_slot_w - 1, by + k_slot_h - 1,
              has ? k_panel : k_ink);
         const Rgb edge = picked ? k_select : (has ? Rgb{0xC2, 0xC3, 0xC7}
                                                   : k_dim);
         pse::draw_rect(screen, bx, by, k_slot_w, k_slot_h,
                        edge.r, edge.g, edge.b);
+        if (picked && items_here) {
+            pse::draw_rect(screen, bx - 2, by - 2, k_slot_w + 4, k_slot_h + 4,
+                           k_select.r, k_select.g, k_select.b);
+        }
         if (!has) continue;
         draw_item(screen, world.items[i], bx + (k_slot_w - k_joker_icon) / 2,
                   by + (k_slot_h - k_joker_icon) / 2);
     }
 
-    if (world.msg) {
+    /* The bottom line: what the cursor is standing on.
+     *
+     * This is the whole reason the joker row can be five pictures. A row of
+     * silhouettes with no way to ask what one does is a memory test; a row you
+     * can point at, with the answer under it, is a row you can learn from
+     * while you play.
+     */
+    if (world.joker_menu && world.joker_count > 0) {
+        static const char* const k_acts[jr::k_joker_acts] = {
+            "MOVE LEFT", "MOVE RIGHT", "SELL",
+        };
+        const uint8_t held = world.jokers[world.joker_sel % jr::k_max_jokers];
+        int x = 4;
+        for (int i = 0; i < jr::k_joker_acts; i++) {
+            const bool on = i == world.joker_act;
+            const char* label = k_acts[i];
+            const int w = pse::text_width(label) + 8;
+            fill(screen, x, top + 110, x + w - 1, top + 122,
+                 on ? k_cabinet : k_panel);
+            pse::draw_rect(screen, x, top + 110, w, 13,
+                           on ? k_select.r : k_dim.r,
+                           on ? k_select.g : k_dim.g,
+                           on ? k_select.b : k_dim.b);
+            text(screen, label, x + 4, top + 113, on ? k_paper : k_dim);
+            x += w + 4;
+        }
+        text_right(screen, num_line("$", jr::joker_sale(held), ""), 236,
+                   top + 113, k_select);
+    } else if (world.msg) {
         text_centred(screen, world.msg, k_screen_w / 2, top + 113, k_good);
     } else if (world.state == jr::kCount) {
         text_centred(screen, jr::hand_name(world.hand_index), k_screen_w / 2,
                      top + 113, k_select);
+    } else if (world.state == jr::kIdle &&
+               world.focus == jr::kFocusJokers && world.joker_count > 0) {
+        text(screen, jr::joker_text(
+                 world.jokers[world.joker_sel % jr::k_max_jokers]),
+             4, top + 113, k_paper);
+    } else if (world.state == jr::kIdle &&
+               world.focus == jr::kFocusItems && world.item_count > 0) {
+        text(screen, jr::item_text(
+                 world.items[world.item_sel % jr::k_max_items]),
+             4, top + 113, k_paper);
     }
 
     /* And the number it put in, over the half of the equation it went into.
@@ -979,17 +1118,25 @@ void render_panel(const jr::World& world, const pse::RenderTarget& screen) {
      * and on whichever side it actually touched: a joker can add chips, add
      * mult, or double the mult, and one of those three is not the other two.
      */
-    if (fire.on) {
-        if (fire.entry->chips != 0) {
-            draw_pop(screen, num_line("+", fire.entry->chips, ""),
-                     (k_chips_x + k_times_x) / 2, top + 19, fire, k_chip);
+    /* And the number that just went in, over the half of the sum it went into.
+     *
+     * Every entry, not only the jokers. A payline is the commonest thing the
+     * count pays and it was the one thing with no pop at all, so the number a
+     * player most wanted to see arrive was the one that only appeared in the
+     * total. Chips on the left, mult or X2 on the right, and both when an
+     * entry touches both.
+     */
+    if (show.on) {
+        if (show.entry->chips != 0) {
+            draw_pop(screen, num_line("+", show.entry->chips, ""),
+                     (k_chips_x + k_times_x) / 2, top + 19, show, k_chip);
         }
-        if (fire.entry->mult == -1) {
-            draw_pop(screen, "X2", (k_mult_x + k_score_r) / 2, top + 19, fire,
+        if (show.entry->mult == -1) {
+            draw_pop(screen, "X2", (k_mult_x + k_score_r) / 2, top + 19, show,
                      k_mult);
-        } else if (fire.entry->mult != 0) {
-            draw_pop(screen, num_line("+", fire.entry->mult, ""),
-                     (k_mult_x + k_score_r) / 2, top + 19, fire, k_mult);
+        } else if (show.entry->mult != 0) {
+            draw_pop(screen, num_line("+", show.entry->mult, ""),
+                     (k_mult_x + k_score_r) / 2, top + 19, show, k_mult);
         }
     }
 }
@@ -1042,7 +1189,7 @@ void render_shop(const jr::World& world, const pse::RenderTarget& screen) {
         text(screen, shop_title(item), k_shop_text_x, y + 5,
              item.sold ? k_dim : k_paper);
         text(screen, shop_body(item), k_shop_text_x, y + 17, k_dim);
-        text_right(screen, item.sold ? "SOLD" : num_line("G", item.cost, ""),
+        text_right(screen, item.sold ? "SOLD" : num_line("$", item.cost, ""),
                    228, y + 5,
                    item.sold ? k_dim
                              : (world.gold >= item.cost ? k_select : k_warn));
@@ -1069,7 +1216,7 @@ void render_shop(const jr::World& world, const pse::RenderTarget& screen) {
                    on_reroll ? k_select.b : k_dim.b);
     draw_extra(screen, kExtraReroll, 9, y + 1);
     text(screen, "REROLL", 33, y + 7, on_reroll ? k_paper : k_dim);
-    text_right(screen, num_line("G", cost, ""), 110, y + 7,
+    text_right(screen, num_line("$", cost, ""), 110, y + 7,
                afford ? k_select : k_warn);
 
     fill(screen, 126, y, 234, y + 21, on_next ? k_cabinet : k_panel);

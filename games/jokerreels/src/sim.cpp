@@ -331,6 +331,11 @@ void score(World& w) {
 bool apply_tally_step(World& w) {
     if (w.tally_step >= w.tally_len) return false;
     const TallyEntry& e = w.tally[w.tally_step++];
+    // Where the numbers were before this entry. The screen counts from these
+    // to the new ones across the entry's hold rather than cutting: a total
+    // that jumps is a total nobody watched arrive.
+    w.chips_from = w.chips;
+    w.mult_from = w.mult;
     // Every entry adds, including the first. It used to be skipped because
     // score() seeded chips and mult with the base hand before the count
     // started; it does not any more, so skipping it dropped the best line and
@@ -358,6 +363,9 @@ void finish_score(World& w) {
         w.state = kIdle;
         w.msg = nullptr;
     }
+    // Back to the dial, so the next pull is A from where the player was left.
+    w.focus = kFocusDial;
+    w.joker_menu = 0;
 }
 
 void start_spin(World& w) {
@@ -391,9 +399,12 @@ void start_spin(World& w) {
     }
     w.chips = 0;
     w.mult = 0;
+    w.chips_from = 0;
+    w.mult_from = 0;
     w.scored = 0;
     w.tally_len = 0;
     w.tally_step = 0;
+    w.rush = 0;
     w.msg = nullptr;
     w.spin_ticks = 0;
     for (uint8_t line = 0; line < k_lines; line++) w.line_hand[line] = kNothing;
@@ -493,6 +504,52 @@ void use_item(World& w) {
     }
 }
 
+/* Moving a joker, or selling it back.
+ *
+ * Order is not tidying: UNDERSTUDY copies whatever is on its LEFT, so sliding
+ * one along the row is a real play, and it is the only way to aim that joker
+ * at anything.
+ */
+void do_joker_act(World& w) {
+    if (w.joker_count == 0) return;
+    if (w.joker_sel >= w.joker_count) w.joker_sel = 0;
+    const int i = w.joker_sel;
+    switch (w.joker_act) {
+        case kActLeft:
+            if (i == 0) { w.msg = "ALREADY FIRST"; return; }
+            {
+                const uint8_t t = w.jokers[i - 1];
+                w.jokers[i - 1] = w.jokers[i];
+                w.jokers[i] = t;
+            }
+            w.joker_sel = static_cast<uint8_t>(i - 1);
+            w.msg = "MOVED";
+            return;
+        case kActRight:
+            if (i + 1 >= w.joker_count) { w.msg = "ALREADY LAST"; return; }
+            {
+                const uint8_t t = w.jokers[i + 1];
+                w.jokers[i + 1] = w.jokers[i];
+                w.jokers[i] = t;
+            }
+            w.joker_sel = static_cast<uint8_t>(i + 1);
+            w.msg = "MOVED";
+            return;
+        default:
+            w.gold = static_cast<uint16_t>(w.gold + joker_sale(w.jokers[i]));
+            for (int k = i; k + 1 < w.joker_count; k++) {
+                w.jokers[k] = w.jokers[k + 1];
+            }
+            w.joker_count--;
+            if (w.joker_sel >= w.joker_count) {
+                w.joker_sel = w.joker_count
+                                  ? static_cast<uint8_t>(w.joker_count - 1) : 0;
+            }
+            w.msg = "SOLD";
+            return;
+    }
+}
+
 void buy(World& w) {
     if (w.shop_sel >= w.shop_len) return;
     ShopItem& item = w.shop[w.shop_sel];
@@ -565,6 +622,11 @@ int item_cost(uint8_t i) { return k_items_table[i % k_items].cost; }
 int item_chips(uint8_t i) { return k_items_table[i % k_items].chips; }
 int item_mult(uint8_t i) { return k_items_table[i % k_items].mult; }
 
+int joker_sale(uint8_t joker) {
+    const int half = joker_cost(joker) / 2;
+    return half < 2 ? 2 : half;
+}
+
 int reroll_cost(const World& w) {
     return k_reroll_base + k_reroll_step * w.rerolls;
 }
@@ -584,10 +646,21 @@ uint8_t shop_next_index(const World& w) {
  * panel from where you were looking.
  */
 int tally_hold(const World& w) {
-    constexpr int k_step_ticks = 22;
-    constexpr int k_joker_ticks = 40;
-    if (w.tally_step == 0 || w.tally_step > w.tally_len) return k_step_ticks;
-    return w.tally[w.tally_step - 1].joker ? k_joker_ticks : k_step_ticks;
+    // Long enough to read the line, watch the number climb to meet it, and
+    // see which joker moved. It was 22 ticks, under a quarter of a second,
+    // which is time to notice that something happened and not what.
+    constexpr int k_step_ticks = 55;
+    constexpr int k_joker_ticks = 70;
+    int hold = k_step_ticks;
+    if (w.tally_step > 0 && w.tally_step <= w.tally_len &&
+        w.tally[w.tally_step - 1].joker) {
+        hold = k_joker_ticks;
+    }
+    // A press does not SKIP: the same entries play in the same order, three
+    // times as fast. Skipping outright would make the count something to get
+    // rid of, and a count nobody reads may as well be a total.
+    if (w.rush) hold /= 3;
+    return hold < 6 ? 6 : hold;
 }
 
 int32_t facet_mid(int32_t angle, int facet) {
@@ -848,6 +921,10 @@ void world_init(World& w, uint32_t seed) {
     w.item_sel = 0;
     w.loaded_count = 0;
     w.rerolls = 0;
+    w.focus = kFocusDial;
+    w.joker_sel = 0;
+    w.joker_menu = 0;
+    w.joker_act = kActLeft;
     w.msg = nullptr;
 
     for (int h = 0; h < k_hands; h++) w.hand_level[h] = 1;
@@ -963,6 +1040,7 @@ void world_tick(World& w, const Buttons& btn) {
         }
 
         case kCount: {
+            if (btn.a) w.rush = 1;
             w.count_wait++;
             if (w.count_wait >= static_cast<uint16_t>(tally_hold(w))) {
                 w.count_wait = 0;
@@ -972,18 +1050,92 @@ void world_tick(World& w, const Buttons& btn) {
         }
 
         case kIdle: {
-            turn_dial(w, btn);
+            /* The panel has a CURSOR between spins.
+             *
+             * Three rows of things and one D-pad: up and down hop between the
+             * dial, the jokers and the consumables, and left and right act on
+             * whichever row the cursor is in. That is what lets a player point
+             * at a joker at all, which is what lets the panel say what it does
+             * rather than leaving five pictures to be memorised.
+             *
+             * A is context sensitive and the cursor is what makes that safe:
+             * it starts on the dial every time the machine comes back, so the
+             * pull is always A from where you were left.
+             */
+            if (w.joker_menu) {
+                // The actions on one joker, which is a modal of three words.
+                if (btn.left && w.joker_act > 0) w.joker_act--;
+                if (btn.right && w.joker_act + 1 < k_joker_acts) w.joker_act++;
+                if (btn.b) w.joker_menu = 0;
+                if (btn.a) { do_joker_act(w); w.joker_menu = 0; }
+                return;
+            }
+
+            if (btn.up) {
+                w.focus = static_cast<uint8_t>(w.focus > 0 ? w.focus - 1
+                                                           : k_focuses - 1);
+            }
+            if (btn.down) {
+                w.focus = static_cast<uint8_t>((w.focus + 1) % k_focuses);
+            }
+
+            if (w.focus == kFocusDial) {
+                if (btn.right) {
+                    w.speed = static_cast<uint8_t>(
+                        w.speed + 1 < k_speeds ? w.speed + 1 : k_speeds - 1);
+                }
+                if (btn.left) {
+                    w.speed = static_cast<uint8_t>(w.speed > 0 ? w.speed - 1 : 0);
+                }
+            } else if (w.focus == kFocusJokers) {
+                if (w.joker_count == 0) {
+                    w.joker_sel = 0;
+                } else {
+                    if (w.joker_sel >= w.joker_count) w.joker_sel = 0;
+                    if (btn.left) {
+                        w.joker_sel = static_cast<uint8_t>(
+                            (w.joker_sel + w.joker_count - 1) % w.joker_count);
+                    }
+                    if (btn.right) {
+                        w.joker_sel = static_cast<uint8_t>(
+                            (w.joker_sel + 1) % w.joker_count);
+                    }
+                }
+            } else {
+                if (w.item_count == 0) {
+                    w.item_sel = 0;
+                } else {
+                    if (w.item_sel >= w.item_count) w.item_sel = 0;
+                    if (btn.left) {
+                        w.item_sel = static_cast<uint8_t>(
+                            (w.item_sel + w.item_count - 1) % w.item_count);
+                    }
+                    if (btn.right) {
+                        w.item_sel = static_cast<uint8_t>(
+                            (w.item_sel + 1) % w.item_count);
+                    }
+                }
+            }
+
             // The instructions, for the moment a player wants to know what
             // they are aiming at.
             if (btn.b) open_learn(w, kIdle);
-            // X spends a consumable and Y picks which one. They are the two
-            // buttons this game had never used, and between spins is the only
-            // moment spending one is a decision rather than a reflex.
+            // X spends a consumable wherever the cursor is, because reaching
+            // for one is the same reflex whatever you were last looking at.
+            if (btn.x) use_item(w);
             if (btn.y && w.item_count > 1) {
                 w.item_sel = static_cast<uint8_t>((w.item_sel + 1) % w.item_count);
             }
-            if (btn.x) use_item(w);
-            if (btn.a) start_spin(w);
+            if (btn.a) {
+                if (w.focus == kFocusJokers && w.joker_count > 0) {
+                    w.joker_menu = 1;
+                    w.joker_act = kActLeft;
+                } else if (w.focus == kFocusItems && w.item_count > 0) {
+                    use_item(w);
+                } else if (w.focus == kFocusDial) {
+                    start_spin(w);
+                }
+            }
             return;
         }
 
