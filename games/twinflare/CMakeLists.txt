@@ -7,6 +7,7 @@ add_picosystem_game(twinflare
         src/tracks.cpp
         src/fixed.cpp
         src/render.cpp
+        src/sfx.cpp
     MODELS
         ${twinflare_model_files}
 )

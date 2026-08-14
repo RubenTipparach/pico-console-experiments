@@ -67,6 +67,17 @@ struct Events {
     uint8_t rev;       // the engine note, 0..255, off speed and throttle
 };
 
+// Fold one tick's events into a frame's worth.
+//
+// A frame steps the sim up to eight times and the sound layer is called once,
+// so something has to carry the seven ticks that would otherwise be thrown
+// away: a lap completed on the first of eight sim ticks in a frame is a lap
+// nobody hears. The edges accumulate and the LEVELS take the latest value,
+// which is the difference between "did this happen during the frame" and "what
+// is it doing now", and getting that backwards is a rev that flickers to
+// whatever the first tick of the frame happened to be.
+void merge_events(Events& into, const Events& from);
+
 // One pod under the flight model. The player's; the rivals run something far
 // cheaper, below.
 struct Pod {

@@ -254,6 +254,26 @@ Input autopilot(const Race& race, const Track& t) {
 
 }  // namespace
 
+void merge_events(Events& into, const Events& from) {
+    into.count |= from.count;
+    into.go |= from.go;
+    into.lap |= from.lap;
+    into.finish |= from.finish;
+    into.boost |= from.boost;
+    into.launch |= from.launch;
+    into.flood |= from.flood;
+    into.bump |= from.bump;
+    into.scrape |= from.scrape;
+    into.slam |= from.slam;
+    into.engine_out |= from.engine_out;
+    into.wreck |= from.wreck;
+    // Levels, not edges: the latest value wins. OR'd like the rest, `grinding`
+    // would latch on for the whole frame after one tick against the rock and
+    // `rev` would climb to the loudest tick and stay there.
+    into.grinding = from.grinding;
+    into.rev = from.rev;
+}
+
 int countdown_number(const Race& race) {
     if (race.phase != Phase::Countdown) return 0;
     if (race.countdown <= 0) return 0;
@@ -592,6 +612,11 @@ void race_tick(Race& race, const Input& raw) {
                 pod.flash_ticks = 20;
             }
         }
+
+        // The engines wind up audibly with the charge, which is the whole of
+        // "power up the engines during the countdown" as a sound: the note
+        // rising is the instrument, and the bar on screen is the readout.
+        race.ev.rev = static_cast<uint8_t>(30 + race.charge * 170 / k_charge_one);
 
         if (race.countdown <= 0) {
             race.phase = Phase::Racing;

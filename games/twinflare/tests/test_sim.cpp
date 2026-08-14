@@ -1401,6 +1401,107 @@ void test_heat_does_not_throw_sparks() {
           "and it does it without striking sparks");
 }
 
+void test_a_frame_hears_every_tick_in_it() {
+    // A frame steps the sim up to eight times and calls the sound layer once,
+    // so something has to carry the seven ticks that would otherwise be thrown
+    // away. Edges accumulate; levels take the latest value.
+    Events frame{};
+    Events a{};
+    a.lap = true;
+    a.rev = 200;
+    a.grinding = true;
+    Events b{};
+    b.bump = true;
+    b.rev = 40;
+    b.grinding = false;
+
+    merge_events(frame, a);
+    merge_events(frame, b);
+    check(frame.lap, "a lap on the first tick of a frame survives to the end of it");
+    check(frame.bump, "and so does a bump on the last");
+    // THE LEVELS DO NOT ACCUMULATE, which is the half that is easy to get
+    // wrong: OR'd like the rest, the rev would climb to the loudest tick of the
+    // frame and stay there, and one tick against a wall would latch the grind
+    // on for the whole frame.
+    check(frame.rev == 40, "the engine note is the latest tick's, not the loudest");
+    check(!frame.grinding, "and a scrape that ended during the frame has ended");
+}
+
+void test_the_race_says_what_happened() {
+    // The whole point of Events: the sound layer holds no state about the race
+    // and the race holds no opinion about the sound. Every cue below is raised
+    // by driving the sim into the situation rather than by setting the flag.
+    const Track& t = track(0);
+
+    // The countdown announces its numbers and the green light.
+    {
+        Race race;
+        race_init(race, 0, 0);
+        int counts = 0, gos = 0;
+        Input idle{};
+        while (race.phase == Phase::Countdown) {
+            race_tick(race, idle);
+            counts += race.ev.count ? 1 : 0;
+            gos += race.ev.go ? 1 : 0;
+        }
+        check(counts == 3 && gos == 1, "the grid says three, two, one, go");
+    }
+
+    // A lap, the flag, and a rev that rises off the throttle.
+    {
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        int laps = 0, finishes = 0, boosts = 0;
+        uint8_t quiet = 255, loud = 0;
+        int guard = 0;
+        while (!race.finished && guard++ < 40000) {
+            drive(race, t, in);
+            race_tick(race, in);
+            laps += race.ev.lap ? 1 : 0;
+            finishes += race.ev.finish ? 1 : 0;
+            boosts += race.ev.boost ? 1 : 0;
+            if (race.ev.rev < quiet) quiet = race.ev.rev;
+            if (race.ev.rev > loud) loud = race.ev.rev;
+        }
+        check(laps == t.laps, "one lap event per lap of the track");
+        check(finishes == 1, "and one flag, on the last of them");
+        check(boosts > 0, "the boost pads announce themselves");
+        // The engine is a LEVEL and has to actually move, or the drone it
+        // drives is a constant tone with a volume knob.
+        check(loud > 150, "the engine note reaches the top of its range");
+        check(loud - quiet > 100, "and it has real range, not a fixed pitch");
+        std::printf("  events over a race: %d laps, %d boosts, rev %d..%d\n",
+                    laps, boosts, quiet, loud);
+    }
+
+    // A wall says so on the tick it starts, once, not on every tick it lasts.
+    // On HOARFROST, which is three quarters wall, and driven against HOARFROST:
+    // the driver takes the track it is steering round, and handing it the
+    // desert while the race ran on the ice put the pod nowhere near a wall.
+    {
+        const Track& frost = track(3);
+        Race race;
+        race_start(race, 3, 0);
+        Input in{};
+        for (int i = 0; i < 400; ++i) { drive(race, frost, in); race_tick(race, in); }
+        int starts = 0, grinding = 0;
+        for (int i = 0; i < 1500; ++i) {
+            in = Input{};
+            in.throttle = true;
+            in.left = true;
+            race_tick(race, in);
+            starts += race.ev.scrape ? 1 : 0;
+            grinding += race.ev.grinding ? 1 : 0;
+        }
+        check(grinding > 50, "the pod really did grind along a wall");
+        check(starts > 0, "and the scrape announced itself");
+        check(starts < grinding / 4,
+              "once per contact, not once per tick of it: a scrape is a held "
+              "sound with an attack, not a machine gun");
+    }
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -1459,6 +1560,8 @@ int main() {
     test_a_damaged_engine_smokes_before_it_dies();
     test_a_hit_says_which_engine_took_it();
     test_heat_does_not_throw_sparks();
+    test_a_frame_hears_every_tick_in_it();
+    test_the_race_says_what_happened();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 
