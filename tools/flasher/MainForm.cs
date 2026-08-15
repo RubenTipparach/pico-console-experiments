@@ -1,8 +1,8 @@
 namespace PicoFlasher;
 
 /// <summary>
-/// Two tabs: Flash copies a .uf2 to the board, Console chooses what goes on
-/// one.
+/// Three tabs: Flash copies a .uf2 to the board, Console chooses what goes on
+/// one, and Play builds a game for this PC and runs it without a device.
 ///
 /// The Console tab is the bundle builder, back after the console stopped
 /// being a set of flash slots and became one binary. The job it does for a
@@ -31,6 +31,7 @@ public sealed class MainForm : Form
 
     private readonly TabControl _tabs = new();
     private readonly ConsoleTab _console;
+    private readonly PlayTab _play;
 
     public MainForm()
     {
@@ -73,8 +74,11 @@ public sealed class MainForm : Form
         {
             ReloadFiles();
             // A different folder is a different checkout, so the console tab
-            // is looking at a different set of games and a different menu.
-            _console?.SetBackend(new ConsoleYamlBackend(_root.Text));
+            // is looking at a different set of games and a different menu, and
+            // so is the play tab.
+            var moved = new ConsoleYamlBackend(_root.Text);
+            _console?.SetBackend(moved);
+            _play?.SetGames(moved.DiscoverGames(), _root.Text);
         };
 
         _browse.Text = "Folder...";
@@ -120,14 +124,25 @@ public sealed class MainForm : Form
         var flashPage = new TabPage("Flash") { Padding = new Padding(4) };
         flashPage.Controls.Add(layout);
 
-        _console = new ConsoleTab(new ConsoleYamlBackend(_root.Text));
+        var backend = new ConsoleYamlBackend(_root.Text);
+        _console = new ConsoleTab(backend);
         _console.FlashRequested += OnFlashRequested;
         var consolePage = new TabPage("Console") { Padding = new Padding(4) };
         consolePage.Controls.Add(_console);
 
+        // The play tab takes a list rather than the backend. It has no console
+        // in it and no business holding one; the backend is simply the thing
+        // that already knows how to read games/*/game.yml, and a second reader
+        // would be a second place to keep that in step.
+        _play = new PlayTab(_root.Text);
+        _play.SetGames(backend.DiscoverGames(), _root.Text);
+        var playPage = new TabPage("Play") { Padding = new Padding(4) };
+        playPage.Controls.Add(_play);
+
         _tabs.Dock = DockStyle.Fill;
         _tabs.TabPages.Add(flashPage);
         _tabs.TabPages.Add(consolePage);
+        _tabs.TabPages.Add(playPage);
         Controls.Add(_tabs);
 
         _watcher.DrivesChanged += OnDrivesChanged;
@@ -306,6 +321,10 @@ public sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         _console?.SaveQuietly();
+        // A game launched from the Play tab is a child of this process. Left
+        // behind it would be a window with no way back to the tool that
+        // started it.
+        _play?.StopIfRunning();
         base.OnFormClosing(e);
     }
 

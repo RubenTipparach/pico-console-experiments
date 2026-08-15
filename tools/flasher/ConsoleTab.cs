@@ -379,7 +379,7 @@ public sealed class ConsoleTab : UserControl
         _available.Items.Clear();
         foreach (var game in _games)
         {
-            _icons.Images.Add(LoadIcon(game.ThumbnailPath));
+            _icons.Images.Add(GameIcon.Load(game.ThumbnailPath));
             _available.Items.Add(new ListViewItem(game.Title)
             {
                 Tag = game,
@@ -399,30 +399,6 @@ public sealed class ConsoleTab : UserControl
         RefreshMenu();
     }
 
-    private static Image LoadIcon(string? path)
-    {
-        if (path is not null)
-        {
-            try
-            {
-                // Through a copy in memory so the file is not left locked:
-                // the build rewrites thumbnails, and a tool holding one open
-                // fails that build with a permission error nobody expects.
-                using var stream = new MemoryStream(File.ReadAllBytes(path));
-                using var original = Image.FromStream(stream);
-                return new Bitmap(original, new Size(48, 48));
-            }
-            catch (IOException) { }
-            catch (ArgumentException) { }
-        }
-
-        var placeholder = new Bitmap(48, 48);
-        using var graphics = Graphics.FromImage(placeholder);
-        graphics.Clear(Color.FromArgb(58, 58, 68));
-        using var pen = new Pen(Color.FromArgb(150, 150, 160), 3);
-        graphics.DrawLine(pen, 8, 8, 40, 40);
-        return placeholder;
-    }
 
     private ConsoleRecipe CurrentRecipe() => new(_title.Text, _rows.ToList());
 
