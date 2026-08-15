@@ -31,6 +31,12 @@ bool g_enabled = true;
 bool g_engine_on = false;
 // And the grind, which is the same problem with a different voice.
 bool g_grind_on = false;
+// Frames left of the blast. The noise channel is the grind's, borrowed: a
+// wrecked pod is not grinding anything, so the two can never want it at once,
+// and noise is the only voice here that can be a bang rather than a note. The
+// square cue underneath it keeps playing, so what is heard is a crack with a
+// tone falling out of it.
+int g_bang_left = 0;
 
 void play(const Step* steps, int count) {
     // Later cues replace earlier ones: a crash should never wait politely
@@ -103,6 +109,7 @@ void sfx_silence() {
     g_step_count = 0;
     g_engine_on = false;
     g_grind_on = false;
+    g_bang_left = 0;
 }
 
 void sfx_handle(const Events& ev) {
@@ -122,8 +129,18 @@ void sfx_handle(const Events& ev) {
     }
 
     // ---- the grind, likewise held ------------------------------------------
+    // The bang owns this channel while it lasts: a pod that just came apart is
+    // not grinding a wall, and letting the grind take it back mid blast would
+    // turn the explosion into a scrape.
+    // The bang's claim on this channel is a CONDITION here, not another branch
+    // chained in front of the grind. Chaining it would put this level into the
+    // one shot priority chain below, which a tooling check forbids and is
+    // right to: a drone handled as a cue is a click. (That check reads the
+    // source as text, comments included, so do not spell the banned shape out
+    // in one either. This comment used to, and failed the build.)
     auto& grind = blit::channels[2];
-    if (ev.grinding) {
+    const bool grinding_now = ev.grinding && g_bang_left == 0;
+    if (grinding_now) {
         if (!g_grind_on) {
             grind.frequency = 900;
             grind.trigger_attack();
@@ -141,6 +158,13 @@ void sfx_handle(const Events& ev) {
     if (ev.wreck) {
         const Step s[] = {{620, 6}, {500, 10}, {410, 22}};
         play(s, 3);
+        // THE BANG. Noise, because the pod exploding is the one thing in this
+        // game that is not a note: a square wave sweep alone reads as a error
+        // buzzer, and the pod now visibly comes apart on the same frame.
+        grind.frequency = 620;
+        grind.trigger_attack();
+        g_grind_on = false;
+        g_bang_left = 16;
         // The only cue that reaches across: a wrecked pod has no engine note.
         engine.trigger_release();
         g_engine_on = false;
@@ -192,6 +216,10 @@ void sfx_handle(const Events& ev) {
 
 void sfx_tick() {
     auto& cue = blit::channels[0];
+
+    // The blast runs itself out and hands the noise channel back to the grind.
+    if (g_bang_left > 0 && --g_bang_left == 0)
+        blit::channels[2].trigger_release();
 
     if (g_ticks_left > 0) {
         --g_ticks_left;

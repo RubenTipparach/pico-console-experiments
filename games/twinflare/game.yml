@@ -18,8 +18,8 @@ rules:
 controls:
   - "B: throttle. Hold it on the grid to wind the engines up"
   - "B twice: boost, once the green light beside the heat bar is on"
-  - "Y: air brake, and it nearly doubles how hard you can turn"
-  - "X: repair both engines, at a third of the throttle"
+  - "X: air brake, and it nearly doubles how hard you can turn"
+  - "Y: repair both engines, at a third of the throttle"
   - "left/right: steer"
   - "up/down: pitch the nose. Nose up in the air to glide a gap"
   - "A: pause"

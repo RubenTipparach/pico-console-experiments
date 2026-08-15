@@ -111,7 +111,6 @@ struct Pod {
     int16_t wreck_ticks;
     int32_t wreck_speed;         // what it was doing when it went, for the respawn
     int16_t flash_ticks;
-    int16_t blast[2];
     // Ticks of sparks left on each engine, set by whatever last hit it. The
     // renderer used to strike sparks off a wall alone, because a wall was the
     // only damage source that said WHERE it landed; every other one took the

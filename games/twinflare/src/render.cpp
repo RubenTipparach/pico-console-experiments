@@ -1230,6 +1230,11 @@ struct PodPose {
     int16_t hit[2];
     // And which engines are hurt badly enough to trail smoke.
     bool smoking[2];
+    // Ticks left of a wreck, counting down, or zero for a pod in one piece.
+    // The explosion is driven off this rather than off a counter of its own:
+    // the sim already runs exactly one clock from the bang to the respawn, and
+    // a second one beside it is a second thing to keep in step.
+    int16_t wreck;
 };
 
 // A unit vector across a strand, perpendicular to it and to the line of sight,
@@ -1505,6 +1510,179 @@ void smoke(const PodPose& p, const float at[3], uint32_t tick, const uint8_t sky
     }
 }
 
+// THE POD COMING APART.
+//
+// A wreck used to be a pod that carried on being drawn, intact, tumbling
+// gently, with the word WRECKED in the corner. The fuse made that worse rather
+// than better: the whole point of counting three seconds down is that
+// something happens at zero, and what happened was a caption.
+//
+// One shot, driven off the sim's own wreck clock, in three overlapping stages
+// so it reads as an event rather than a puff:
+//
+//   the flash    the first fifth of a second, a white core that blooms and is
+//                gone. This is what sells the bang at 120 pixels, because it
+//                is the only part big enough to register in two frames.
+//   the debris   the pod's pieces thrown out and up, hot at first, cooling to
+//                a dark tumbling chunk. They arrive fast and slow down.
+//   the smoke    what is left, rising and fading, for the rest of the wreck,
+//                so the respawn does not arrive into an empty frame.
+//
+// The aft bias is deliberate and it is the same lesson the sparks and the
+// smoke both had to learn: the chase camera is BEHIND the pod, so a piece
+// thrown backward is a piece thrown at the lens, and at eight units of camera
+// distance a debris speed that looks right sideways puts half the explosion
+// behind the near plane. Backward throws are cut to a third. Nothing here
+// reaches past about three and a half units, well inside the camera.
+constexpr int k_boom_chunks = 14;
+constexpr int k_boom_smoke = 7;
+// How far through the wreck each stage runs, as a fraction of wreck_ticks.
+// The debris runs the WHOLE wreck. Cutting it off at half was the first shape
+// and it left the last second of the wreck with two grey puffs on an empty
+// road: the pod is gone, the fire is out, and there is nothing to look at
+// while the camera tracks a hole in the air. The pieces are the wreck, so they
+// stay for all of it, cooling and falling.
+constexpr float k_flash_until = 0.12f;
+constexpr float k_debris_until = 1.0f;
+
+void fireball(const PodPose& p, const float centre[3], float age,
+              const uint8_t sky[3]) {
+    const float fx = std::sin(p.yaw), fz = std::cos(p.yaw);
+    const float sx = std::cos(p.yaw), sz = -std::sin(p.yaw);
+
+    // ---- the flash ---------------------------------------------------------
+    // A CLUSTER, not concentric shells. Three camera facing squares centred on
+    // one point are one square: they share an orientation and a centre, so the
+    // largest simply swallows the rest and what reaches the screen is a flat
+    // orange rectangle. Measured, the outer shell reached four and a half units
+    // of half extent against a pod five units wide, which at chase distance is
+    // most of the frame painted one colour.
+    //
+    // Six lumps scattered inside a small radius overlap into an irregular
+    // silhouette instead, which is what makes it read as fire rather than as a
+    // rectangle, and the whole ball stays about as wide as the pod.
+    if (age < k_flash_until) {
+        const float t = age / k_flash_until;
+        // Hot white lumps with orange between them, rather than white with
+        // pale yellow: at 120 pixels a cream blob is a cream blob, and the
+        // orange is what says fire in the two frames anyone actually sees.
+        static const uint8_t k_hot[3] = {255, 250, 226};
+        static const uint8_t k_mid[3] = {255, 166, 62};
+        for (int k = 0; k < 6; ++k) {
+            const uint32_t seed = static_cast<uint32_t>(k + 3) * 2654435761u;
+            const float across = (((seed >> 4) & 7) / 3.5f - 1.0f) * 0.85f;
+            const float rise = (((seed >> 10) & 7) / 3.5f - 1.0f) * 0.55f;
+            const float fore = (((seed >> 16) & 7) / 3.5f - 1.0f) * 0.5f;
+            // Blooms out from the middle and holds, rather than expanding for
+            // the whole flash: a ball that is still growing when it vanishes
+            // reads as a wipe.
+            const float grow = 0.45f + t * 0.9f;
+            const float base[3] = {
+                centre[0] + (sx * across + fx * fore) * grow,
+                centre[1] + 0.45f + rise * grow,
+                centre[2] + (sz * across + fz * fore) * grow,
+            };
+            const float sz_q = 0.62f + t * 0.30f;
+            float rx = base[2], rz = -base[0];
+            const float m = std::sqrt(rx * rx + rz * rz);
+            if (m < 0.0001f) continue;
+            rx = rx / m * sz_q; rz = rz / m * sz_q;
+            const float q[4][3] = {
+                {base[0] - rx, base[1] + sz_q, base[2] - rz},
+                {base[0] + rx, base[1] + sz_q, base[2] + rz},
+                {base[0] + rx, base[1] - sz_q, base[2] + rz},
+                {base[0] - rx, base[1] - sz_q, base[2] - rz},
+            };
+            quad(q[0], q[1], q[2], q[3], (k & 1) ? k_mid : k_hot, false);
+            ++g_stats.boom;
+        }
+    }
+
+    // ---- the debris --------------------------------------------------------
+    if (age < k_debris_until) {
+        const float t = age / k_debris_until;
+        // Ease out: everything leaves at once and slows, which is how a blast
+        // throws things. Linear travel reads as a firework going up.
+        const float reach = 1.0f - (1.0f - t) * (1.0f - t);
+        static const uint8_t k_hot[3] = {255, 232, 168};
+        static const uint8_t k_warm[3] = {255, 146, 58};
+        static const uint8_t k_cold[3] = {96, 78, 72};
+        for (int k = 0; k < k_boom_chunks; ++k) {
+            const uint32_t seed = static_cast<uint32_t>(k + 1) * 2654435761u;
+            const float across = ((seed >> 3) & 15) / 7.5f - 1.0f;
+            const float up = 0.30f + ((seed >> 9) & 15) / 15.0f;
+            float fore = ((seed >> 15) & 15) / 7.5f - 1.0f;
+            if (fore < 0.0f) fore *= 0.33f;   // not into the lens
+            const float speed = 2.0f + ((seed >> 21) & 7) * 0.22f;
+            const float r = reach * speed;
+            // Gravity, so they arc over and come down instead of drifting out
+            // forever. This is most of what makes the late wreck read as
+            // debris rather than as floating markers.
+            const float drop = t * t * 3.2f;
+            const float base[3] = {
+                centre[0] + sx * across * r + fx * fore * r,
+                centre[1] + 0.35f + up * r - drop,
+                centre[2] + sz * across * r + fz * fore * r,
+            };
+            const float sz_q = 0.58f - t * 0.20f;
+            float rx = base[2], rz = -base[0];
+            const float m = std::sqrt(rx * rx + rz * rz);
+            if (m < 0.0001f) continue;
+            rx = rx / m * sz_q; rz = rz / m * sz_q;
+            const float q[4][3] = {
+                {base[0] - rx, base[1] + sz_q, base[2] - rz},
+                {base[0] + rx, base[1] + sz_q, base[2] + rz},
+                {base[0] + rx, base[1] - sz_q, base[2] + rz},
+                {base[0] - rx, base[1] - sz_q, base[2] - rz},
+            };
+            quad(q[0], q[1], q[2], q[3],
+                 t < 0.10f ? k_hot : (t < 0.30f ? k_warm : k_cold), false);
+            ++g_stats.boom;
+        }
+    }
+
+    // ---- the smoke it leaves ------------------------------------------------
+    // Starts under the debris and outlives it, fading toward the sky for the
+    // same reason the engine plume does: a dark puff on a dark track is a hole
+    // in the picture rather than smoke.
+    if (age > 0.06f) {
+        const float t = (age - 0.06f) / (1.0f - 0.06f);
+        for (int k = 0; k < k_boom_smoke; ++k) {
+            const uint32_t seed = static_cast<uint32_t>(k + 1) * 2246822519u;
+            const float lag = (seed >> 28) / 15.0f * 0.35f;
+            const float a = t - lag;
+            if (a <= 0.0f) continue;
+            const float across = ((seed >> 5) & 7) / 3.5f - 1.0f;
+            const float fore = (((seed >> 11) & 7) / 3.5f - 1.0f) * 0.4f;
+            const float spread = 0.5f + a * 1.5f;
+            const float base[3] = {
+                centre[0] + sx * across * spread + fx * fore * spread,
+                centre[1] + 0.4f + a * 2.6f,
+                centre[2] + sz * across * spread + fz * fore * spread,
+            };
+            const float sz_q = 0.5f + a * 0.9f;
+            const float fade = a * 0.7f;
+            const uint8_t puff[3] = {
+                static_cast<uint8_t>(46 + (sky[0] - 46) * fade),
+                static_cast<uint8_t>(44 + (sky[1] - 44) * fade),
+                static_cast<uint8_t>(48 + (sky[2] - 48) * fade),
+            };
+            float rx = base[2], rz = -base[0];
+            const float m = std::sqrt(rx * rx + rz * rz);
+            if (m < 0.0001f) continue;
+            rx = rx / m * sz_q; rz = rz / m * sz_q;
+            const float q[4][3] = {
+                {base[0] - rx, base[1] + sz_q, base[2] - rz},
+                {base[0] + rx, base[1] + sz_q, base[2] + rz},
+                {base[0] + rx, base[1] - sz_q, base[2] + rz},
+                {base[0] - rx, base[1] - sz_q, base[2] - rz},
+            };
+            quad(q[0], q[1], q[2], q[3], puff, false);
+            ++g_stats.boom;
+        }
+    }
+}
+
 // The back end of an engine mesh: how far aft the nozzle is and how wide it is
 // there. Read off the mesh rather than written down beside it, because six
 // racers fly six different engines and a table of their lengths is a table
@@ -1630,6 +1808,22 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     PodPose cab = p;
     cab.yaw = p.yaw - p.swing * k_cockpit_trail;
     cab.roll = p.roll + p.swing * 0.45f;
+
+    // A WRECKED POD IS NOT DRAWN. It is in pieces, and the pieces are the
+    // explosion: drawing the intact hull inside its own fireball is what this
+    // looked like before, a pod flying calmly through a bang. Returning here
+    // also skips the cables, the flares and the smoke below, all of which
+    // belong to a pod that still exists.
+    if (p.wreck > 0 && g_palette) {
+        float centre[3];
+        local_point(p, 0.0f, 0.0f, k_pod_z * 0.5f, centre);
+        note_coordinate(centre);
+        // Age runs 0 at the bang to 1 at the respawn. wreck_ticks counts down,
+        // so it is one minus the fraction left.
+        const float age = 1.0f - static_cast<float>(p.wreck) / k_respawn_ticks;
+        fireball(p, centre, age < 0.0f ? 0.0f : age, g_palette->sky_bottom);
+        return;
+    }
 
     float left[3], right[3], cockpit[3];
     local_point(eng, -k_engine_x, k_engine_y, k_engine_z, left);
@@ -1855,6 +2049,7 @@ PodPose pose_of(const Pod& pod, uint32_t tick) {
     p.spray = pod.over_water && pod.grounded;
     p.surface = to_world(pod.y - pod.clearance);
     p.scrape = pod.scraping ? pod.scrape : 0;
+    p.wreck = pod.wreck_ticks;
     for (int i = 0; i < 2; ++i) {
         p.hit[i] = pod.hit[i];
         // The sim owns the threshold, so what smokes and what the health bar

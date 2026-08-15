@@ -615,6 +615,143 @@ void test_the_rocks_belong_to_the_track() {
     }
 }
 
+void test_the_pod_explodes_when_the_fuse_runs_out() {
+    // The requirement: when the break up countdown reaches zero the pod should
+    // explode. It reached zero and printed WRECKED, with the intact pod still
+    // being drawn, tumbling gently through its own non-existent fireball.
+    //
+    // Pixels, not draw calls, for exactly the reason the spark test above
+    // spells out: a billboard that projects to nothing submits happily and
+    // paints nothing. And one extra thing that only matters here, because the
+    // hull is deliberately not drawn during a wreck: an explosion that fails
+    // to rasterize is not a missing effect on a visible pod, it is an empty
+    // road with a camera tracking a hole in the air, and a test that only
+    // checked "the pod is gone" would pass on that.
+    // NIGHTJAR, on purpose, and not the SCARAB the rest of these tests fly.
+    // The hull has to be told apart from the desert AND from the fireball, and
+    // Scarab's livery is {214, 124, 40}: amber, which is both. Nightjar is
+    // purple, which is neither, so "is the pod on screen" is answerable.
+    const int k_racer = 4;
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, k_racer);
+    Input in{};
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+
+    // The hull, by the RELATIONSHIP between its channels rather than by
+    // matching its colour. Matching the colour was the obvious way and it does
+    // not work: the mesh is lit, so what lands on screen is the livery scaled
+    // by a shading factor, and measured, an exact match with a generous
+    // tolerance found zero hull pixels on a frame with the pod plainly in the
+    // middle of it. That detector would have made "the hull is gone during the
+    // wreck" pass on a frame where the pod never left.
+    //
+    // Flat shading multiplies all three channels together, so the ORDER
+    // survives it. Nightjar is blue dominant with red over green; the desert
+    // is red over green over blue, and the fire is red dominant with almost no
+    // blue. Nothing else on this track is blue dominant.
+    //
+    // Counting triangles instead was tried and is worse than useless here: the
+    // explosion submits its own quads, so the wrecked frame drew THREE MORE
+    // triangles than the intact one and the difference said nothing about the
+    // hull at all.
+    const auto hull_pixels = []() {
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) {
+            const uint8_t* px = g_pixels + i * 3;
+            if (px[2] > px[0] + 18 && px[0] > px[1] + 12) ++n;
+        }
+        return n;
+    };
+    // Fire: hot white through orange. Nothing on DUNE SEA is this bright and
+    // this saturated, which is the whole reason the blast reads at 120 pixels.
+    const auto fire_pixels = []() {
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) {
+            const uint8_t* px = g_pixels + i * 3;
+            if (px[0] > 230 && px[1] > 130 && px[1] < 255 && px[2] < 140) ++n;
+        }
+        return n;
+    };
+
+    // Two renders of one sim state: the pod intact, then the same pod with the
+    // wreck clock running. Everything else in the frame is identical, so the
+    // whole difference between them is the pod.
+    render_frame(race, chrome, target());
+    const int hull_before = hull_pixels();
+    check(hull_before >= 20, "the pod is on screen before it goes");
+    check(render_stats().boom == 0, "and nothing is exploding yet");
+    const int16_t saved = race.pod.wreck_ticks;
+    race.pod.wreck_ticks = k_respawn_ticks / 2;
+    render_frame(race, chrome, target());
+    check(hull_pixels() == 0,
+          "the hull stops being drawn the moment the pod is wrecked");
+    check(render_stats().boom > 0, "and the explosion is drawn instead");
+    race.pod.wreck_ticks = saved;
+
+    // Lose an engine and let the fuse burn all the way down.
+    race.pod.engine[0] = 0;
+    race.pod.dead = 1;
+    Input coast{};
+    int guard = 0;
+    while (race.pod.wreck_ticks == 0 && guard++ < 600) race_tick(race, coast);
+    check(race.pod.wreck_ticks > 0, "the fuse ran out and the pod wrecked");
+
+    // The flash's own white, which the debris never wears. Both are hot, but
+    // the flash core is {255, 250, 226} and the hottest debris is
+    // {255, 232, 168}: the blue channel is the whole difference, and without
+    // it a test cannot tell a fireball from a shower of embers. Switching the
+    // flash off entirely left every other check in this test green.
+    const auto flash_pixels = []() {
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) {
+            const uint8_t* px = g_pixels + i * 3;
+            if (px[0] > 240 && px[1] > 235 && px[2] > 200) ++n;
+        }
+        return n;
+    };
+
+    int fire_peak = 0, drawn = 0, frames = 0, hull_seen = 0;
+    int flash_peak = 0, thin = 0;
+    for (int i = 0; race.pod.wreck_ticks > 0 && i < 400; ++i) {
+        render_frame(race, chrome, target());
+        ++frames;
+        // Every frame, not a sample: the wreck runs a second and a half and a
+        // check at the flash alone would pass for an effect that is one frame
+        // long and then leaves the camera on an empty road.
+        if (render_stats().boom > 0) ++drawn;
+        // And SUBSTANCE, not just presence. Counting "more than nothing" let a
+        // mutant through that cut the debris off after one frame: the trailing
+        // smoke alone kept the counter above zero for the whole wreck, so an
+        // explosion reduced to seven drifting puffs read as fully working.
+        if (render_stats().boom < 10) ++thin;
+        if (hull_pixels() > 0) ++hull_seen;
+        const int fire = fire_pixels();
+        if (fire > fire_peak) fire_peak = fire;
+        const int white = flash_pixels();
+        if (white > flash_peak) flash_peak = white;
+        race_tick(race, coast);
+    }
+    check(frames > 100, "the wreck lasts long enough to see");
+    check(drawn == frames, "something is drawn on every frame of it");
+    check(hull_seen == 0, "and the hull is gone for all of it, not just the flash");
+    // Measured at zero on a working build, so the margin is slack rather than
+    // a tuned number. An explosion cut down to its trailing smoke runs about
+    // 150 thin frames.
+    check(thin <= 2, "the wreck stays an explosion, not a few drifting puffs");
+    // Eight pixels was enough for a spark. A pod coming apart is the biggest
+    // event in the game and has to be bigger than one spark.
+    check(fire_peak >= 60, "the fireball is a fireball, not a speck");
+    // Measured at 162 px. Zero when the flash is switched off, which every
+    // other check in this test survived.
+    check(flash_peak >= 40, "and it starts with a flash, not just embers");
+    std::printf("  boom: %d frames of wreck, all drawn (%d thin), fire peaks at "
+                "%d px, flash core %d px, hull %d px before and %d after\n",
+                frames, thin, fire_peak, flash_peak, hull_before, hull_seen);
+}
+
 void test_scraping_a_wall_throws_sparks() {
     // Reported from playing it: crashing into a wall popped the pod up over
     // the wall, and nothing on screen said the pod was grinding along it. The
@@ -816,6 +953,7 @@ int main() {
     test_pod_select_shows_the_pod();
     test_the_rocks_belong_to_the_track();
     test_scraping_a_wall_throws_sparks();
+    test_the_pod_explodes_when_the_fuse_runs_out();
     test_the_world_is_closed_when_you_look_off_the_side();
     test_no_band_of_ground_runs_backwards();
 

@@ -81,6 +81,14 @@ struct RenderStats {
     // never smokes pass a check about smoking because it happened to be
     // grinding a wall at the time.
     uint16_t smoke;
+    // Pieces of the pod coming apart: the core flash, the debris thrown out of
+    // it, and the smoke left behind. Counted for the reason every other one
+    // here is, and for one more that is specific to this effect: the hull is
+    // NOT drawn while the pod is in pieces, so a fireball that silently fails
+    // to draw is not a missing effect on a visible pod, it is an empty screen
+    // with a camera tracking nothing. A test that only asked "is the hull
+    // gone" would pass on exactly that.
+    uint16_t boom;
     // Vertical faces: canyon walls, tunnel sides and roofs, and the two lips of
     // a chasm. Counted because a hole in the road with no walls around it and a
     // hole in the road with walls look the same from every angle except the one

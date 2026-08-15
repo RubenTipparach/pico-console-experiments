@@ -107,6 +107,7 @@ jobs:
           python3 tools/tests/test_twinflare_sound.py
           python3 tools/tests/test_audio_range.py
           python3 tools/tests/test_gen_shell.py
+          python3 tools/tests/test_control_map.py
           python3 tools/tests/test_game_entry.py
           python3 tools/tests/test_screen_mode.py
           python3 tools/tests/test_board_agnostic.py
