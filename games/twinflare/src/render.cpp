@@ -1979,9 +1979,33 @@ void draw_hud(const Race& race, const pse::RenderTarget& target) {
     // button name.
     const char* msg = nullptr;
     uint8_t mr = 255, mg = 255, mb = 255;
+    char fuse_line[16];
     if (pod.wreck_ticks > 0)      { msg = "WRECKED";    mr = 255; mg = 90;  mb = 90; }
+    else if (fuse_seconds(pod) > 0) {
+        // The count, not just the state. A pod on one engine has three seconds
+        // to live and nothing it can do about them, so the one thing the line
+        // owes the player is HOW LONG: "ONE ENGINE" says a fact, "BREAKING UP
+        // 2" says what to do with the next two seconds.
+        //
+        // This REPLACES the old steady "ONE ENGINE" line rather than sitting
+        // above it. A pod with a dead engine is always on the clock, so that
+        // line could never be reached again, and a branch for a state the sim
+        // cannot be in is worse than no branch: it reads as a state that
+        // exists. test_a_dead_engine_is_always_on_the_clock is what allows it
+        // to stay deleted.
+        const char* word = "BREAKING UP ";
+        int n = 0;
+        while (word[n]) { fuse_line[n] = word[n]; ++n; }
+        fuse_line[n++] = static_cast<char>('0' + fuse_seconds(pod));
+        fuse_line[n] = '\0';
+        msg = fuse_line;
+        // Flashing, and faster as it runs out, which is the part that reads
+        // from the corner of an eye while the player is looking at the road.
+        const int rate = pod.fuse > k_tick_hz ? 10 : 5;
+        const bool on = ((race.ticks / rate) & 1) == 0;
+        mr = 255; mg = on ? 90 : 200; mb = on ? 60 : 120;
+    }
     else if (pod.locked)          { msg = "VENTING";    mr = 255; mg = 150; mb = 60; }
-    else if (pod.dead)            { msg = "ONE ENGINE"; mr = 255; mg = 190; mb = 80; }
     if (msg) {
         const int w = pse::text_width(msg);
         pse::fill_rect(target, 60 - w / 2 - 3, 46, w + 6, 11, 10, 10, 16);

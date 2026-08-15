@@ -147,6 +147,16 @@ void sfx_handle(const Events& ev) {
     } else if (ev.finish) {
         const Step s[] = {{523, 5}, {659, 5}, {784, 5}, {1046, 22}};
         play(s, 4);
+    } else if (ev.fuse_lit) {
+        // An engine has gone and the pod has three seconds. Longer and more
+        // alarming than the plain engine_out cue below it, because it is not
+        // reporting damage, it is starting a countdown.
+        const Step s[] = {{980, 4}, {620, 5}, {980, 4}, {620, 14}};
+        play(s, 4);
+    } else if (ev.fuse_beat) {
+        // One per second of it, so the clock is audible without looking.
+        const Step s[] = {{880, 3}, {660, 4}};
+        play(s, 2);
     } else if (ev.engine_out) {
         const Step s[] = {{660, 4}, {500, 9}, {430, 13}};
         play(s, 3);

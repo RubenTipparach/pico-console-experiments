@@ -254,6 +254,19 @@ constexpr int32_t k_bump_push = per_s(fp(30));// and they are shoved apart
 // out that the player has a decision to make about the repair button.
 constexpr int32_t k_engine_critical = 300;    // thousandths of engine_max
 
+// ONE ENGINE IS A FUSE, NOT A HANDICAP.
+//
+// A pod flying on one engine is a pod coming apart: the surviving engine is
+// carrying a load meant for two and the frame was never built for the
+// asymmetry. Three seconds after an engine goes out, the pod does too.
+//
+// It cannot be nursed and that is the point. Repair does not resurrect a dead
+// engine, so there is nothing to work on and no button that stops the clock.
+// What the three seconds buy is a chance to reach the line, back off a jump,
+// or simply watch it coming, and the respawn is the recovery: it hands both
+// engines back at half.
+constexpr int16_t k_fuse_ticks = 3 * k_tick_hz;
+
 // How long one hit throws sparks. Short: a spark shower that outlives the
 // impact reads as a fire rather than as a blow.
 constexpr int16_t k_hit_ticks = 24;

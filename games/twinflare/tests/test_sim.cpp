@@ -1516,6 +1516,162 @@ int ring_delta(int a, int b, int n) {
     return d > n / 2 ? d - n : d;
 }
 
+void test_one_engine_is_a_fuse() {
+    // The requirement, in its own words: when we are down to one engine the pod
+    // should explode after a few seconds.
+    //
+    // Not a handicap you nurse. Repair cannot resurrect a dead engine, so there
+    // is nothing to work on and no button that stops the clock: what the three
+    // seconds buy is a chance to reach a line or watch it coming.
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+    check(race.pod.fuse == 0, "two good engines light no fuse");
+    check(fuse_seconds(race.pod) == 0, "and the HUD has nothing to count");
+
+    // Port engine out, everything else untouched.
+    race.pod.engine[0] = 0;
+    race.pod.dead = 1;
+    Input coast{};
+    race_tick(race, coast);
+    check(race.ev.fuse_lit, "losing an engine lights the fuse, once");
+    check(fuse_seconds(race.pod) == 3, "and it reads three seconds");
+
+    int beats = 0, ticks = 0;
+    bool relit = false;
+    for (; ticks < 2000 && race.pod.wreck_ticks == 0; ++ticks) {
+        // Repair held the whole way, which is the check that it cannot be
+        // nursed: the one button a player would reach for has to do nothing.
+        Input nurse{};
+        nurse.repair = true;
+        nurse.throttle = true;
+        race_tick(race, nurse);
+        if (race.ev.fuse_beat) ++beats;
+        if (race.ev.fuse_lit) relit = true;
+    }
+    check(race.pod.wreck_ticks > 0, "and a few seconds later the pod is gone");
+    check(!relit, "the fuse is lit once, not restarted every tick");
+    // Three seconds, to within the tick the engine died on.
+    check(ticks >= k_fuse_ticks - 2 && ticks <= k_fuse_ticks + 2,
+          "it takes k_fuse_ticks, not some other number");
+    check(beats == 3, "and it counts down audibly, once a second");
+    // BOTH engines are gone, not one dead and one healthy: the pod came apart.
+    check(engine_dead(race.pod, 0) && engine_dead(race.pod, 1),
+          "the surviving engine goes with it");
+
+    std::printf("  fuse: lit, %d beats, blew after %.2fs\n", beats, ticks / 100.0);
+}
+
+void test_the_fuse_cannot_be_outrun() {
+    // Every input a player has, held for the whole fuse, and none of them buys
+    // a single tick. This is the half that makes it a requirement rather than a
+    // difficulty setting.
+    const Track& t = track(0);
+    static const char* k_names[4] = {"repair", "brake", "throttle", "nothing"};
+    for (int mode = 0; mode < 4; ++mode) {
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+        race.pod.engine[1] = 0;
+        race.pod.dead = 2;
+        int ticks = 0;
+        for (; ticks < 2000 && race.pod.wreck_ticks == 0; ++ticks) {
+            Input held{};
+            held.repair = mode == 0;
+            held.brake = mode == 1;
+            held.throttle = mode == 2;
+            race_tick(race, held);
+        }
+        check(race.pod.wreck_ticks > 0, "the pod goes whatever is held");
+        check(ticks <= k_fuse_ticks + 2,
+              "and holding a button does not buy a single tick");
+        (void)k_names[mode];
+    }
+
+    // And a pod that never lost an engine is never on a clock, however long it
+    // races: without this the check above passes for a fuse that is always lit.
+    Race clean;
+    race_start(clean, 0, 0);
+    Input in{};
+    int lit = 0;
+    for (int i = 0; i < 3000 && clean.pod.wreck_ticks == 0; ++i) {
+        drive(clean, t, in);
+        race_tick(clean, in);
+        if (clean.ev.fuse_lit) ++lit;
+    }
+    check(lit == 0, "a healthy pod is never put on the clock");
+}
+
+void test_a_respawn_puts_the_fuse_out() {
+    // The recovery. A wreck hands both engines back at half, so the clock has
+    // to be gone with it or the new pod inherits the old one's death sentence.
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+    race.pod.engine[0] = 0;
+    race.pod.dead = 1;
+    Input coast{};
+    for (int i = 0; i < k_fuse_ticks + k_respawn_ticks + 8; ++i)
+        race_tick(race, coast);
+    check(race.pod.wreck_ticks == 0, "the pod came back");
+    check(race.pod.fuse == 0, "with the fuse out");
+    check(!engine_dead(race.pod, 0) && !engine_dead(race.pod, 1),
+          "and two engines to fly on");
+    check(fuse_seconds(race.pod) == 0, "so the HUD stops counting");
+}
+
+void test_a_dead_engine_is_always_on_the_clock() {
+    // The invariant the HUD is entitled to rely on: there is no such thing as a
+    // pod flying with one engine and no fuse.
+    //
+    // It matters because the HUD used to carry a steady "ONE ENGINE" line for
+    // exactly that state, and with the fuse in front of it that line can never
+    // be reached: `pod.dead` is written in one place and cleared in one place,
+    // so it agrees with the fuse block's own count, and the fuse is lit on the
+    // same tick the engine goes. The line is gone, and this is the check that
+    // says it may stay gone. If someone later adds a way to lose an engine that
+    // does not light the clock, this fails rather than the pod silently flying
+    // on forever with a bar at zero.
+    int one_engine_ticks = 0;
+    for (int track_index = 0; track_index < 4; ++track_index) {
+        const Track& t = track(track_index);
+        Race race;
+        race_start(race, track_index, 0);
+        Input in{};
+        for (int i = 0; i < 1600; ++i) {
+            // An engine every so often, which is long enough for the fuse to
+            // blow, the pod to wreck and the respawn to hand two back.
+            if (i % 400 == 100 && !race.pod.dead && race.pod.wreck_ticks == 0) {
+                const int which = (i / 400) & 1;
+                race.pod.engine[which] = 0;
+                race.pod.dead = static_cast<uint8_t>(1 << which);
+            }
+            drive(race, t, in);
+            race_tick(race, in);
+            const bool flying = race.pod.wreck_ticks == 0;
+            const bool both_out =
+                engine_dead(race.pod, 0) && engine_dead(race.pod, 1);
+            if (flying && race.pod.dead && !both_out) {
+                ++one_engine_ticks;
+                check(race.pod.fuse > 0,
+                      "a pod flying on one engine is always on the clock");
+                check(fuse_seconds(race.pod) > 0,
+                      "and the HUD always has a number to print");
+            }
+        }
+    }
+    // Not vacuous: the state was actually reached, many times.
+    check(one_engine_ticks > 100,
+          "and the one engine state was really visited");
+    std::printf("  one engine: %d ticks flown across 4 tracks, every one on a clock\n",
+                one_engine_ticks);
+}
+
 void test_a_wreck_puts_you_back_on_road_and_moving() {
     // Reported from playing: "you respawn at the same location", and the pod
     // came back at a crawl.
@@ -1775,6 +1931,10 @@ int main() {
     test_heat_does_not_throw_sparks();
     test_a_frame_hears_every_tick_in_it();
     test_the_race_says_what_happened();
+    test_one_engine_is_a_fuse();
+    test_the_fuse_cannot_be_outrun();
+    test_a_respawn_puts_the_fuse_out();
+    test_a_dead_engine_is_always_on_the_clock();
     test_a_wreck_puts_you_back_on_road_and_moving();
     test_a_respawn_is_a_rolling_start();
     test_state_is_small();
