@@ -24,32 +24,6 @@ PixelFormat translate(blit::PixelFormat format) {
     }
 }
 
-// The Tufty 2350's five front buttons, standing in for a dpad and four face
-// buttons.
-//
-// Physically there is up, down, A, B and C, and C arrives as blit::Button::X
-// because that is the pin the board config wires it to. There is no left and
-// no right, and all twelve games read DPAD_LEFT and DPAD_RIGHT, so the two
-// buttons to the right of A become the horizontal axis.
-//
-// Additive, not a permutation, and that is the point. B still reports as B
-// and C still reports as X, so a game that reads them keeps them; they simply
-// also read as left and right. It means a game whose B does something
-// distinct from moving left gets both at once, which is a genuine conflict
-// and the honest cost of five buttons. The alternative, moving B onto left
-// and taking B away, breaks those games outright instead.
-//
-// Being additive is also what lets an accessory just work. The board config
-// enables the tca9555 driver, so a Qw/ST Pad on the I2C connector ORs a real
-// dpad and a real A/B/X/Y into this same word. Real left arrives as left, and
-// nothing here fights it.
-constexpr uint32_t map_button_word(uint32_t word) {
-    uint32_t mapped = word;
-    if (word & blit::Button::B) mapped |= blit::Button::DPAD_LEFT;
-    if (word & blit::Button::X) mapped |= blit::Button::DPAD_RIGHT;
-    return mapped;
-}
-
 }  // namespace
 
 void set_screen_mode(ScreenMode mode) {
@@ -72,30 +46,6 @@ void set_screen_mode(ScreenMode mode) {
     // leaving the game with no screen at all, because the failure mode of
     // returning here is a black window and no message.
     blit::set_screen_mode(sdk_mode);
-}
-
-MappedButtons::MappedButtons() {
-    if constexpr (!k_remaps_buttons) return;
-
-    saved_state_ = blit::buttons.state;
-    saved_pressed_ = blit::buttons.pressed;
-    saved_released_ = blit::buttons.released;
-
-    // The same word transform on all three, which is why no history is kept
-    // here: pressed and released are already the SDK's edges for this tick,
-    // and a pure function of the button word maps an edge exactly as it maps
-    // a state.
-    blit::buttons.state = map_button_word(saved_state_);
-    blit::buttons.pressed = map_button_word(saved_pressed_);
-    blit::buttons.released = map_button_word(saved_released_);
-}
-
-MappedButtons::~MappedButtons() {
-    if constexpr (!k_remaps_buttons) return;
-
-    blit::buttons.state = saved_state_;
-    blit::buttons.pressed = saved_pressed_;
-    blit::buttons.released = saved_released_;
 }
 
 RenderTarget target_from_screen() {

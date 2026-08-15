@@ -5,26 +5,13 @@
 // the SDK's three global entry points instead, and this is them. Four lines,
 // generated rather than written out in every game, so adding a game stays
 // "add a directory" (rule 7's open/closed, applied to the build).
-//
-// The pse::MappedButtons guards are how a board with the wrong buttons is
-// handled without any game knowing: they present the buttons the games read
-// for exactly as long as the game is running, and hand the SDK its own state
-// back afterwards. On a board whose buttons already match they are empty and
-// compile away. See engine/src/blit_target.cpp.
 
-#include "pse/blit_target.hpp"
 #include "pse/game.hpp"
 
 PSE_GAME_DECL(@PSE_GAME_SYMBOL@);
 
 void init() { pse_game_@PSE_GAME_SYMBOL@.init(); }
 
-void update(uint32_t time) {
-    pse::MappedButtons buttons;
-    pse_game_@PSE_GAME_SYMBOL@.update(time);
-}
+void update(uint32_t time) { pse_game_@PSE_GAME_SYMBOL@.update(time); }
 
-void render(uint32_t time) {
-    pse::MappedButtons buttons;
-    pse_game_@PSE_GAME_SYMBOL@.render(time);
-}
+void render(uint32_t time) { pse_game_@PSE_GAME_SYMBOL@.render(time); }

@@ -42,13 +42,4 @@ constexpr bool k_letterboxed = true;
 constexpr bool k_letterboxed = false;
 #endif
 
-// True when the board's physical buttons are not the ones the games read, so
-// something has to stand in for the missing ones. The mapping itself, and why
-// it is the one it is, lives in blit_target.cpp.
-#if defined(PSE_BOARD_TUFTY2350)
-constexpr bool k_remaps_buttons = true;
-#else
-constexpr bool k_remaps_buttons = false;
-#endif
-
 }  // namespace pse

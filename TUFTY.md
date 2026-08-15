@@ -78,8 +78,9 @@ Almost nothing, deliberately, and the shape of the change is the point.
   exactly that size, rather than for whatever panel is fitted. Games call it
   instead of the SDK's `set_screen_mode`. That is one line per game and the
   only change any game needed.
-- `pse::MappedButtons` presents the buttons the games read on a board that
-  does not have them.
+- Nothing at all for input. The buttons report as themselves on both boards,
+  and the reason that is worth a bullet is that it briefly did not: see the
+  buttons section below.
 
 The consequence worth stating: **`PSE_RENDER_WIDTH` and `PSE_RENDER_HEIGHT`
 stay 120x120 on both boards.** The depth buffer, the triangle queue and every
@@ -96,25 +97,29 @@ be written to want it.
 
 ### The buttons
 
-Five buttons cannot be six, so something gives. The mapping is additive:
+Nothing is remapped. Every button reports as itself:
 
 | physical | reads as |
 |---|---|
 | up, down | `DPAD_UP`, `DPAD_DOWN` |
 | A | `A` |
-| B | `B` **and** `DPAD_LEFT` |
-| C | `X` **and** `DPAD_RIGHT` |
+| B | `B` |
+| C | `X`, which is the pin the board config wires it to |
 
-Additive rather than a permutation for two reasons. A game that reads B still
-gets B, so nothing breaks outright; and a Qw/ST Pad's real left and right come
-through the same word untouched, so the accessory composes instead of
-fighting the fallback.
+**There is no left and no right on the badge itself.** A game that steers
+needs a Qw/ST Pad on the I2C connector, which the board config already
+supports through the `tca9555` driver: it ORs a full dpad, four face buttons
+and start/select into the same word, so it works with no code changes.
 
-The cost is real and is not hidden: a game whose B does something other than
-move left now does both at once. catcoin is the clearest case, where B uses
-the selected item and left walks the row. The fix for that is per game control
-schemes, which is a design decision nobody has made yet, not a bug in the
-mapping.
+This was briefly done the other way, with B also reporting as left and C also
+as right, on the reasoning that five buttons cannot be six and all twelve
+games read `DPAD_LEFT` and `DPAD_RIGHT`. It was wrong on hardware, and
+obviously so once seen: with a pad attached the badge has real left and right
+already, so B and C fired their own action and moved the player at the same
+time. A button that does two things is worse than a button that does one and
+a direction you have to plug a pad in for. If a game needs to be playable on
+the bare badge, the answer is a control scheme for that game, not a mapping
+that makes every game's B ambiguous.
 
 ## Building it
 

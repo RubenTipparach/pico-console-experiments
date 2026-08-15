@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 #include "pse/pixel.hpp"
 
 namespace pse {
@@ -31,36 +29,5 @@ enum class ScreenMode { lores, hires };
 // panel itself, so a 240x240 game lands in the middle of a 320x240 screen
 // with its geometry untouched.
 void set_screen_mode(ScreenMode mode);
-
-// Presents the buttons this board actually has as the buttons the games
-// expect, for as long as it is in scope.
-//
-// The PicoSystem has a dpad and four face buttons. The Tufty has five: up,
-// down, A, B and C, with no left and no right at all, and every game in this
-// repo reads DPAD_LEFT and DPAD_RIGHT. This maps the ones that exist onto the
-// ones that are read.
-//
-// It is a guard rather than a function because blit::buttons is the SDK's own
-// state, and the SDK derives the next tick's pressed and released edges from
-// it: engine.cpp takes its `last_state` snapshot before calling update(), and
-// a catch up tick runs update() twice off one snapshot, so a word left
-// modified would read as a fresh press the second time round. Mapping on the
-// way in and putting the SDK's own values back on the way out means the games
-// see the mapping and the SDK never does.
-//
-// On a board that needs no mapping this is empty and costs nothing.
-class MappedButtons {
-public:
-    MappedButtons();
-    ~MappedButtons();
-
-    MappedButtons(const MappedButtons&) = delete;
-    MappedButtons& operator=(const MappedButtons&) = delete;
-
-private:
-    uint32_t saved_state_ = 0;
-    uint32_t saved_pressed_ = 0;
-    uint32_t saved_released_ = 0;
-};
 
 }  // namespace pse
