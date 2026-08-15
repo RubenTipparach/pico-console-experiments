@@ -281,13 +281,16 @@ void voice_the_frame() {
         cue(k_ch_gun, 900, 30, 1600);
     }
     if (g_world.missiles < g_last_missiles) {
-        cue(k_ch_gun, 220, 220, 2600);
+        cue(k_ch_gun, 520, 220, 2600);
     }
     if (g_world.hull < g_last_hull) {
-        cue(k_ch_hit, 90, 200, 4200);
+        // A hit and a kill are the two darkest sounds here, and they used to
+        // be 90 Hz and 60 Hz, which on a piezo is silence. Kept in the same
+        // order and moved into the band the device can actually make.
+        cue(k_ch_hit, 470, 200, 4200);
     }
     if (g_world.kills > g_last_kills) {
-        cue(k_ch_hit, 60, 320, 4800);
+        cue(k_ch_hit, 400, 320, 4800);
     }
     g_last_gun_reload = g_world.gun_reload;
     g_last_missiles = g_world.missiles;

@@ -32,6 +32,21 @@
 // not-idle, and mutes the engine permanently. sfx_tick's terminal release is
 // load bearing.
 
+// NOTHING HERE GOES BELOW 400 Hz, and that is not a stylistic preference. A
+// piezo is a high pass device by construction: its output climbs toward a
+// mechanical resonance in the low kilohertz and falls away steeply under it, so
+// a couple of hundred hertz is faint on the device and the bottom of a piano is
+// nothing at all. The web and desktop builds run the SDK's full mixer through a
+// real speaker and play any of it perfectly, which is why a tone that is silent
+// on hardware sounds fine everywhere a developer is likely to hear it.
+//
+// Low reads as bad news, so every cue that means damage wants to be the darkest
+// thing in the game, and a piezo cannot do dark. What replaces it is a FALL: a
+// figure dropping through the audible band says failure on a one voice beeper
+// far better than a low tone nobody hears. Every damage cue below is one.
+//
+// tools/tests/test_audio_range.py holds the floor for the whole repo.
+
 #include "sim.hpp"
 
 namespace tfs {

@@ -133,7 +133,7 @@ void sound_thrust(int total) {
     // well as loudens, which is what stops four pods sounding like one loud
     // pod.
     channels[k_ch_thrust].frequency =
-        static_cast<uint16_t>(300 + (total * 500) / 1020);
+        static_cast<uint16_t>(420 + (total * 500) / 1020);
     channels[k_ch_thrust].volume =
         static_cast<uint16_t>(1200 + (total * 4200) / 1020);
     if (!g_thrust_sounding) {
@@ -520,7 +520,11 @@ void step_sim() {
                 g_save_pending = true;
             }
         } else {
-            sound_cue(110, 420, 6000);       // a crash, low and long
+            // A crash: the lowest and longest cue this game has, but no
+            // lower than 400 Hz. It was 110, which is inaudible on the
+            // device's piezo and fine on the web, which is why it survived.
+            // See tools/tests/test_audio_range.py.
+            sound_cue(400, 420, 6000);
         }
     }
 }

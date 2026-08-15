@@ -111,7 +111,7 @@ void sound_thrust(int throttle) {
         return;
     }
     channels[k_ch_thrust].frequency =
-        static_cast<uint16_t>(240 + (throttle * 420) / 255);
+        static_cast<uint16_t>(420 + (throttle * 420) / 255);
     channels[k_ch_thrust].volume =
         static_cast<uint16_t>(1100 + (throttle * 4400) / 255);
     if (!g_thrust_sounding) {
@@ -501,7 +501,7 @@ void step_sim(bool edges) {
     const uint8_t stage_before = g_world.stage;
     ps::world_tick(g_world, in);
 
-    if (g_world.stage != stage_before) sound_cue(180, 260, 5200);
+    if (g_world.stage != stage_before) sound_cue(500, 260, 5200);
     sound_thrust(g_world.throttle);
 
     if (before == ps::Flight::Flying && g_world.state != ps::Flight::Flying) {
@@ -526,7 +526,12 @@ void step_sim(bool edges) {
         } else if (g_world.state == ps::Flight::Landed) {
             sound_cue(420, 220, 4200);
         } else {
-            sound_cue(96, 460, 6000);       // a wreck, low and long
+            // A wreck: the lowest and longest cue this game has, but no
+            // lower than 400 Hz. It was 96, which a piezo cannot move air
+            // at, so on the device the worst thing that can happen to you
+            // was the one event that made no sound. See
+            // tools/tests/test_audio_range.py.
+            sound_cue(400, 460, 6000);
         }
     }
 }
