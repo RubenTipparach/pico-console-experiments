@@ -365,6 +365,72 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The pod coming apart, sampled across the wreck. The fuse blows, both
+    // engines go, and these are the frames between the bang and the respawn.
+    // Taken at ticks rather than at fractions so the names say when: boom_02 is
+    // two ticks after it went, which is the flash, and boom_90 is the smoke.
+    {
+        static const int k_when[6] = {1, 6, 16, 34, 60, 100};
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        const Track& t = track(0);
+        // 300 rather than the 900 the other shots use, on purpose: the fuse
+        // takes three more seconds to burn, and from 900 that lands the wreck
+        // in a shadowed dune where the whole frame is nearly black. Same
+        // explosion, a stretch of road you can see it on.
+        for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+        // One engine out, then let the fuse run: this is the wreck the
+        // requirement is about, not a pod dropped down a hole.
+        race.pod.engine[0] = 0;
+        race.pod.dead = 1;
+        Input coast{};
+        int guard = 0;
+        while (race.pod.wreck_ticks == 0 && guard++ < 600) {
+            race_tick(race, coast);
+            // The last intact frame, kept as the scale reference: an explosion
+            // wants to be bigger than the thing that exploded, and the only
+            // way to know is to have the pod at the same distance to hold it
+            // against. Overwritten every tick, so what lands on disk is the
+            // frame immediately before the bang.
+            if (race.pod.wreck_ticks == 0 && fuse_seconds(race.pod) == 1) {
+                Chrome pre;
+                pre.screen = Screen::Race;
+                render_frame(race, pre, target());
+                write_ppm(dir, "boom_000_before");
+            }
+        }
+        if (race.pod.wreck_ticks == 0) {
+            std::printf("FAIL: the fuse never blew, so there is no wreck to draw\n");
+            ++failures;
+        }
+        int at = 0;
+        for (int shot = 0; shot < 6; ++shot) {
+            while (at < k_when[shot]) { race_tick(race, coast); ++at; }
+            Chrome chrome;
+            chrome.screen = Screen::Race;
+            render_frame(race, chrome, target());
+            // The hull must be GONE and the explosion must be THERE. Checked
+            // here rather than only in the render tests because this is the
+            // harness that produces the picture: a silent failure here is a
+            // frame of empty scenery that still gets written to disk and still
+            // looks like a plausible screenshot of a track.
+            if (render_stats().boom == 0) {
+                std::printf("FAIL: nothing drawn %d ticks into the wreck\n",
+                            k_when[shot]);
+                ++failures;
+            }
+            // Zero padded to three, because two digits turned tick 100 into
+            // "boom_:0": '0' + 10 is ':' and the file still wrote perfectly
+            // happily under a name nothing would ever look for.
+            char name[16];
+            std::snprintf(name, sizeof name, "boom_%03d", k_when[shot]);
+            write_ppm(dir, name);
+        }
+        std::printf("  boom: %d pieces on the last frame, wreck_ticks %d\n",
+                    render_stats().boom, race.pod.wreck_ticks);
+    }
+
     // Damage, from the chase camera, which is the angle the game is played at
     // and the one the smoke exists for. Three frames: healthy, one engine
     // smoking, and one engine smoking while the other is being struck.

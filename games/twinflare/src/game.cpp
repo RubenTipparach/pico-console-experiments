@@ -44,8 +44,11 @@ uint32_t g_a_held_since = 0;
 twinflare::Input read_input() {
     twinflare::Input in{};
     in.throttle = buttons & Button::B;
-    in.brake = buttons & Button::Y;
-    in.repair = buttons & Button::X;
+    // Repair on Y and the air brake on X, which is the swap of what they were.
+    // Repair is the one held under pressure, with an engine going and a corner
+    // coming, so it gets the button that is easier to reach for.
+    in.brake = buttons & Button::X;
+    in.repair = buttons & Button::Y;
     in.left = buttons & Button::DPAD_LEFT;
     in.right = buttons & Button::DPAD_RIGHT;
     in.up = buttons & Button::DPAD_UP;

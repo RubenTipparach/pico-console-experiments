@@ -44,7 +44,6 @@ bool hurt(Pod& pod, int which, int32_t amount, bool spark = true) {
     if (pod.engine[which] <= 0) {
         pod.engine[which] = 0;
         pod.dead |= static_cast<uint8_t>(1 << which);
-        pod.blast[which] = 50;
         return true;
     }
     return false;
@@ -619,7 +618,6 @@ void race_tick(Race& race, const Input& raw) {
 
     if (pod.flash_ticks > 0) --pod.flash_ticks;
     for (int i = 0; i < 2; ++i) {
-        if (pod.blast[i] > 0) --pod.blast[i];
         if (pod.hit[i] > 0) --pod.hit[i];
     }
     if (pod.bump_ticks > 0) --pod.bump_ticks;
