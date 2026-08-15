@@ -28,6 +28,25 @@ public sealed class ConsoleTab : UserControl
     private readonly Button _build = new();
     private readonly Button _buildAndFlash = new();
 
+    private readonly ComboBox _board = new();
+    private readonly ComboBox _bundle = new();
+    private readonly Button _saveBundle = new();
+    private readonly MemoryBar _memory = new();
+
+    // Set while a dropdown is being repopulated, so the handler that reacts to
+    // a person choosing something does not also fire for the code that put the
+    // items there. Without it, refreshing the bundle list reloads the menu and
+    // throws away the edit that prompted the refresh.
+    private bool _populating;
+
+    // The last measurement, kept because taking one runs arm-none-eabi-size
+    // and Revalidate fires on every keystroke in the title box. Measuring
+    // there spawned a process per character typed. Re-measured only when the
+    // thing it describes can actually have changed: a build finished, or the
+    // target board moved to one with a different build directory.
+    private ConsoleSize? _size;
+    private bool _sizeMeasured;
+
     private readonly List<RecipeEntry> _rows = new();
     private IReadOnlyList<AvailableGame> _games = Array.Empty<AvailableGame>();
     private IConsoleBackend _backend;
@@ -108,6 +127,36 @@ public sealed class ConsoleTab : UserControl
         _buildAndFlash.Height = 32;
         _buildAndFlash.Click += (_, _) => Build(thenFlash: true);
 
+        // Target hardware. There is no autodetecting this at build time: there
+        // may be no board plugged in, and the two do not share a toolchain, a
+        // build directory or an SRAM ceiling. Flashing is the other way round
+        // and does detect, off the .uf2's own family id.
+        _board.DropDownStyle = ComboBoxStyle.DropDownList;
+        _board.Width = 132;
+        foreach (var spec in BoardSpec.All) _board.Items.Add(spec);
+        _board.SelectedIndex = 0;
+        _board.SelectedIndexChanged += (_, _) =>
+        {
+            if (_populating) return;
+            if (_board.SelectedItem is not BoardSpec spec) return;
+            _backend.Board = spec.Board;
+            RefreshMemory(remeasure: true);
+            Revalidate();
+        };
+
+        _bundle.DropDownStyle = ComboBoxStyle.DropDownList;
+        _bundle.Width = 176;
+        _bundle.SelectedIndexChanged += (_, _) =>
+        {
+            if (_populating) return;
+            LoadSelectedBundle();
+        };
+
+        _saveBundle.Text = "Save bundle...";
+        _saveBundle.AutoSize = true;
+        _saveBundle.Width = 118;
+        _saveBundle.Click += (_, _) => SaveBundleAs();
+
         Controls.Add(BuildLayout());
 
         Reload();
@@ -119,11 +168,13 @@ public sealed class ConsoleTab : UserControl
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 5,
+            RowCount = 6,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        // The strip: target, bundles, memory bar.
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -149,6 +200,36 @@ public sealed class ConsoleTab : UserControl
         layout.Controls.Add(titleRow, 0, 0);
         layout.SetColumnSpan(titleRow, 3);
 
+        // Target, bundles and the memory bar on one strip above the lists.
+        // Everything here is about the console as a whole rather than about a
+        // row, which is why it sits above the two lists and not beside them.
+        var strip = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            WrapContents = false,
+            Margin = new Padding(0, 4, 0, 4),
+        };
+        strip.Controls.Add(new Label
+        {
+            Text = "Target",
+            AutoSize = true,
+            Margin = new Padding(0, 7, 6, 0),
+        });
+        strip.Controls.Add(_board);
+        strip.Controls.Add(new Label
+        {
+            Text = "Bundle",
+            AutoSize = true,
+            Margin = new Padding(18, 7, 6, 0),
+        });
+        strip.Controls.Add(_bundle);
+        strip.Controls.Add(_saveBundle);
+        strip.Controls.Add(_memory);
+        layout.Controls.Add(strip, 0, 1);
+        layout.SetColumnSpan(strip, 3);
+
         var middle = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown,
@@ -161,9 +242,9 @@ public sealed class ConsoleTab : UserControl
             middle.Controls.Add(button);
         }
 
-        layout.Controls.Add(_available, 0, 1);
-        layout.Controls.Add(middle, 1, 1);
-        layout.Controls.Add(_menu, 2, 1);
+        layout.Controls.Add(_available, 0, 2);
+        layout.Controls.Add(middle, 1, 2);
+        layout.Controls.Add(_menu, 2, 2);
 
         var buttons = new FlowLayoutPanel
         {
@@ -173,12 +254,12 @@ public sealed class ConsoleTab : UserControl
         };
         buttons.Controls.Add(_build);
         buttons.Controls.Add(_buildAndFlash);
-        layout.Controls.Add(buttons, 0, 2);
+        layout.Controls.Add(buttons, 0, 3);
         layout.SetColumnSpan(buttons, 3);
 
-        layout.Controls.Add(_status, 0, 3);
+        layout.Controls.Add(_status, 0, 4);
         layout.SetColumnSpan(_status, 3);
-        layout.Controls.Add(_log, 0, 4);
+        layout.Controls.Add(_log, 0, 5);
         layout.SetColumnSpan(_log, 3);
 
         return layout;
@@ -189,6 +270,105 @@ public sealed class ConsoleTab : UserControl
     {
         _backend = backend;
         Reload();
+    }
+
+    // ---- bundles ----
+
+    /// <summary>
+    /// The saved lists, with an unnamed first entry for "whatever console.yaml
+    /// currently holds". That entry is what the window opens on and what a
+    /// build uses, so there is always something selected and never a state
+    /// where the dropdown implies an edit that has not happened.
+    /// </summary>
+    private void RefreshBundles(string? select = null)
+    {
+        _populating = true;
+        try
+        {
+            _bundle.Items.Clear();
+            _bundle.Items.Add(CurrentBundleLabel);
+            foreach (var name in _backend.ListBundles()) _bundle.Items.Add(name);
+
+            var at = select is null ? 0 : _bundle.Items.IndexOf(select);
+            _bundle.SelectedIndex = at < 0 ? 0 : at;
+        }
+        finally
+        {
+            _populating = false;
+        }
+    }
+
+    private const string CurrentBundleLabel = "(current)";
+
+    private void LoadSelectedBundle()
+    {
+        if (_bundle.SelectedItem is not string name) return;
+        var recipe = name == CurrentBundleLabel
+            ? _backend.Load()
+            : _backend.LoadBundle(name);
+
+        _title.Text = recipe.Title;
+        _rows.Clear();
+        _rows.AddRange(recipe.Entries);
+        RefreshMenu();
+    }
+
+    private void SaveBundleAs()
+    {
+        var suggested = _bundle.SelectedItem as string;
+        if (suggested is null or CurrentBundleLabel) suggested = _title.Text;
+
+        var name = Prompt.Ask(this, "Save bundle",
+            "A name for this list of games. Saving one keeps the menu you have "
+            + "arranged so you can come back to it; it does not change how the "
+            + "console is built.",
+            suggested ?? "");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            _backend.SaveBundle(name.Trim(), CurrentRecipe());
+        }
+        catch (IOException error)
+        {
+            _status.ForeColor = Color.FromArgb(168, 32, 32);
+            _status.Text = $"Could not save the bundle: {error.Message}";
+            return;
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            _status.ForeColor = Color.FromArgb(168, 32, 32);
+            _status.Text = $"Could not save the bundle: {error.Message}";
+            return;
+        }
+
+        RefreshBundles(name.Trim());
+        _status.ForeColor = SystemColors.ControlText;
+        _status.Text = $"Saved bundle \"{name.Trim()}\".";
+    }
+
+    // ---- the memory bar ----
+
+    /// <summary>
+    /// Shows what the last build for the selected board cost, and says so when
+    /// the menu has moved on since. Comparing game counts rather than the whole
+    /// recipe on purpose: reordering a menu or renaming a row does not change
+    /// what is linked in, so calling those stale would cry wolf.
+    /// </summary>
+    private void RefreshMemory(bool remeasure = false)
+    {
+        var spec = _board.SelectedItem as BoardSpec ?? BoardSpec.PicoSystem;
+
+        if (remeasure || !_sizeMeasured)
+        {
+            try { _size = _backend.MeasureLastBuild(); }
+            catch (IOException) { _size = null; }
+            _sizeMeasured = true;
+        }
+
+        var games = _rows.OfType<GameEntry>().Count();
+        var stale = _size is not null && _size.Games != games;
+        _memory.Show(_size, stale, $"no {spec.Name} build yet");
     }
 
     private void Reload()
@@ -210,6 +390,8 @@ public sealed class ConsoleTab : UserControl
             });
         }
 
+        _sizeMeasured = false;
+        RefreshBundles();
         var recipe = _backend.Load();
         _title.Text = recipe.Title;
         _rows.Clear();
@@ -348,6 +530,7 @@ public sealed class ConsoleTab : UserControl
             _status.Text = $"{games} game(s), {_rows.Count} row(s). Ready to build.";
         }
 
+        RefreshMemory();
         UpdateButtons();
     }
 
@@ -364,6 +547,11 @@ public sealed class ConsoleTab : UserControl
         _down.Enabled = hasSelection && !_building;
         _build.Enabled = ready;
         _buildAndFlash.Enabled = ready;
+        // The target decides which script runs and which directory it writes
+        // into, so changing it mid build would describe the wrong one.
+        _board.Enabled = !_building;
+        _bundle.Enabled = !_building;
+        _saveBundle.Enabled = !_building;
     }
 
     // ---- editing ----
@@ -527,6 +715,7 @@ public sealed class ConsoleTab : UserControl
             ? SystemColors.ControlText
             : Color.FromArgb(168, 32, 32);
         _status.Text = outcome.Message;
+        RefreshMemory(remeasure: true);
         UpdateButtons();
 
         if (outcome.Success && thenFlash && outcome.Uf2Path is not null)

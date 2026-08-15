@@ -227,6 +227,8 @@ public sealed class MainForm : Form
         if (_devices.SelectedItem is not BootselDrive drive) return;
         if (_files.SelectedItem is not Uf2File file) return;
 
+        if (!BoardsAgree(file, drive)) return;
+
         _flash.Enabled = false;
         _progress.Value = 0;
         _status.Text = $"Flashing {Path.GetFileName(file.Path)}...";
@@ -245,6 +247,42 @@ public sealed class MainForm : Form
                 _watcher.Refresh();
                 UpdateFlashEnabled();
             }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>
+    /// Refuses a .uf2 built for the other board, before it is copied.
+    ///
+    /// The hardware will not tell you: the bootrom checks each block's family
+    /// id and silently ignores the ones that do not match, so flashing a
+    /// PicoSystem build at a Tufty copies the file, reports success, reboots,
+    /// and runs whatever was there before. Both boards now produce a
+    /// console.uf2 and a catcoin.uf2, so the two are one mis-click apart, and
+    /// "nothing happened" is the least debuggable failure there is.
+    ///
+    /// Only refuses when both sides are known. An unrecognised drive or a file
+    /// whose family belongs to neither board goes through as it always did:
+    /// this is here to catch a specific confusion, not to become a gatekeeper
+    /// for every .uf2 the world contains.
+    /// </summary>
+    private bool BoardsAgree(Uf2File file, BootselDrive drive)
+    {
+        var forBoard = Uf2Family.Identify(file.Path);
+        var isBoard = BoardSpec.ForDriveLabel(drive.Label);
+        if (forBoard is null || isBoard is null) return true;
+        if (forBoard.Board == isBoard.Board) return true;
+
+        MessageBox.Show(this,
+            $"{Path.GetFileName(file.Path)} is a {forBoard.Name} build "
+            + $"({forBoard.Chip}), and the board plugged in is a {isBoard.Name} "
+            + $"({isBoard.Chip}).\n\n"
+            + "Flashing it would appear to work and do nothing: the bootloader "
+            + "ignores blocks that are not for its own chip.\n\n"
+            + $"Build it with {isBoard.ConsoleScript} for the console, or "
+            + $"build_uf2s{(isBoard.Board == TargetBoard.Tufty2350 ? "_tufty" : "")}.bat "
+            + "for a single game.",
+            "Wrong board", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        _status.Text = $"Not flashed: that file is for the {forBoard.Name}.";
+        return false;
     }
 
     /// <summary>Walks up from the executable looking for the repo, so the file

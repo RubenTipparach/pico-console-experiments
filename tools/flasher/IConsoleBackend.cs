@@ -23,6 +23,46 @@ public interface IConsoleBackend
     string Description { get; }
 
     /// <summary>
+    /// Which console the next build is for.
+    ///
+    /// A target is not a game or a row, so by the note above it does not
+    /// obviously belong here. It is here anyway because the alternative is
+    /// worse: the two boards do not share a toolchain, a build directory or an
+    /// SRAM ceiling, and a backend that cannot be told which one it is making
+    /// leaves the window guessing on behalf of the build. Auto detection is
+    /// not available at build time either, since there may be no board plugged
+    /// in at all.
+    /// </summary>
+    TargetBoard Board { get; set; }
+
+    /// <summary>
+    /// Named game lists that can be recalled later, newest name last.
+    ///
+    /// These are saved recipes and nothing more. They are NOT the bundle
+    /// composer this tool used to have, which assigned flash slots and
+    /// concatenated per slot builds; that is gone and is not coming back
+    /// (CLAUDE.md rule 8). Every one of these builds the same single binary
+    /// with every listed game linked into it, exactly as the unsaved list
+    /// does. The only thing being stored is which games, in what order.
+    /// </summary>
+    IReadOnlyList<string> ListBundles();
+
+    /// <summary>Recalls a saved list. Unknown names give an empty recipe.</summary>
+    ConsoleRecipe LoadBundle(string name);
+
+    /// <summary>Stores this list under a name, replacing one of that name.</summary>
+    void SaveBundle(string name, ConsoleRecipe recipe);
+
+    /// <summary>
+    /// What the last build for the current board actually cost, or null when
+    /// there is no build to measure. Reported rather than predicted: the
+    /// console links every game into one binary, so what a game adds depends
+    /// on what is already in there, and a made up number on a progress bar is
+    /// worse than an empty one.
+    /// </summary>
+    ConsoleSize? MeasureLastBuild();
+
+    /// <summary>
     /// Whether a build could run here at all, and if not, why in a sentence
     /// a person can act on. Building needs a toolchain that a downloaded
     /// .exe on a fresh machine will not have, and finding that out after a
