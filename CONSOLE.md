@@ -187,7 +187,7 @@ person about to flash it, so the number to watch is the one `arm-none-eabi-size`
 prints at the end of that build. `data + bss` is the static footprint, the
 framebuffer is already inside it, and the RP2040 has 270,336 bytes. Past about
 230,000 there is too little left for the stack, and the linker's own
-`region RAM overflowed` is the next warning you get — which names no game.
+`region RAM overflowed` is the next warning you get, and it names no game.
 
 A 2D game that never asks for the shared rasterizer never links it:
 `shared_render.cpp` is a translation unit of its own, and an archive member
