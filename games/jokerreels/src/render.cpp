@@ -6,6 +6,7 @@
 #include "pse/parallel.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
+#include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
 #include "jokerreels/bar.hpp"
@@ -30,7 +31,14 @@ namespace {
 // 120x120 buffer, and this game draws a 240x112 band.
 pse::OwnedRasterizer<k_screen_w, k_window_h> g_raster;
 pse::Renderer3D g_renderer(g_raster);
-pse::FrameQueue g_queue;
+
+// The queue IS the shared one, unlike the rasterizer above. A FrameQueue's
+// size is PSE_MAX_QUEUE triangles and has nothing to do with the window being
+// drawn into, so a private one here was 21,766 bytes holding exactly what
+// shared_render.cpp already holds. Only one game runs at a time, and the
+// queue is filled and drained inside a single frame, which is the same reason
+// every other game here shares it.
+pse::FrameQueue& g_queue = pse::shared_queue();
 Stats g_stats{0, 0, 0};
 
 // The eight symbol textures, in sim.hpp's Symbol order. A ScreenTriangle's

@@ -4,6 +4,7 @@
 
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
+#include "pse/shared_render.hpp"
 
 #include "sprites.hpp"
 
@@ -35,11 +36,15 @@ using namespace pm;
 // with dustrider.
 using namespace models::picomon;
 
-// Rendering state. Static because dynamic allocation is banned, and this is
-// the documented RAM cost of drawing the game:
-//   Rasterizer  14,400 bytes of depth buffer
-//   the rest    under 200 bytes
-pse::OwnedRasterizer<pse::k_render_width, pse::k_render_height> g_raster;
+// Rendering state. Static because dynamic allocation is banned.
+//
+// The engine's shared rasterizer, not one of this game's own. It used to
+// carry its own OwnedRasterizer at exactly the default size, which is a
+// second copy of a 14,400 byte depth buffer that shared_render.cpp already
+// holds. On a standalone build that is merely wasteful; on the console it is
+// 14,448 bytes of a 264 KB device spent on a duplicate, and the console
+// stopped linking for want of 2,484 of them.
+pse::Rasterizer& g_raster = pse::shared_rasterizer();
 pse::Renderer3D g_renderer(g_raster);
 
 // ---- the camera, measured out of Black and White ------------------------
