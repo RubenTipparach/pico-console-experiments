@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""No game names one board's hardware.
+"""No game names one board's hardware, and nothing lights an LED.
 
 A game draws through `pse::RenderTarget` and reads `blit::buttons`. It does not
 touch GPIO, and it does not include a board header, because there are two
-boards now and a pin number means different things on each.
+boards now and a pin number means different things on each. It does not drive
+the LED either, by any route: the light on the case is not part of any game
+here, and every use of it so far has been somebody debugging.
 
 This exists because of a specific failure, and the failure is worth writing
 down. Dust Rider carried a temporary debugging header that lit the PicoSystem's
@@ -73,6 +75,12 @@ BOARD_MACRO = re.compile(r"\b(?:PICOSYSTEM|BW)_[A-Z0-9_]+\b")
 # are already per board.
 GPIO_HEADER = re.compile(r"""#\s*include\s*[<"]hardware/gpio\.h[">]""")
 
+# The SDK's own LED, `blit::LED = Pen(...)`, which the raw GPIO patterns above
+# would not see. Both boards have one and neither game uses it: the only thing
+# it has ever been for here is a debugging aid somebody meant to remove.
+# `\bLED\b` rather than a looser match so LEDGE and led_count are not swept up.
+BLIT_LED = re.compile(r"\bLED\b")
+
 
 def sources_of(game):
     src = os.path.join(game.directory, "src")
@@ -101,6 +109,10 @@ def test_no_game_includes_a_board_header():
                       "%s includes hardware/gpio.h: a pin number means a "
                       "different thing on each board, and a game should not "
                       "know any (%s)" % (game.slug, path))
+            if BLIT_LED.search(body):
+                check(False,
+                      "%s drives the LED, which is a debugging aid rather "
+                      "than part of a game (%s)" % (game.slug, path))
             found = BOARD_MACRO.findall(body)
             if found:
                 check(False,
@@ -123,6 +135,10 @@ def test_this_test_can_see_the_thing_it_looks_for():
 
     check(bool(GPIO_HEADER.search('#include "hardware/gpio.h"')),
           "the gpio include matches")
+
+    check(bool(BLIT_LED.search("LED = Pen(255, 0, 0);")), "the SDK LED matches")
+    check(bool(BLIT_LED.search("blit::LED = c;")), "namespaced too")
+    check(not BLIT_LED.search("int ledge = 0;"), "and a word containing it does not")
 
     check(bool(BOARD_MACRO.search("gpio_put(PICOSYSTEM_LED_R_PIN, 1);")),
           "a PicoSystem pin macro matches")

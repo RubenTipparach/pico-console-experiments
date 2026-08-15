@@ -284,6 +284,16 @@ and expensive to draw.
   its how to play, beside what each one does.
 - Debug overlays (frame time, triangle count, CPU split) are opt in behind a
   build flag, not on by default in a published build.
+- **No game touches the LED, and no game touches GPIO.** Both boards have a
+  light on the case and it is not part of any game here; every use of it so
+  far has been somebody bisecting a hang and meaning to take it out. It is
+  worse than clutter now that there are two boards, because a pin number is
+  not portable: dustrider kept a debug header that included
+  `boards/pimoroni_picosystem.h` and drove the red LED on GPIO 14, which on a
+  Tufty is the line wired to RESET. It was the only game of ten that would not
+  launch. `tools/tests/test_board_agnostic.py` is the rule; do not weaken it
+  to get a diagnostic in. If a checkpoint really is needed, print it, or draw
+  it, and delete it in the same branch.
 - Same rule for the web gallery: short labels, no marketing copy.
 - **Measure text, never place it by eye.** `screen.measure_text()` gives the
   width; centre and size panels from it. A hand tuned x is only correct for
