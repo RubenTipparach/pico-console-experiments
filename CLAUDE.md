@@ -146,11 +146,23 @@ reason nobody can see.
   browser the runner already ships, fall back to Playwright's download, and
   do not add `--with-deps` back.
 
-### 6. One SDK: 32blit
+### 6. One SDK: 32blit, and both boards
 
 Every game builds against the 32blit SDK, which targets the PicoSystem through
 `-DPICO_BOARD=pimoroni_picosystem` and also builds for desktop and for the
 browser.
+
+**Every game runs on both boards: the RP2040 PicoSystem and the RP2350 Tufty
+2350.** Not one or the other, and never a feature that only exists on the
+newer chip. A design whose answer is "that works on the 2350" is not an
+answer, it is a fork of the library, and the games are the thing this repo
+has. `TUFTY.md` describes the RP2350's QMI address translation, which makes
+separately linked `.blit` games loadable at any free flash offset: that is
+real, it is interesting, and it is **not** the route here, because the RP2040
+cannot do it and separation linking has already been tried and abandoned once
+(`CONSOLE.md`). Where the two boards genuinely differ, the difference lives in
+`engine/include/pse/board.hpp` and `engine/src/blit_target.cpp`, never in a
+game.
 
 Do not reach for the raw Pimoroni picosystem SDK. It is device only: no SDL
 target, no Emscripten target, and its single SDL wrapper pull request was closed
