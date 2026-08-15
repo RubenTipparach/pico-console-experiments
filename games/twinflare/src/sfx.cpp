@@ -44,11 +44,12 @@ void play(const Step* steps, int count) {
 // The engine's note from the sim's rev level. The whole mapping is here rather
 // than in the sim because it is a fact about a piezo, not about a podracer.
 //
-// 150 to 660 Hz. The bottom is a drone rather than a rattle and the top is
-// short of the range the cues live in, so a flat out engine and a lap chime are
-// never the same note.
+// 420 to 930 Hz. The bottom is the piezo floor rather than a choice: below
+// about 400 the device makes no useful sound at all, so an engine drone down
+// there is an engine nobody hears. The top stays clear of where the cues sit,
+// so a flat out engine and a lap chime are never the same note.
 uint16_t engine_freq(uint8_t rev) {
-    return static_cast<uint16_t>(150 + rev * 2);
+    return static_cast<uint16_t>(420 + rev * 2);
 }
 
 }  // namespace
@@ -138,7 +139,7 @@ void sfx_handle(const Events& ev) {
     // this frame is the thing that is heard. A frame where the pod lands hard,
     // clips a rival and completes a lap is one sound, and it should be the lap.
     if (ev.wreck) {
-        const Step s[] = {{200, 6}, {150, 10}, {110, 22}};
+        const Step s[] = {{620, 6}, {500, 10}, {410, 22}};
         play(s, 3);
         // The only cue that reaches across: a wrecked pod has no engine note.
         engine.trigger_release();
@@ -147,10 +148,10 @@ void sfx_handle(const Events& ev) {
         const Step s[] = {{523, 5}, {659, 5}, {784, 5}, {1046, 22}};
         play(s, 4);
     } else if (ev.engine_out) {
-        const Step s[] = {{300, 4}, {190, 9}, {150, 13}};
+        const Step s[] = {{660, 4}, {500, 9}, {430, 13}};
         play(s, 3);
     } else if (ev.flood) {
-        const Step s[] = {{300, 4}, {200, 14}};
+        const Step s[] = {{600, 4}, {440, 14}};
         play(s, 2);
     } else if (ev.go) {
         const Step s[] = {{1320, 18}};
@@ -168,13 +169,13 @@ void sfx_handle(const Events& ev) {
         const Step s[] = {{660, 7}};
         play(s, 1);
     } else if (ev.slam) {
-        const Step s[] = {{190, 11}};
+        const Step s[] = {{440, 11}};
         play(s, 1);
     } else if (ev.bump) {
-        const Step s[] = {{260, 3}, {200, 6}};
+        const Step s[] = {{580, 3}, {460, 6}};
         play(s, 2);
     } else if (ev.scrape) {
-        const Step s[] = {{240, 5}};
+        const Step s[] = {{540, 5}};
         play(s, 1);
     }
 }

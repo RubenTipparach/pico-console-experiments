@@ -147,6 +147,7 @@ void die(World& world, Death cause) {
     if (meters > world.best_m) {
         world.best_m = meters;
         world.save_pending = true;
+        world.ev.record = true;
     }
 }
 
@@ -164,6 +165,7 @@ void world_init(World& world, uint32_t seed) {
 void world_tick(World& world, const Input& input) {
     world.ev = Events{};
     if (!world.alive) return;
+    const int32_t was_m = distance_m(world);
     world.tick++;
 
     ensure_generated(world, (world.x > world.screen_x ? world.x
@@ -172,6 +174,7 @@ void world_tick(World& world, const Input& input) {
     if (input.throttle && !world.started) {
         world.started = true;
         world.start_tick = world.tick;
+        world.ev.launched = true;
     }
     world.throttling = input.throttle;
 
@@ -272,6 +275,44 @@ void world_tick(World& world, const Input& input) {
             return;
         }
     }
+
+    // ---- what any of that sounded like ----
+    // Filled last and only on a tick the bike survived, so nothing here can
+    // be read from a world that has already died: every die() above returns
+    // straight out, which is what leaves ev.died as the only thing set on the
+    // tick a run ends.
+    {
+        // The engine, off forward speed rather than off the throttle, so it
+        // falls away when the rider lifts and climbs again under power.
+        const int32_t v = world.v > k_bike_vmax ? k_bike_vmax : world.v;
+        world.ev.rev = static_cast<uint8_t>(k_bike_vmax > 0
+            ? (v * 255) / k_bike_vmax : 0);
+        world.ev.offroad = off_road(world);
+        // Cornered: near either end of the window, which in this game is the
+        // whole tension. Reported as one flag rather than two because both
+        // ends kill you and the warning is the same warning.
+        if (world.started) {
+            const int32_t rel = world.x - world.screen_x;
+            const int32_t room = rel < 0 ? rel + k_window_half
+                                         : k_window_half - rel;
+            world.ev.cornered = room < k_window_warn;
+        }
+        // Every hundred metres. Off the distance actually crossed this tick,
+        // not a countdown, so a fast bike cannot step over one.
+        const int32_t now_m = distance_m(world);
+        if (now_m / 100 != was_m / 100) world.ev.milestone = true;
+    }
+}
+
+void merge_events(Events& into, const Events& from) {
+    into.died |= from.died;
+    into.launched |= from.launched;
+    into.record |= from.record;
+    into.milestone |= from.milestone;
+    // Levels, not edges: the latest tick wins.
+    into.offroad = from.offroad;
+    into.cornered = from.cornered;
+    into.rev = from.rev;
 }
 
 bool world_load(World& world, const SaveData& data) {

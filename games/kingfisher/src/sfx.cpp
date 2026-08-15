@@ -37,9 +37,13 @@ void sfx_init() {
     channel.release_ms = 30;
     channel.volume = 0x5fff;
 
-    // The reel ratchet lives on its own channel: a low triangle thump whose
-    // envelope decays to silence on its own, so it can tick away under a
-    // bite jingle without either interrupting the other.
+    // The reel ratchet lives on its own channel: a triangle tick whose
+    // envelope decays to silence on its own, so it can run under a bite
+    // jingle without either interrupting the other.
+    //
+    // It was a LOW thump, at 72 Hz, which is a frequency the device's piezo
+    // cannot usefully make: on the web it thumped and on hardware the reel
+    // was silent. A short tick up in the band carries the same information.
     auto& click = blit::channels[1];
     click.waveforms = blit::Waveform::TRIANGLE;
     click.attack_ms = 2;
@@ -67,7 +71,7 @@ void sfx_handle(const kf::Events& ev) {
     // not an announcement, and it plays alongside whatever else fires.
     if (ev.reel_click) {
         auto& click = blit::channels[1];
-        click.frequency = 72;
+        click.frequency = 520;
         click.trigger_attack();
     }
 
@@ -79,10 +83,10 @@ void sfx_handle(const kf::Events& ev) {
         const Step s[] = {{523, 5}, {659, 5}, {784, 10}};
         play(s, 3);
     } else if (ev.snap) {
-        const Step s[] = {{220, 4}, {160, 14}};
+        const Step s[] = {{560, 4}, {410, 14}};
         play(s, 2);
     } else if (ev.escape) {
-        const Step s[] = {{240, 8}, {180, 10}};
+        const Step s[] = {{580, 8}, {430, 10}};
         play(s, 2);
     } else if (ev.hooked) {
         const Step s[] = {{440, 3}, {880, 5}};
@@ -97,7 +101,7 @@ void sfx_handle(const kf::Events& ev) {
         const Step s[] = {{1100, 2}};
         play(s, 1);
     } else if (ev.splash) {
-        const Step s[] = {{300, 3}, {210, 4}};
+        const Step s[] = {{640, 3}, {450, 4}};
         play(s, 2);
     } else if (ev.cast) {
         const Step s[] = {{900, 3}, {620, 3}};

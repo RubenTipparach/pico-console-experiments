@@ -70,21 +70,67 @@ bool hurt_side(Pod& pod, int which, int32_t amount, int32_t far_share) {
 void wreck(Pod& pod) {
     if (pod.wreck_ticks > 0) return;
     pod.wreck_ticks = k_respawn_ticks;
+    // What the pod was doing when it went, so the respawn can hand some of it
+    // back. Captured HERE and not at the respawn, because by then the pod has
+    // been tumbling for a second and a half and its velocity is the tumble's
+    // rather than the racing line's.
+    pod.wreck_speed = pod_speed(pod);
     if (pod.vy < per_s(fp(6))) pod.vy = per_s(fp(6));
 }
 
 // Back on the road with both engines at half, which is the only forgiving
 // thing in the whole model. A three lap race that ends on lap one is a race
 // nobody runs twice.
+//
+// BACK ONTO ROAD, AND WITH A RUN UP. The node the pod wrecked at is very often
+// the node it wrecked IN: a gap reports no surface at all, so falling down one
+// leaves the nearest node somewhere in the middle of the hole, and putting the
+// pod back there drops it straight down the same hole. Measured on DUNE SEA,
+// whose gap is seven nodes and fifty six units wide: a pod that lost an engine
+// arrived too slow to jump it, fell, and respawned at node 66, which is the
+// middle of the gap, at eleven units a second.
+//
+// So walk back until there is a run of real road, and place the pod at the far
+// end of that run rather than at its lip. Both halves matter. Without the walk
+// the pod is in the hole; without the run up it is on the edge of the hole with
+// no room to get moving, which is the same outcome one second later.
 void respawn(Pod& pod, const Track& t) {
-    const TrackNode& n = t.nodes[pod.node];
-    const TrackNode& ahead = t.nodes[(pod.node + 1) % t.node_count];
+    uint16_t node = pod.node;
+    int road_run = 0;
+    for (int back = 0; back < k_respawn_search; ++back) {
+        // Written the long way round on purpose: `a + n - back % n` reads as
+        // the wrap it is meant to be and is not, because the modulo binds
+        // tighter than the subtraction. It happens to come out right while the
+        // search is shorter than a lap, which is a bug waiting for a short
+        // track.
+        const int32_t step = back % t.node_count;
+        const int32_t i = (pod.node + t.node_count - step) % t.node_count;
+        if (t.nodes[i].flags & kGap) { road_run = 0; continue; }
+        ++road_run;
+        node = i;
+        if (road_run >= k_respawn_runup) break;
+    }
+    pod.node = node;
+    const TrackNode& n = t.nodes[node];
+    const TrackNode& ahead = t.nodes[(node + 1) % t.node_count];
     const int32_t heading = fatan2(node_x(ahead) - node_x(n), node_z(ahead) - node_z(n));
     pod.x = node_x(n);
     pod.z = node_z(n);
     pod.y = node_y(n) + k_hover_height;
-    pod.vx = ftrig(k_respawn_speed, fsin(heading));
-    pod.vz = ftrig(k_respawn_speed, fcos(heading));
+    // MOVING. Eleven units a second on a track whose top speed is ninety is a
+    // standing start, and a standing start after every mistake turns one error
+    // into most of a lap. Half of what the pod was doing when it went, which is
+    // the racing convention, with a floor so a crash at walking pace still
+    // rolls away and a cap so a crash at full speed is still a real penalty.
+    int32_t speed = pod.wreck_speed / 2;
+    const int32_t top = pod_top_speed(pod);
+    const int32_t floor_speed = fscale(top, k_respawn_floor);
+    const int32_t cap = fscale(top, k_respawn_cap);
+    if (speed < floor_speed) speed = floor_speed;
+    if (speed > cap) speed = cap;
+    pod.wreck_speed = 0;
+    pod.vx = ftrig(speed, fsin(heading));
+    pod.vz = ftrig(speed, fcos(heading));
     pod.vy = 0;
     pod.yaw = heading;
     pod.yaw_rate = 0;

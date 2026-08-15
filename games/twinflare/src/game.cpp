@@ -120,15 +120,30 @@ void update_play(uint32_t elapsed) {
     if (g_race.done) g_chrome.screen = twinflare::Screen::Results;
 }
 
+// The pause rows, in the order draw_pause draws them. Named rather than
+// numbered because the sound row went in between resume and restart, and a
+// chain of bare 0/1/2 comparisons is exactly the sort of thing that silently
+// starts restarting the race when a row is inserted above it.
+enum PauseRow : uint8_t { kResume, kSound, kRestart, kQuit };
+
 void update_paused() {
+    const int n = twinflare::k_pause_rows;
     if (buttons.pressed & Button::DPAD_UP)
-        g_chrome.menu_item = static_cast<uint8_t>((g_chrome.menu_item + 2) % 3);
+        g_chrome.menu_item = static_cast<uint8_t>((g_chrome.menu_item + n - 1) % n);
     if (buttons.pressed & Button::DPAD_DOWN)
-        g_chrome.menu_item = static_cast<uint8_t>((g_chrome.menu_item + 1) % 3);
+        g_chrome.menu_item = static_cast<uint8_t>((g_chrome.menu_item + 1) % n);
     if (buttons.pressed & (Button::A | Button::B)) {
-        if (g_chrome.menu_item == 0) g_chrome.screen = twinflare::Screen::Race;
-        else if (g_chrome.menu_item == 1) start_race();
-        else g_chrome.screen = twinflare::Screen::Title;
+        switch (g_chrome.menu_item) {
+            case kResume: g_chrome.screen = twinflare::Screen::Race; break;
+            case kSound:
+                // Stays on the menu, because a toggle you have to reopen the
+                // menu to check is a toggle nobody trusts.
+                g_chrome.sound_on = !g_chrome.sound_on;
+                tfs::sfx_set_enabled(g_chrome.sound_on);
+                break;
+            case kRestart: start_race(); break;
+            default: g_chrome.screen = twinflare::Screen::Title; break;
+        }
     }
 }
 

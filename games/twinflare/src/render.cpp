@@ -60,6 +60,10 @@ constexpr float k_finish_aim_lift = 0.21f;
 // where a row stays readable over the brightest ground on any of the four
 // tracks and the road is still plainly visible under it.
 constexpr uint8_t k_board_alpha = 170;
+// How far the pause screen dims the race behind it. Heavier than the results
+// board, because a paused game wants to say clearly that it is paused, and
+// nothing behind the menu is worth reading while it is up.
+constexpr uint8_t k_dim_alpha = 200;
 
 // How much of the pod's bank the horizon takes. A third: enough that a corner
 // visibly rolls the world, not so much that the player loses which way is up.
@@ -2145,25 +2149,43 @@ void draw_track_map(const Track& t, const pse::RenderTarget& target,
 }
 
 void draw_pause(const Chrome& chrome, const pse::RenderTarget& target) {
-    // A solid panel behind the rows, not just a dither. There is no blending
-    // in this engine, so a checkerboard over a bright desert is still half a
-    // bright desert and three words of 5x7 on it are genuinely hard to read.
-    for (int y = 0; y < k_h; ++y)
-        for (int x = (y & 1); x < k_w; x += 2)
-            pse::plot_pixel(target, x, y, 8, 9, 14);
-    static const char* k_rows[3] = {"RESUME", "RESTART", "QUIT"};
+    // The whole screen dimmed, which used to be a hand rolled checkerboard
+    // because the engine could not blend. It can now, and the comment that
+    // used to sit here explaining the dither outlived the limitation it was
+    // apologising for: a dither over a bright desert is still half a bright
+    // desert, and 5x7 text on that is genuinely hard to read.
+    pse::blend_rect(target, 0, 0, k_w, k_h, 8, 9, 14, k_dim_alpha);
+
+    const char* rows[k_pause_rows] = {
+        "RESUME",
+        chrome.sound_on ? "SOUND: ON" : "SOUND: OFF",
+        "RESTART",
+        "QUIT",
+    };
+    // Measured from the WIDEST row, and the sound row is the one that moves:
+    // "SOUND: OFF" is a character wider than "SOUND: ON", so a panel sized
+    // while the sound was on is a panel the label prints out of the moment it
+    // is switched off.
     int widest = 0;
-    for (const char* row : k_rows) {
+    for (const char* row : rows) {
         const int w = pse::text_width(row);
         if (w > widest) widest = w;
     }
-    pse::fill_rect(target, 60 - widest / 2 - 8, 33, widest + 16, 3 * 14 + 8, 12, 13, 20);
-    for (int i = 0; i < 3; ++i) {
-        const int w = pse::text_width(k_rows[i]);
-        const int y = 40 + i * 14;
+    // Sized off the longest label rather than the current one, so the panel
+    // does not breathe as the row's own text changes under the cursor.
+    const int off = pse::text_width("SOUND: OFF");
+    if (off > widest) widest = off;
+
+    const int rows_h = k_pause_rows * 14;
+    const int top = 60 - rows_h / 2 - 4;
+    pse::fill_rect(target, 60 - widest / 2 - 8, top, widest + 16, rows_h + 8,
+                   12, 13, 20);
+    for (int i = 0; i < k_pause_rows; ++i) {
+        const int w = pse::text_width(rows[i]);
+        const int y = top + 7 + i * 14;
         if (i == chrome.menu_item)
             pse::fill_rect(target, 60 - w / 2 - 4, y - 2, w + 8, 11, 232, 138, 43);
-        pse::draw_text_centred(target, k_rows[i], 60, y,
+        pse::draw_text_centred(target, rows[i], 60, y,
                                i == chrome.menu_item ? 20 : 210,
                                i == chrome.menu_item ? 12 : 216,
                                i == chrome.menu_item ? 4 : 228);

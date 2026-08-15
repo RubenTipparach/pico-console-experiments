@@ -5,6 +5,7 @@ add_picosystem_game(dustrider
         src/game.cpp
         src/sim.cpp
         src/render.cpp
+        src/sfx.cpp
     MODELS
         ${dustrider_model_files}
 )

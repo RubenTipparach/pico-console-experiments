@@ -46,7 +46,13 @@ constexpr uint8_t k_flag_cactus = 2;
 struct SaveData {
     uint32_t magic;        // 'D','S','T','1'
     uint32_t best_m;
-    uint8_t reserved[4];
+    // Stored as sound OFF rather than sound on, which is the whole reason the
+    // magic does not need bumping: a save written before this field existed
+    // has zeros here, and zero means what it always meant, which is that the
+    // sound is on. Written the other way round, every existing save would come
+    // back muted and read as the feature being broken.
+    uint8_t sound_off;
+    uint8_t reserved[3];
 };
 constexpr uint32_t k_save_magic = 0x31545344u;
 
@@ -60,8 +66,21 @@ struct Input {
 
 // One tick's worth of things the presentation cares about. Reset every
 // tick.
+//
+// The edges are things that HAPPENED and the levels are things that ARE, and
+// the split matters to whatever reads them: a frame steps the sim several
+// times, so an edge has to survive being merged with the ticks either side of
+// it while a level has to be the latest value and not the loudest.
 struct Events {
     bool died;
+    bool launched;         // the first throttle of a run: the bike is away
+    bool record;           // that death set a new best
+    bool milestone;        // another hundred metres
+
+    // Levels.
+    bool offroad;          // both wheels in the sand
+    bool cornered;         // the window is closing, either end
+    uint8_t rev;           // 0..255 engine note, off forward speed
 };
 
 struct World {
@@ -115,6 +134,23 @@ struct World {
 
 void world_init(World& world, uint32_t seed);
 void world_tick(World& world, const Input& input);
+
+// Fold one tick's events into a frame's worth, for a caller that steps the sim
+// more than once between sounds. Edges accumulate and levels take the latest
+// value, which is the difference between "did this happen during the frame"
+// and "what is it doing now": OR'd like the rest, the rev would stick at the
+// loudest tick of the frame and one tick in the sand would latch the rumble on
+// for all of it.
+void merge_events(Events& into, const Events& from);
+
+// Whether a save record says the sound is on.
+//
+// One line, and it lives here rather than in the SDK facing shell because it
+// is the line that can be wrong: read as "sound_on" instead of "sound off",
+// every save written before the field existed comes back muted, which reads
+// as the toggle being broken rather than as a save format decision. Down here
+// a host test can hold it to that.
+inline bool save_sound_on(const SaveData& data) { return data.sound_off == 0; }
 
 bool world_load(World& world, const SaveData& data);
 void world_make_save(const World& world, SaveData& out);

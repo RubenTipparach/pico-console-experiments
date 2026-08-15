@@ -98,6 +98,12 @@ constexpr int32_t k_start_grace = 100;
 // window is not.
 constexpr int32_t k_window_half = 2760;
 
+// How little room at either end of the window counts as being cornered, which
+// is the only thing this game gives the rider an audible warning about. A
+// quarter of the half width: close enough that it means something, far enough
+// that the warning arrives while there is still time to do something with it.
+constexpr int32_t k_window_warn = k_window_half / 4;
+
 // ---- track generation ----
 
 // One chunk is 512 fp8 = 2 m of track.

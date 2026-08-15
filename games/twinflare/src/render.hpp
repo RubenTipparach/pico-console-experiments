@@ -26,6 +26,11 @@ enum class Screen : uint8_t {
     Results,
 };
 
+// How many rows the pause menu has, and it lives here because game.cpp walks
+// the cursor over them and render.cpp draws them. Two copies of "how many" is
+// a cursor that can select a row nobody drew.
+constexpr int k_pause_rows = 4;
+
 struct Chrome {
     Screen screen = Screen::Title;
     uint8_t pod = 0;
@@ -33,6 +38,7 @@ struct Chrome {
     uint8_t menu_item = 0;
     uint32_t time_ms = 0;
     bool boost_on_a = false;   // the button scheme, see game.cpp
+    bool sound_on = true;      // what the pause menu's SOUND row reads
 };
 
 void render_frame(const Race& race, const Chrome& chrome,
