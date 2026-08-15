@@ -59,6 +59,8 @@ struct Events {
     bool scrape;       // first tick against a wall
     bool slam;         // landed hard
     bool engine_out;   // an engine reached zero
+    bool fuse_lit;     // and that left one, so the pod is now on a clock
+    bool fuse_beat;    // another second of it gone
     bool wreck;
 
     // Held states rather than edges, because these are sounds that do not
@@ -117,6 +119,9 @@ struct Pod {
     // lets a hit of any kind be seen on the side it happened.
     int16_t hit[2];
     int16_t bump_ticks;          // cooldown, so one touch is one hit
+    // Ticks until the pod comes apart, lit the moment it is down to one
+    // engine and stopped by nothing. See k_fuse_ticks.
+    int16_t fuse;
     uint8_t racer_index;
 };
 
@@ -264,5 +269,14 @@ inline bool engine_critical(const Pod& pod, int i) {
 // by the renderer, so the number the player sees and the number the charge is
 // racing against cannot drift apart.
 int countdown_number(const Race& race);
+
+// Seconds left on the fuse, rounded UP so the last second reads 1 rather than
+// the number reaching zero while the pod is still flying. Zero means no fuse.
+// One rounding, shared by the HUD and the tests, for the same reason the
+// countdown has one.
+inline int fuse_seconds(const Pod& pod) {
+    if (pod.fuse <= 0) return 0;
+    return (pod.fuse + k_tick_hz - 1) / k_tick_hz;
+}
 
 }  // namespace twinflare

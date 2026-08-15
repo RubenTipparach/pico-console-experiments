@@ -11,7 +11,8 @@ objective: "Three laps against five rivals. The pod hangs off two engines and a 
 
 rules:
   - "The grid: Three seconds on the line before the light goes green, and holding the throttle through them winds the engines up. The bar under the number is the charge and the red mark is where it blows: let it reach that and both engines take the damage before you have moved. Stop short and the charge becomes a boost off the line."
-  - "Damage: Each engine has its own bar because each one takes its own damage. A wall grinds the engine on the side you hit it with. A hard landing goes to whichever engine is lower, so a slam mid corner lands on the inside one. A rival you touch damages the engine that touched it. An engine that is nearly out trails smoke, and a dead one leaves you pulling toward the side that is missing."
+  - "Damage: Each engine has its own bar because each one takes its own damage. A wall grinds the engine on the side you hit it with. A hard landing goes to whichever engine is lower, so a slam mid corner lands on the inside one. A rival you touch damages the engine that touched it. An engine that is nearly out trails smoke."
+  - "One engine left: Lose an engine outright and the pod is coming apart. Three seconds on the clock, counted down on screen and in your ears, and then it goes. Nothing stops it: repair cannot bring a dead engine back, so there is no button to hold and nothing to nurse. What the three seconds buy is the chance to reach a line, back off a jump, or watch it coming."
   - "The flag: Your race ends at the line and the pod flies itself while the rest of the field comes in, with each racer's time appearing as they cross. Any button skips to the results."
 
 controls:

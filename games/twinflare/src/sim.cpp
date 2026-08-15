@@ -140,6 +140,7 @@ void respawn(Pod& pod, const Track& t) {
     pod.swing = 0;
     pod.swing_rate = 0;
     pod.dead = 0;
+    pod.fuse = 0;
     pod.engine[0] = pod.engine[1] = static_cast<int16_t>(pod.engine_max / 2);
     pod.heat = 0;
     pod.locked = false;
@@ -312,6 +313,8 @@ void merge_events(Events& into, const Events& from) {
     into.scrape |= from.scrape;
     into.slam |= from.slam;
     into.engine_out |= from.engine_out;
+    into.fuse_lit |= from.fuse_lit;
+    into.fuse_beat |= from.fuse_beat;
     into.wreck |= from.wreck;
     // Levels, not edges: the latest value wins. OR'd like the rest, `grinding`
     // would latch on for the whole frame after one tick against the rock and
@@ -1122,6 +1125,39 @@ void race_tick(Race& race, const Input& raw) {
     const bool was_wrecked = pod.wreck_ticks > 0;
     if (pod.clearance < k_crash_floor) wreck(pod);
     if (pod.y < node_y(t.nodes[surf.node]) + k_crash_floor) wreck(pod);
+
+    // ---- one engine is a fuse, not a handicap -----------------------------
+    // Down to one engine, the pod is coming apart, and three seconds later it
+    // does. Nothing stops the clock: repair cannot resurrect a dead engine, so
+    // there is nothing to nurse and no button to hold. What the three seconds
+    // buy is the chance to reach a line, back off a jump, or watch it coming.
+    //
+    // Evaluated AFTER every damage source this tick, so an engine that goes out
+    // to a wall lights the fuse on the tick it went and not the one after.
+    const int alive_now =
+        (engine_dead(pod, 0) ? 0 : 1) + (engine_dead(pod, 1) ? 0 : 1);
+    if (alive_now == 1 && pod.wreck_ticks == 0) {
+        if (pod.fuse <= 0) {
+            pod.fuse = k_fuse_ticks;
+            race.ev.fuse_lit = true;
+        } else {
+            const int was_left = fuse_seconds(pod);
+            --pod.fuse;
+            if (fuse_seconds(pod) != was_left) race.ev.fuse_beat = true;
+        }
+        if (pod.fuse <= 0) {
+            pod.fuse = 0;
+            // It goes WITH the other one. The pod does not limp on with an
+            // engine at zero, it comes apart, so the surviving engine is taken
+            // too and the wreck below is the one that has always been there:
+            // both engines out. One wreck path, not two.
+            hurt(pod, 0, pod.engine_max);
+            hurt(pod, 1, pod.engine_max);
+            race.ev.engine_out = true;
+        }
+    } else {
+        pod.fuse = 0;
+    }
     if (engine_dead(pod, 0) && engine_dead(pod, 1)) wreck(pod);
     if (!was_wrecked && pod.wreck_ticks > 0) race.ev.wreck = true;
 

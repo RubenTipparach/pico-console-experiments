@@ -337,6 +337,34 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The fuse, on the frame a player actually sees it: one engine gone and the
+    // pod counting down to coming apart.
+    {
+        for (int at = 3; at >= 1; --at) {
+            Race race;
+            race_start(race, 0, 0);
+            Input in{};
+            const Track& t = track(0);
+            for (int i = 0; i < 900; ++i) { drive(race, t, in); race_tick(race, in); }
+            race.pod.engine[0] = 0;
+            race.pod.dead = 1;
+            Input coast{};
+            int guard = 0;
+            while (fuse_seconds(race.pod) != at && guard++ < 400)
+                race_tick(race, coast);
+            Chrome chrome;
+            chrome.screen = Screen::Race;
+            render_frame(race, chrome, target());
+            char name[16] = {'f','u','s','e','_','0','\0'};
+            name[5] = static_cast<char>('0' + at);
+            if (fuse_seconds(race.pod) != at) {
+                std::printf("FAIL: never reached %d on the fuse\n", at);
+                ++failures;
+            }
+            write_ppm(dir, name);
+        }
+    }
+
     // Damage, from the chase camera, which is the angle the game is played at
     // and the one the smoke exists for. Three frames: healthy, one engine
     // smoking, and one engine smoking while the other is being struck.
