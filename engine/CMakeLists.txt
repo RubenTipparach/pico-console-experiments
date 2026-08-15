@@ -66,41 +66,6 @@ target_include_directories(pse-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# How big the shared depth buffer is, for pse/shared_render.hpp.
-#
-# The largest window any game in THIS build draws, read from each game.yml's
-# `render:` block. Per build and not per repo on purpose: a standalone game
-# that draws the default square pays exactly what it always paid, and only a
-# build that actually contains a wider game grows to fit it. That is still far
-# less than the wider game carrying a second buffer of its own, which is what
-# it did before.
-if(PSE_CONSOLE)
-    set(pse_arena_args --console)
-elseif(DEFINED PICO_ONLY_GAME)
-    set(pse_arena_args --only-game ${PICO_ONLY_GAME})
-else()
-    set(pse_arena_args "")
-endif()
-# Reconfigure when a game changes the window it asks for. console.yaml is
-# deliberately NOT listed here: cmake/console.cmake already carries it, and
-# naming the same file from two directories with two spellings makes ninja
-# report two rules generating it and refuse to build at all.
-file(GLOB pse_arena_inputs CONFIGURE_DEPENDS
-     ${CMAKE_CURRENT_SOURCE_DIR}/../games/*/game.yml)
-execute_process(
-    COMMAND ${PSE_PYTHON3} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/depth_arena.py
-            ${pse_arena_args}
-    OUTPUT_VARIABLE PSE_DEPTH_ARENA_BYTES
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE pse_arena_result)
-if(NOT pse_arena_result EQUAL 0 OR NOT PSE_DEPTH_ARENA_BYTES MATCHES "^[0-9]+$")
-    message(FATAL_ERROR "depth_arena.py did not report a size: a 3D game "
-                        "would get no depth buffer and draw nothing")
-endif()
-message(STATUS "Shared depth buffer: ${PSE_DEPTH_ARENA_BYTES} bytes")
-target_compile_definitions(pse-core PUBLIC
-                           PSE_DEPTH_ARENA_BYTES=${PSE_DEPTH_ARENA_BYTES})
-
 # Which board this is, for pse/board.hpp.
 #
 # Read from PICO_BOARD rather than from the SDK's own BLIT_BOARD_* define,

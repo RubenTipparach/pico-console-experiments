@@ -39,23 +39,6 @@ root, not in `game.yml`: list the slug under `build:` to keep it in the
 rotation, under `hold:` to take it out, or leave it out entirely and it builds
 by default.
 
-### `render:` (optional)
-
-The window this game rasterizes into, when it is not the default 120x120
-square.
-
-```yaml
-render:
-  width: 240
-  height: 112
-```
-
-The engine keeps one shared depth buffer, because only one game runs at a
-time. `tools/depth_arena.py` sizes it to the largest window in the build, so
-declaring a window here is what lets a game use the shared buffer instead of
-carrying a second one beside it. Leave it out and you get the default, which
-is what nearly every game wants.
-
 ## What a game exports
 
 One symbol, and it is not `main`. A game defines its three functions with

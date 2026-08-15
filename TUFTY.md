@@ -253,35 +253,42 @@ proposed again. Nothing in this repo uses that path yet. It is written down
 here so the next person does not read `CONSOLE.md` and conclude the question
 is closed on both boards.
 
-## Core 1 is off on the RP2350, and why
+## A corrupt bottom band, and what it actually was
 
-Every 3D game came back from the Tufty with the bottom band of the screen
-corrupt. That band is exactly and only the rows core 1 renders in
-`pse::run_split`: core 0's half was perfect in the same frame, 2D games were
-untouched, and both boards run identical game code. So the fault is in
-`engine/src/parallel_pico.cpp`, not in a game and not in the display driver.
+Worth keeping because the first diagnosis was wrong and the evidence that
+corrected it was one sentence from the person holding the device.
 
-Ruled out by reading the code: the handoff's publication order is right for a
-weakly ordered machine and not merely for an in-order one. Core 0 fills the
-job, issues `__sync_synchronize` (a real `DMB` on Cortex-M33, not just the
-compiler barrier its comment used to claim), then bumps the sequence; core 1
-observes the sequence, issues its own barrier, then reads the job. That is a
-correct acquire/release pair.
+Every 3D game came back with the bottom of the screen corrupt. That band is
+exactly the rows core 1 renders in `pse::run_split`, 2D games were untouched,
+and the fault looked board specific, so core 1 on the RP2350 was the obvious
+suspect and the first fix took it out of the split there.
 
-Not ruled out, and needing a device to settle: core 1 runs on the pico-sdk's
-default **2 KB** stack, and the Cortex-M33 build of `render_band` may want
-more of it than the M0+ build did. An overrunning stack produces exactly this
-shape of fault, wrong pixels out of one core with everything else intact.
+Then: **the same glitch was on the RP2040.** Which rules core 1 out entirely,
+because that path has shipped and been played on the PicoSystem for as long as
+this repo has existed. What actually distinguishes the affected games is not
+the split at all, it is that only 3D games link `shared_render.cpp`.
 
-So the RP2350 renders both bands on core 0 for now. That is not a fallback of
-unknown quality: it is the same code path the web, desktop and host builds
-take, and `engine/tests` proves it byte identical to the split. The RP2350 is
-also the faster chip per clock and has an FPU the RP2040 lacks, which is where
-the vertex transform spends its time, so one core here is not obviously slower
-than two there. The RP2040 path is untouched.
+The cause was an optimisation from this same branch. The shared depth buffer
+had been turned into a bare arena so a game drawing a different shape could
+lay its own window over the same bytes, saving 14,444 bytes. The binding
+happened in each game's static initialiser: jokerreels bound its 240x112
+window unconditionally, everyone else bound 120x120 only if nothing had bound
+yet, and in a console holding both the winner was link order. Whenever
+jokerreels won, every other 3D game rasterized believing its depth buffer was
+240 wide on a 120 wide screen. The index `y * 240 + x` passes the end of a
+26,880 byte buffer at about `y = 112`, which is the bottom band, on any chip.
 
-To test the stack theory on hardware, build with `PSE_PICO_SPLIT_CORE1=1` and
-see whether the band comes back.
+Reverted. The shared rasterizer is an `OwnedRasterizer<120, 120>` again and
+jokerreels carries its own, which costs back the 14,444 bytes. The lesson is
+not "bind more carefully": a shared object whose shape is decided by whichever
+game initialised last has no single correct state, and a type that fixes the
+shape cannot be got wrong that way.
+
+Core 1 renders the bottom band on both boards again, as it always did. One
+thing was worth keeping from the wrong diagnosis: the handoff's comment
+claimed compiler barriers where the code uses `__sync_synchronize`, a real
+`DMB` on Cortex-M33, so the acquire/release pair is correct on both chips and
+the comment now says so.
 
 ## What is not done
 

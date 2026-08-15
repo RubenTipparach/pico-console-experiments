@@ -27,17 +27,12 @@
 namespace jrr {
 namespace {
 
-// The shared rasterizer, with this game's 240x112 band laid over the shared
-// depth buffer rather than a second buffer of its own.
+// Its own, sized to the window. Not the shared one: that carries the default
+// 120x120 buffer, and this game draws a 240x112 band.
 //
-// It used to own one, because the shared buffer was fixed at 120x120 and this
-// game does not draw a square. That cost 26,880 bytes sitting beside the
-// shared 14,400, in a console that can only ever be running one of them. The
-// buffer is sized from this game's `render:` block in game.yml now, so the
-// window fits the shared bytes and the static_assert in
-// shared_windowed_rasterizer proves it at compile time.
-pse::Rasterizer& g_raster =
-    pse::shared_windowed_rasterizer<k_screen_w, k_window_h>();
+// Sharing those bytes was tried and reverted. See engine/src/shared_render.cpp:
+// it cost the bottom of the screen in every other 3D game.
+pse::OwnedRasterizer<k_screen_w, k_window_h> g_raster;
 pse::Renderer3D g_renderer(g_raster);
 
 // The queue IS the shared one, unlike the rasterizer above. A FrameQueue's
