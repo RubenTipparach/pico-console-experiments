@@ -140,6 +140,10 @@ constexpr int32_t k_offroad_drag = 2600;
 // punishment, and it has to be a cost you race against rather than one you
 // avoid. Off the road AND over water takes whichever is worse.
 constexpr int32_t k_water_drag = 1550;
+// How near the waterline counts as breaking it, for spray. Three units, which
+// covers a pod hovering on the sea (the field rests it about two up) as well
+// as one diving through on its way into the causeway.
+constexpr int32_t k_splash_band = fp(3);
 
 // ---- steering --------------------------------------------------------------
 // A podracer does not turn like a car. It turns like a thing dragged behind

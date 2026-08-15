@@ -694,10 +694,27 @@ void test_the_sea_is_a_surface_and_not_a_hazard() {
         if (race.pod.y < lowest) lowest = race.pod.y;
     }
     check(race.pod.wreck_ticks == 0, "the sea does not drown a pod");
-    check(race.pod.over_water, "and the pod knows it is over water");
-    check(lowest >= sea, "the pod never gets below the waterline");
-    check(race.pod.y < sea + k_hover_height + fp(1),
-          "it settles ON the sea rather than hovering somewhere above it");
+    // THE CAUSEWAY TAKES YOU UNDER, and this check used to say the opposite.
+    // It asserted that the pod never gets below the waterline and settles ON
+    // the sea, which is what the sim did and what made TIDEBREAK's submerged
+    // third a place you flew over the top of: 98 of its 304 nodes are under
+    // the sea, the deepest by 14 units, and the pod rode 2.6 units above the
+    // waterline over every one of them. Reported from playing it, in as many
+    // words: in the underwater section it did not seem like the pod was going
+    // under water. It was not.
+    //
+    // The sea is a surface only where the track has none now, so the pod
+    // follows the road down and the sea closes over it.
+    check(race.pod.y < sea, "the pod goes UNDER the waterline on the causeway");
+    check(race.pod.submerged, "and the sim knows it is under");
+    check(!race.pod.over_water,
+          "which is not the same as skimming the surface");
+    // Down to the road, not through it: the hover field still holds it up, it
+    // is just holding it up off tarmac that happens to be under the sea.
+    check(race.pod.y > node_y(t.nodes[deepest]),
+          "it is held off the road rather than dropped through it");
+    check(race.pod.y < node_y(t.nodes[deepest]) + k_hover_height + fp(1),
+          "and it settles ON that road, at the bottom of the trench");
     std::printf("  %s: sea at %.1f, deepest road %.1f, pod settled at %.2f "
                 "(lowest %.2f)\n", t.name, sea / 65536.0,
                 node_y(t.nodes[deepest]) / 65536.0, race.pod.y / 65536.0,
@@ -721,6 +738,59 @@ void test_the_sea_is_a_surface_and_not_a_hazard() {
         check(fall.pod.wreck_ticks == 0, "a gap over the sea is survivable");
         check(fall.pod.y >= sea, "and it lands you on the surface");
     }
+}
+
+void test_a_lap_really_dives_and_comes_back_up() {
+    // The report, in the user's words: in the underwater section it did not
+    // seem like the pod was going under water. The checks above prove the pod
+    // CAN be under the sea when it is placed there; this one drives a lap and
+    // proves it actually happens to a player who just races.
+    //
+    // The failure this is really guarding is not "no underwater section", it
+    // is the two ways of getting one that would be worse than none: a dive so
+    // steep the pod wrecks going in, and a trench it cannot climb out of.
+    int tide = -1;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+    check(tide >= 0, "a track has a sea to dive into");
+    if (tide < 0) return;
+    const Track& t = track(tide);
+    const int32_t sea = water_level(t);
+
+    Race race;
+    race_start(race, tide, 0);
+    Input in{};
+    int under = 0, dry = 0, splashes = 0, wrecks = 0;
+    int32_t deepest = 0;
+    bool was_under = false, crossed_down = false, crossed_up = false;
+    for (int i = 0; i < 12000 && race.pod.lap < 2; ++i) {
+        drive(race, t, in);
+        race_tick(race, in);
+        if (race.pod.wreck_ticks > 0) { ++wrecks; continue; }
+        if (race.pod.submerged) {
+            ++under;
+            const int32_t depth = sea - race.pod.y;
+            if (depth > deepest) deepest = depth;
+            if (!was_under) crossed_down = true;
+        } else {
+            ++dry;
+            if (was_under) crossed_up = true;
+        }
+        was_under = race.pod.submerged;
+        if (race.pod.splashing) ++splashes;
+    }
+    check(under > 200, "a driven lap spends real time under the sea");
+    check(dry > 200, "and real time above it: this is not a submarine");
+    check(crossed_down && crossed_up,
+          "the pod goes under and comes back up, rather than starting there");
+    check(deepest > fp(6), "and it gets properly deep, not ankle deep");
+    // The dive has to be survivable. A causeway that drops 14 units into a
+    // trench is a slam waiting to happen if the road does not ramp, and a
+    // wreck every lap at the same corner is worse than no underwater section.
+    check(wrecks == 0, "and nothing about the dive wrecks the pod");
+    check(splashes > 0, "crossing the surface throws spray");
+    std::printf("  %s: a lap spends %d ticks under and %d above, deepest %.1f u "
+                "down, %d ticks of spray, %d wrecks\n",
+                t.name, under, dry, deepest / 65536.0, splashes, wrecks);
 }
 
 void test_the_sea_costs_time() {
@@ -763,9 +833,17 @@ void test_the_sea_costs_time() {
         Input coast{};
         for (int i = 0; i < 60; ++i) race_tick(race, coast);
         speed[k] = pod_speed(race.pod);
-        check(race.pod.over_water == (k == 1), "each pod is on the surface it was put on");
+        // The wet one is UNDER the sea now rather than skimming it, which is
+        // the whole change; what has not changed is that water costs speed,
+        // and the check below still measures exactly that.
+        check(race.pod.submerged == (k == 1),
+              "each pod is on the surface it was put on");
     }
-    check(speed[1] < speed[0], "coasting over the sea is slower than the causeway");
+    // A REAL margin, not just "less". Measured at 41 against 46, and with the
+    // water drag removed entirely the two came out close enough that a bare
+    // less-than still passed: the mutant survived and the check was decoration.
+    check(speed[1] * 20 < speed[0] * 19,
+          "coasting under the sea is meaningfully slower than the causeway");
     std::printf("  coasting: %d u/s on the causeway against %d u/s over the sea\n",
                 speed[0] * k_tick_hz / k_one, speed[1] * k_tick_hz / k_one);
 }
@@ -1914,6 +1992,7 @@ int main() {
     test_the_pod_never_gets_below_the_surface();
     test_a_hard_landing_costs_engines_and_not_the_run();
     test_the_sea_is_a_surface_and_not_a_hazard();
+    test_a_lap_really_dives_and_comes_back_up();
     test_the_sea_costs_time();
     test_rivals_move_smoothly();
     test_a_wall_stops_the_pod_rather_than_lifting_it();

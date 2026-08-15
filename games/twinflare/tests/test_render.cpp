@@ -615,6 +615,104 @@ void test_the_rocks_belong_to_the_track() {
     }
 }
 
+void test_going_under_the_sea_looks_like_going_under_the_sea() {
+    // The sim taking the pod down is only half of it. The geometry was right
+    // as soon as it did: poly re-winds every triangle toward the camera, so the
+    // sea is drawn from below as happily as from above, and a probe colour
+    // showed it correctly overhead receding to a horizon. The frame still read
+    // as open air, because the underside of the sea was painted in the same
+    // blues as the sky and the gradient behind everything was still a sky.
+    //
+    // So this measures the LOOK, at the top of the frame, which is where the
+    // difference lives: above water that band is sky, under it that band is
+    // the sea's underside and has to be darker.
+    int tide = -1;
+    for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+    check(tide >= 0, "a track has a sea");
+    if (tide < 0) return;
+    const Track& t = track(tide);
+    const int32_t sea = water_level(t);
+
+    // How much of the frame has had the red taken out of it, which is what
+    // being under water DOES to a picture. Brightness was the obvious measure
+    // and it is useless here: TIDEBREAK's sky and its sunk water come out
+    // within one luma step of each other, so a frame correctly tinted from top
+    // to bottom scored 97 against the dry frame's 96 and the check failed on a
+    // working build.
+    //
+    // Water absorbs red first, which is why the sink halves it and lifts the
+    // other two. Nothing on a dry frame of this track is blue by that margin.
+    // How much of the frame is still wearing the SKY's own colour. Under the
+    // sea the answer has to be none of it: the gradient behind everything is
+    // deep water, and the ceiling over the pod is the sea's underside.
+    //
+    // Sampling one pixel and asking how far it is from the sky was tried and
+    // is too weak to matter: the pixel it lands on is the sea ceiling, which
+    // differs from the sky whether or not the tint ran, so the check passed
+    // with the underwater gradient switched off entirely.
+    const auto sky_pixels = [&t]() {
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) {
+            const uint8_t* p = g_pixels + i * 3;
+            if (std::abs(p[0] - t.palette.sky_top[0])
+              + std::abs(p[1] - t.palette.sky_top[1])
+              + std::abs(p[2] - t.palette.sky_top[2]) < 12) ++n;
+        }
+        return n;
+    };
+    // Pixels too RED to have come through the sink. It keeps three tenths of
+    // the red, so a tinted polygon cannot exceed 76 whatever it was painted;
+    // anything above that underwater is either the HUD, which is drawn
+    // immediate mode afterwards and deliberately not tinted, or the pod's
+    // mesh, which goes through draw_mesh rather than poly.
+    //
+    // A threshold derived from the constant beats comparing mean red between
+    // the two frames, which was tried: they are different places on the track
+    // with different scenery, so 58 against 36 was mostly the view and only
+    // partly the water.
+    const auto too_red = []() {
+        int n = 0;
+        for (int i = 0; i < 120 * 120; ++i) if (g_pixels[i * 3] > 76) ++n;
+        return n;
+    };
+
+    uint16_t deepest = 0, high = 0;
+    for (uint16_t i = 0; i < t.node_count; ++i) {
+        if (node_y(t.nodes[i]) < node_y(t.nodes[deepest])) deepest = i;
+        if (node_y(t.nodes[i]) > node_y(t.nodes[high])) high = i;
+    }
+
+    Chrome chrome;
+    chrome.screen = Screen::Race;
+    chrome.track = static_cast<uint8_t>(tide);
+    int luma[2] = {0, 0}, red[2] = {0, 0};
+    for (int k = 0; k < 2; ++k) {
+        const uint16_t at = k ? deepest : high;
+        Race race;
+        race_start(race, tide, 0);
+        const TrackNode& n = t.nodes[at];
+        race.pod.node = at;
+        race.pod.x = node_x(n);
+        race.pod.z = node_z(n);
+        race.pod.y = node_y(n) + k_hover_floor;
+        Input coast{};
+        for (int i = 0; i < 12; ++i) race_tick(race, coast);
+        check(race.pod.submerged == (k == 1),
+              "the pod is under the sea at the deep end and not at the high one");
+        render_frame(race, chrome, target());
+        luma[k] = sky_pixels();
+        red[k] = too_red();
+        if (k == 1) check(render_stats().sea > 0, "the sea is drawn from under it");
+    }
+    check(luma[0] > 200, "above the water there is sky in the picture");
+    check(luma[1] == 0, "and under it there is none: the sky is gone entirely");
+    check(red[1] * 4 < red[0],
+          "and the whole picture has had the red taken out of it");
+    std::printf("  under: %d sky pixels above water and %d below, "
+                "%d pixels too red to be underwater against %d\n",
+                luma[0], luma[1], red[0], red[1]);
+}
+
 void test_the_pod_explodes_when_the_fuse_runs_out() {
     // The requirement: when the break up countdown reaches zero the pod should
     // explode. It reached zero and printed WRECKED, with the intact pod still
@@ -953,6 +1051,7 @@ int main() {
     test_pod_select_shows_the_pod();
     test_the_rocks_belong_to_the_track();
     test_scraping_a_wall_throws_sparks();
+    test_going_under_the_sea_looks_like_going_under_the_sea();
     test_the_pod_explodes_when_the_fuse_runs_out();
     test_the_world_is_closed_when_you_look_off_the_side();
     test_no_band_of_ground_runs_backwards();

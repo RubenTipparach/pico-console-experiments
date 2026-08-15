@@ -164,6 +164,77 @@ int main(int argc, char** argv) {
         if (ti == 0) write_ppm(dir, "thumbnail");
     }
 
+    // TIDEBREAK's submerged stretch, which is the one part of the game whose
+    // whole point is a place you cannot see from any other shot. The lap shots
+    // above are taken at a fixed tick and land wherever they land.
+    {
+        int tide = -1;
+        for (int i = 0; i < k_track_count; ++i) if (has_water(track(i))) tide = i;
+        if (tide < 0) {
+            std::printf("FAIL: no track has water to photograph\n");
+            ++failures;
+        } else {
+            const Track& t = track(tide);
+            const int32_t sea = water_level(t);
+            uint16_t deepest = 0;
+            for (uint16_t i = 0; i < t.node_count; ++i)
+                if (node_y(t.nodes[i]) < node_y(t.nodes[deepest])) deepest = i;
+            // Approach, arrival and the deepest point itself, so how the
+            // transition reads is visible and not just the bottom.
+            static const int k_before[3] = {14, 6, 0};
+            for (int shot = 0; shot < 3; ++shot) {
+                Race race;
+                race_start(race, tide, 0);
+                const int node =
+                    (deepest + t.node_count - k_before[shot]) % t.node_count;
+                const TrackNode& n = t.nodes[node];
+                race.pod.node = static_cast<uint16_t>(node);
+                race.pod.x = node_x(n);
+                race.pod.z = node_z(n);
+                // AT the road, not dropped in from above the sea. The field
+                // only reaches 3.4 units, so a pod released above a trench 14
+                // units deep is in free fall and needs 111 ticks to arrive;
+                // settling for 60 photographed it still on its way down, which
+                // read exactly like a pod that refuses to submerge.
+                race.pod.y = node_y(n) + k_hover_floor;
+                Input in{};
+                for (int i = 0; i < 40; ++i) { drive(race, t, in); race_tick(race, in); }
+                Chrome chrome;
+                chrome.screen = Screen::Race;
+                chrome.track = static_cast<uint8_t>(tide);
+                render_frame(race, chrome, target());
+                char name[24];
+                std::snprintf(name, sizeof name, "tide_deep_%d", k_before[shot]);
+                write_ppm(dir, name);
+                if (shot == 2) {
+                    int under = 0;
+                    int32_t deepest_drop = 0;
+                    for (uint16_t i = 0; i < t.node_count; ++i) {
+                        const int32_t d = sea - node_y(t.nodes[i]);
+                        if (d > 0) ++under;
+                        if (d > deepest_drop) deepest_drop = d;
+                    }
+                    std::printf("  tide: %d of %d nodes are under the sea, "
+                                "deepest %.1f u below it\n",
+                                under, t.node_count, deepest_drop / 65536.0);
+                    const int32_t road = node_y(n);
+                    const Surface below =
+                        surface_at(t, race.pod.node, race.pod.x, race.pod.z);
+                    std::printf("  tide: deepest node %d, road %.1f u, sea %.1f u, "
+                                "pod settles at %.1f u (%.1f u ABOVE the road)\n",
+                                node, road / 65536.0, sea / 65536.0,
+                                race.pod.y / 65536.0,
+                                (race.pod.y - road) / 65536.0);
+                    std::printf("  tide: pod now at node %d, surface under it "
+                                "%.1f u (water=%d road=%d), submerged=%d\n",
+                                race.pod.node, below.y / 65536.0,
+                                below.water ? 1 : 0, below.road ? 1 : 0,
+                                race.pod.submerged ? 1 : 0);
+                }
+            }
+        }
+    }
+
     // One frame of each screen, so a menu change can be looked at.
     {
         Race race;

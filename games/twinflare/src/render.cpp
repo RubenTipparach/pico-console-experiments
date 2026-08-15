@@ -336,6 +336,45 @@ float g_forward[3] = {0.0f, 0.0f, 1.0f};
 // for the two things that need a colour a long way from where the track is in
 // scope: the spray a pod throws, and nothing else yet.
 const Palette* g_palette = nullptr;
+
+// Is the camera under the sea this frame? Set once, at the top of the frame,
+// from the sim's own answer, so nothing here has a second opinion about where
+// the waterline is.
+//
+// It exists because being underwater is almost entirely a COLOUR problem here.
+// The geometry was right as soon as the sim let the pod descend: the sea is a
+// surface, poly re-winds every triangle toward the camera so it is drawn from
+// below as happily as from above, and a probe colour showed it correctly
+// overhead, receding to a horizon. It still read as open sky, because the
+// underside of the sea was painted in the same blues as the sky above it and
+// the gradient behind everything was still a sky.
+bool g_submerged = false;
+
+// A colour seen from under the water: dimmed and pulled toward the green of a
+// sea rather than the blue of a sky. Cheap on purpose, three multiplies and an
+// add, because it runs per quad on a machine with no FPU to spare.
+// Strong on purpose. A gentler version was tried first and MEASURED: the sea's
+// underside came out 29 away from this track's sky colour, which is nothing,
+// because TIDEBREAK's sky is already a deep blue and its water is a bright
+// cyan. The ceiling was drawn correctly, overhead, and still read as sky.
+// Water takes the red out first, so that is what this leans on hardest.
+void sunk(const uint8_t in[3], uint8_t out[3]) {
+    out[0] = static_cast<uint8_t>(in[0] * 30 / 100);
+    out[1] = static_cast<uint8_t>(in[1] * 55 / 100 + 8);
+    out[2] = static_cast<uint8_t>(in[2] * 58 / 100 + 12);
+}
+
+// The same sink for a MESH. Meshes go to the engine's draw_mesh rather than
+// through poly, so the tint in poly never reached them: the pod flew through
+// the trench in full daylight brown while the world around it went green,
+// which reads as the pod being lit by something nobody can see.
+void sink_rgb(uint8_t& r, uint8_t& g, uint8_t& b) {
+    if (!g_submerged) return;
+    const uint8_t in[3] = {r, g, b};
+    uint8_t out[3];
+    sunk(in, out);
+    r = out[0]; g = out[1]; b = out[2];
+}
 RenderStats g_stats{};
 
 void note_coordinate(const float p[3]) {
@@ -425,6 +464,20 @@ void poly(const float (*pts)[3], int count, const uint8_t colour[3],
         float nrm[3];
         normal_of(clipped[0], clipped[1], clipped[2], nrm);
         c = shade(colour, nrm[0], nrm[1], nrm[2]);
+    }
+    // UNDER THE SEA, EVERYTHING IS. This is the one place worth doing it: the
+    // whole scene is being looked at through water, so tinting the sea's
+    // underside alone left a dark ceiling over a floor still lit like open
+    // air, which reads as night rather than as depth. Per POLYGON, not per
+    // pixel, so on a machine with no FPU it costs three multiplies for a quad
+    // the rasterizer is about to spend hundreds of pixels on.
+    //
+    // The HUD is untouched: it is drawn immediate mode after the split
+    // workers, so the instruments stay readable in the dark.
+    if (g_submerged) {
+        uint8_t in[3] = {c.r, c.g, c.b}, out[3];
+        sunk(in, out);
+        c.r = out[0]; c.g = out[1]; c.b = out[2];
     }
     pse::ScreenTriangle tri{};
     tri.r0 = tri.r1 = tri.r2 = c.r;
@@ -743,12 +796,17 @@ void ground_band(const Track& t, int index, float side, GroundBand& out) {
     edge_at(t, index, side, half + reach,
             to_world(ground_offset(wall, static_cast<int32_t>(reach * 65536.0f))),
             out.plain);
-    const float sea = sea_level(t);
-    float* points[6] = {out.base, out.lip, out.shoulder,
-                        out.verge, out.rail, out.plain};
-    for (float* p : points) if (p[1] < sea) p[1] = sea;
-    // The rail stands ON the sea where the sea won, rather than being drowned
-    // by it: a barrier the pod is stopped at and cannot see is worse than none.
+    // NOT RAISED TO THE SEA. Every one of these points used to be, because
+    // surface_at was: the sea won wherever the rock was lower, so the drawn
+    // ground and the driven ground agreed by both being the waterline.
+    //
+    // surface_at only does that over a gap now, so the ground is drawn where
+    // the rock actually is, submerged or not, and the causeway at the bottom
+    // of TIDEBREAK's trench is a real fourteen unit descent in the picture as
+    // well as in the sim. The sea is drawn separately, as its own surface at
+    // its own height, which is what lets it be a ceiling when the pod is under
+    // it. Raising the terrain here instead would put the pod inside the
+    // scenery for a third of the lap.
     if (out.railed && out.rail[1] < out.verge[1] + to_world(k_rail_height))
         out.rail[1] = out.verge[1] + to_world(k_rail_height);
 }
@@ -872,18 +930,11 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
                                    && yj - shoulder_drop < sea;
         const float wave_i = wet ? sea + ripple(i, tick) : 0.0f;
         const float wave_j = wet ? sea + ripple(j, tick) : 0.0f;
-        // The road itself comes up to the waterline where it is under it, for
-        // the same reason and by the same rule as the shoulder does. Skipping
-        // this left a segment with one end above the sea and one below drawn
-        // at its true height while the field held the pod at sea level, so on
-        // the way into TIDEBREAK's trench the pod hovered up to seventeen
-        // units over the road it could see.
-        if (wet) {
-            if (wave_i > li[1]) li[1] = wave_i;
-            if (wave_i > ri[1]) ri[1] = wave_i;
-            if (wave_j > lj[1]) lj[1] = wave_j;
-            if (wave_j > rj[1]) rj[1] = wave_j;
-        }
+        // The road stays where the road is. It used to be lifted to the
+        // waterline here, to match a hover field that was itself pinned to the
+        // waterline; both halves of that are gone, so lifting it now would put
+        // the pod under its own tarmac for a third of the lap. The sea is a
+        // separate surface drawn over the top, further down.
 
         const bool tunnel = (a.flags & kTunnel) != 0;
         // A hole under water is not a hole, it is more water.
@@ -948,27 +999,20 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
 
                 const uint8_t* plain_col = pal.ground[band];
                 const uint8_t* bank_col = pal.rock[band];
-                if (wet) {
-                    // PER VERTEX, and the rule is surface_at's own: the sea
-                    // wins wherever the rock is lower than it. Flipping a whole
-                    // band to sea level the moment its outer edge went under
-                    // drew water over a beach that was still a metre and a half
-                    // above the waterline, and a pod driving there hovered
-                    // sixteen units over the drawn surface.
-                    if (wave_i > wi[1]) wi[1] = wave_i;
-                    if (wave_j > wj[1]) wj[1] = wave_j;
-                    if (wave_i > fi[1]) fi[1] = wave_i;
-                    if (wave_j > fj[1]) fj[1] = wave_j;
-                    if (plain_wet) {
-                        plain_col = pal.water[band];
-                        // The bank between the road edge and the plain. Where
-                        // the road is dry and the plain is not, this is the
-                        // shoreline, and it wants the foam colour: a beach is
-                        // the one edge in the frame a player uses to judge how
-                        // much road is left.
-                        if (!road_wet) bank_col = pal.foam;
-                        ++g_stats.sea;
-                    }
+                if (wet && plain_wet) {
+                    // The shoulder and the plain are NOT lifted to the
+                    // waterline any more. They used to be, per vertex, matching
+                    // a surface_at that did the same; both are the seabed now,
+                    // the pod can fly under them, and the water above them is
+                    // drawn as its own surface further down. Lifting them here
+                    // would put the pod inside the scenery in exactly the place
+                    // this whole change exists to open up.
+                    //
+                    // The bank between the road edge and the plain still takes
+                    // the foam colour where the road is dry and the plain is
+                    // not, because that edge IS the shoreline and it is what a
+                    // player reads to judge how much road is left.
+                    if (!road_wet) bank_col = pal.foam;
                 }
                 // The rim and the plateau above a wall, or the bank and the
                 // plain beside open road: the same two quads either way,
@@ -1006,12 +1050,20 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
             ++g_stats.rim;
         }
 
-        // Submerged road is SEA, drawn at sea level and not where the tarmac
-        // is. That is not a decoration: surface_at hands the hover field the
-        // waterline out here, so the pod is skimming twelve units above the
-        // road at the bottom of TIDEBREAK's trench, and drawing the road it is
-        // nowhere near would put the whole pod under the scenery.
-        if (road_wet) {
+        // THE SEA, as its own surface at its own height.
+        //
+        // This block used to BE the submerged road: the tarmac was not drawn at
+        // all, a lane of water was drawn at sea level in its place, and the
+        // segment was finished. That matched a hover field pinned to the
+        // waterline, and together they meant TIDEBREAK's trench existed in the
+        // track data and nowhere else. The pod flew over the top of a third of
+        // the lap.
+        //
+        // Now the road below is drawn where the road is, and this is the water
+        // over it: the same lane, at the waterline, with the seabed and the
+        // causeway underneath. From above it looks exactly as it did, which is
+        // the point of keeping the lane. From below it is a ceiling.
+        if (wet && (road_wet || plain_wet)) {
             // The lane, in the shallows colour with foam down both edges. The
             // first version drew plain sea here and the racing line stopped
             // existing for a third of the lap: a player cannot aim at a track
@@ -1025,19 +1077,40 @@ void draw_road(const Track& t, const Pod& pod, uint32_t tick) {
             edge_at(t, j, -1.0f, half_j * (1.0f - k_surf), 0.0f, aj);
             edge_at(t, i, 1.0f, half_i * (1.0f - k_surf), 0.0f, bi);
             edge_at(t, j, 1.0f, half_j * (1.0f - k_surf), 0.0f, bj);
-            float li2[3], lj2[3], ri2[3], rj2[3];
-            for (int c = 0; c < 3; ++c) {
-                li2[c] = li[c]; lj2[c] = lj[c]; ri2[c] = ri[c]; rj2[c] = rj[c];
+            // The road corridor's edges, and the outer water beyond them. All
+            // of it FORCED to the waterline: these come back from edge_at at
+            // the height of the rock, which is now the real seabed rather than
+            // the sea, so inheriting it would drape the water over the trench
+            // instead of laying it flat across the top.
+            float li2[3], lj2[3], ri2[3], rj2[3], oi[3], oj[3], pi_[3], pj_[3];
+            edge_at(t, i, -1.0f, half_i, 0.0f, li2);
+            edge_at(t, j, -1.0f, half_j, 0.0f, lj2);
+            edge_at(t, i, 1.0f, half_i, 0.0f, ri2);
+            edge_at(t, j, 1.0f, half_j, 0.0f, rj2);
+            edge_at(t, i, -1.0f, half_i + k_plain_reach, 0.0f, oi);
+            edge_at(t, j, -1.0f, half_j + k_plain_reach, 0.0f, oj);
+            edge_at(t, i, 1.0f, half_i + k_plain_reach, 0.0f, pi_);
+            edge_at(t, j, 1.0f, half_j + k_plain_reach, 0.0f, pj_);
+            ai[1] = bi[1] = li2[1] = ri2[1] = oi[1] = pi_[1] = wave_i;
+            aj[1] = bj[1] = lj2[1] = rj2[1] = oj[1] = pj_[1] = wave_j;
+            // Open water either side of the causeway. Drawn as its own pair of
+            // quads rather than by lifting the plain to the waterline, which is
+            // what used to happen: the plain is the SEABED now and the pod can
+            // be under it, so the two have to be different surfaces.
+            if (plain_wet) {
+                quad(oi, oj, lj2, li2, pal.water[band]);
+                quad(ri2, rj2, pj_, pi_, pal.water[band]);
             }
-            if (near) {
-                quad(li2, lj2, aj, ai, pal.foam);
-                quad(ai, aj, bj, bi, pal.shallow[band]);
-                quad(bi, bj, rj2, ri2, pal.foam);
-            } else {
-                quad(li2, lj2, rj2, ri2, pal.shallow[band]);
+            if (road_wet) {
+                if (near) {
+                    quad(li2, lj2, aj, ai, pal.foam);
+                    quad(ai, aj, bj, bi, pal.shallow[band]);
+                    quad(bi, bj, rj2, ri2, pal.foam);
+                } else {
+                    quad(li2, lj2, rj2, ri2, pal.shallow[band]);
+                }
             }
             ++g_stats.sea;
-            continue;
         }
 
         const uint8_t* col = pal.road[band];
@@ -1202,9 +1275,11 @@ void draw_props(const Track& t, const Pod& pod) {
         if (g_stats.props < 4) g_stats.prop_node[g_stats.props++] =
             static_cast<uint16_t>(i);
         note_coordinate(p);
+        uint8_t rr = col[0], rg = col[1], rb = col[2];
+        sink_rgb(rr, rg, rb);
         g_renderer->draw_mesh(models::twinflare::rock, p[0], p[1] + 1.0f, p[2],
                               static_cast<float>(h & 255) * 0.024f, scale,
-                              col[0], col[1], col[2]);
+                              rr, rg, rb);
     }
 }
 
@@ -1853,9 +1928,12 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
     }
 
     if (lod == 0) {
+        uint8_t hull_r = rc.colour[0][0], hull_g = rc.colour[0][1];
+        uint8_t hull_b = rc.colour[0][2];
+        sink_rgb(hull_r, hull_g, hull_b);
         g_renderer->draw_mesh(cockpit_mesh, cockpit[0], cockpit[1],
                               cockpit[2], cab.yaw, 1.0f,
-                              rc.colour[0][0], rc.colour[0][1], rc.colour[0][2],
+                              hull_r, hull_g, hull_b,
                               cab.pitch, 0, cab.roll);
         // BOTH ENDS OF A CABLE ARE ON THE PARTS THEY JOIN, which sounds
         // obvious and was not true. The pod end was a fixed point on the pod's
@@ -1991,10 +2069,12 @@ void draw_pod(const PodPose& p, int lod, const Camera& cam) {
         const float wear = p.engine_max ? static_cast<float>(p.engine[i]) / p.engine_max : 1.0f;
         const uint8_t tint = static_cast<uint8_t>(140 + 115 * wear);
         const float* at = i ? right : left;
+        uint8_t er = static_cast<uint8_t>(rc.colour[0][0] * tint / 255);
+        uint8_t eg = static_cast<uint8_t>(rc.colour[0][1] * tint / 255);
+        uint8_t eb = static_cast<uint8_t>(rc.colour[0][2] * tint / 255);
+        sink_rgb(er, eg, eb);
         g_renderer->draw_mesh(engine_mesh, at[0], at[1], at[2], eng.yaw, 1.0f,
-                              static_cast<uint8_t>(rc.colour[0][0] * tint / 255),
-                              static_cast<uint8_t>(rc.colour[0][1] * tint / 255),
-                              static_cast<uint8_t>(rc.colour[0][2] * tint / 255),
+                              er, eg, eb,
                               eng.pitch, p.boosting ? 90 : 0, eng.roll);
         if (lod == 0) {
             // Dimmer as the engine wears, so a burn losing its colour is the
@@ -2044,9 +2124,11 @@ PodPose pose_of(const Pod& pod, uint32_t tick) {
     p.engine_max = pod.engine_max;
     p.boosting = pod.boost_ticks > 0;
     p.tick = tick;
-    // Only while the field has something to push off. Spray thrown by a pod
-    // sailing over a gap is spray coming off nothing.
-    p.spray = pod.over_water && pod.grounded;
+    // At the surface, not merely over water. The sim owns the band, so what
+    // throws spray and what the HUD calls wet cannot drift apart, and it now
+    // fires on the way INTO the causeway and again on the way out, which is
+    // the moment the effect was always for.
+    p.spray = pod.splashing;
     p.surface = to_world(pod.y - pod.clearance);
     p.scrape = pod.scraping ? pod.scrape : 0;
     p.wreck = pod.wreck_ticks;
@@ -2073,7 +2155,10 @@ PodPose pose_of(const Rival& r, const Track& t, uint32_t tick) {
     // same reason the player does: a pack running over water where only one
     // pod marks it would read as the others being on rails.
     p.surface = to_world(r.y - k_hover_height);
-    p.spray = has_water(t) && r.y - k_hover_height <= water_level(t) + fp(0, 500);
+    // Same band as the player's, so a pack diving into the causeway throws
+    // spray together rather than one pod marking the surface and five not.
+    const int32_t off = r.y - water_level(t);
+    p.spray = has_water(t) && off > -k_splash_band && off < k_splash_band;
     return p;
 }
 
@@ -2668,6 +2753,9 @@ void render_frame(const Race& race, const Chrome& chrome,
     }
 
     g_stats = RenderStats{};
+    // Asked of the sim rather than worked out again here, so the frame that
+    // goes dark is exactly the frame the pod crossed the waterline.
+    g_submerged = race.pod.submerged;
     queue.reset();
     raster.begin_frame_collect(target, queue);
 
@@ -2720,8 +2808,38 @@ void render_frame(const Race& race, const Chrome& chrome,
     PodPose mine = pose_of(race.pod, race.ticks);
     draw_pod(mine, 0, cam);
 
-    const pse::SkyGradient sky{pal.sky_top[0], pal.sky_top[1], pal.sky_top[2],
-                               pal.sky_bottom[0], pal.sky_bottom[1], pal.sky_bottom[2]};
+    // THE SKY, or the water when the pod is under it. Everything the geometry
+    // does not cover is this gradient, so leaving it a sky is the single
+    // loudest thing saying "you are outside": a frame can have the sea drawn
+    // correctly as a ceiling overhead and still read as open air because the
+    // haze at the horizon is pale blue.
+    uint8_t g_top[3], g_bot[3];
+    if (g_submerged) {
+        // Down toward the deep rather than up toward the light, and DARK. The
+        // first version used the water's own colour merely dimmed, and the
+        // measurement said what the eye half suspected: it came out within one
+        // luma step of TIDEBREAK's sky, because that sky is already a deep
+        // blue. A gradient that reads as sky is the loudest thing in the frame
+        // saying the pod is outside.
+        //
+        // The gradient only shows where no geometry does, which underwater is
+        // the far field, so it is haze at depth rather than the bright surface
+        // overhead. The surface overhead is drawn: it is the sea, and it has
+        // its own quads.
+        uint8_t lit[3];
+        sunk(pal.water[0], lit);
+        for (int c = 0; c < 3; ++c) {
+            g_top[c] = static_cast<uint8_t>(lit[c] * 58 / 100);
+            g_bot[c] = static_cast<uint8_t>(lit[c] * 26 / 100);
+        }
+    } else {
+        for (int c = 0; c < 3; ++c) {
+            g_top[c] = pal.sky_top[c];
+            g_bot[c] = pal.sky_bottom[c];
+        }
+    }
+    const pse::SkyGradient sky{g_top[0], g_top[1], g_top[2],
+                               g_bot[0], g_bot[1], g_bot[2]};
     pse::run_split(raster, queue, sky);
     raster.end_collect();
 
