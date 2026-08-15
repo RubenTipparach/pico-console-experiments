@@ -1,8 +1,8 @@
 namespace PicoFlasher;
 
 /// <summary>
-/// Two tabs: Flash copies a .uf2 to the board, Console chooses what goes on
-/// one.
+/// Three tabs: Flash copies a .uf2 to the board, Console chooses what goes on
+/// one, and Play builds a game for this PC and runs it without a device.
 ///
 /// The Console tab is the bundle builder, back after the console stopped
 /// being a set of flash slots and became one binary. The job it does for a
@@ -31,6 +31,7 @@ public sealed class MainForm : Form
 
     private readonly TabControl _tabs = new();
     private readonly ConsoleTab _console;
+    private readonly PlayTab _play;
 
     public MainForm()
     {
@@ -73,8 +74,11 @@ public sealed class MainForm : Form
         {
             ReloadFiles();
             // A different folder is a different checkout, so the console tab
-            // is looking at a different set of games and a different menu.
-            _console?.SetBackend(new ConsoleYamlBackend(_root.Text));
+            // is looking at a different set of games and a different menu, and
+            // so is the play tab.
+            var moved = new ConsoleYamlBackend(_root.Text);
+            _console?.SetBackend(moved);
+            _play?.SetGames(moved.DiscoverGames(), _root.Text);
         };
 
         _browse.Text = "Folder...";
@@ -120,14 +124,25 @@ public sealed class MainForm : Form
         var flashPage = new TabPage("Flash") { Padding = new Padding(4) };
         flashPage.Controls.Add(layout);
 
-        _console = new ConsoleTab(new ConsoleYamlBackend(_root.Text));
+        var backend = new ConsoleYamlBackend(_root.Text);
+        _console = new ConsoleTab(backend);
         _console.FlashRequested += OnFlashRequested;
         var consolePage = new TabPage("Console") { Padding = new Padding(4) };
         consolePage.Controls.Add(_console);
 
+        // The play tab takes a list rather than the backend. It has no console
+        // in it and no business holding one; the backend is simply the thing
+        // that already knows how to read games/*/game.yml, and a second reader
+        // would be a second place to keep that in step.
+        _play = new PlayTab(_root.Text);
+        _play.SetGames(backend.DiscoverGames(), _root.Text);
+        var playPage = new TabPage("Play") { Padding = new Padding(4) };
+        playPage.Controls.Add(_play);
+
         _tabs.Dock = DockStyle.Fill;
         _tabs.TabPages.Add(flashPage);
         _tabs.TabPages.Add(consolePage);
+        _tabs.TabPages.Add(playPage);
         Controls.Add(_tabs);
 
         _watcher.DrivesChanged += OnDrivesChanged;
@@ -227,6 +242,8 @@ public sealed class MainForm : Form
         if (_devices.SelectedItem is not BootselDrive drive) return;
         if (_files.SelectedItem is not Uf2File file) return;
 
+        if (!BoardsAgree(file, drive)) return;
+
         _flash.Enabled = false;
         _progress.Value = 0;
         _status.Text = $"Flashing {Path.GetFileName(file.Path)}...";
@@ -245,6 +262,42 @@ public sealed class MainForm : Form
                 _watcher.Refresh();
                 UpdateFlashEnabled();
             }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>
+    /// Refuses a .uf2 built for the other board, before it is copied.
+    ///
+    /// The hardware will not tell you: the bootrom checks each block's family
+    /// id and silently ignores the ones that do not match, so flashing a
+    /// PicoSystem build at a Tufty copies the file, reports success, reboots,
+    /// and runs whatever was there before. Both boards now produce a
+    /// console.uf2 and a catcoin.uf2, so the two are one mis-click apart, and
+    /// "nothing happened" is the least debuggable failure there is.
+    ///
+    /// Only refuses when both sides are known. An unrecognised drive or a file
+    /// whose family belongs to neither board goes through as it always did:
+    /// this is here to catch a specific confusion, not to become a gatekeeper
+    /// for every .uf2 the world contains.
+    /// </summary>
+    private bool BoardsAgree(Uf2File file, BootselDrive drive)
+    {
+        var forBoard = Uf2Family.Identify(file.Path);
+        var isBoard = BoardSpec.ForDriveLabel(drive.Label);
+        if (forBoard is null || isBoard is null) return true;
+        if (forBoard.Board == isBoard.Board) return true;
+
+        MessageBox.Show(this,
+            $"{Path.GetFileName(file.Path)} is a {forBoard.Name} build "
+            + $"({forBoard.Chip}), and the board plugged in is a {isBoard.Name} "
+            + $"({isBoard.Chip}).\n\n"
+            + "Flashing it would appear to work and do nothing: the bootloader "
+            + "ignores blocks that are not for its own chip.\n\n"
+            + $"Build it with {isBoard.ConsoleScript} for the console, or "
+            + $"build_uf2s{(isBoard.Board == TargetBoard.Tufty2350 ? "_tufty" : "")}.bat "
+            + "for a single game.",
+            "Wrong board", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        _status.Text = $"Not flashed: that file is for the {forBoard.Name}.";
+        return false;
     }
 
     /// <summary>Walks up from the executable looking for the repo, so the file
@@ -268,6 +321,10 @@ public sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         _console?.SaveQuietly();
+        // A game launched from the Play tab is a child of this process. Left
+        // behind it would be a window with no way back to the tool that
+        // started it.
+        _play?.StopIfRunning();
         base.OnFormClosing(e);
     }
 

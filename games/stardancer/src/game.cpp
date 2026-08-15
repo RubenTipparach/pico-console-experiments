@@ -344,7 +344,7 @@ void update_debrief() {
 // ---- the three the SDK wants, via pse::Game ----
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     g_chrome = sdr::Chrome{};
     g_chrome.screen = sdr::Screen::Title;

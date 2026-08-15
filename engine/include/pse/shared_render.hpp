@@ -25,4 +25,38 @@ namespace pse {
 Rasterizer& shared_rasterizer();
 FrameQueue& shared_queue();
 
+// How many bytes of depth buffer this build has. tools/depth_arena.py works
+// it out from the `render:` block of every game.yml in the build and
+// engine/CMakeLists.txt passes it in, so it is the largest window any game
+// here asks for and never smaller than the default square.
+#ifndef PSE_DEPTH_ARENA_BYTES
+#define PSE_DEPTH_ARENA_BYTES (PSE_RENDER_WIDTH * PSE_RENDER_HEIGHT)
+#endif
+
+// The shared rasterizer, pointed at a window of the caller's own shape.
+//
+// This is what a game drawing something other than the default square asks
+// for. jokerreels renders a 240x112 band: it could not use a 120x120 buffer,
+// so it carried its own 26,880 byte one NEXT TO the shared one, and the
+// console paid for both while only ever running one of them. Same buffer now,
+// different dimensions over it.
+//
+// Safe for the same reason the shared rasterizer is safe at all: one game runs
+// at a time, and begin_frame clears the depth buffer, so nothing of the last
+// game's frame can be read by this one.
+//
+// A template so the fit is checked when it is written rather than when it is
+// run. Getting this wrong is not a smaller picture, it is a rasterizer writing
+// past the end of the arena.
+Rasterizer& bind_shared_depth(int width, int height);
+
+template <int Width, int Height>
+Rasterizer& shared_windowed_rasterizer() {
+    static_assert(Width * Height <= PSE_DEPTH_ARENA_BYTES,
+                  "this window is bigger than the build's shared depth buffer: "
+                  "declare it in the game's game.yml under render: so "
+                  "tools/depth_arena.py can size the buffer for it");
+    return bind_shared_depth(Width, Height);
+}
+
 }  // namespace pse

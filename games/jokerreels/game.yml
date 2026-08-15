@@ -7,6 +7,14 @@ target: jokerreels
 sdk: 32blit
 web: true
 
+# The window this game rasterizes into, which is not the default 120x120
+# square: it draws a 240x112 band. The engine sizes its one shared depth
+# buffer to the largest window in the build, so declaring it here is what
+# lets this game use the shared buffer instead of carrying a second one.
+render:
+  width: 240
+  height: 112
+
 objective: "Bank the ante's target in five spins, eight antes in a row. Five reels stop three rows deep and five paylines cross the grid, so one pull can pay several times over. Between antes the back room sells you the run: jokers, hand levels, and the thing it is really about, opening a reel and changing what it is able to land on."
 
 # The scoring, split into panels rather than crammed into the objective.

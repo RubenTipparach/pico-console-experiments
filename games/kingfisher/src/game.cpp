@@ -492,7 +492,7 @@ bool update_tournament() {
 }
 
 void game_init() {
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     // Every entry, not once per boot: the console calls this each time the
     // game is picked, so the shell has to be put back to its title screen

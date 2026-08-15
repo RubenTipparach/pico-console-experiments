@@ -41,7 +41,7 @@ void game_init() {
     // Hires. This is the one 3D game here that is not lores, and it can be
     // because the 3D covers the top 112 rows rather than the whole screen.
     // render.hpp carries the arithmetic.
-    set_screen_mode(ScreenMode::hires);
+    pse::set_screen_mode(pse::ScreenMode::hires);
     jr::world_init(g_world, 0x5EED5EEDu);
 }
 

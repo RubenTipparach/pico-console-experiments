@@ -40,11 +40,20 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
         _repositoryRoot = repositoryRoot;
     }
 
-    public string Description => "console.yaml, built by build_console.bat";
+    public string Description =>
+        $"console.yaml, built by {Spec.ConsoleScript} for the {Spec.Name}";
+
+    /// <summary>Which console the next build is for. Defaults to the PicoSystem,
+    /// which is the board this repo publishes from.</summary>
+    public TargetBoard Board { get; set; } = TargetBoard.PicoSystem;
+
+    private BoardSpec Spec => BoardSpec.For(Board);
 
     private string ConfigPath => Path.Combine(_repositoryRoot, "console.yaml");
     private string GamesDirectory => Path.Combine(_repositoryRoot, "games");
-    private string BuildScript => Path.Combine(_repositoryRoot, "build_console.bat");
+    private string BundlesDirectory => Path.Combine(_repositoryRoot, "bundles");
+    private string BuildScript =>
+        Path.Combine(_repositoryRoot, Spec.ConsoleScript);
     private string FontPath =>
         Path.Combine(_repositoryRoot, "engine", "font", "console5x7.txt");
 
@@ -99,9 +108,11 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
 
     // ---- reading and writing the recipe ----
 
-    public ConsoleRecipe Load()
+    public ConsoleRecipe Load() => LoadFrom(ConfigPath);
+
+    private static ConsoleRecipe LoadFrom(string path)
     {
-        if (!File.Exists(ConfigPath)) return ConsoleRecipe.Empty;
+        if (!File.Exists(path)) return ConsoleRecipe.Empty;
 
         var title = "PICO CONSOLE";
         var entries = new List<RecipeEntry>();
@@ -117,7 +128,7 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
             pendingName = null;
         }
 
-        foreach (var raw in SafeReadLines(ConfigPath))
+        foreach (var raw in SafeReadLines(path))
         {
             var line = raw.Split('#', 2)[0].TrimEnd();
             if (line.Trim().Length == 0) continue;
@@ -169,11 +180,142 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
     /// a tool that silently ate the documentation for the file it rewrites
     /// would be a bad trade for a GUI.
     /// </summary>
-    public void Save(ConsoleRecipe recipe)
+    public void Save(ConsoleRecipe recipe) => SaveTo(ConfigPath, recipe, true);
+
+    // ---- bundles ----
+    //
+    // A bundle is a saved console.yaml under bundles/, and that is the whole
+    // idea. Loading one fills the window; building still writes console.yaml
+    // and runs the same script, so a bundle changes what is on the menu and
+    // nothing about how the binary is made.
+    //
+    // Emphatically not the old bundle composer, which assigned flash slots and
+    // stitched per slot builds together and is gone for good (CLAUDE.md rule
+    // 8). Nothing here knows a flash address. They are named lists.
+    //
+    // Same format as console.yaml, so one can be copied over the other by hand
+    // and a bundle stays readable and diffable in the repo.
+
+    private string BundlePath(string name) =>
+        Path.Combine(BundlesDirectory, SafeName(name) + ".yaml");
+
+    /// <summary>
+    /// Keeps a typed name to something that is a filename on Windows. Not a
+    /// security boundary, just the difference between "Arcade / Casino" saving
+    /// and throwing.
+    /// </summary>
+    private static string SafeName(string name)
+    {
+        var cleaned = new StringBuilder();
+        foreach (var character in name.Trim())
+        {
+            cleaned.Append(Array.IndexOf(Path.GetInvalidFileNameChars(), character) >= 0
+                ? '-' : character);
+        }
+        var result = cleaned.ToString().Trim();
+        return result.Length == 0 ? "bundle" : result;
+    }
+
+    public IReadOnlyList<string> ListBundles()
+    {
+        if (!Directory.Exists(BundlesDirectory)) return Array.Empty<string>();
+        try
+        {
+            return Directory.EnumerateFiles(BundlesDirectory, "*.yaml")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Select(name => name!)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (IOException) { return Array.Empty<string>(); }
+        catch (UnauthorizedAccessException) { return Array.Empty<string>(); }
+    }
+
+    public ConsoleRecipe LoadBundle(string name) => LoadFrom(BundlePath(name));
+
+    public void SaveBundle(string name, ConsoleRecipe recipe) =>
+        SaveTo(BundlePath(name), recipe, false);
+
+    // ---- what the last build cost ----
+
+    /// <summary>
+    /// Read off the .elf with arm-none-eabi-size, the same way
+    /// tools\build_console.bat reports it, because the alternative is
+    /// predicting and the console cannot be predicted: every game is linked
+    /// into one binary against one shared copy of the engine and the SDK, so
+    /// what the second game costs is nothing like what the first one did.
+    /// A number invented for a progress bar would be wrong in a way nobody
+    /// could check.
+    /// </summary>
+    public ConsoleSize? MeasureLastBuild()
+    {
+        var directory = Path.Combine(_repositoryRoot, Spec.ConsoleBuildDirectory);
+        if (!Directory.Exists(directory)) return null;
+
+        string? elf;
+        try
+        {
+            elf = Directory
+                .EnumerateFiles(directory, "console.elf", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTime)
+                .FirstOrDefault();
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+        if (elf is null) return null;
+
+        var start = new ProcessStartInfo
+        {
+            FileName = "arm-none-eabi-size",
+            Arguments = $"\"{elf}\"",
+            WorkingDirectory = _repositoryRoot,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+
+        try
+        {
+            using var process = Process.Start(start);
+            if (process is null) return null;
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0) return null;
+
+            // `text data bss dec hex filename`, under a header row.
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length < 2) return null;
+            var columns = lines[1].Split((char[]?)null,
+                                         StringSplitOptions.RemoveEmptyEntries);
+            if (columns.Length < 3) return null;
+            if (!int.TryParse(columns[0], out var text)) return null;
+            if (!int.TryParse(columns[1], out var data)) return null;
+            if (!int.TryParse(columns[2], out var bss)) return null;
+
+            // What was on the menu when it was built, which is what the file
+            // next to the .elf says rather than what is on screen now.
+            var games = LoadFrom(ConfigPath).Entries.OfType<GameEntry>().Count();
+
+            return new ConsoleSize(text, data + bss, games,
+                                   File.GetLastWriteTime(elf), Spec);
+        }
+        // arm-none-eabi-size is not on PATH on a machine with no toolchain,
+        // which is a machine that cannot build a console anyway. No bar rather
+        // than a dialog.
+        catch (System.ComponentModel.Win32Exception) { return null; }
+        catch (IOException) { return null; }
+    }
+
+    private void SaveTo(string path, ConsoleRecipe recipe, bool keepComment)
     {
         var text = new StringBuilder();
-        foreach (var line in LeadingComment()) text.AppendLine(line);
-        if (text.Length > 0) text.AppendLine();
+        if (keepComment)
+        {
+            foreach (var line in LeadingComment()) text.AppendLine(line);
+            if (text.Length > 0) text.AppendLine();
+        }
 
         text.AppendLine($"title: {recipe.Title}");
         text.AppendLine();
@@ -195,7 +337,8 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
             }
         }
 
-        File.WriteAllText(ConfigPath, text.ToString());
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, text.ToString());
     }
 
     private IReadOnlyList<string> LeadingComment()
@@ -453,7 +596,7 @@ public sealed class ConsoleYamlBackend : IConsoleBackend
 
     private string? NewestConsoleUf2()
     {
-        var directory = Path.Combine(_repositoryRoot, "build.console");
+        var directory = Path.Combine(_repositoryRoot, Spec.ConsoleBuildDirectory);
         if (!Directory.Exists(directory)) return null;
         try
         {

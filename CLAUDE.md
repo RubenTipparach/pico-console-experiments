@@ -146,11 +146,23 @@ reason nobody can see.
   browser the runner already ships, fall back to Playwright's download, and
   do not add `--with-deps` back.
 
-### 6. One SDK: 32blit
+### 6. One SDK: 32blit, and both boards
 
 Every game builds against the 32blit SDK, which targets the PicoSystem through
 `-DPICO_BOARD=pimoroni_picosystem` and also builds for desktop and for the
 browser.
+
+**Every game runs on both boards: the RP2040 PicoSystem and the RP2350 Tufty
+2350.** Not one or the other, and never a feature that only exists on the
+newer chip. A design whose answer is "that works on the 2350" is not an
+answer, it is a fork of the library, and the games are the thing this repo
+has. `TUFTY.md` describes the RP2350's QMI address translation, which makes
+separately linked `.blit` games loadable at any free flash offset: that is
+real, it is interesting, and it is **not** the route here, because the RP2040
+cannot do it and separation linking has already been tried and abandoned once
+(`CONSOLE.md`). Where the two boards genuinely differ, the difference lives in
+`engine/include/pse/board.hpp` and `engine/src/blit_target.cpp`, never in a
+game.
 
 Do not reach for the raw Pimoroni picosystem SDK. It is device only: no SDL
 target, no Emscripten target, and its single SDL wrapper pull request was closed
@@ -284,6 +296,16 @@ and expensive to draw.
   its how to play, beside what each one does.
 - Debug overlays (frame time, triangle count, CPU split) are opt in behind a
   build flag, not on by default in a published build.
+- **No game touches the LED, and no game touches GPIO.** Both boards have a
+  light on the case and it is not part of any game here; every use of it so
+  far has been somebody bisecting a hang and meaning to take it out. It is
+  worse than clutter now that there are two boards, because a pin number is
+  not portable: dustrider kept a debug header that included
+  `boards/pimoroni_picosystem.h` and drove the red LED on GPIO 14, which on a
+  Tufty is the line wired to RESET. It was the only game of ten that would not
+  launch. `tools/tests/test_board_agnostic.py` is the rule; do not weaken it
+  to get a diagnostic in. If a checkpoint really is needed, print it, or draw
+  it, and delete it in the same branch.
 - Same rule for the web gallery: short labels, no marketing copy.
 - **Measure text, never place it by eye.** `screen.measure_text()` gives the
   width; centre and size panels from it. A hand tuned x is only correct for
@@ -466,6 +488,9 @@ games/picomon/art/PROPORTIONS.md  the character art blueprint: row budget,
                    what the references measure, what is wrong today
 STORAGE.md         the 16 MB flash: persistence, game library, larger games
 CONSOLE.md         the console: one binary, every game in it, a menu
+TUFTY.md           the Tufty 2350 as a second board: what it costs, what is
+                   still wrong, and why the RP2350 reopens CONSOLE.md's
+                   settled question
 ```
 
 ## Adding a game

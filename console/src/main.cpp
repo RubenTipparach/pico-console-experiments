@@ -91,7 +91,7 @@ bool just_pressed(uint32_t button) { return (buttons.pressed & button) != 0; }
 }  // namespace
 
 void init() {
-    set_screen_mode(ScreenMode::hires);
+    pse::set_screen_mode(pse::ScreenMode::hires);
     g_menu.reset(last_played());
     g_running = -1;
 }

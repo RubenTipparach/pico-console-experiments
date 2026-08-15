@@ -32,6 +32,61 @@ The two projects that actually do this on this hardware do not do any of it:
 Neither relocates native code, because neither has to. That is the whole
 insight: **the games do not need to move, only the call does.**
 
+### What PicoCrystal-GBC costs in RAM, and why we cannot copy it
+
+Worth reading carefully, because at a glance it looks like it solves a problem
+this repo has and it does not. Everything below was read out of the source at
+`Wyatt-Grant/PicoCrystal-GBC`, not inferred from the README.
+
+**Its games are data.** `tools/gen_rom_data.py` emits each ROM as
+`extern "C" const uint8_t rom_N_data[]`, so every ROM is const and lives in
+flash. `rom_catalog[]` is a table of pointers into it. Picking a game is one
+assignment, `g_rom_data = rom.data`, and reading a byte is
+`g_rom_data[addr]`: a dereference straight into XIP flash, with no copy into
+RAM at any point.
+
+**Its emulator is one instance.** `main.cpp` has exactly one
+`static struct gb_s gb;`, and that structure holds the whole machine:
+`wram[WRAM_SIZE]`, `vram[VRAM_SIZE]`, `oam[OAM_SIZE]`, which on the colour
+build is 32 KB + 16 KB + 160 bytes. That figure does not move whether the
+firmware carries one ROM or a hundred.
+
+So the cost of N games there is N ROMs of flash and **zero** extra RAM. That
+is not a subtle optimisation, it is what "the games are input to one program"
+means. Confirmed in practice as well as in the source: 13 to 14 MB of ROMs on
+a 16 MB device, running fine.
+
+**Ours are code.** Every game here is native C++ with its own file scope
+state, and the linker allocates all of it, permanently, at build time. Nothing
+is loaded when the menu picks a game because there is nothing to load: a
+game's `g_world` exists from boot whether or not it is ever chosen. Ten games
+is ten `g_world`s resident at once, about 18 KB of the console's 213 KB.
+
+The property PicoCrystal gets for free is therefore not available by tidying
+our code. It needs one of:
+
+- **An overlay.** Only one game runs at a time, so their state could share one
+  arena sized to the largest rather than the sum. `pse::Game::init()` already
+  must fully re-seed on every entry, which is the contract that would make it
+  safe. Worth roughly 21 KB including the rasterizers, against a framebuffer
+  that is 54% of the budget and cannot be shared away.
+- **Separately linked games**, which is the real analogue and is only possible
+  on RP2350. See `TUFTY.md`: `32blit-pico/loader/` plus the QMI address
+  translation unit lets a `.blit` be flashed anywhere free and remapped at
+  launch, so only the running game exists at all. On an RP2040 this is the
+  thing that never booted.
+
+Two other pieces of it are worth stealing regardless, and neither is about
+game count:
+
+- **Sliced flash erase.** `flash_sliced.cpp` uses the W25Q Erase Suspend
+  (0x75) and Resume (0x7A) commands to erase a sector in ~1.5 ms slices
+  instead of holding XIP down for the whole ~45 ms, so the game keeps running
+  through a save. Our `write_save` contract (rule 8, `STORAGE.md`) is the
+  blunt version of the same problem.
+- **Ping-pong save slots.** Saves alternate between two flash slots so a
+  power cut during a write cannot destroy the previous save.
+
 ## The design
 
 One `.uf2`. It contains the menu and every game `console.yaml` lists, all
@@ -132,7 +187,7 @@ person about to flash it, so the number to watch is the one `arm-none-eabi-size`
 prints at the end of that build. `data + bss` is the static footprint, the
 framebuffer is already inside it, and the RP2040 has 270,336 bytes. Past about
 230,000 there is too little left for the stack, and the linker's own
-`region RAM overflowed` is the next warning you get — which names no game.
+`region RAM overflowed` is the next warning you get, and it names no game.
 
 A 2D game that never asks for the shared rasterizer never links it:
 `shared_render.cpp` is a translation unit of its own, and an archive member

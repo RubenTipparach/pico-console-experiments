@@ -28,7 +28,7 @@ void game_init() {
     // 240x240. The cart was 128x128 and this is the demake's whole point, so
     // hires rather than the lores every 3D game in this repo uses. 115 KB of
     // the 264 KB goes to the framebuffer; the game's own state is under 2 KB.
-    set_screen_mode(ScreenMode::hires);
+    pse::set_screen_mode(pse::ScreenMode::hires);
     dl::world_init(g_world, static_cast<uint32_t>(now()) | 1u);
 }
 

@@ -47,3 +47,20 @@ public sealed record AvailableGame(string Slug, string Title, string Blurb,
 public sealed record Problem(int EntryIndex, string Message, bool Blocking = true);
 
 public sealed record BuildOutcome(bool Success, string Message, string? Uf2Path);
+
+/// <summary>
+/// What a built console costs on its board, measured from the artifact.
+///
+/// <paramref name="StaticRam"/> is data + bss, and the ceiling it is compared
+/// against is the whole of SRAM rather than what is left over, because the
+/// SDK's framebuffer is counted in bss: 115,200 bytes of it on a PicoSystem
+/// and 307,200 on a Tufty, which double buffers hires by default on RP2350.
+///
+/// <paramref name="Games"/> is how many were on the menu when this was built,
+/// so the UI can say whether the number still describes the list on screen.
+/// </summary>
+public sealed record ConsoleSize(int Flash, int StaticRam, int Games,
+                                 DateTime BuiltAt, BoardSpec Board)
+{
+    public bool RamIsTight => StaticRam > Board.SramWarn;
+}

@@ -24,10 +24,15 @@ title: PICO CONSOLE
 menu:
   - heading: ARCADE
   - game: dustrider
+  - game: dumblander
   - game: kingfisher
   - game: stardancer
+  - heading: Casino
+  - game: jokerreels
+  - game: catcoin
   - heading: RPG
   - game: picomon
   - heading: SIM
   - game: tomlander
   - game: picospace
+  - game: twinflare

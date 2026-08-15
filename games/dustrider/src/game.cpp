@@ -10,7 +10,6 @@
 #include "sfx.hpp"
 #include "sim.hpp"
 
-#include "diagnostic_led.hpp"  // TEMPORARY, see that file
 
 using namespace blit;
 
@@ -177,8 +176,7 @@ void start_run() {
 }
 
 void game_init() {
-    DIAG_LED_RED();
-    set_screen_mode(ScreenMode::lores);
+    pse::set_screen_mode(pse::ScreenMode::lores);
 
     // Every entry, not once per boot: the console calls this each time the
     // game is picked, so the shell goes back to its title and attract run
@@ -269,7 +267,6 @@ void game_update(uint32_t time) {
 }
 
 void game_render(uint32_t time) {
-    DIAG_LED_GREEN();
     drr::render_scene(g_world, pse::target_from_screen(), time);
 
     if (g_shell == Shell::Title) {

@@ -161,6 +161,65 @@ def test_a_card_is_a_picture_a_name_and_a_line():
         shutil.rmtree(site, ignore_errors=True)
 
 
+def test_a_card_names_the_board_only_when_there_are_two():
+    """One build is a download. Two builds are a choice, and only then a label.
+
+    The card reads the site rather than the config, because the two go out of
+    step in both directions: a game held back before the Tufty existed keeps
+    the PicoSystem binary the state branch carried for it and has no Tufty file
+    at all, and a run can publish one board and not the other. Offering a
+    button for a file that is not there is a 404 on the front page, which is
+    worse than a card with one button.
+
+    The labels are checked in the actions, not in the page, because the footer
+    now names both boards too and "Tufty is somewhere on this page" would pass
+    on a card that never gained a button.
+    """
+    slug = "dustrider"
+    site = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(site, "uf2"))
+        with open(os.path.join(site, "uf2", "%s.uf2" % slug), "wb") as handle:
+            handle.write(b"\0")
+
+        page = render(site, [])
+        check("uf2/%s.uf2" % slug in page, "the one board that exists is offered")
+        check("uf2-tufty/%s.uf2" % slug not in page,
+              "and the board that does not is not")
+        check(">.uf2<" in page,
+              "with one build the button is the .uf2 it has always been")
+
+        os.makedirs(os.path.join(site, "uf2-tufty"))
+        with open(os.path.join(site, "uf2-tufty", "%s.uf2" % slug), "wb") as f:
+            f.write(b"\0")
+
+        page = render(site, [])
+        check("uf2/%s.uf2" % slug in page, "both boards are offered")
+        check("uf2-tufty/%s.uf2" % slug in page, "including the Tufty")
+        check(">Pico" in page, "and the buttons name the boards")
+        check(">Tufty" in page, "both of them")
+        # The row must not grow a third download or wrap onto a second line.
+        check(page.count("uf2-tufty/%s.uf2" % slug) == 1,
+              "one Tufty button per card, not one per action row")
+    finally:
+        shutil.rmtree(site, ignore_errors=True)
+
+
+def test_this_test_would_notice_a_missing_button():
+    """A card assertion that cannot fail is worse than no assertion."""
+    slug = "dustrider"
+    site = tempfile.mkdtemp()
+    try:
+        # No uf2 directory at all: neither board, so neither href.
+        page = render(site, [])
+        check("uf2/%s.uf2" % slug not in page,
+              "with nothing published there is no download to offer")
+        check("uf2-tufty/%s.uf2" % slug not in page,
+              "and no Tufty one either")
+    finally:
+        shutil.rmtree(site, ignore_errors=True)
+
+
 def test_the_mockups_door_follows_the_site_not_the_repo():
     """The front page links the mockups only when a page is there to link.
 
@@ -201,6 +260,8 @@ def main():
     test_a_given_title_is_left_alone()
     test_held_games_leave_the_shelf_for_the_archive()
     test_a_card_is_a_picture_a_name_and_a_line()
+    test_a_card_names_the_board_only_when_there_are_two()
+    test_this_test_would_notice_a_missing_button()
     test_the_mockups_door_follows_the_site_not_the_repo()
     if failures:
         print("gen_gallery: %d check(s) failed" % len(failures))

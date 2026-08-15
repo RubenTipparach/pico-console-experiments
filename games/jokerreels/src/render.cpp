@@ -6,6 +6,7 @@
 #include "pse/parallel.hpp"
 #include "pse/raster.hpp"
 #include "pse/renderer3d.hpp"
+#include "pse/shared_render.hpp"
 #include "pse/text.hpp"
 
 #include "jokerreels/bar.hpp"
@@ -26,11 +27,26 @@
 namespace jrr {
 namespace {
 
-// Its own, sized to the window. Not the shared one: that carries the default
-// 120x120 buffer, and this game draws a 240x112 band.
-pse::OwnedRasterizer<k_screen_w, k_window_h> g_raster;
+// The shared rasterizer, with this game's 240x112 band laid over the shared
+// depth buffer rather than a second buffer of its own.
+//
+// It used to own one, because the shared buffer was fixed at 120x120 and this
+// game does not draw a square. That cost 26,880 bytes sitting beside the
+// shared 14,400, in a console that can only ever be running one of them. The
+// buffer is sized from this game's `render:` block in game.yml now, so the
+// window fits the shared bytes and the static_assert in
+// shared_windowed_rasterizer proves it at compile time.
+pse::Rasterizer& g_raster =
+    pse::shared_windowed_rasterizer<k_screen_w, k_window_h>();
 pse::Renderer3D g_renderer(g_raster);
-pse::FrameQueue g_queue;
+
+// The queue IS the shared one, unlike the rasterizer above. A FrameQueue's
+// size is PSE_MAX_QUEUE triangles and has nothing to do with the window being
+// drawn into, so a private one here was 21,766 bytes holding exactly what
+// shared_render.cpp already holds. Only one game runs at a time, and the
+// queue is filled and drained inside a single frame, which is the same reason
+// every other game here shares it.
+pse::FrameQueue& g_queue = pse::shared_queue();
 Stats g_stats{0, 0, 0};
 
 // The eight symbol textures, in sim.hpp's Symbol order. A ScreenTriangle's
