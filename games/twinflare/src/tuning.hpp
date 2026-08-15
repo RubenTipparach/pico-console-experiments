@@ -261,7 +261,25 @@ constexpr int16_t k_hit_ticks = 24;
 // ---- the run ---------------------------------------------------------------
 constexpr int32_t k_crash_floor = fp(-26);    // below the road, and the run ends
 constexpr int32_t k_respawn_ticks = 160;
-constexpr int32_t k_respawn_speed = per_s(fp(12));
+
+// Where a wrecked pod comes back, and how fast.
+//
+// `search` is how far back along the centreline respawn will look for road,
+// and it has to clear the longest gap on any circuit with room to spare:
+// ASHFALL carries fourteen gap nodes and DUNE SEA's are seven in a row.
+// `runup` is how many nodes of unbroken road the pod is given in front of it,
+// because a respawn on the lip of a hole is a respawn in the hole one second
+// later.
+constexpr int k_respawn_search = 48;
+constexpr int k_respawn_runup = 5;            // 40 world units of clear road
+
+// Half of what the pod was doing when it went, floored and capped as a
+// fraction of its own top speed. The floor is the important one: this used to
+// be a flat twelve units a second against a top speed of ninety, which is a
+// standing start, and a standing start after every mistake turns one error
+// into most of a lap.
+constexpr int32_t k_respawn_floor = 300;      // thousandths of top speed
+constexpr int32_t k_respawn_cap = 500;
 
 // ---- the start -------------------------------------------------------------
 // Three seconds on the line, a second of GO, and the pod is held for all of

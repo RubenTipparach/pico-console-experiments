@@ -1506,6 +1506,215 @@ void test_the_race_says_what_happened() {
     }
 }
 
+// Shortest signed distance from a to b round the ring, in nodes; positive is
+// forward. Written because the naive `(b - a + n) % n` reports one node forward
+// as a whole lap backward, and a harness using it duly "found" a pod thrown 300
+// nodes back on a 301 node circuit.
+int ring_delta(int a, int b, int n) {
+    int d = (b - a) % n;
+    if (d < 0) d += n;
+    return d > n / 2 ? d - n : d;
+}
+
+void test_a_wreck_puts_you_back_on_road_and_moving() {
+    // Reported from playing: "you respawn at the same location", and the pod
+    // came back at a crawl.
+    //
+    // The same location was the literal problem. respawn placed the pod at the
+    // node it wrecked at, and the node a pod wrecks at is very often the node it
+    // wrecked IN: a gap reports no surface at all, so falling down one leaves
+    // the nearest node in the middle of the hole. Measured on DUNE SEA, whose
+    // gap is seven nodes and fifty six units wide, a pod that lost an engine
+    // arrived too slow to jump it, fell, and came back at node 66, which is the
+    // middle of the gap, doing eleven units a second.
+    //
+    // Every node of every circuit, because a gap is a property of a track and
+    // checking one is checking the one that happened to be looked at.
+    int checked = 0, in_a_gap = 0, too_slow = 0, too_fast = 0, thrown_far = 0;
+    int no_runup = 0;
+    int32_t slowest = INT32_MAX, fastest = 0;
+    int furthest = 0;
+    for (int ti = 0; ti < k_track_count; ++ti) {
+        const Track& t = track(ti);
+        for (uint16_t n = 0; n < t.node_count; ++n) {
+            Race race;
+            race_start(race, ti, 0);
+            const TrackNode& node = t.nodes[n];
+            const TrackNode& ahead = t.nodes[(n + 1) % t.node_count];
+            const int32_t heading =
+                fatan2(node_x(ahead) - node_x(node), node_z(ahead) - node_z(node));
+            race.pod.x = node_x(node);
+            race.pod.z = node_z(node);
+            race.pod.y = node_y(node) + k_hover_height;
+            race.pod.node = n;
+            race.pod.yaw = heading;
+            const int32_t was = fscale(pod_top_speed(race.pod), 800);
+            race.pod.vx = ftrig(was, fsin(heading));
+            race.pod.vz = ftrig(was, fcos(heading));
+            // BOTH ENGINES, which is a wreck condition that does not depend on
+            // the terrain. Dropping the pod through the floor was tried first
+            // and does not work on TIDEBREAK: the sea is a surface, so a pod put
+            // under the road lands on the water and never wrecks, and the check
+            // then reads a pod that was never respawned as a respawn in a gap.
+            race.pod.engine[0] = race.pod.engine[1] = 0;
+            race.pod.dead = 3;
+
+            Input idle{};
+            int wreck_node = -1;
+            for (int i = 0; i < k_respawn_ticks + 8; ++i) {
+                race_tick(race, idle);
+                if (wreck_node < 0 && race.pod.wreck_ticks > 0)
+                    wreck_node = race.pod.node;
+            }
+            if (wreck_node < 0) continue;
+            ++checked;
+
+            if (t.nodes[race.pod.node].flags & kGap) ++in_a_gap;
+
+            // AND WITH ROAD IN FRONT OF IT. Landing on the last node before the
+            // hole is not being put back in the hole, it is being put back in
+            // the hole one second later, and every check that only asks "is the
+            // respawn node a gap" passes for it. Four nodes is thirty two world
+            // units, which is enough to be moving before the lip arrives.
+            int clear = 0;
+            for (int k = 0; k < 8; ++k) {
+                const int i = (race.pod.node + k) % t.node_count;
+                if (t.nodes[i].flags & kGap) break;
+                ++clear;
+            }
+            if (clear < 4) ++no_runup;
+
+            const int32_t speed = pod_speed(race.pod);
+            const int32_t top = pod_top_speed(race.pod);
+            // A couple of units of slack, because the pod has had a handful of
+            // ticks of drag since it was placed.
+            if (speed < fscale(top, k_respawn_floor) - fp(2)) ++too_slow;
+            if (speed > fscale(top, k_respawn_cap) + fp(2)) ++too_fast;
+            if (speed < slowest) slowest = speed;
+            if (speed > fastest) fastest = speed;
+
+            const int back = -ring_delta(wreck_node, race.pod.node, t.node_count);
+            if (back > furthest) furthest = back;
+            // A crash on open road should put you back roughly where it
+            // happened. Only a gap earns the long walk backwards.
+            bool near_gap = false;
+            for (int k = -2; k <= k_respawn_runup + 4; ++k) {
+                const int i = ((wreck_node - k) % t.node_count + t.node_count)
+                              % t.node_count;
+                if (t.nodes[i].flags & kGap) near_gap = true;
+            }
+            if (!near_gap && back > k_respawn_runup) ++thrown_far;
+        }
+    }
+    check(checked > 1000, "every node of every circuit was actually wrecked at");
+    check(in_a_gap == 0, "a respawn never puts the pod back inside a gap");
+    check(no_runup == 0, "and always with clear road ahead to get moving on");
+    check(too_slow == 0, "and never at less than the floor speed");
+    check(too_fast == 0, "nor at more than half its top speed");
+    check(thrown_far == 0, "a crash on open road comes back where it happened");
+    std::printf("  respawn over %d wrecks: %d..%d u/s, furthest walk back %d "
+                "nodes, %d inside a gap, %d with no run up\n", checked,
+                slowest * k_tick_hz / k_one, fastest * k_tick_hz / k_one,
+                furthest, in_a_gap, no_runup);
+}
+
+// Crash the pod at a chosen fraction of its top speed, and report what it was
+// doing when it went and what it came back at.
+//
+// The respawn speed is read on the EXACT tick the pod comes back, not a few
+// ticks later. A few ticks later it has been sliding down whatever piece of
+// ground it landed on, and since a faster crash carries the pod further before
+// it wrecks, the three runs land in three different places and pick up three
+// different amounts of that slide. Measured late, "a faster crash comes back
+// faster" passed even with the respawn speed pinned to a constant, on terrain
+// alone.
+struct Comeback {
+    int32_t went_at;     // wreck_speed the sim recorded
+    int32_t came_back;   // speed on the tick the pod was placed
+};
+
+Comeback crash_at(int32_t thousandths_of_top) {
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    for (int k = 0; k < 400; ++k) { drive(race, t, in); race_tick(race, in); }
+    const int32_t heading = race.pod.yaw;
+    const int32_t want = fscale(pod_top_speed(race.pod), thousandths_of_top);
+    race.pod.vx = ftrig(want, fsin(heading));
+    race.pod.vz = ftrig(want, fcos(heading));
+    race.pod.engine[0] = race.pod.engine[1] = 0;
+    race.pod.dead = 3;
+
+    Comeback out{0, 0};
+    Input idle{};
+    bool was = false;
+    for (int k = 0; k < k_respawn_ticks + 40; ++k) {
+        race_tick(race, idle);
+        const bool now = race.pod.wreck_ticks > 0;
+        if (now && !was) out.went_at = race.pod.wreck_speed;
+        if (was && !now) { out.came_back = pod_speed(race.pod); break; }
+        was = now;
+    }
+    return out;
+}
+
+void test_a_respawn_is_a_rolling_start() {
+    // "should start the spawn with like 50% of the speed". It was a flat twelve
+    // units a second against a top speed of ninety, which is a standing start,
+    // and a standing start after every mistake turns one error into most of a
+    // lap.
+    //
+    // Half of what the pod was doing, floored so a crash at walking pace still
+    // rolls away and capped so a crash at full chat is still a real penalty.
+    const int32_t top = fscale(k_top_speed_ref, stat_scale(racer(0).top, k_spread_top));
+    const int32_t lo = fscale(top, k_respawn_floor);
+    const int32_t hi = fscale(top, k_respawn_cap);
+    check(lo < hi, "the floor is below the cap, or the rule says nothing");
+
+    // The fast case is over the pod's nominal top on purpose: half of exactly
+    // top speed is 29,382 against a cap of 29,491, which does not reach it, so
+    // a crash at 100% leaves the cap untested. A boosted pod really does exceed
+    // its own top speed, so this is a real state and not a contrived one.
+    static const int32_t k_at[3] = {200, 700, 1400};   // thousandths of top
+    Comeback got[3];
+    for (int i = 0; i < 3; ++i) {
+        got[i] = crash_at(k_at[i]);
+        // THE RULE ITSELF: half of what it was doing, clamped. A comparison
+        // between runs is not enough on its own, because a constant and a
+        // fraction both satisfy "the fast one is not slower".
+        //
+        // To within a couple of fixed point units, because the sim stores the
+        // speed as a velocity and this reads it back as a length: measured over
+        // every heading and every speed, that round trip loses at most 10 of
+        // 65536, which is fifteen thousandths of a unit per second.
+        int32_t want = got[i].went_at / 2;
+        if (want < lo) want = lo;
+        if (want > hi) want = hi;
+        const int32_t off = got[i].came_back - want;
+        check(off > -16 && off < 16,
+              "a respawn is half the speed the pod crashed at, floored and capped");
+    }
+    // And all three arms of the clamp are actually exercised, or the check
+    // above is one case wearing three hats: the slow crash has to be raised by
+    // the floor, the fast one held by the cap, and the middle one neither.
+    check(got[0].went_at / 2 < lo, "the slow crash is under the floor");
+    check(got[2].went_at / 2 >= hi, "the fast crash is over the cap");
+    check(got[1].went_at / 2 > lo && got[1].went_at / 2 < hi,
+          "and the middle crash is between them, so the halving is visible");
+    check(got[1].came_back > got[0].came_back,
+          "so a faster crash really does come back faster");
+    std::printf("  crashed at %d/%d/%d u/s, came back at %d/%d/%d "
+                "(floor %d, cap %d)\n",
+                got[0].went_at * k_tick_hz / k_one,
+                got[1].went_at * k_tick_hz / k_one,
+                got[2].went_at * k_tick_hz / k_one,
+                got[0].came_back * k_tick_hz / k_one,
+                got[1].came_back * k_tick_hz / k_one,
+                got[2].came_back * k_tick_hz / k_one,
+                lo * k_tick_hz / k_one, hi * k_tick_hz / k_one);
+}
+
 void test_state_is_small() {
     // Rule 8: budget everything. Star Dancer's whole world is 3,372 bytes, and
     // this is the number the PR body has to state.
@@ -1566,6 +1775,8 @@ int main() {
     test_heat_does_not_throw_sparks();
     test_a_frame_hears_every_tick_in_it();
     test_the_race_says_what_happened();
+    test_a_wreck_puts_you_back_on_road_and_moving();
+    test_a_respawn_is_a_rolling_start();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 

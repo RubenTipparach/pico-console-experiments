@@ -107,6 +107,7 @@ struct Pod {
     bool roofed;                 // under a tunnel, so there is a ceiling
     int8_t scrape;               // which side is grinding: -1 left, +1 right
     int16_t wreck_ticks;
+    int32_t wreck_speed;         // what it was doing when it went, for the respawn
     int16_t flash_ticks;
     int16_t blast[2];
     // Ticks of sparks left on each engine, set by whatever last hit it. The
