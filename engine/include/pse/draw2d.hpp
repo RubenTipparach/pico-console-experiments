@@ -33,6 +33,30 @@ void plot_pixel(const RenderTarget& target, int x, int y, uint8_t r, uint8_t g,
 void fill_rect(const RenderTarget& target, int x, int y, int w, int h,
                uint8_t r, uint8_t g, uint8_t b);
 
+// The same rectangle, MIXED with what is already there. `alpha` is the weight
+// of the new colour: 0 leaves the target untouched, 255 is fill_rect, 128 is
+// half and half.
+//
+// This is the one function in the engine that reads the framebuffer back, and
+// the exception is deliberate and bounded. The rasterizer does not blend and
+// must not start: it fills triangles, millions of pixels a second on a core
+// with no cache, and a read-modify-write in that inner loop is not a cost, it
+// is the cost. That argument does not carry over to an overlay. A panel is
+// thousands of pixels ONCE a frame, drawn in immediate mode after the split
+// workers have finished, and being able to see the game through a results
+// board is worth a framebuffer read per pixel of the board.
+//
+// It costs the precision of the target format, and on a 16 bit screen that is
+// visible: the result is quantised on the way back out, so a gradient blended
+// under a panel bands slightly more than the gradient does. That is the price
+// of the format, not of the blend.
+//
+// NOT SAFE DURING A COLLECTED FRAME. It reads pixels the split rasterizer may
+// still be writing. Call it after end_collect, where every other overlay in
+// this repo already lives.
+void blend_rect(const RenderTarget& target, int x, int y, int w, int h,
+                uint8_t r, uint8_t g, uint8_t b, uint8_t alpha);
+
 // One pixel outline, clipped. `w` and `h` are the outside measurements, so a
 // 10 wide rect covers x .. x+9.
 void draw_rect(const RenderTarget& target, int x, int y, int w, int h,

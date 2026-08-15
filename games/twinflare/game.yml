@@ -9,8 +9,13 @@ web: true
 
 objective: "Three laps against five rivals. The pod hangs off two engines and a hover field keeps it off the ground, so it never crashes into the road, only off it. Each engine takes damage on its own, and a damaged one pulls you toward it. Repair costs speed, boosting costs heat, and heat costs engines."
 
+rules:
+  - "The grid: Three seconds on the line before the light goes green, and holding the throttle through them winds the engines up. The bar under the number is the charge and the red mark is where it blows: let it reach that and both engines take the damage before you have moved. Stop short and the charge becomes a boost off the line."
+  - "Damage: Each engine has its own bar because each one takes its own damage. A wall grinds the engine on the side you hit it with. A hard landing goes to whichever engine is lower, so a slam mid corner lands on the inside one. A rival you touch damages the engine that touched it. An engine that is nearly out trails smoke, and a dead one leaves you pulling toward the side that is missing."
+  - "The flag: Your race ends at the line and the pod flies itself while the rest of the field comes in, with each racer's time appearing as they cross. Any button skips to the results."
+
 controls:
-  - "B: throttle"
+  - "B: throttle. Hold it on the grid to wind the engines up"
   - "B twice: boost, once the green light beside the heat bar is on"
   - "Y: air brake, and it nearly doubles how hard you can turn"
   - "X: repair both engines, at a third of the throttle"

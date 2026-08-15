@@ -31,6 +31,16 @@ using namespace twinflare;
 
 namespace {
 
+// Every test below is about the RACE, not the grid, so they all start from the
+// green light. race_init holds the pod on the line for a three second
+// countdown now, and a test that ticks two hundred times and then asks how far
+// the pod has travelled would otherwise be measuring the countdown.
+void race_start(Race& race, int track_index, int racer_index) {
+    race_init(race, track_index, racer_index);
+    const Input idle{};
+    while (race.phase == Phase::Countdown) race_tick(race, idle);
+}
+
 int g_failures = 0;
 
 void check(bool ok, const char* what) {
@@ -149,7 +159,7 @@ void test_a_pod_settles_on_the_road() {
     // road with no throttle, a pod should settle near the rest height and
     // stay there. It sank straight through, once.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     for (int i = 0; i < 400; ++i) race_tick(race, in);
     const int32_t clear = race.pod.clearance;
@@ -168,7 +178,7 @@ void test_speed_never_runs_away() {
         const Track& t = track(ti);
         for (int ri = 0; ri < k_racer_count; ++ri) {
             Race race;
-            race_init(race, ti, ri);
+            race_start(race, ti, ri);
             Input in{};
             for (int i = 0; i < 3000; ++i) {
                 drive(race, t, in);
@@ -195,7 +205,7 @@ void test_the_pod_gets_round() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         for (int i = 0; i < 12000; ++i) {
             drive(race, t, in);
@@ -212,14 +222,14 @@ void test_one_engine_pulls_the_pod_off_line() {
     // engine's thrust acting off the pod's centreline. If it ever stops
     // falling out, this is what says so.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     in.throttle = true;
     for (int i = 0; i < 300; ++i) race_tick(race, in);
     const int32_t straight_yaw = race.pod.yaw;
 
     Race hurt_race;
-    race_init(hurt_race, 0, 0);
+    race_start(hurt_race, 0, 0);
     hurt_race.pod.engine[0] = 0;
     hurt_race.pod.dead = 1;
     Input hurt_in{};
@@ -235,7 +245,7 @@ void test_damage_pulls_before_it_kills() {
     // which is what turns a health bar into something arriving through the
     // stick.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     race.pod.engine[0] = static_cast<int16_t>(race.pod.engine_max / 5);
     Input in{};
     in.throttle = true;
@@ -249,7 +259,7 @@ void test_boost_is_gated_on_speed() {
     // The Thrust Meter reads current speed, not a charge. A double tap from a
     // standstill has to do nothing, or the mechanic is just a button.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     check(!boost_armed(race.pod), "boost is not armed from a standstill");
 
     // Driven until the gate opens, rather than sampled at one arbitrary tick.
@@ -267,6 +277,18 @@ void test_boost_is_gated_on_speed() {
     check(armed_at >= 0, "boost arms once the pod is up to speed");
     if (armed_at < 0) return;
 
+    // WITH MARGIN, and that is not padding. The tick the gate first opens is by
+    // construction the marginal one: measured, the pod arms at 0.7% over the
+    // gate and is back under it on the very next tick, so a double tap issued
+    // there fails on the second press for reasons that have nothing to do with
+    // the double tap. Driven on until the pod is comfortably over the line.
+    const int32_t clear = fscale(fscale(pod_top_speed(race.pod), k_boost_gate), 1080);
+    for (int i = 0; i < 3000 && pod_speed(race.pod) < clear; ++i) {
+        drive(race, t, in);
+        race_tick(race, in);
+    }
+    check(pod_speed(race.pod) >= clear, "and gets clear of the gate");
+
     // And a double tap while it is armed lights it.
     in.boost_press = true;
     race_tick(race, in);
@@ -276,7 +298,7 @@ void test_boost_is_gated_on_speed() {
     // A single press, far apart, does not: that is what makes it a double tap
     // rather than a boost button with extra steps.
     Race single;
-    race_init(single, 0, 0);
+    race_start(single, 0, 0);
     Input sin_{};
     for (int i = 0; i < 3000 && !boost_armed(single.pod); ++i) {
         drive(single, t, sin_);
@@ -295,7 +317,7 @@ void test_boost_is_gated_on_speed() {
 
 void test_overheating_costs_both_engines() {
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     race.pod.heat = k_heat_one - 4;
     // Boosting, or the heat simply sheds and the redline never arrives: the
     // gauge only climbs while the boost is lit.
@@ -311,7 +333,7 @@ void test_overheating_costs_both_engines() {
 void test_repair_cannot_resurrect() {
     // A repair beam is not a spare part.
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     race.pod.engine[0] = 0;
     race.pod.dead = 1;
     race.pod.engine[1] = 100;
@@ -356,7 +378,7 @@ void test_every_gap_is_passable() {
 
         // Get the slowest pod up to speed on the track it has to jump on.
         Race race;
-        race_init(race, ti, 1);   // WISP, the lowest top speed on the roster
+        race_start(race, ti, 1);   // WISP, the lowest top speed on the roster
         Input in{};
         int32_t best = 0;
         for (int i = 0; i < 2000; ++i) {
@@ -390,7 +412,7 @@ void test_running_wide_costs_time_and_not_the_run() {
     // trapdoor, not a field.
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     for (int i = 0; i < 400; ++i) { drive(race, t, in); race_tick(race, in); }
 
@@ -426,8 +448,8 @@ void test_running_wide_costs_time_and_not_the_run() {
     // concluded the rough was faster; the next held both straight for three
     // seconds, by which time the on road pod had driven off the road.
     Race rough, smooth;
-    race_init(rough, 0, 0);
-    race_init(smooth, 0, 0);
+    race_start(rough, 0, 0);
+    race_start(smooth, 0, 0);
     Race* const pair[2] = {&rough, &smooth};
     for (Race* r : pair) {
         r->pod.node = race.pod.node;
@@ -472,7 +494,7 @@ void test_only_a_gap_is_fatal() {
     if (gap_node < 0) return;
 
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     const TrackNode& n = t.nodes[gap_node];
     race.pod.node = static_cast<uint16_t>(gap_node);
     race.pod.x = node_x(n);
@@ -501,7 +523,7 @@ void test_the_pod_never_gets_below_the_surface() {
         const Track& t = track(ti);
         for (int ri = 0; ri < 2; ++ri) {
             Race race;
-            race_init(race, ti, ri * 2);
+            race_start(race, ti, ri * 2);
             Input in{};
             int32_t worst = INT32_MAX;
             for (int i = 0; i < 6000; ++i) {
@@ -523,47 +545,110 @@ void test_the_pod_never_gets_below_the_surface() {
     }
 }
 
-void test_a_hard_landing_costs_engines_and_not_the_run() {
-    // The other half of the same report: "pod should instead take damage if it
-    // hits the ground too hard." Instead of what it used to do, which was sink
-    // through the road and wreck.
-    //
-    // Dropped from sixty units up onto the middle of the start straight, which
-    // is a worse arrival than any ramp on any of the four tracks produces.
+// Drop the pod sixty units straight down onto the start straight at a chosen
+// bank angle, and report what each engine lost, how fast it fell, and how close
+// it came to the road.
+//
+// THE WHOLE ATTITUDE IS HELD, not only the roll, and that is not belt and
+// braces. Roll is recomputed inside every tick from the yaw rate and the
+// cockpit swing, and the swing is measured off the pod's offset from the
+// centreline, so a roll assigned before the tick is gone by the time the
+// landing is evaluated. Pinning roll alone measured the level case twice, once
+// under each name, and reported the pair as a mismatch. The sideways velocity
+// goes too: a pod that keeps flying while it falls lands somewhere else, and on
+// a walled stretch that is a scrape mixed into the landing it is supposed to be
+// measuring.
+//
+// What survives the tick is 48% of the roll set here, which is the one figure
+// this borrows from the attitude model. It does not need to be exact: what the
+// test asks is which side is low and whether the two sides mirror.
+struct Drop {
+    int32_t lost[2];
+    int32_t fastest_fall;
+    int32_t closest;
+    bool wrecked;
+};
+
+Drop drop_with_roll(int32_t roll) {
     const Track& t = track(0);
     Race race;
-    race_init(race, 0, 0);
+    race_start(race, 0, 0);
     Input in{};
     for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
 
     const Surface s = surface_at(t, race.pod.node, race.pod.x, race.pod.z);
     race.pod.y = s.y + fp(60);
     race.pod.vy = 0;
-    const int16_t before = race.pod.engine[0];
+    const int16_t before[2] = {race.pod.engine[0], race.pod.engine[1]};
 
-    int32_t worst = INT32_MAX;
-    int32_t fastest_fall = 0;
+    Drop d{};
+    d.closest = INT32_MAX;
     Input coast{};
     for (int i = 0; i < 240; ++i) {
+        race.pod.roll = roll;
+        race.pod.yaw_rate = 0;
+        race.pod.swing = 0;
+        race.pod.swing_rate = 0;
+        race.pod.lateral = 0;
+        race.pod.pitch = 0;
+        race.pod.pitch_rate = 0;
+        race.pod.vx = 0;
+        race.pod.vz = 0;
         race_tick(race, coast);
-        if (-race.pod.vy > fastest_fall) fastest_fall = -race.pod.vy;
-        if (race.pod.grounded && race.pod.clearance < worst) worst = race.pod.clearance;
+        if (-race.pod.vy > d.fastest_fall) d.fastest_fall = -race.pod.vy;
+        if (race.pod.grounded && race.pod.clearance < d.closest)
+            d.closest = race.pod.clearance;
     }
-    check(race.pod.wreck_ticks == 0, "a hard landing does not wreck the pod");
-    check(worst >= k_hover_floor, "and it does not go through the surface");
-    check(race.pod.engine[0] < before, "it costs the left engine health");
-    check(race.pod.engine[1] < before, "and the right engine equally");
-    check(race.pod.engine[0] == race.pod.engine[1],
-          "a slam is symmetric: both engines hit the ground together");
+    for (int i = 0; i < 2; ++i) d.lost[i] = before[i] - race.pod.engine[i];
+    d.wrecked = race.pod.wreck_ticks != 0;
+    return d;
+}
+
+void test_a_hard_landing_costs_engines_and_not_the_run() {
+    // The other half of the same report: "pod should instead take damage if it
+    // hits the ground too hard." Instead of what it used to do, which was sink
+    // through the road and wreck.
+    const Drop level = drop_with_roll(0);
+    check(!level.wrecked, "a hard landing does not wreck the pod");
+    check(level.closest >= k_hover_floor, "and it does not go through the surface");
+    check(level.lost[0] > 0, "it costs the port engine health");
+    check(level.lost[1] > 0, "and the starboard engine too");
+    check(level.lost[0] == level.lost[1],
+          "a LEVEL slam is symmetric: both engines hit the ground together");
     // Enough to be worth avoiding and not enough to end a race outright, which
     // is the whole point of moving the penalty from the run to the engines.
-    const int lost = before - race.pod.engine[0];
-    check(lost > 40, "the damage is felt");
-    check(lost < race.pod.engine_max / 2, "and one bad landing is survivable");
-    std::printf("  sixty unit drop: fell at %d u/s, cost %d of %d health an "
-                "engine, closest to the road %.2f units\n",
-                fastest_fall * k_tick_hz / k_one, lost, race.pod.engine_max,
-                worst / 65536.0);
+    const int32_t total = level.lost[0] + level.lost[1];
+    check(level.lost[0] > 40, "the damage is felt");
+    check(level.lost[0] < k_engine_max / 2, "and one bad landing is survivable");
+
+    // AND A TILTED ONE IS NOT. The pod's local frame puts engine 0 to port and
+    // a positive roll drops it, so a pod landing mid corner puts the blow on
+    // the inside engine. This is the asked for behaviour ("one or both of the
+    // engines take damage") and the reason a landing is now worth steering out
+    // of rather than a tax on the whole machine.
+    const Drop port_low = drop_with_roll(k_swing_max);
+    const Drop starboard_low = drop_with_roll(-k_swing_max);
+    check(port_low.lost[0] > port_low.lost[1],
+          "rolled to port, the port engine takes the landing");
+    check(starboard_low.lost[1] > starboard_low.lost[0],
+          "rolled to starboard, the starboard engine does");
+    check(port_low.lost[0] == starboard_low.lost[1]
+          && port_low.lost[1] == starboard_low.lost[0],
+          "and the two are mirror images of each other");
+
+    // THE TOTAL IS THE SAME. Leaning redistributes a landing, it does not add
+    // one: without this the check above passes just as well for a change that
+    // left both engines on the old even split and piled extra damage on the low
+    // one, which is a different game and a much harsher one.
+    const int32_t tilted_total = port_low.lost[0] + port_low.lost[1];
+    check(tilted_total == total,
+          "a tilted landing costs the machine what a level one costs it");
+
+    std::printf("  sixty unit drop: fell at %d u/s, cost %d + %d level and "
+                "%d + %d rolled hard over, closest to the road %.2f units\n",
+                level.fastest_fall * k_tick_hz / k_one,
+                level.lost[0], level.lost[1], port_low.lost[0], port_low.lost[1],
+                level.closest / 65536.0);
 }
 
 void test_the_sea_is_a_surface_and_not_a_hazard() {
@@ -594,7 +679,7 @@ void test_the_sea_is_a_surface_and_not_a_hazard() {
           "the deepest part of the circuit is well under the waterline");
 
     Race race;
-    race_init(race, tide, 0);
+    race_start(race, tide, 0);
     const TrackNode& n = t.nodes[deepest];
     race.pod.node = static_cast<uint16_t>(deepest);
     race.pod.x = node_x(n);
@@ -626,7 +711,7 @@ void test_the_sea_is_a_surface_and_not_a_hazard() {
         if ((t.nodes[i].flags & kGap) && node_y(t.nodes[i]) < sea) { gap = i; break; }
     if (gap >= 0) {
         Race fall;
-        race_init(fall, tide, 0);
+        race_start(fall, tide, 0);
         fall.pod.node = static_cast<uint16_t>(gap);
         fall.pod.x = node_x(t.nodes[gap]);
         fall.pod.z = node_z(t.nodes[gap]);
@@ -663,7 +748,7 @@ void test_the_sea_costs_time() {
     const int nodes[2] = {dry_node, wet_node};
     for (int k = 0; k < 2; ++k) {
         Race race;
-        race_init(race, tide, 0);
+        race_start(race, tide, 0);
         const TrackNode& n = t.nodes[nodes[k]];
         const TrackNode& ahead = t.nodes[(nodes[k] + 1) % t.node_count];
         const int32_t head = fatan2(node_x(ahead) - node_x(n), node_z(ahead) - node_z(n));
@@ -701,7 +786,7 @@ void test_rivals_move_smoothly() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         int32_t worst_jerk = 0, worst_step = 0, worst_yaw_jerk = 0;
         int32_t last_dx = 0, last_dz = 0, last_turn = 0;
@@ -757,7 +842,7 @@ void test_a_wall_stops_the_pod_rather_than_lifting_it() {
         if (wall_node < 0) continue;
 
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         const TrackNode& n = t.nodes[wall_node % t.node_count];
         const TrackNode& b = t.nodes[(wall_node + 1) % t.node_count];
         const int32_t head = fatan2(node_x(b) - node_x(n), node_z(b) - node_z(n));
@@ -811,7 +896,7 @@ void test_the_railing_bounds_the_pod() {
     for (int ti = 0; ti < k_track_count; ++ti) {
         const Track& t = track(ti);
         Race race;
-        race_init(race, ti, 0);
+        race_start(race, ti, 0);
         Input in{};
         int32_t widest = 0;
         for (int i = 0; i < 3000; ++i) {
@@ -835,6 +920,589 @@ void test_the_railing_bounds_the_pod() {
         std::printf("  %-10s a pilot aiming off the road gets %.1f units past the "
                     "edge (railing at %.0f)\n",
                     t.name, widest / 65536.0, k_verge / 65536.0);
+    }
+}
+
+void test_the_race_is_held_on_the_line() {
+    // A race used to begin the instant the screen appeared. Nothing may move
+    // until the light goes green: not the pod, not the pack, and not the clock,
+    // because a countdown the lap timer runs through is a countdown that costs
+    // the player three seconds of their own lap.
+    Race race;
+    race_init(race, 0, 0);
+    check(race.phase == Phase::Countdown, "a race starts on the grid");
+
+    const Pod start = race.pod;
+    const int32_t rival_start = race.rivals[0].distance;
+    Input flat{};
+    flat.throttle = true;
+    for (int i = 0; i < k_count_ticks - 1; ++i) race_tick(race, flat);
+
+    check(race.phase == Phase::Countdown, "and it is still on the grid at 0.01s");
+    check(race.pod.x == start.x && race.pod.z == start.z,
+          "the pod has not moved off the line");
+    check(race.pod.vx == 0 && race.pod.vz == 0, "and it is not even rolling");
+    check(race.rivals[0].distance == rival_start, "nor has the field");
+    check(race.ticks == 0, "and the clock has not started");
+
+    race_tick(race, flat);
+    check(race.phase == Phase::Racing, "then the light goes green");
+    for (int i = 0; i < 100; ++i) race_tick(race, flat);
+    check(race.ticks == 100, "the clock runs from green, not from the grid");
+    check(race.pod.x != start.x || race.pod.z != start.z, "the pod is away");
+    check(race.rivals[0].distance > rival_start, "and so is the field");
+}
+
+void test_the_countdown_counts_three_two_one() {
+    // The number on screen comes from the sim rather than from a frame counter
+    // in the renderer, so what the player is looking at and what the charge is
+    // racing against cannot drift apart.
+    Race race;
+    race_init(race, 0, 0);
+    Input idle{};
+    int counts = 0, gos = 0;
+    int seen[5] = {0, 0, 0, 0, 0};
+    int last = countdown_number(race);
+    check(last == 3, "it opens on three");
+    while (race.phase == Phase::Countdown) {
+        race_tick(race, idle);
+        if (race.ev.count) ++counts;
+        if (race.ev.go) ++gos;
+        const int n = countdown_number(race);
+        if (n != last) { seen[n]++; last = n; }
+    }
+    // Three changes of number: 3 to 2, 2 to 1, 1 to GO. A fourth would mean the
+    // number flickered, and two would mean one of them never showed.
+    check(counts == 3, "the countdown announces exactly three numbers");
+    check(seen[2] == 1 && seen[1] == 1 && seen[0] == 1,
+          "and it shows 2, then 1, then GO, once each");
+    check(gos == 1, "the green light fires once");
+    check(countdown_number(race) == 0, "and the number is gone once racing");
+}
+
+void test_winding_up_on_the_line_pays_and_can_blow() {
+    // Three seconds of nothing is three seconds of nothing unless there is
+    // something to do with them. Holding the throttle against the brakes fills
+    // a charge that cashes in as boost, and past the flood line it holes both
+    // engines instead, which is the whole tension of the grid.
+    Input flat{};
+    flat.throttle = true;
+    const Input idle{};
+
+    // Held all the way: it floods, and floods only once, because the charge is
+    // spent when it goes.
+    Race blown;
+    race_init(blown, 0, 0);
+    const int16_t whole = blown.pod.engine[0];
+    int floods = 0;
+    while (blown.phase == Phase::Countdown) {
+        race_tick(blown, flat);
+        if (blown.ev.flood) ++floods;
+    }
+    check(blown.pod.engine[0] < whole && blown.pod.engine[1] < whole,
+          "holding it down all three seconds costs BOTH engines, not one");
+    check(blown.pod.engine[0] == blown.pod.engine[1],
+          "evenly, because nothing struck either of them");
+    // ONCE, and this is the check that matters. Reset to zero without latching,
+    // a finger still on the throttle simply refills the charge and blows it
+    // again: measured, that was three floods in one countdown and 720 of 1000
+    // health off both engines before the race had started. One mistake is one
+    // mistake, and every check above passes just as well for three of them.
+    check(floods == 1, "and it blows once, however long the throttle is held");
+    check(whole - blown.pod.engine[0] == k_charge_burn,
+          "for exactly one engine's worth of damage");
+    check(blown.charge == 0, "with nothing left to cash in");
+
+    // Start winding up late enough to arrive at green with a big charge and no
+    // flood, which is the shot the whole mechanic is asking for. Held right up
+    // to the light rather than released early: the charge BLEEDS off the
+    // throttle, so a player who lets go at the top of it and waits arrives on
+    // green with nothing, and this test measured that instead the first time.
+    Race clean;
+    race_init(clean, 0, 0);
+    while (clean.countdown > 150) race_tick(clean, idle);
+    while (clean.phase == Phase::Countdown) race_tick(clean, flat);
+    const int16_t held = static_cast<int16_t>(150 * k_charge_rise);
+    check(clean.pod.engine[0] == whole && clean.pod.engine[1] == whole,
+          "a charge released in time costs nothing");
+    check(clean.pod.boost_ticks > 0, "and it is worth a boost off the line");
+
+    // Which is worth MORE than doing nothing at all, and more than blowing it.
+    Race lazy;
+    race_init(lazy, 0, 0);
+    while (lazy.phase == Phase::Countdown) race_tick(lazy, idle);
+    check(lazy.pod.boost_ticks == 0, "a pod that sat there gets nothing");
+    check(blown.pod.boost_ticks == 0, "and neither does one that flooded");
+
+    // The charge BLEEDS when the throttle comes off, so a launch is a release
+    // at the right moment rather than a button held from the first tick.
+    Race bled;
+    race_init(bled, 0, 0);
+    while (bled.charge < k_charge_flood / 2) race_tick(bled, flat);
+    const int16_t peak = bled.charge;
+    for (int i = 0; i < 20; ++i) race_tick(bled, idle);
+    check(bled.charge < peak, "letting go bleeds the charge");
+
+    std::printf("  launch: %d charge released clean is %d boost ticks, "
+                "flooding costs %d health an engine\n",
+                held, clean.pod.boost_ticks, whole - blown.pod.engine[0]);
+}
+
+void test_a_wall_grinds_the_engine_that_is_against_it() {
+    // "when engine collides with wall ... one or both of the engines take
+    // damage". It used to take the same off both, so the bar the player was
+    // watching went down and nothing said which side was on the rock.
+    //
+    // Driven off both edges of the same walled stretch in turn, so the two runs
+    // differ in nothing but which way the pod was steered.
+    //
+    // On HOARFROST, which is three quarters wall: on the open desert a lock to
+    // one side finds a railing and a lock to the other finds nothing but
+    // shoulder, and the run that never touched rock reported no damage on
+    // either engine, which reads exactly like the split not working.
+    const int frost = 3;
+    const Track& t = track(frost);
+    int32_t lost[2][2] = {{0, 0}, {0, 0}};
+    int scraped[2] = {0, 0};
+    for (int side = 0; side < 2; ++side) {
+        Race race;
+        race_start(race, frost, 0);
+        Input in{};
+        // Up to speed on the racing line first, then hold a lock against one
+        // edge. The lock is re-applied every tick and the run is long enough to
+        // find rock wherever on the lap the pod happens to be.
+        for (int i = 0; i < 400; ++i) { drive(race, t, in); race_tick(race, in); }
+        // ACCOUNTED PER TICK, AND ONLY THE SCRAPE. A pod held against a wall
+        // also bounces off it, and a landing damages both engines: summing the
+        // whole run credits the far engine with damage the wall never did, and
+        // a version that put the ENTIRE scrape on the near engine passed a
+        // check that the far engine had lost something. It had, to the floor.
+        for (int i = 0; i < 3000; ++i) {
+            in = Input{};
+            in.throttle = true;
+            in.right = side == 1;
+            in.left = side == 0;
+            const int16_t was[2] = {race.pod.engine[0], race.pod.engine[1]};
+            const bool grinding = race.pod.scraping;
+            race_tick(race, in);
+            if (race.pod.scraping) ++scraped[side];
+            if (!grinding || race.ev.slam) continue;
+            for (int e = 0; e < 2; ++e) lost[side][e] += was[e] - race.pod.engine[e];
+        }
+    }
+    check(scraped[0] > 50 && scraped[1] > 50, "both runs actually found a wall");
+    check(lost[0][0] > 0 && lost[1][1] > 0, "and it cost them engine health");
+    // Steered left, the pod runs out on the port side and the port engine is
+    // the one on the rock. Steered right, the mirror.
+    check(lost[0][0] > lost[0][1], "grinding the port side costs the port engine most");
+    check(lost[1][1] > lost[1][0], "and the starboard side costs the starboard engine");
+    // AND THE FAR ENGINE STILL PAYS. Without this the check above is satisfied
+    // by moving the whole scrape onto one engine, which is a different and much
+    // more punishing game: a pod could lean on a wall all lap with one engine
+    // untouched.
+    check(lost[0][1] > 0 && lost[1][0] > 0,
+          "the frame carries some of a scrape across to the other engine");
+    std::printf("  scrape: port lock cost %d + %d over %d ticks, starboard %d + %d "
+                "over %d\n", lost[0][0], lost[0][1], scraped[0],
+                lost[1][0], lost[1][1], scraped[1]);
+}
+
+// Park the pod alongside rival zero, `off` units to the rival's side of it, and
+// facing the way the rival is going.
+//
+// THE POD IS MOVED, NOT THE RIVAL, and that is not a matter of taste. A rival
+// has no position of its own: rival_place rebuilds x, y and z from its distance
+// along the centreline at the top of every tick, so a rival dropped next to the
+// pod is back on the racing line before the contact test ever sees it. Placing
+// the rival was the first thing tried and it produced a collision test that
+// could not make a collision happen.
+//
+// The pod is held still as well, so what it meets on the next tick is the
+// rival's own three quarters of a unit of travel and nothing else.
+void park_beside_rival(Race& race, int32_t off) {
+    const Rival& r = race.rivals[0];
+    Pod& p = race.pod;
+    p.yaw = r.yaw;
+    p.x = r.x - ftrig(off, fcos(r.yaw));
+    p.z = r.z + ftrig(off, fsin(r.yaw));
+    p.y = r.y;
+    p.vx = p.vz = p.vy = 0;
+}
+
+void test_touching_a_rival_costs_the_engine_that_touched() {
+    // "when engine collides with enemy that engine takes damage". Rivals were
+    // scenery: five shapes going past at a plausible speed that the pod could
+    // fly straight through, so the pack was something to look at rather than
+    // something to get past.
+    const Track& t = track(0);
+    for (int side = 0; side < 2; ++side) {
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+
+        // Positive across is to starboard, so a rival on the starboard flank
+        // sits at a positive offset from the pod.
+        const int32_t off = side == 1 ? fp(1, 500) : -fp(1, 500);
+        park_beside_rival(race, off);
+
+        const int16_t before[2] = {race.pod.engine[0], race.pod.engine[1]};
+        const int32_t yaw = race.pod.yaw;
+        Input coast{};
+        race_tick(race, coast);
+
+        check(race.ev.bump, "a rival alongside is a collision");
+        check(race.pod.engine[side] < before[side],
+              "and it costs the engine on the side it happened");
+        check(race.pod.engine[side ^ 1] == before[side ^ 1],
+              "and only that one: a touch is not a landing");
+        // Shoved AWAY, which is what stops the two riding along inside each
+        // other for as long as the rival keeps pace. Measured in the pod's own
+        // frame at the heading it had when it was hit.
+        const int32_t push = ftrig(race.pod.vx, fcos(yaw)) - ftrig(race.pod.vz, fsin(yaw));
+        check(side == 1 ? push < 0 : push > 0,
+              "the pod is pushed away from what it hit, not into it");
+
+        // ONE touch is ONE hit. Without the cooldown a rival that keeps station
+        // takes an engine out in under a second at a hundred ticks a second,
+        // which is not a collision, it is a blender.
+        const int16_t after = race.pod.engine[side];
+        for (int i = 0; i < k_bump_ticks - 2; ++i) {
+            park_beside_rival(race, off);
+            race_tick(race, coast);
+        }
+        check(race.pod.engine[side] == after,
+              "and staying alongside does not grind the engine away");
+        // The cooldown EXPIRES, though, so a second pass costs a second hit and
+        // a pod cannot be made invulnerable by never leaving the pack.
+        for (int i = 0; i < 6; ++i) {
+            park_beside_rival(race, off);
+            race_tick(race, coast);
+        }
+        check(race.pod.engine[side] < after, "a second touch costs a second time");
+    }
+
+    // A rival passing directly UNDERNEATH is not a collision: a pod off a crest
+    // flies over the pack rather than through it. Without the height band, two
+    // racers on the same piece of road at different heights collide, and on a
+    // track with a tunnel that is a hit from something the player cannot see.
+    //
+    // The pod goes above rather than the rival below, and it has to: a rival
+    // has no height of its own either, rival_place puts it a hover height over
+    // the road every tick. Sinking the pod instead puts it under the road,
+    // where the hover floor lifts it straight back into the band inside one
+    // tick, and the test then measures the field rather than the height band.
+    Race high;
+    race_start(high, 0, 0);
+    Input in{};
+    for (int i = 0; i < 300; ++i) { drive(high, t, in); race_tick(high, in); }
+    park_beside_rival(high, 0);
+    high.pod.y = high.rivals[0].y + k_bump_high + fp(1);
+    const int16_t before[2] = {high.pod.engine[0], high.pod.engine[1]};
+    Input coast{};
+    race_tick(high, coast);
+    check(!high.ev.bump, "a rival passing overhead is not a collision");
+    check(high.pod.engine[0] == before[0] && high.pod.engine[1] == before[1],
+          "and it costs nothing");
+}
+
+void test_the_position_counts_from_the_line_the_field_does() {
+    // pod.lap counts from one and a rival's distance counts from zero on the
+    // line, so the player used to be credited a whole lap they had not driven.
+    // Measured, that was position 1 for all 9,412 ticks of a three lap race
+    // whatever the rest of the field did.
+    Race race;
+    race_start(race, 0, 0);
+    check(race.place == 1, "on the line, ahead of a field that is behind it");
+
+    // Park the pod on the start line and let the field run. The whole field
+    // starts a few units BEHIND the line and the slowest pod covers that inside
+    // a second, so a pod that has not moved has to be last of six within a
+    // couple of seconds.
+    //
+    // WITHIN A COUPLE OF SECONDS, and the deadline is the test. Given a minute
+    // the field laps a parked pod anyway, so "it ends up last" was true with
+    // the free lap credit still in and the bug survived the check that was
+    // written for it. Three hundred ticks is long enough for every rival to
+    // reach the line and far too short for any of them to make up a whole lap
+    // of imaginary progress.
+    Input idle{};
+    int at_300 = 0;
+    for (int i = 0; i < 300; ++i) {
+        race.pod.vx = race.pod.vz = 0;   // held, so this is about the field
+        race_tick(race, idle);
+    }
+    at_300 = race.place;
+    check(at_300 == k_racer_count,
+          "three seconds later the whole field is past it, and the HUD says so");
+    for (int i = 0; i < 5700; ++i) {
+        race.pod.vx = race.pod.vz = 0;
+        race_tick(race, idle);
+    }
+    check(race.place == k_racer_count, "and it stays last");
+    std::printf("  a parked pod is %d of %d after three seconds and %d after a "
+                "minute\n", at_300, k_racer_count, race.place);
+}
+
+void test_every_racer_gets_a_time_and_the_table_orders_them() {
+    // "show the current placing, and total race time that player did, as well
+    // for each other racer as they cross the finishing line."
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    int guard = 0;
+    while (!race.done && guard++ < 40000) {
+        in = Input{};
+        const Pod& p = race.pod;
+        const TrackNode& ahead = t.nodes[(p.node + 4) % t.node_count];
+        const int32_t want = fatan2(node_x(ahead) - p.x, node_z(ahead) - p.z);
+        const int32_t err = angle_diff(want, p.yaw);
+        in.throttle = true;
+        in.left = err < -300;
+        in.right = err > 300;
+        race_tick(race, in);
+    }
+    check(race.done, "the finish sequence ends");
+    check(race.finished, "and the player got round");
+    check(race.finish_tick > 0, "with a total time");
+
+    Standing st[k_racer_count];
+    standings(race, st);
+    int players = 0, finishers = 0;
+    for (int i = 0; i < k_racer_count; ++i) {
+        if (st[i].player) ++players;
+        if (st[i].finished) ++finishers;
+    }
+    check(players == 1, "the player appears exactly once in the table");
+    check(finishers >= 3, "and most of the field is in by the time it ends");
+
+    // Ordered: everyone who finished, by time, above everyone who did not.
+    bool ordered = true, seen_unfinished = false;
+    uint32_t last_time = 0;
+    for (int i = 0; i < k_racer_count; ++i) {
+        if (!st[i].finished) { seen_unfinished = true; continue; }
+        if (seen_unfinished) ordered = false;   // a finisher below a non finisher
+        if (st[i].ticks < last_time) ordered = false;
+        last_time = st[i].ticks;
+    }
+    check(ordered, "the table runs fastest first, with the unfinished at the bottom");
+
+    // Every racer, once: a table that lost or duplicated a row would still be
+    // ordered and would still have one player in it.
+    int seen[k_racer_count] = {0};
+    for (int i = 0; i < k_racer_count; ++i) seen[st[i].racer_index % k_racer_count]++;
+    bool all_once = true;
+    for (int i = 0; i < k_racer_count; ++i) if (seen[i] != 1) all_once = false;
+    check(all_once, "and every racer on the roster is on it exactly once");
+
+    std::printf("  results after %.1fs: ", race.finish_tick / 100.0);
+    for (int i = 0; i < k_racer_count; ++i)
+        std::printf("%s%s ", racer(st[i].racer_index).name, st[i].player ? "*" : "");
+    std::printf("\n");
+}
+
+void test_the_pod_keeps_flying_after_the_flag() {
+    // "give control to the AI after player crosses the race". A pod abandoned
+    // in mid air while the rest of the field comes in is a worse thing to look
+    // at than a chase camera on a cockpit nobody is steering.
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    int guard = 0;
+    while (!race.finished && guard++ < 40000) { drive(race, t, in); race_tick(race, in); }
+    check(race.finished, "the player finished");
+    check(race.phase == Phase::Finished, "and the race knows it");
+
+    // Hands off from here: the input passed in is empty, so anything that
+    // happens is the sim's own driver.
+    const int32_t x = race.pod.x, z = race.pod.z;
+    const uint8_t node = static_cast<uint8_t>(race.pod.node);
+    const Input hands_off{};
+    int on_road = 0;
+    uint8_t modes = 0;
+    for (int i = 0; i < 1500; ++i) {
+        race_tick(race, hands_off);
+        if (race.pod.on_road) ++on_road;
+        modes = static_cast<uint8_t>(modes | (1 << race.cam_mode));
+    }
+    check(race.pod.x != x || race.pod.z != z, "the pod keeps flying with no input");
+    check(race.pod.node != node, "and it makes progress along the track");
+    check(on_road > 1000, "the autopilot keeps it on the road");
+    // The camera cuts, which is the other half of the ask. Fifteen seconds is
+    // seven cuts at two seconds each, so every angle has to have come up.
+    check(modes == (1 << k_cam_modes) - 1,
+          "and the camera works through every angle it has");
+    std::printf("  after the flag: %d of 1500 ticks on the road, %d camera angles\n",
+                on_road, k_cam_modes);
+}
+
+void test_a_damaged_engine_smokes_before_it_dies() {
+    // The renderer asks the sim whether an engine is critical rather than
+    // keeping its own threshold, so what smokes and what the bar shows cannot
+    // disagree.
+    Race race;
+    race_start(race, 0, 0);
+    Pod& p = race.pod;
+    check(!engine_critical(p, 0) && !engine_critical(p, 1), "a fresh pod is fine");
+    p.engine[0] = static_cast<int16_t>(p.engine_max * k_engine_critical / 1000 + 1);
+    check(!engine_critical(p, 0), "just above the line it is not smoking yet");
+    p.engine[0] = static_cast<int16_t>(p.engine_max * k_engine_critical / 1000 - 1);
+    check(engine_critical(p, 0), "just below it, it is");
+    check(!engine_critical(p, 1), "and the other engine is its own question");
+    // AND A DEAD ENGINE IS NOT CRITICAL, it is over. This predicate is what the
+    // renderer trails smoke off, and it draws no mesh and no cable for a dead
+    // engine at all: counting dead as critical put a plume in the empty air
+    // where an engine used to be.
+    p.engine[0] = 0;
+    p.dead |= 1;
+    check(!engine_critical(p, 0), "a dead engine is past smoking, not smoking");
+}
+
+void test_a_hit_says_which_engine_took_it() {
+    // The renderer used to strike sparks off a wall alone, because a wall was
+    // the only damage source that said WHERE it landed. This is the seam that
+    // lets any hit be drawn on the side it happened.
+    const Track& t = track(0);
+    Race race;
+    race_start(race, 0, 0);
+    Input in{};
+    for (int i = 0; i < 300; ++i) { drive(race, t, in); race_tick(race, in); }
+    check(race.pod.hit[0] == 0 && race.pod.hit[1] == 0,
+          "a clean lap strikes no sparks");
+
+    // A rival on the starboard flank.
+    park_beside_rival(race, fp(1, 500));
+    Input coast{};
+    race_tick(race, coast);
+    check(race.pod.hit[1] > 0, "a touch on the starboard side sparks to starboard");
+    check(race.pod.hit[0] == 0, "and not to port");
+
+    // And it burns out rather than staying lit, so a spark shower does not
+    // outlive the blow that caused it.
+    for (int i = 0; i < k_hit_ticks + 2; ++i) race_tick(race, coast);
+    check(race.pod.hit[1] == 0, "and it stops");
+}
+
+void test_heat_does_not_throw_sparks() {
+    // Heat is the one damage source that is not an impact: both engines are
+    // cooking, and a shower of sparks off a pod nothing has touched reads as a
+    // collision the player did not have.
+    Race race;
+    race_start(race, 0, 0);
+    Pod& p = race.pod;
+    p.heat = k_heat_one - 1;
+    const int16_t before = p.engine[0];
+    Input in{};
+    in.throttle = true;
+    for (int i = 0; i < 5; ++i) {
+        p.heat = k_heat_one - 1;   // held over the line
+        race_tick(race, in);
+    }
+    check(race.pod.engine[0] < before, "cooking costs engine health");
+    check(race.pod.hit[0] == 0 && race.pod.hit[1] == 0,
+          "and it does it without striking sparks");
+}
+
+void test_a_frame_hears_every_tick_in_it() {
+    // A frame steps the sim up to eight times and calls the sound layer once,
+    // so something has to carry the seven ticks that would otherwise be thrown
+    // away. Edges accumulate; levels take the latest value.
+    Events frame{};
+    Events a{};
+    a.lap = true;
+    a.rev = 200;
+    a.grinding = true;
+    Events b{};
+    b.bump = true;
+    b.rev = 40;
+    b.grinding = false;
+
+    merge_events(frame, a);
+    merge_events(frame, b);
+    check(frame.lap, "a lap on the first tick of a frame survives to the end of it");
+    check(frame.bump, "and so does a bump on the last");
+    // THE LEVELS DO NOT ACCUMULATE, which is the half that is easy to get
+    // wrong: OR'd like the rest, the rev would climb to the loudest tick of the
+    // frame and stay there, and one tick against a wall would latch the grind
+    // on for the whole frame.
+    check(frame.rev == 40, "the engine note is the latest tick's, not the loudest");
+    check(!frame.grinding, "and a scrape that ended during the frame has ended");
+}
+
+void test_the_race_says_what_happened() {
+    // The whole point of Events: the sound layer holds no state about the race
+    // and the race holds no opinion about the sound. Every cue below is raised
+    // by driving the sim into the situation rather than by setting the flag.
+    const Track& t = track(0);
+
+    // The countdown announces its numbers and the green light.
+    {
+        Race race;
+        race_init(race, 0, 0);
+        int counts = 0, gos = 0;
+        Input idle{};
+        while (race.phase == Phase::Countdown) {
+            race_tick(race, idle);
+            counts += race.ev.count ? 1 : 0;
+            gos += race.ev.go ? 1 : 0;
+        }
+        check(counts == 3 && gos == 1, "the grid says three, two, one, go");
+    }
+
+    // A lap, the flag, and a rev that rises off the throttle.
+    {
+        Race race;
+        race_start(race, 0, 0);
+        Input in{};
+        int laps = 0, finishes = 0, boosts = 0;
+        uint8_t quiet = 255, loud = 0;
+        int guard = 0;
+        while (!race.finished && guard++ < 40000) {
+            drive(race, t, in);
+            race_tick(race, in);
+            laps += race.ev.lap ? 1 : 0;
+            finishes += race.ev.finish ? 1 : 0;
+            boosts += race.ev.boost ? 1 : 0;
+            if (race.ev.rev < quiet) quiet = race.ev.rev;
+            if (race.ev.rev > loud) loud = race.ev.rev;
+        }
+        check(laps == t.laps, "one lap event per lap of the track");
+        check(finishes == 1, "and one flag, on the last of them");
+        check(boosts > 0, "the boost pads announce themselves");
+        // The engine is a LEVEL and has to actually move, or the drone it
+        // drives is a constant tone with a volume knob.
+        check(loud > 150, "the engine note reaches the top of its range");
+        check(loud - quiet > 100, "and it has real range, not a fixed pitch");
+        std::printf("  events over a race: %d laps, %d boosts, rev %d..%d\n",
+                    laps, boosts, quiet, loud);
+    }
+
+    // A wall says so on the tick it starts, once, not on every tick it lasts.
+    // On HOARFROST, which is three quarters wall, and driven against HOARFROST:
+    // the driver takes the track it is steering round, and handing it the
+    // desert while the race ran on the ice put the pod nowhere near a wall.
+    {
+        const Track& frost = track(3);
+        Race race;
+        race_start(race, 3, 0);
+        Input in{};
+        for (int i = 0; i < 400; ++i) { drive(race, frost, in); race_tick(race, in); }
+        int starts = 0, grinding = 0;
+        for (int i = 0; i < 1500; ++i) {
+            in = Input{};
+            in.throttle = true;
+            in.left = true;
+            race_tick(race, in);
+            starts += race.ev.scrape ? 1 : 0;
+            grinding += race.ev.grinding ? 1 : 0;
+        }
+        check(grinding > 50, "the pod really did grind along a wall");
+        check(starts > 0, "and the scrape announced itself");
+        check(starts < grinding / 4,
+              "once per contact, not once per tick of it: a scrape is a held "
+              "sound with an attack, not a machine gun");
     }
 }
 
@@ -885,6 +1553,19 @@ int main() {
     test_rivals_move_smoothly();
     test_a_wall_stops_the_pod_rather_than_lifting_it();
     test_the_railing_bounds_the_pod();
+    test_the_race_is_held_on_the_line();
+    test_the_countdown_counts_three_two_one();
+    test_winding_up_on_the_line_pays_and_can_blow();
+    test_a_wall_grinds_the_engine_that_is_against_it();
+    test_touching_a_rival_costs_the_engine_that_touched();
+    test_the_position_counts_from_the_line_the_field_does();
+    test_every_racer_gets_a_time_and_the_table_orders_them();
+    test_the_pod_keeps_flying_after_the_flag();
+    test_a_damaged_engine_smokes_before_it_dies();
+    test_a_hit_says_which_engine_took_it();
+    test_heat_does_not_throw_sparks();
+    test_a_frame_hears_every_tick_in_it();
+    test_the_race_says_what_happened();
     test_state_is_small();
     test_tracks_cost_what_they_claim();
 

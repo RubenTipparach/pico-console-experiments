@@ -3,6 +3,7 @@
 #include "pse/blit_target.hpp"
 #include "pse/game.hpp"
 #include "render.hpp"
+#include "sfx.hpp"
 #include "sim.hpp"
 
 // The only file here that touches the SDK, and it is thin on purpose: reading
@@ -68,9 +69,18 @@ void update_menu(twinflare::Screen next, uint8_t& value, int count) {
 }
 
 void update_play(uint32_t elapsed) {
-    // Pause. In the default scheme A is only ever the pause button; in the
-    // other one it is a hold, so a boost tap does not open a menu.
-    if (k_boost_on_a) {
+    // Past the flag the race runs itself: the sim flies the pod, the camera
+    // cuts around it, and the finishing times come up over the top. The only
+    // thing a button does here is cut it short, because a player who has seen
+    // enough should not have to wait out the rest of the field.
+    if (g_race.phase == twinflare::Phase::Finished) {
+        if (buttons.pressed) {
+            g_chrome.screen = twinflare::Screen::Results;
+            return;
+        }
+    } else if (k_boost_on_a) {
+        // Pause. In the default scheme A is only ever the pause button; in the
+        // other one it is a hold, so a boost tap does not open a menu.
         if (buttons & Button::A) {
             if (g_a_held_since == 0) g_a_held_since = 1;
             else if (g_a_held_since < k_hold_pause_ms) g_a_held_since += elapsed;
@@ -91,11 +101,23 @@ void update_play(uint32_t elapsed) {
     // race forward in one go with a single frame's input held down.
     if (g_accumulator > twinflare::k_tick_ms * 8)
         g_accumulator = twinflare::k_tick_ms * 8;
+    // Every tick's events folded into one frame's worth. The sound layer is
+    // called once a frame and the sim can step eight times inside it, so
+    // without this a lap completed on the first of those eight ticks is a lap
+    // nobody hears.
+    twinflare::Events heard{};
     while (g_accumulator >= twinflare::k_tick_ms) {
         g_accumulator -= twinflare::k_tick_ms;
         twinflare::race_tick(g_race, in);
+        twinflare::merge_events(heard, g_race.ev);
     }
-    if (g_race.finished) g_chrome.screen = twinflare::Screen::Results;
+    tfs::sfx_handle(heard);
+    // `done`, not `finished`. Finished is the moment the player crosses, and
+    // this used to switch to the results panel on it, which threw away the
+    // whole of the run in: the flat panel appeared the instant the pod passed
+    // the line and nobody else's time was ever on it. Done is when the field is
+    // in, or thirty seconds later, whichever comes first.
+    if (g_race.done) g_chrome.screen = twinflare::Screen::Results;
 }
 
 void update_paused() {
@@ -115,14 +137,26 @@ void game_init() {
     g_chrome = twinflare::Chrome{};
     g_chrome.boost_on_a = k_boost_on_a;
     twinflare::race_init(g_race, 0, 0);
+    tfs::sfx_init();
     g_accumulator = 0;
     g_last_time = 0;
 }
+
+// Rule 8 asks for the budget to be stated; this is the budget being kept. The
+// whole race is one static instance and nothing in it is allocated, so its size
+// is the entire sim RAM cost of the game and a compiler is a better place to
+// notice it growing than a test is.
+static_assert(sizeof(twinflare::Race) <= 512,
+              "the race state has grown past its RAM budget");
 
 void game_update(uint32_t time) {
     const uint32_t elapsed = g_last_time == 0 ? 0 : time - g_last_time;
     g_last_time = time;
     g_chrome.time_ms = time;
+
+    // Off everywhere but the race. The engine is a held note, so a menu that
+    // does not silence it is a menu with a pod idling under it.
+    if (g_chrome.screen != twinflare::Screen::Race) tfs::sfx_silence();
 
     switch (g_chrome.screen) {
         case twinflare::Screen::Title:
@@ -143,6 +177,11 @@ void game_update(uint32_t time) {
             if (buttons.pressed) g_chrome.screen = twinflare::Screen::Title;
             break;
     }
+
+    // EVERY update, including the menus and the pause screen. The sequencer
+    // steps here, so a screen that skips it freezes whatever cue was playing
+    // when it opened, mid note, holding the channel.
+    tfs::sfx_tick();
 }
 
 void game_render(uint32_t) {

@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -791,6 +792,170 @@ void test_rgb565_matches_the_sdk() {
     CHECK(blue[0] == 0x00 && blue[1] == 0xF8);
 }
 
+// Every format, so a blend that is only ever exercised on the desktop's 24 bit
+// target cannot be wrong on the two the device actually uses.
+struct FormatCase {
+    pse::PixelFormat format;
+    const char* name;
+    int bpp;
+    bool exact;   // false where the format itself truncates the channels
+};
+const FormatCase k_formats[] = {
+    {pse::PixelFormat::rgb888, "rgb888", 3, true},
+    {pse::PixelFormat::rgba8888, "rgba8888", 4, true},
+    {pse::PixelFormat::rgb565, "rgb565", 2, false},
+    {pse::PixelFormat::bgr555, "bgr555", 2, false},
+};
+
+// Read a pixel back THROUGH ITS OWN FORMAT. Reaching for Rgb888::load on every
+// target is the obvious shortcut and it is wrong for both 16 bit layouts: it
+// hands back the two bytes of a packed halfword as if they were a red and a
+// green, so a correct blend reads as a broken one and a broken one can read as
+// correct.
+void load_px(const FormatCase& f, const uint8_t* px, uint8_t& r, uint8_t& g,
+             uint8_t& b) {
+    switch (f.format) {
+        case pse::PixelFormat::rgb565: pse::Rgb565::load(px, r, g, b); break;
+        case pse::PixelFormat::bgr555: pse::Bgr555::load(px, r, g, b); break;
+        case pse::PixelFormat::rgb888: pse::Rgb888::load(px, r, g, b); break;
+        default: pse::Rgba8888::load(px, r, g, b); break;
+    }
+}
+
+void test_a_pixel_survives_a_round_trip() {
+    // load has to be store's inverse, or a blend drifts every time it runs.
+    // The 16 bit formats cannot be exact, so what is asked of them is that the
+    // ends hold (black stays black, white stays WHITE and not 248) and that
+    // nothing in between moves by more than one step of the format.
+    for (const FormatCase& f : k_formats) {
+        for (int r = 0; r < 256; r += 3) {
+            for (int g = 0; g < 256; g += 7) {
+                for (int b = 0; b < 256; b += 11) {
+                    uint8_t px[4] = {0, 0, 0, 0};
+                    uint8_t gr = 0, gg = 0, gb = 0;
+                    pse::RenderTarget t{px, 1, 1, f.bpp, f.format};
+                    pse::fill_rect(t, 0, 0, 1, 1, static_cast<uint8_t>(r),
+                                   static_cast<uint8_t>(g),
+                                   static_cast<uint8_t>(b));
+                    // A zero weight blend, so the read path blend_rect uses
+                    // is the one under test rather than a second opinion.
+                    pse::blend_rect(t, 0, 0, 1, 1, 0, 0, 0, 0);
+                    load_px(f, px, gr, gg, gb);
+                    if (f.exact) {
+                        CHECK(gr == r && gg == g && gb == b);
+                    } else {
+                        CHECK(std::abs(gr - r) <= 8);
+                        CHECK(std::abs(gg - g) <= 8);
+                        CHECK(std::abs(gb - b) <= 8);
+                    }
+                }
+            }
+        }
+        // The ends, spelled out. Widening by shifting up and padding with zeros
+        // instead of replicating the high bits puts white at 248, and a panel
+        // blended over white then comes out a shade darker on the device than
+        // on the desktop.
+        uint8_t px[4] = {0, 0, 0, 0};
+        uint8_t gr = 0, gg = 0, gb = 0;
+        pse::RenderTarget t{px, 1, 1, f.bpp, f.format};
+        pse::fill_rect(t, 0, 0, 1, 1, 255, 255, 255);
+        load_px(f, px, gr, gg, gb);
+        CHECK(gr == 255 && gg == 255 && gb == 255);
+    }
+}
+
+void test_a_blend_mixes_what_is_already_there() {
+    for (const FormatCase& f : k_formats) {
+        uint8_t px[4 * 4] = {0};
+        pse::RenderTarget t{px, 4, 1, 4 * f.bpp, f.format};
+
+        // Nothing at all at zero, whatever is asked for.
+        pse::fill_rect(t, 0, 0, 4, 1, 40, 80, 120);
+        uint8_t a = 0, b2 = 0, c = 0;
+        pse::blend_rect(t, 0, 0, 4, 1, 255, 0, 0, 0);
+        load_px(f, px, a, b2, c);
+        if (f.exact) CHECK(a == 40 && b2 == 80 && c == 120);
+
+        // A full blend is a fill, EXACTLY. Not "within a rounding step": the
+        // opaque case has to be the same pixels fill_rect would have written,
+        // or a caller cannot reach for one knowing what the other does.
+        uint8_t solid[4 * 4] = {0};
+        pse::RenderTarget s{solid, 4, 1, 4 * f.bpp, f.format};
+        pse::fill_rect(s, 0, 0, 4, 1, 200, 30, 90);
+        pse::blend_rect(t, 0, 0, 4, 1, 200, 30, 90, 255);
+        for (int i = 0; i < 4 * f.bpp; ++i) CHECK(px[i] == solid[i]);
+
+        // AND A BLEND OF A COLOUR WITH ITSELF DOES NOT DRIFT. Truncating
+        // instead of rounding, this comes back one darker every time it runs,
+        // so a panel drawn over its own colour walks toward black: eight passes
+        // is eight steps and nothing in a single frame would show it.
+        //
+        // Checked on every format, not only the exact ones, and as STABILITY
+        // rather than identity. A 16 bit target cannot hold 130 exactly, so
+        // asking for 130 back would fail for a reason that is the format's and
+        // not the blend's; what has to hold everywhere is that pass eight is
+        // pass one, which is precisely what drift breaks.
+        pse::fill_rect(t, 0, 0, 4, 1, 130, 70, 200);
+        pse::blend_rect(t, 0, 0, 4, 1, 130, 70, 200, 128);
+        uint8_t s1 = 0, s2 = 0, s3 = 0;
+        load_px(f, px, s1, s2, s3);
+        for (int pass = 0; pass < 7; ++pass)
+            pse::blend_rect(t, 0, 0, 4, 1, 130, 70, 200, 128);
+        load_px(f, px, a, b2, c);
+        CHECK(a == s1 && b2 == s2 && c == s3);
+        if (f.exact) CHECK(a == 130 && b2 == 70 && c == 200);
+
+        // Halfway really is halfway: black under a white panel is grey.
+        pse::fill_rect(t, 0, 0, 4, 1, 0, 0, 0);
+        pse::blend_rect(t, 0, 0, 4, 1, 255, 255, 255, 128);
+        load_px(f, px, a, b2, c);
+        if (f.exact) CHECK(a == 128 && b2 == 128 && c == 128);
+        else CHECK(std::abs(static_cast<int>(a) - 128) <= 8);
+    }
+}
+
+void test_a_blend_stays_inside_its_rectangle() {
+    // The same clipping fill_rect has, and it has to be checked separately:
+    // this one reads as well as writes, so a bad bound is an out of bounds READ
+    // before it is a visible smear.
+    //
+    // WITH A GUARD BAND, and that is the point of the test rather than a
+    // precaution. Counting which pixels inside the surface changed does not
+    // catch a missing clip at all: drop the two upper bounds and a rectangle
+    // hanging off the right edge writes PAST the buffer, where no in-bounds
+    // pixel moves and the count comes out exactly right. The version of this
+    // test without the band passed the mutant that removed the clipping.
+    const int w = 6, h = 4;
+    constexpr int k_guard = 64;
+    std::vector<uint8_t> buffer(k_guard + w * h * 3 + k_guard, 0xA5);
+    uint8_t* px = buffer.data() + k_guard;
+    pse::RenderTarget t{px, w, h, w * 3, pse::PixelFormat::rgb888};
+    pse::fill_rect(t, 0, 0, w, h, 10, 20, 30);
+    // Straddling every edge, and wholly outside it.
+    pse::blend_rect(t, -3, -3, 4, 4, 255, 255, 255, 128);
+    pse::blend_rect(t, w - 1, h - 1, 5, 5, 255, 255, 255, 128);
+    pse::blend_rect(t, -50, -50, 4, 4, 255, 255, 255, 128);
+    pse::blend_rect(t, w + 9, h + 9, 4, 4, 255, 255, 255, 128);
+    pse::blend_rect(t, -2, 1, w + 4, 1, 255, 255, 255, 128);
+    int touched = 0;
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const uint8_t* p = px + (y * w + x) * 3;
+            if (p[0] != 10) ++touched;
+        }
+    }
+    // The two corners the straddling calls cover, plus the whole of row 1 from
+    // the one that overhangs both sides.
+    CHECK(touched == 2 + w);
+    CHECK(px[0] != 10);
+    CHECK(px[((h - 1) * w + (w - 1)) * 3] != 10);
+    // And not one byte either side of the surface.
+    for (int i = 0; i < k_guard; ++i) {
+        CHECK(buffer[i] == 0xA5);
+        CHECK(buffer[buffer.size() - 1 - i] == 0xA5);
+    }
+}
+
 void test_memory_budget() {
     CHECK(sizeof(pse::MeshFace) == 12);
     CHECK(sizeof(pse::MeshVertex) == 6);
@@ -1319,6 +1484,9 @@ int main() {
     test_a_textured_triangle_samples_its_texture();
     test_texture_mapping_is_perspective_correct();
     test_rgb565_matches_the_sdk();
+    test_a_pixel_survives_a_round_trip();
+    test_a_blend_mixes_what_is_already_there();
+    test_a_blend_stays_inside_its_rectangle();
     test_memory_budget();
     test_split_matches_immediate();
     test_two_scene_split();

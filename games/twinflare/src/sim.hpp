@@ -42,6 +42,42 @@ struct Input {
     bool boost_press;
 };
 
+// What happened this tick, for the sound to read. Cleared and refilled by
+// race_tick, so the audio layer holds no state about the race and the race
+// holds no opinion about the audio: exactly the arrangement kingfisher uses,
+// and the reason its sfx.cpp compiles against a sim that has never heard of
+// the SDK.
+struct Events {
+    bool count;        // one of 3, 2, 1 came up
+    bool go;           // green
+    bool lap;          // the player finished a lap
+    bool finish;       // and the last one
+    bool boost;        // boost lit, however it was lit
+    bool launch;       // the charge cashed in on green
+    bool flood;        // or blew on the line
+    bool bump;         // touched a rival
+    bool scrape;       // first tick against a wall
+    bool slam;         // landed hard
+    bool engine_out;   // an engine reached zero
+    bool wreck;
+
+    // Held states rather than edges, because these are sounds that do not
+    // start and stop, they rise and fall. A jingle cannot be an engine.
+    bool grinding;     // still against the rock
+    uint8_t rev;       // the engine note, 0..255, off speed and throttle
+};
+
+// Fold one tick's events into a frame's worth.
+//
+// A frame steps the sim up to eight times and the sound layer is called once,
+// so something has to carry the seven ticks that would otherwise be thrown
+// away: a lap completed on the first of eight sim ticks in a frame is a lap
+// nobody hears. The edges accumulate and the LEVELS take the latest value,
+// which is the difference between "did this happen during the frame" and "what
+// is it doing now", and getting that backwards is a rev that flickers to
+// whatever the first tick of the frame happened to be.
+void merge_events(Events& into, const Events& from);
+
 // One pod under the flight model. The player's; the rivals run something far
 // cheaper, below.
 struct Pod {
@@ -73,6 +109,13 @@ struct Pod {
     int16_t wreck_ticks;
     int16_t flash_ticks;
     int16_t blast[2];
+    // Ticks of sparks left on each engine, set by whatever last hit it. The
+    // renderer used to strike sparks off a wall alone, because a wall was the
+    // only damage source that said WHERE it landed; every other one took the
+    // health off both engines and showed nothing at all. This is the seam that
+    // lets a hit of any kind be seen on the side it happened.
+    int16_t hit[2];
+    int16_t bump_ticks;          // cooldown, so one touch is one hit
     uint8_t racer_index;
 };
 
@@ -85,11 +128,26 @@ struct Rival {
     int32_t x, y, z;
     int32_t yaw, roll;
     int32_t pace;
+    // A rival's own race, which it did not have. It was a shape moving past the
+    // camera at a plausible speed, and that is all the HUD's position number
+    // ever needed. A results table needs it to have FINISHED something: which
+    // lap it is on, and the tick it crossed the line for the last time.
+    uint32_t finish_tick;        // 0 until it crosses
+    uint8_t lap;
     uint8_t racer_index;
     uint8_t phase;
 };
 
 constexpr int k_rival_count = k_racer_count - 1;
+
+// Where the race is. A race used to begin the instant the screen appeared,
+// which is fine for a time trial and wrong for a grid: the pod was already
+// moving before the player had looked at it.
+enum class Phase : uint8_t {
+    Countdown,   // held on the line, winding the engines up
+    Racing,
+    Finished,    // the player is over the line and the sim is driving
+};
 
 struct Race {
     Pod pod;
@@ -100,11 +158,40 @@ struct Race {
     uint32_t lap_tick;           // tick the current lap started on
     uint32_t best_lap;           // ticks, 0 when none yet
     uint32_t last_lap;
-    bool finished;
+    bool finished;               // the player is over the line
+    Phase phase;
+    int16_t countdown;           // ticks to green, then down through GO
+    int16_t charge;              // the launch charge, 0..k_charge_one
+    bool flooded;                // and it blew, so it cannot be rebuilt
+    uint32_t finish_tick;        // the player's total, in ticks
+    int16_t after_ticks;         // ticks since the player crossed
+    uint8_t cam_mode;
+    bool done;                   // the whole finish sequence is over
+    Events ev;
 };
 
 void race_init(Race& race, int track_index, int racer_index);
 void race_tick(Race& race, const Input& in);
+
+// One racer's standing, and the whole of what the results table draws. Built
+// rather than drawn straight off the arrays because the player is a Pod and the
+// other five are Rivals, and a results table that reaches into both is a table
+// that has to know which is which on every row.
+struct Standing {
+    uint8_t racer_index;
+    uint32_t ticks;              // its finishing time, 0 while still out there
+    uint8_t lap;
+    // How far round, fp16 along the centreline from the line, which is what
+    // orders the racers still out there. Lap alone ties five ways down the
+    // last lap, which is the lap the table is being looked at on.
+    int32_t progress;
+    bool player;
+    bool finished;
+};
+
+// Every racer, in finishing order: those that have crossed by their time, then
+// those still running by how far round they are.
+void standings(const Race& race, Standing out[k_racer_count]);
 
 // The surface under a point: where the road is, how far off its middle, and
 // whether there is any road there at all. One function, so the hover field,
@@ -157,5 +244,24 @@ int32_t pod_speed(const Pod& pod);            // fp16 per tick
 int32_t pod_top_speed(const Pod& pod);        // fp16 per tick
 bool boost_armed(const Pod& pod);
 inline bool engine_dead(const Pod& pod, int i) { return (pod.dead >> i) & 1; }
+
+// An engine still running and nearly out. Derived rather than stored, because a
+// flag and a health bar are two answers to one question and only one of them is
+// the one the thrust is calculated from.
+//
+// A DEAD ENGINE IS NOT CRITICAL, it is over, and the difference is not
+// pedantry: this is what the renderer trails smoke off, and the renderer draws
+// no mesh and no cable for a dead engine at all. Counting dead as critical put
+// a plume in the empty air where an engine used to be.
+inline bool engine_critical(const Pod& pod, int i) {
+    if (engine_dead(pod, i)) return false;
+    return pod.engine_max > 0
+        && pod.engine[i] * 1000 / pod.engine_max < k_engine_critical;
+}
+
+// Which of the countdown's numbers is on screen: 3, 2, 1, or 0 for GO. Asked
+// by the renderer, so the number the player sees and the number the charge is
+// racing against cannot drift apart.
+int countdown_number(const Race& race);
 
 }  // namespace twinflare

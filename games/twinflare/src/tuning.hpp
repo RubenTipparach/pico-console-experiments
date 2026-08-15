@@ -220,10 +220,92 @@ constexpr int32_t k_scrape = 460;             // health per second grinding a wa
 constexpr int32_t k_slam = 3400;
 constexpr int32_t k_slam_floor = per_s(fp(26));
 
+// A wall grinds ONE side of the pod. It used to take the same off both
+// engines, which is an honest model of a pod dropped down a well and a poor
+// one of a pod running its left engine along a canyon: the bar the player was
+// watching went down, and nothing said which side was against the rock.
+//
+// The engine on the rock takes the wear and the frame carries a quarter of it
+// across, so a long scrape still costs the machine something and a glance at
+// the two bars still says which way to steer.
+constexpr int32_t k_scrape_far = 250;         // thousandths, to the far engine
+constexpr uint32_t k_scrape_every = 4;        // ticks between bites, see sim.cpp
+
+// A landing lands on ONE engine first, and which one is the roll: the pod's
+// local frame puts engine 0 to port, so a positive roll drops it and the port
+// engine meets the ground. At full roll the low engine takes this much more
+// than an even split and the high one takes that much less, so a flat landing
+// is still shared and a tilted one is not.
+constexpr int32_t k_slam_lean = 800;          // thousandths, at full roll
+
+// Touching a rival. Both boxes are generous next to a pod that is 3.4 units
+// long, and deliberately: two pods closing at ninety units a second cross a
+// tight box inside one tick, so a test honest enough to satisfy a geometer
+// never fires at racing speed. The height band is the part that has to be
+// tight, because without one a rival on the road under a bridge is a hit.
+constexpr int32_t k_bump_long = fp(4, 200);   // half length of the contact box
+constexpr int32_t k_bump_lat = fp(3);         // half width
+constexpr int32_t k_bump_high = fp(3, 500);   // and half height
+constexpr int32_t k_bump = 130;               // health off the engine that touched
+constexpr int32_t k_bump_ticks = 40;          // before the same pod can hit again
+constexpr int32_t k_bump_push = per_s(fp(30));// and they are shoved apart
+
+// Below this an engine is CRITICAL: it trails smoke, and it is close enough to
+// out that the player has a decision to make about the repair button.
+constexpr int32_t k_engine_critical = 300;    // thousandths of engine_max
+
+// How long one hit throws sparks. Short: a spark shower that outlives the
+// impact reads as a fire rather than as a blow.
+constexpr int16_t k_hit_ticks = 24;
+
 // ---- the run ---------------------------------------------------------------
 constexpr int32_t k_crash_floor = fp(-26);    // below the road, and the run ends
 constexpr int32_t k_respawn_ticks = 160;
 constexpr int32_t k_respawn_speed = per_s(fp(12));
+
+// ---- the start -------------------------------------------------------------
+// Three seconds on the line, a second of GO, and the pod is held for all of
+// it. A standing start is the one moment the whole field is level, so it is
+// the one moment where what the player does with three seconds is worth
+// something.
+constexpr int16_t k_count_ticks = 3 * k_tick_hz;
+constexpr int16_t k_go_ticks = 80;
+
+// Winding the engines up against the brakes. Holding the throttle fills the
+// charge and letting go bleeds it, so the launch is a release at the right
+// moment rather than a button held from the start.
+//
+// Past the flood line it is going to blow, and that is the whole tension: the
+// charge worth the most is the one just short of the one that holes both
+// engines.
+//
+// The rise is set against the length of the countdown rather than picked: at
+// five a tick the charge reaches the flood line in 176 ticks, so a player who
+// holds the throttle from the moment the lights appear blows it with a second
+// to spare, and one who waits until the 1 comes up gets a good launch. Faster
+// than that (eleven a tick was tried) and holding from the 2 is already fatal,
+// which makes the grid a reaction test rather than a judgement.
+constexpr int32_t k_charge_one = 1000;
+constexpr int32_t k_charge_rise = 5;          // per tick on the throttle
+constexpr int32_t k_charge_fall = 6;          // per tick off it
+constexpr int32_t k_charge_flood = 880;       // over this and the engines cook
+constexpr int32_t k_charge_burn = 240;        // health off both when they do
+constexpr int16_t k_launch_ticks = 64;        // boost ticks at a full clean charge
+
+// ---- after the flag --------------------------------------------------------
+// The player's race ends at the line and the pod keeps flying, driven by the
+// sim, while the rest of the field comes in. The camera cuts every two seconds
+// so the sequence is something to watch rather than a chase camera on a pod
+// nobody is steering.
+constexpr int32_t k_auto_deadband = 300;      // brads of heading error the autopilot ignores
+constexpr int16_t k_cam_cut_ticks = 200;
+constexpr int k_cam_modes = 4;
+// And it ends whether or not everyone is in, because a rival that wrecks into
+// a pace of zero would otherwise hang the race forever. Thirty seconds is long
+// enough for the whole field to come in behind a winning run (measured: the
+// slowest pod is twenty eight seconds off the fastest over three laps of DUNE
+// SEA) and the player can cut it short with any button.
+constexpr int16_t k_finish_ticks = 30 * k_tick_hz;
 
 // ---- racers ----------------------------------------------------------------
 // A stat is 0..5 and 3 is neutral, so a middling pod flies the numbers above

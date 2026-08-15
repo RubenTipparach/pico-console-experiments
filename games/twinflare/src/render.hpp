@@ -69,6 +69,12 @@ struct RenderStats {
     // quads thrown off the pod and they were briefly the same counter, which
     // would have let a scrape satisfy a test asking whether water was drawn.
     uint16_t sparks;
+    // And smoke off an engine that is nearly out, counted separately again for
+    // the same reason: a plume and a shower are different cues about different
+    // things, and one standing in for the other in a test would let a pod that
+    // never smokes pass a check about smoking because it happened to be
+    // grinding a wall at the time.
+    uint16_t smoke;
     // Vertical faces: canyon walls, tunnel sides and roofs, and the two lips of
     // a chasm. Counted because a hole in the road with no walls around it and a
     // hole in the road with walls look the same from every angle except the one
