@@ -1,8 +1,8 @@
 {
   "games": [
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/catcoin",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -23,8 +23,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/dumblander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -34,8 +34,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/dustrider",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -45,8 +45,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/jokerreels",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -56,8 +56,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/kingfisher",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -78,8 +78,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/picomon",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -89,8 +89,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/picospace",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -100,8 +100,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/stardancer",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -111,8 +111,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/tomlander",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -122,8 +122,8 @@
       "web": true
     },
     {
-      "built_at": "2026-08-15T03:27:51Z",
-      "commit": "ea7d61c",
+      "built_at": "2026-08-15T03:35:30Z",
+      "commit": "c347251",
       "dir": "games/twinflare",
       "has_thumbnail": true,
       "sdk": "32blit",
@@ -133,6 +133,6 @@
       "web": true
     }
   ],
-  "generated_at": "2026-08-15T03:27:51Z",
+  "generated_at": "2026-08-15T03:35:30Z",
   "schema": 2
 }
