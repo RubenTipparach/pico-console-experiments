@@ -60,11 +60,6 @@ if /i "%BOARD%"=="picosystem" (
     exit /b 1
 )
 
-rem Pinned commits for the Tufty pair, so this builds the same tree next month
-rem as it does today.
-set "BLIT_SDK_SHA=db99cb7fad2ee163bf7251193566bfcf6781da7c"
-set "TUFTY_PICO_SDK_TAG=2.3.0"
-
 if not "%GAME%"=="" (
     if not exist "%ROOT%\games\%GAME%\CMakeLists.txt" (
         echo No such game: %GAME%
@@ -97,25 +92,8 @@ if errorlevel 1 (
 )
 
 if "%FETCH%"=="1" (
-    if not exist "%BLIT_SDK_DIR%\32blit-pico\board\pimoroni_tufty2350" (
-        echo Fetching the 32blit SDK at %BLIT_SDK_SHA:~0,7% ...
-        rem A sha cannot be cloned with --branch, so init and fetch it.
-        if not exist "%BLIT_SDK_DIR%" mkdir "%BLIT_SDK_DIR%"
-        git -C "%BLIT_SDK_DIR%" rev-parse --git-dir >nul 2>nul || git init -q "%BLIT_SDK_DIR%"
-        git -C "%BLIT_SDK_DIR%" remote get-url origin >nul 2>nul || git -C "%BLIT_SDK_DIR%" remote add origin https://github.com/32blit/32blit-sdk
-        git -C "%BLIT_SDK_DIR%" fetch --depth 1 origin %BLIT_SDK_SHA%
-        if errorlevel 1 exit /b 1
-        git -C "%BLIT_SDK_DIR%" checkout -q FETCH_HEAD
-        if errorlevel 1 exit /b 1
-    )
-    if not exist "%PICO_SDK_DIR%" (
-        echo Fetching the Pico SDK ^(%TUFTY_PICO_SDK_TAG%^) ...
-        git clone --depth 1 --branch "%TUFTY_PICO_SDK_TAG%" https://github.com/raspberrypi/pico-sdk "%PICO_SDK_DIR%"
-        if errorlevel 1 exit /b 1
-        rem Only tinyusb is needed, same as install_deps.bat.
-        git -C "%PICO_SDK_DIR%" submodule update --init lib/tinyusb
-        if errorlevel 1 exit /b 1
-    )
+    call "%ROOT%\tools\fetch_tufty_sdks.bat" "%BLIT_SDK_DIR%" "%PICO_SDK_DIR%"
+    if errorlevel 1 exit /b 1
 )
 
 if not exist "%BLIT_SDK_DIR%" (

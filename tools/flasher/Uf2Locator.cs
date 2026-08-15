@@ -19,6 +19,7 @@ public static class Uf2Locator
         // Where build_console.bat puts console.uf2, first because the console
         // is the thing most likely to be wanted.
         "build.console",
+        "build.console.tufty",
         "build.pico",
         // build_uf2s_tufty.bat. A separate directory rather than a second
         // board writing into build.pico, because the two produce a .uf2 of
