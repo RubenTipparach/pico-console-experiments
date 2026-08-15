@@ -10,7 +10,6 @@
 #include "dustrider/bike.hpp"
 #include "dustrider/cactus.hpp"
 #include "dustrider/rock.hpp"
-#include "diagnostic_led.hpp"  // TEMPORARY, see that file
 
 namespace drr {
 namespace {
@@ -599,7 +598,6 @@ void render_scene(const World& world, const pse::RenderTarget& target,
     g_stats.queued = g_queue.count;
     g_stats.dropped = g_queue.dropped;
 
-    DIAG_LED_BLUE();
     pse::run_split(g_raster, g_queue,
                    pse::SkyGradient{118, 174, 232, 248, 206, 152});
     g_raster.end_collect();
