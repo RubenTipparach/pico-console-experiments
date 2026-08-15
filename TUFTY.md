@@ -253,6 +253,36 @@ proposed again. Nothing in this repo uses that path yet. It is written down
 here so the next person does not read `CONSOLE.md` and conclude the question
 is closed on both boards.
 
+## Core 1 is off on the RP2350, and why
+
+Every 3D game came back from the Tufty with the bottom band of the screen
+corrupt. That band is exactly and only the rows core 1 renders in
+`pse::run_split`: core 0's half was perfect in the same frame, 2D games were
+untouched, and both boards run identical game code. So the fault is in
+`engine/src/parallel_pico.cpp`, not in a game and not in the display driver.
+
+Ruled out by reading the code: the handoff's publication order is right for a
+weakly ordered machine and not merely for an in-order one. Core 0 fills the
+job, issues `__sync_synchronize` (a real `DMB` on Cortex-M33, not just the
+compiler barrier its comment used to claim), then bumps the sequence; core 1
+observes the sequence, issues its own barrier, then reads the job. That is a
+correct acquire/release pair.
+
+Not ruled out, and needing a device to settle: core 1 runs on the pico-sdk's
+default **2 KB** stack, and the Cortex-M33 build of `render_band` may want
+more of it than the M0+ build did. An overrunning stack produces exactly this
+shape of fault, wrong pixels out of one core with everything else intact.
+
+So the RP2350 renders both bands on core 0 for now. That is not a fallback of
+unknown quality: it is the same code path the web, desktop and host builds
+take, and `engine/tests` proves it byte identical to the split. The RP2350 is
+also the faster chip per clock and has an FPU the RP2040 lacks, which is where
+the vertex transform spends its time, so one core here is not obviously slower
+than two there. The RP2040 path is untouched.
+
+To test the stack theory on hardware, build with `PSE_PICO_SPLIT_CORE1=1` and
+see whether the band comes back.
+
 ## What is not done
 
 - **The console is PicoSystem only in CI.** Every game is built and published
