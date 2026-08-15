@@ -51,6 +51,20 @@ class Card:
         candidate = os.path.join(self.site_dir, "uf2", "%s.uf2" % self.game.slug)
         return "uf2/%s.uf2" % self.game.slug if os.path.isfile(candidate) else None
 
+    @property
+    def tufty_uf2_href(self):
+        """The Tufty 2350 build, when one was published.
+
+        Same existence test as uf2_href and for the same reason: a card offers
+        what is actually on the site, never what the config says should be. A
+        run that built only the PicoSystem, or a game carried forward from the
+        state branch before the Tufty existed, has no file here and gets no
+        button, rather than a link to a 404."""
+        candidate = os.path.join(self.site_dir, "uf2-tufty",
+                                 "%s.uf2" % self.game.slug)
+        return ("uf2-tufty/%s.uf2" % self.game.slug
+                if os.path.isfile(candidate) else None)
+
     def render_screen(self):
         thumb = self.thumbnail_href
         if thumb:
@@ -78,10 +92,27 @@ class Card:
                 href += "?v=%s" % escape(version)
             actions.append('<a class="btn play" data-slug="%s" href="%s">'
                            'Play</a>' % (escape(self.game.slug), href))
+        # One board or two, and the card says which only when it has to.
+        #
+        # With a single build there is nothing to disambiguate, so the button
+        # stays the `.uf2` it has always been: naming the board on a shelf
+        # that only ships one is a question nobody asked. With two, the label
+        # becomes the board, because "which of these do I want" is then a real
+        # question and the file name does not answer it.
+        #
+        # A device only game spells `.uf2` out on both, since it has no Play
+        # button to make the row obviously a set of downloads.
         uf2 = self.uf2_href
-        if uf2:
+        tufty = self.tufty_uf2_href
+        if uf2 and tufty:
+            suffix = "" if actions else " .uf2"
+            for label, href in (("Pico", uf2), ("Tufty", tufty)):
+                actions.append(
+                    '<a class="btn small" href="%s%s" download>%s%s</a>'
+                    % (base, escape(href), label, suffix))
+        elif uf2 or tufty:
             actions.append('<a class="btn" href="%s%s" download>.uf2</a>'
-                           % (base, escape(uf2)))
+                           % (base, escape(uf2 or tufty)))
         if not actions:
             return ('<div class="actions">'
                     '<span class="btn" aria-disabled="true">building</span>'
@@ -201,14 +232,14 @@ def render_page(cards, repo, generated_at, title, active_cards=None,
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%(title)s</title>
-<meta name="description" content="PicoSystem games, built and published on every push.">
+<meta name="description" content="Games for the PicoSystem and the Tufty 2350, built and published on every push.">
 <link rel="stylesheet" href="gallery.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#127918;</text></svg>">
 </head>
 <body>
 <header class="marquee">
   <h1>%(title)s</h1>
-  <p>PicoSystem games, built and published on every push</p>
+  <p>PicoSystem and Tufty 2350, built and published on every push</p>
   <div class="stats">%(stats)s</div>
 </header>
 
@@ -217,7 +248,8 @@ def render_page(cards, repo, generated_at, title, active_cards=None,
 %(archived_section)s
 
   <footer class="shelf-footer">
-    <span>Flash a .uf2: hold <kbd>X</kbd>, press power, drop the file on <kbd>RPI-RP2</kbd>.</span>
+    <span>PicoSystem: hold <kbd>X</kbd>, press power, drop the file on <kbd>RPI-RP2</kbd>.</span>
+    <span>Tufty: hold <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, drop it on <kbd>RP2350</kbd>. <a href="https://github.com/pimoroni/tufty2350/releases/latest">Back to badge OS</a></span>
     <span><a href="%(repo_url)s">Source</a></span>
     <span>Built %(generated_at)s</span>
   </footer>

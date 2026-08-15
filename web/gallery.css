@@ -233,6 +233,27 @@ body {
 
 .btn.play:hover { background: var(--accent-dim); }
 
+/* Two boards, two downloads, one row.
+ *
+ * Tighter padding and no letter spacing so `Play  Pico  Tufty` fits a 15rem
+ * card without wrapping. The row must not wrap: a card's height is what keeps
+ * the shelf rectangular, and rule 12 threw the per control lines off a card
+ * for making its height depend on the game. Making it depend on how many
+ * boards a game happens to build for would be the same mistake wearing a hat.
+ *
+ * On a device only card these are the whole row, so they share it evenly. */
+.btn.small {
+  padding: 0.45rem 0.5rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.actions .btn.small:only-of-type,
+.actions:not(:has(.btn.play)) .btn.small {
+  flex: 1;
+  text-align: center;
+}
+
 /* ---- footer ---- */
 
 .shelf-footer {

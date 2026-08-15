@@ -189,6 +189,10 @@ One `.uf2` is one game, so trying another means reflashing. The loader route
 under "the RP2350 changes what CONSOLE.md says is impossible" is the fix for
 that, and nothing here uses it yet.
 
+CI publishes a Tufty build for every game on every run, so the gallery is the
+other way to get one: each card offers `Pico` and `Tufty` side by side, and
+the site is always what main last produced.
+
 ## Badge OS, and getting it back
 
 The Tufty ships running Pimoroni's MicroPython firmware. A badge OS app is a
@@ -246,11 +250,9 @@ is closed on both boards.
 
 ## What is not done
 
-- **CI does not build for the Tufty.** Rule 2 says a build that only works on
-  one machine is not done, and by that measure this is not. Publishing a
-  second `.uf2` per game is a gallery change as much as a workflow one (a card
-  would carry two downloads, and the manifest would need to say which is
-  which), so it wants deciding rather than assuming.
+- **The console is PicoSystem only in CI.** Every game is built and published
+  for both boards, but `build_console.bat` is still a local job on either
+  board and nothing publishes a console binary.
 - **Not every game has been played on the badge.** A build has run on real
   hardware and works, which is what settled that the centred surface and the
   button mapping are right in principle. That is one game booting, not twelve

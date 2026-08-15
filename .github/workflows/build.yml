@@ -47,6 +47,20 @@ env:
   BLIT_SDK_TAG: v0.3.3
   PICO_SDK_TAG: 2.0.0
   EMSDK_VERSION: 3.1.61
+  # A second SDK pair, for the Tufty 2350 only.
+  #
+  # Not a version bump of the pair above: those are what every PicoSystem and
+  # web build this site has ever published was made with, and the Tufty does
+  # not need them moved. It needs newer ones. Its board config landed in
+  # 32blit master in March 2026 and the newest tag, v0.3.3, is from December
+  # 2024 with no pimoroni_tufty2350 directory at all; pico-sdk 2.0.0 is too
+  # old as well, since the board header wants PICO_RP2350_A2_SUPPORTED and
+  # the config pulls in hardware_powman.
+  #
+  # A commit rather than a branch so a rerun of an old commit builds the same
+  # tree it built the first time.
+  BLIT_SDK_TUFTY_SHA: db99cb7fad2ee163bf7251193566bfcf6781da7c
+  PICO_SDK_TUFTY_TAG: 2.3.0
 
 jobs:
   # Fails in seconds if the renderer is broken, before any cross compile starts.
@@ -147,10 +161,11 @@ jobs:
     # against '[]' because that string coercion is not reliable.
     if: needs.detect.outputs.has_work == 'true'
     runs-on: ubuntu-latest
-    # A matrix leg is about three minutes warm and about six from a cold
-    # cache, since the emscripten half deliberately never caches. 25 leaves
-    # room for a slow mirror and still fails a wedged apt in minutes.
-    timeout-minutes: 25
+    # A leg was about three minutes warm and about six cold, since the
+    # emscripten half deliberately never caches. It now compiles each game a
+    # third time, for the Tufty, so budget for roughly half again on top. 35
+    # leaves room for a slow mirror and still fails a wedged apt in minutes.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
@@ -185,6 +200,31 @@ jobs:
           # Only tinyusb is needed. `--recursive` would also drag in btstack,
           # cyw43-driver, lwip and mbedtls and roughly triple the cache.
           git -C pico-sdk submodule update --init lib/tinyusb
+
+      - name: Cache the Tufty SDKs
+        id: tufty-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/../32blit-sdk-tufty
+            ${{ github.workspace }}/../pico-sdk-tufty
+          key: tufty-sdks-${{ env.BLIT_SDK_TUFTY_SHA }}-${{ env.PICO_SDK_TUFTY_TAG }}
+
+      - name: Check out the Tufty SDKs
+        if: steps.tufty-sdk-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}/..
+        run: |
+          set -euo pipefail
+          # A sha cannot be cloned with --branch, so init and fetch it.
+          mkdir -p 32blit-sdk-tufty
+          git -C 32blit-sdk-tufty init -q
+          git -C 32blit-sdk-tufty remote add origin \
+            https://github.com/32blit/32blit-sdk
+          git -C 32blit-sdk-tufty fetch --depth 1 origin "$BLIT_SDK_TUFTY_SHA"
+          git -C 32blit-sdk-tufty checkout -q FETCH_HEAD
+          git clone --depth 1 --branch "$PICO_SDK_TUFTY_TAG" \
+            https://github.com/raspberrypi/pico-sdk pico-sdk-tufty
+          git -C pico-sdk-tufty submodule update --init lib/tinyusb
 
       # Object level reuse for the compiles that do have to run: a game whose
       # dependencies changed still shares almost every SDK object with its
@@ -232,7 +272,11 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          ccache --max-size=150M --zero-stats
+          # 300M rather than 150M: one leg now compiles the same game for two
+          # different architectures, so the objects a warm cache has to hold
+          # roughly doubled, and a cache that evicts what the next board is
+          # about to ask for is a cache that never hits.
+          ccache --max-size=300M --zero-stats
           cmake -S . -B build.pico -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk/pico.toolchain" \
             -DPICO_BOARD=pimoroni_picosystem \
@@ -250,6 +294,36 @@ jobs:
           # the .uf2. Nothing downstream would notice, so check the artifact
           # itself.
           python3 tools/game_meta.py extract --uf2 "$(find build.pico -name "$TARGET.uf2" -print -quit)"
+          ccache --show-stats
+
+      # pico2.toolchain, NOT pico.toolchain. The latter hardcodes
+      # -mcpu=cortex-m0plus, configures without complaint, and then dies in
+      # the middle of the compile: engine/src/parallel_pico.cpp includes
+      # pico/multicore.h, RP2350 defaults PICO_USE_SW_SPIN_LOCKS on for errata
+      # E2, and that implementation is gated on __ARM_ARCH_8M_MAIN__, which an
+      # ARMv6-M build does not define. spin_lock.h then reaches its "#error no
+      # SW_SPIN_LOCK_LOCK available ... on this platform" fallback, which reads
+      # like a broken SDK and is a wrong -mcpu.
+      #
+      # A separate build directory and its own SDK pair, so nothing here can
+      # reach into the PicoSystem build or the web one.
+      - name: Build the .uf2 for Tufty 2350
+        env:
+          GAME: ${{ matrix.slug }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake -S . -B build.tufty -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/../32blit-sdk-tufty/pico2.toolchain" \
+            -DPICO_BOARD=pimoroni_tufty2350 \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/../pico-sdk-tufty" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DPICO_ONLY_GAME="$GAME" \
+            -DPSE_BUILD_VERSION="${GITHUB_SHA::7}"
+          cmake --build build.tufty --parallel
+          python3 tools/game_meta.py extract --uf2 "$(find build.tufty -name "$TARGET.uf2" -print -quit)"
           ccache --show-stats
 
       - name: Build for the browser
@@ -277,7 +351,7 @@ jobs:
           WANTS_WEB: ${{ matrix.web }}
         run: |
           set -euo pipefail
-          mkdir -p "out/web/$GAME" out/uf2
+          mkdir -p "out/web/$GAME" out/uf2 out/uf2-tufty
 
           uf2=$(find build.pico -name "$TARGET.uf2" -print -quit)
           if [ -z "$uf2" ]; then
@@ -285,6 +359,13 @@ jobs:
             exit 1
           fi
           cp "$uf2" "out/uf2/$GAME.uf2"
+
+          tufty=$(find build.tufty -name "$TARGET.uf2" -print -quit)
+          if [ -z "$tufty" ]; then
+            echo "::error::no Tufty .uf2 produced for $GAME"
+            exit 1
+          fi
+          cp "$tufty" "out/uf2-tufty/$GAME.uf2"
 
           if [ "$WANTS_WEB" = "true" ]; then
             # add_picosystem_game renames the Emscripten target to `index`,
@@ -357,7 +438,7 @@ jobs:
             git -C site checkout --orphan gh-pages
             git -C site rm -rf . >/dev/null 2>&1 || true
           fi
-          mkdir -p site/uf2 site/thumbs
+          mkdir -p site/uf2 site/uf2-tufty site/thumbs
 
       - uses: actions/download-artifact@v4
         with:
@@ -372,7 +453,7 @@ jobs:
           PREFIX: ${{ needs.detect.outputs.prefix }}
         run: |
           set -euo pipefail
-          mkdir -p "site/${PREFIX}uf2" "site/${PREFIX}thumbs"
+          mkdir -p "site/${PREFIX}uf2" "site/${PREFIX}uf2-tufty" "site/${PREFIX}thumbs"
           [ -d incoming ] || { echo "nothing rebuilt this run"; exit 0; }
 
           for slug in $(echo "$BUILT" | tr ',' ' '); do
@@ -418,6 +499,12 @@ jobs:
             fi
             if [ -f "incoming/uf2/$slug.uf2" ]; then
               cp "incoming/uf2/$slug.uf2" "site/${PREFIX}uf2/$slug.uf2"
+            fi
+            # A game held back before the Tufty existed has no file here, and
+            # the gallery tests each one for itself, so a missing board is a
+            # card with one button rather than a link to a 404.
+            if [ -f "incoming/uf2-tufty/$slug.uf2" ]; then
+              cp "incoming/uf2-tufty/$slug.uf2" "site/${PREFIX}uf2-tufty/$slug.uf2"
             fi
           done
 
