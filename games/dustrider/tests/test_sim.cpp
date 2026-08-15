@@ -380,6 +380,104 @@ void test_save_roundtrip() {
     CHECK(!dr::world_load(other, data));
 }
 
+void test_the_ride_says_what_it_sounds_like() {
+    // The sim tells the sound layer what happened; the sound layer holds no
+    // state about the ride and the ride holds no opinion about the sound.
+    dr::World world;
+    init_bare(world, 3);
+
+    dr::Input idle{};
+    dr::world_tick(world, idle);
+    CHECK(!world.ev.launched);
+    CHECK(world.ev.rev == 0);
+
+    dr::Input go = throttle_only();
+    dr::world_tick(world, go);
+    CHECK(world.ev.launched);        // exactly once, on the first throttle
+    dr::world_tick(world, go);
+    CHECK(!world.ev.launched);
+
+    // The engine climbs with speed, or the drone it drives is a constant tone
+    // with a volume knob.
+    //
+    // The window is re-centred every tick, the way the top speed test does it:
+    // held flat out with the chase running, this ride ends against the window's
+    // right edge after 38 metres, and a rev that never gets near the top is a
+    // measurement of that rather than of the engine.
+    uint8_t quiet = 255, loud = 0;
+    int milestones = 0;
+    for (int i = 0; i < 4000 && world.alive; i++) {
+        dr::world_tick(world, go);
+        world.screen_x = world.x;
+        if (world.ev.rev < quiet) quiet = world.ev.rev;
+        if (world.ev.rev > loud) loud = world.ev.rev;
+        if (world.ev.milestone) milestones++;
+    }
+    CHECK(world.alive);
+    CHECK(loud > 200);
+    CHECK(loud - quiet > 80);
+    // One chime per hundred metres, and no more: a milestone counted off a
+    // countdown rather than off the distance actually crossed can be stepped
+    // over by a fast bike, or fire twice at a boundary.
+    CHECK(milestones == dr::distance_m(world) / 100);
+
+    std::printf("  ride: rev %d..%d, %d milestones over %dm\n", quiet, loud,
+                milestones, dr::distance_m(world));
+}
+
+void test_a_frame_hears_every_tick_in_it() {
+    // Edges accumulate, levels take the latest value. OR'd like the rest, the
+    // rev would stick at the loudest tick of the frame and one tick in the
+    // sand would latch the rumble on for all of it.
+    dr::Events frame{};
+    dr::Events a{};
+    a.milestone = true;
+    a.rev = 250;
+    a.offroad = true;
+    dr::Events b{};
+    b.died = true;
+    b.rev = 40;
+    b.offroad = false;
+
+    dr::merge_events(frame, a);
+    dr::merge_events(frame, b);
+    CHECK(frame.milestone);
+    CHECK(frame.died);
+    CHECK(frame.rev == 40);
+    CHECK(!frame.offroad);
+}
+
+void test_sound_survives_a_save_written_before_it_existed() {
+    // sound_off rather than sound_on, so the zero an older save has in that
+    // byte means what it always meant. Written the other way round every
+    // existing save comes back muted, which reads as the toggle being broken.
+    dr::World world;
+    dr::world_init(world, 9);
+    world.best_m = 1234;
+    dr::SaveData data;
+    dr::world_make_save(world, data);
+    CHECK(data.sound_off == 0);
+
+    // And an old record, byte for byte: magic and best where they were, zeros
+    // in the tail. It has to load, and it has to load with the sound ON.
+    dr::SaveData old{};
+    old.magic = dr::k_save_magic;
+    old.best_m = 777;
+    dr::World other;
+    dr::world_init(other, 10);
+    CHECK(dr::world_load(other, old));
+    CHECK(other.best_m == 777);
+    // THE INTERPRETATION, not just the byte. Reading that field as "sound on"
+    // rather than "sound off" is one character in one line, it compiles, and
+    // its whole effect is that every save anyone already has comes back muted.
+    CHECK(dr::save_sound_on(old));
+    CHECK(dr::save_sound_on(data));
+
+    dr::SaveData muted = data;
+    muted.sound_off = 1;
+    CHECK(!dr::save_sound_on(muted));
+}
+
 void test_memory_budget() {
     CHECK(sizeof(dr::World) <= 1024);
     CHECK(sizeof(dr::SaveData) <= 16);
@@ -401,6 +499,9 @@ int main() {
     test_bot_survives();
     test_determinism();
     test_save_roundtrip();
+    test_the_ride_says_what_it_sounds_like();
+    test_a_frame_hears_every_tick_in_it();
+    test_sound_survives_a_save_written_before_it_existed();
     test_memory_budget();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

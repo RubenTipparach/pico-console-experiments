@@ -12,7 +12,7 @@ objective: "Stay ahead of the screen. Weave through the cactus and rocks, keep t
 controls:
   - "A: throttle"
   - "B: brake"
-  - "up/down: steer"
+  - "up/down: steer, and on the title they move between RIDE and the sound switch"
 
 models:
   - bike.obj

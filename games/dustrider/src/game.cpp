@@ -7,6 +7,7 @@
 
 #include "bot.hpp"
 #include "render.hpp"
+#include "sfx.hpp"
 #include "sim.hpp"
 
 #include "diagnostic_led.hpp"  // TEMPORARY, see that file
@@ -24,6 +25,14 @@ Shell g_shell = Shell::Title;
 uint32_t g_dead_ticks = 0;
 uint32_t g_attract_dead = 0;
 bool g_new_record = false;
+bool g_sound_on = true;
+// Which title row the cursor is on. Zero is RIDE, which is where it starts and
+// where it returns, so a player who never touches the pad still rides with any
+// button and this title keeps the property its comments defend, that no press
+// can be the wrong guess. Only a player who has deliberately moved down can
+// toggle anything.
+uint8_t g_title_row = 0;
+constexpr uint8_t k_title_rows = 2;
 
 // Any button acts. With nothing on screen telling the player which one to
 // press, no press can be the wrong guess.
@@ -40,14 +49,19 @@ uint32_t fresh_seed() {
     return blit::now() ^ (g_world.rng * 2654435761u) ^ 0xD057D057u;
 }
 
-void save_if_needed() {
+void save_now() {
     // update() runs outside run_split, so core 1 is parked in its RAM idle
     // loop and a flash write is safe here.
-    if (!g_world.save_pending) return;
     dr::SaveData data;
     dr::world_make_save(g_world, data);
+    data.sound_off = g_sound_on ? 0 : 1;
     blit::write_save(data);
     g_world.save_pending = false;
+}
+
+void save_if_needed() {
+    if (!g_world.save_pending) return;
+    save_now();
 }
 
 // Centre one line on the screen. Every string here is measured rather than
@@ -89,17 +103,33 @@ void panel_lines(int top, const char* const* lines, const Pen* pens,
 
 void draw_title() {
     char best[20];
-    const char* lines[2] = {"DUST RIDER", best};
-    const Pen pens[2] = {Pen(255, 196, 90), Pen(210, 210, 220)};
-    int count = 1;
+    char ride[16];
+    char sound[20];
+    const char* lines[4];
+    Pen pens[4];
+    int count = 0;
+
+    lines[count] = "DUST RIDER";
+    pens[count++] = Pen(255, 196, 90);
     if (g_world.best_m > 0) {
         snprintf(best, sizeof(best), "best %um", g_world.best_m);
-        count = 2;
+        lines[count] = best;
+        pens[count++] = Pen(210, 210, 220);
     }
 
-    // No control prompts. Any button rides, so there is nothing a prompt
-    // could usefully say, and the gallery card already lists the controls.
-    panel_lines(46, lines, pens, count, Pen(20, 10, 8, 190));
+    // Still no control prompt: neither row says which button presses it,
+    // because any of them does. What the rows carry is STATE, which a prompt
+    // never had to: a setting that does not show whether it is on is a
+    // setting nobody can use.
+    snprintf(ride, sizeof(ride), "%sRIDE", g_title_row == 0 ? "> " : "  ");
+    snprintf(sound, sizeof(sound), "%s%s", g_title_row == 1 ? "> " : "  ",
+             g_sound_on ? "SOUND ON" : "SOUND OFF");
+    lines[count] = ride;
+    pens[count++] = g_title_row == 0 ? Pen(255, 255, 238) : Pen(150, 150, 160);
+    lines[count] = sound;
+    pens[count++] = g_title_row == 1 ? Pen(255, 255, 238) : Pen(150, 150, 160);
+
+    panel_lines(38, lines, pens, count, Pen(20, 10, 8, 190));
 }
 
 const char* death_word(dr::Death death) {
@@ -138,6 +168,7 @@ void draw_hud() {
 }
 
 void start_run() {
+    drs::sfx_silence();
     const uint32_t best = g_world.best_m;
     dr::world_init(g_world, fresh_seed());
     g_world.best_m = best;
@@ -162,7 +193,16 @@ void game_init() {
     const bool have_save = blit::read_save(data);
     if (have_save) seed ^= data.best_m * 2654435761u;
     dr::world_init(g_world, seed);
-    if (have_save) dr::world_load(g_world, data);
+    drs::sfx_init();
+    if (have_save && dr::world_load(g_world, data))
+        g_sound_on = dr::save_sound_on(data);
+    drs::sfx_set_enabled(g_sound_on);
+    // The title runs an attract bike, and an attract bike revving at the
+    // player from the menu would be the loudest thing in the room. The engine
+    // stays quiet until a run actually starts: game_update never hands the
+    // title's ticks to sfx_handle.
+    drs::sfx_silence();
+    g_title_row = 0;
 }
 
 void game_update(uint32_t time) {
@@ -175,7 +215,26 @@ void game_update(uint32_t time) {
             g_world.best_m = best;
             g_attract_dead = 0;
         }
-        if (buttons.pressed & k_any_button) start_run();
+        if (buttons.pressed & Button::DPAD_UP)
+            g_title_row = static_cast<uint8_t>((g_title_row + k_title_rows - 1)
+                                               % k_title_rows);
+        if (buttons.pressed & Button::DPAD_DOWN)
+            g_title_row = static_cast<uint8_t>((g_title_row + 1) % k_title_rows);
+        // Up and down are the cursor, so they are the only two presses that do
+        // not act. Everything else acts on the row the cursor is on, and the
+        // cursor starts on RIDE.
+        constexpr uint32_t k_act =
+            k_any_button & ~(Button::DPAD_UP | Button::DPAD_DOWN);
+        if (buttons.pressed & k_act) {
+            if (g_title_row == 1) {
+                g_sound_on = !g_sound_on;
+                drs::sfx_set_enabled(g_sound_on);
+                save_now();
+            } else {
+                start_run();
+            }
+        }
+        drs::sfx_tick();
         return;
     }
 
@@ -190,6 +249,15 @@ void game_update(uint32_t time) {
     const uint32_t prev_best = g_world.best_m;
     dr::world_tick(g_world, input);
     if (g_world.ev.died) g_new_record = g_world.best_m > prev_best;
+
+    // One frame is one sound. This shell steps the sim exactly once per
+    // update, so the merge is a copy today, but it goes through the same door
+    // the multi step games use: a shell that later catches up several ticks
+    // would otherwise silently drop every cue but the last.
+    dr::Events heard{};
+    dr::merge_events(heard, g_world.ev);
+    drs::sfx_handle(heard);
+    drs::sfx_tick();
 
     if (!g_world.alive) {
         g_dead_ticks++;
