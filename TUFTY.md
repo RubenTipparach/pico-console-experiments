@@ -146,19 +146,73 @@ spin_lock.h:196: #error no SW_SPIN_LOCK_LOCK available for PICO_USE_SW_SPIN_LOCK
 is gated on `__ARM_ARCH_8M_MAIN__`, which an ARMv6-M build does not define.
 It is a wrong `-mcpu`, nothing more.
 
+## Flashing it
+
+**There are two drives, and only one of them takes a `.uf2`.** This is the
+step that actually costs people time, because the wrong one appears first and
+looks perfectly reasonable: you drop the file on, nothing complains, and
+nothing happens.
+
+| button | drive | what it is |
+|---|---|---|
+| double-tap RESET | `TUFTY` | MicroPython's filesystem, where badge OS keeps its apps. A `.uf2` copied here is just a file. |
+| **hold BOOT, tap RESET** | `RP2350` | The RP2350 bootrom. This is the one. |
+
+BOOT is at the far left on the back and RESET is just to its right. Hold BOOT
+down for the whole gesture, including while tapping RESET, and let go after.
+If `TUFTY` appears instead of `RP2350`, BOOT was not held.
+
+Before the first flash, **copy the whole `TUFTY` drive somewhere**. It holds
+`secrets.py` with the wifi credentials, and anything under `apps/`. The
+restore image below puts Pimoroni's defaults back, not your copy, and once a
+32blit game saves anything its storage driver claims the top 4 MB of flash,
+which is where that filesystem lives.
+
+Then:
+
+1. Build: `build_uf2s_tufty.bat catcoin`
+2. Eject the `TUFTY` drive so Windows is not holding it.
+3. Hold BOOT, tap RESET, release BOOT. The drive becomes `RP2350`.
+4. Drag `build.tufty\games\catcoin\catcoin.uf2` onto it. It reboots into the
+   game by itself.
+
+`tools/flasher` does the same job and knows about both boards: its
+`BootselWatcher` matches the `RPI-RP2` and `RP2350` volume labels, and
+`Uf2Locator` scans `build.pico` and `build.tufty`.
+
+**This cannot brick the badge.** BOOT plus RESET is in the RP2350's boot ROM,
+not in anything being flashed, so it is reachable whatever state the chip is
+in. If a build does not boot, hold BOOT and tap RESET and the drive comes
+back.
+
+One `.uf2` is one game, so trying another means reflashing. The loader route
+under "the RP2350 changes what CONSOLE.md says is impossible" is the fix for
+that, and nothing here uses it yet.
+
 ## Badge OS, and getting it back
 
-The Tufty ships running Pimoroni's MicroPython firmware with apps in a flash
-filesystem. There is no seam for a native ARM binary to live inside it: a
-32blit game **is** the firmware. The two cannot coexist.
+The Tufty ships running Pimoroni's MicroPython firmware. A badge OS app is a
+directory in `apps/` holding an `__init__.py`, a 24x24 launcher icon, and a
+loop that calls `badge.update()`: MicroPython source, with no slot in the
+format for a compiled binary. A 32blit game **is** the firmware rather than
+something that runs on top of one, so the two cannot coexist and there is
+nothing to drop into `apps/`. Living there would mean rewriting each game in
+MicroPython against Pimoroni's `badge` API, which is a rewrite rather than a
+port, and a fixed point software rasterizer split across two cores would not
+survive the trip.
 
-Nothing is lost by replacing it. Hold BOOT (far left on the back), tap RESET,
-and a drive named `RP2350` appears; drag a `.uf2` on. To put the badge back
-exactly as it shipped, flash
+Nothing is lost by replacing it, and the swap takes about thirty seconds each
+way. To put the badge back as it shipped, flash
 `tufty-vX.X.X-micropython-with-filesystem.uf2` from
-https://github.com/pimoroni/tufty2350/releases/latest the same way. The other
+https://github.com/pimoroni/tufty2350/releases/latest exactly as above, then
+copy your backed up `secrets.py` and `apps/` over the defaults. The other
 release asset, `tufty-vX.X.X-micropython.uf2`, replaces only the firmware and
-leaves the apps alone.
+leaves the filesystem alone.
+
+Worth knowing: badge OS has no over the air updating either. Apps are
+installed by dragging a directory onto the `TUFTY` drive and firmware by
+dragging a `.uf2` onto `RP2350`, so keeping it buys no update mechanism that
+replacing it takes away.
 
 ## The RP2350 changes what CONSOLE.md says is impossible
 
@@ -197,9 +251,13 @@ is closed on both boards.
   second `.uf2` per game is a gallery change as much as a workflow one (a card
   would carry two downloads, and the manifest would need to say which is
   which), so it wants deciding rather than assuming.
-- **Nothing has run on hardware.** Every claim above about what compiles and
-  what it costs was measured. Every claim about what it looks like was read
-  out of the driver. Per the note in `CLAUDE.md` on desktop testing, a change
-  to anything drawn with `screen.text` is unverified until a device has
-  actually run it, and that goes double for a board nobody here has held.
+- **Not every game has been played on the badge.** A build has run on real
+  hardware and works, which is what settled that the centred surface and the
+  button mapping are right in principle. That is one game booting, not twelve
+  games proven: per the note in `CLAUDE.md` on desktop testing, anything drawn
+  with `screen.text` is unverified until a device has actually run it, and
+  that is still true per game.
+- **The button conflict is unmeasured in practice.** B doing double duty is
+  known to be a compromise; which games it actually spoils is a question for
+  playing them, not for reading them.
 - **Audio, wifi, the RTC, the LEDs and the battery** are all untouched.

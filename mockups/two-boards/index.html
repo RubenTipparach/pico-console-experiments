@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two boards on one shelf</title>
+<meta name="description" content="Three ways a gallery card could offer a .uf2 for two different consoles, now that every game builds for the PicoSystem and the Tufty 2350.">
+<style>
+/* Lifted from web/gallery.css so the cards below are the real thing rather
+   than an impression of it. Same tokens, same 4096 colours. */
+:root {
+  --ground: #110011;
+  --panel: #221133;
+  --panel-lit: #332255;
+  --ink: #ffffee;
+  --muted: #9988bb;
+  --line: #553377;
+  --accent: #ff2266;
+  --accent-dim: #991144;
+  --play: #22ffaa;
+  --device: #ffcc22;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --display: system-ui, -apple-system, "Segoe UI", "Arial Black",
+             "Helvetica Neue", sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0 1rem 5rem;
+  background: var(--ground);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, #33115533 0%, #11001100 70%);
+  color: var(--ink);
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+.wrap { max-width: 60rem; margin: 0 auto; }
+h1 {
+  font-family: var(--display);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: clamp(1.5rem, 5vw, 2.5rem);
+  margin: 2.5rem 0 0.5rem;
+}
+.lede { color: var(--muted); font-size: 0.875rem; max-width: 46rem; }
+h2 {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--play);
+  margin: 2.5rem 0 0.25rem;
+  border-top: 3px solid var(--line);
+  padding-top: 1rem;
+}
+.note { color: var(--muted); font-size: 0.8125rem; margin: 0 0 1rem; max-width: 46rem; }
+.note b { color: var(--ink); }
+
+.shelf { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+/* ---- the card, as gallery.css draws it ---- */
+.cart {
+  width: 15rem;
+  background: var(--panel);
+  border: 3px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.screen { background: #000; aspect-ratio: 1; display: block; }
+.screen img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.fake-screen {
+  width: 100%; height: 100%;
+  background:
+    linear-gradient(160deg, #223355 0%, #112244 55%, #0a1730 100%);
+  display: grid; place-items: center;
+  color: #557799; font-size: 0.625rem; letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.body { padding: 0.9rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.cart h3 { margin: 0; font-size: 1.0625rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
+.blurb { margin: 0; color: var(--muted); font-size: 0.75rem; }
+.tag {
+  font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 0.15rem 0.4rem; border: 2px solid currentColor;
+  white-space: nowrap; font-weight: 700;
+}
+.tag.web { color: var(--play); }
+.tag.device { color: var(--device); }
+.actions { display: flex; gap: 0.4rem; margin-top: auto; padding-top: 0.6rem; }
+.btn {
+  font-family: inherit; font-size: 0.75rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none;
+  padding: 0.45rem 0.75rem; border: 2px solid var(--line);
+  background: var(--panel-lit); color: var(--ink);
+  transition: background 100ms steps(2);
+}
+.btn:hover { background: var(--line); }
+.btn.play { background: var(--accent); border-color: var(--accent); color: #ffffee; flex: 1; text-align: center; }
+.btn.play:hover { background: var(--accent-dim); }
+
+/* ---- what the options add ---- */
+.btn.small { padding: 0.45rem 0.5rem; font-size: 0.6875rem; letter-spacing: 0.04em; }
+.actions.stacked { flex-direction: column; gap: 0.4rem; }
+.actions.stacked .row { display: flex; gap: 0.4rem; }
+.actions.stacked .row .btn { flex: 1; text-align: center; }
+.dl-label {
+  font-size: 0.5625rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); padding-top: 0.5rem;
+}
+.verdict {
+  border-left: 3px solid var(--play);
+  padding: 0.25rem 0 0.25rem 0.8rem;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  max-width: 46rem;
+}
+.verdict b { color: var(--play); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Two boards on one shelf</h1>
+<p class="lede">Every game now builds for the PicoSystem and the Tufty 2350, which means a card
+has two binaries to offer instead of one. Three ways it could, drawn with the real
+gallery CSS. Rule 12 says a card is a picture, a name, a line about it, and a way in,
+so the question is how little can be added and still be honest.</p>
+
+<h2>Option A: three across</h2>
+<p class="note">One row, the download split into two short board names. <b>Play</b> keeps the
+space it has; the two boards take the rest. Nothing wraps, nothing grows in height, and a
+device-only game just loses the Play button and keeps both downloads.</p>
+<div class="shelf">
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Cat Coin</h3><span class="tag web">web</span></div>
+      <p class="blurb">Drop coins, build a combo, clear ten rounds.</p>
+      <div class="actions">
+        <a class="btn play" href="#">Play</a>
+        <a class="btn small" href="#">Pico</a>
+        <a class="btn small" href="#">Tufty</a>
+      </div>
+    </div>
+  </article>
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Kingfisher</h3><span class="tag device">device</span></div>
+      <p class="blurb">Fish the river at dawn, and do not wake the old one.</p>
+      <div class="actions">
+        <a class="btn small" href="#" style="flex:1;text-align:center">Pico .uf2</a>
+        <a class="btn small" href="#" style="flex:1;text-align:center">Tufty .uf2</a>
+      </div>
+    </div>
+  </article>
+</div>
+
+<h2>Option B: a labelled second row</h2>
+<p class="note">Play stays full width and owns its row. The two downloads sit under a small
+caption, so the board names never have to carry the word "uf2" and are readable at a
+glance. Costs about 2rem of card height, on every card, forever.</p>
+<div class="shelf">
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Cat Coin</h3><span class="tag web">web</span></div>
+      <p class="blurb">Drop coins, build a combo, clear ten rounds.</p>
+      <div class="actions stacked">
+        <div class="row"><a class="btn play" href="#">Play</a></div>
+        <div class="dl-label" style="padding-top:0">Download .uf2</div>
+        <div class="row">
+          <a class="btn small" href="#">PicoSystem</a>
+          <a class="btn small" href="#">Tufty 2350</a>
+        </div>
+      </div>
+    </div>
+  </article>
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Kingfisher</h3><span class="tag device">device</span></div>
+      <p class="blurb">Fish the river at dawn, and do not wake the old one.</p>
+      <div class="actions stacked">
+        <div class="dl-label" style="padding-top:0">Download .uf2</div>
+        <div class="row">
+          <a class="btn small" href="#">PicoSystem</a>
+          <a class="btn small" href="#">Tufty 2350</a>
+        </div>
+      </div>
+    </div>
+  </article>
+</div>
+
+<h2>Option C: the shelf stays a shelf</h2>
+<p class="note">The card does not change at all. <b>.uf2</b> keeps pointing at the PicoSystem
+build, and the game's own page grows a downloads section listing both boards with a line
+each about which is which. Rule 12's actual words: anything longer than the blurb belongs
+on the game's own page.</p>
+<div class="shelf">
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Cat Coin</h3><span class="tag web">web</span></div>
+      <p class="blurb">Drop coins, build a combo, clear ten rounds.</p>
+      <div class="actions">
+        <a class="btn play" href="#">Play</a>
+        <a class="btn" href="#">.uf2</a>
+      </div>
+    </div>
+  </article>
+  <article class="cart">
+    <div class="screen"><div class="fake-screen">screenshot</div></div>
+    <div class="body">
+      <div class="title-row"><h3>Kingfisher</h3><span class="tag device">device</span></div>
+      <p class="blurb">Fish the river at dawn, and do not wake the old one.</p>
+      <div class="actions">
+        <a class="btn" href="#" style="flex:1;text-align:center">.uf2</a>
+      </div>
+    </div>
+  </article>
+</div>
+<p class="note" style="margin-top:1rem">The cost: a device-only game on a Tufty is now two
+clicks and a page away, and the front page stops admitting the second board exists.</p>
+
+<div class="verdict">
+<b>Recommendation: A.</b> It is the only one that keeps a card one row of actions tall while
+still telling the truth on the front page, and the shelf stays rectangular because no card
+changes height. B is more readable and costs height on all twenty-odd cards to say something
+most visitors do not need. C is the most faithful to rule 12 as written, but it hides a whole
+board from the shelf, and the reason the rule exists is to keep cards short rather than to
+keep them uninformative.
+</div>
+
+</div>
+</body>
+</html>
