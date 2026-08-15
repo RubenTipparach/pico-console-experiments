@@ -20,7 +20,7 @@ public static class Uf2Locator
         // is the thing most likely to be wanted.
         "build.console",
         "build.pico",
-        // build_uf2s.bat tufty. A separate directory rather than a second
+        // build_uf2s_tufty.bat. A separate directory rather than a second
         // board writing into build.pico, because the two produce a .uf2 of
         // the same name for different CPUs and only one of them will boot the
         // device in your hand. BootselWatcher already tells them apart by

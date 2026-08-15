@@ -119,8 +119,8 @@ mapping.
 ## Building it
 
 ```
-build_uf2s.bat tufty              every game
-build_uf2s.bat tufty kingfisher   one game
+build_uf2s_tufty.bat              every game
+build_uf2s_tufty.bat kingfisher   one game
 ```
 
 Two things about that build are worth knowing before they cost an evening.
