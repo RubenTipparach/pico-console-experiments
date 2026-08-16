@@ -106,6 +106,17 @@ struct Pod {
     bool scraping;
     bool on_road;
     bool over_water;             // the surface under the field is the sea
+    // UNDER the waterline, which is a different thing from being over water.
+    // Over water is skimming the surface with the sea holding you up; this is
+    // the causeway having dived and the pod having gone with it, with the sea
+    // overhead. One is spray, the other is bubbles.
+    bool submerged;
+    // Crossing the surface, either way, or skimming along it. This is where
+    // spray belongs and it used to be pinned to over_water, which meant it
+    // could only happen to a pod riding the sea. Now that the causeway dives,
+    // the moment worth marking is the pod punching through the waterline going
+    // down and coming back up through it at the other end.
+    bool splashing;
     bool roofed;                 // under a tunnel, so there is a ceiling
     int8_t scrape;               // which side is grinding: -1 left, +1 right
     int16_t wreck_ticks;

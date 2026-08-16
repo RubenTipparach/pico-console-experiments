@@ -490,21 +490,26 @@ Surface surface_at(const Track& t, uint16_t near_node, int32_t x, int32_t z) {
         }
     }
 
-    // THE SEA, and it is the last word on where the ground is rather than a
-    // case inside each branch above. Water is a surface: whatever the rock
-    // under it is doing, the hover field has the waves to push off, so a pod
-    // skims them and cannot be dropped through them. A submerged stretch of
-    // road is therefore drivable at sea level, a gap over water is a splash
-    // rather than a grave, and running wide into the shallows is slow rather
-    // than fatal. One test, in the one function the whole sim asks where the
-    // ground is, which is why nothing downstream needs a water case.
-    if (has_water(t)) {
-        const int32_t sea = water_level(t);
-        if (s.y < sea) {
-            s.y = sea;
-            s.water = true;
-            s.wall = false;   // there is nothing to grind against out at sea
-        }
+    // THE SEA, where there is nothing else to push off.
+    //
+    // This used to be the last word on where the ground is: anything below the
+    // waterline was raised TO the waterline, so the hover field always had
+    // waves under it and the pod skimmed the surface. That made the causeway
+    // drivable, and it also meant TIDEBREAK had no underwater section at all.
+    // Reported from playing it, and the numbers agree: 98 of 304 nodes sit
+    // under the sea, the deepest 14 units down, and the pod rode 2.6 units
+    // ABOVE the waterline over every one of them. A third of the lap was
+    // described as submerged and was flown across the top.
+    //
+    // So the sea is a surface only where the track has none: a GAP. Jump one
+    // short and it is still a splash rather than a grave, which is the part of
+    // the old rule worth keeping. Everywhere the track has real ground, that
+    // ground is the surface whether or not it is under water, and the pod goes
+    // down with it.
+    if (has_water(t) && (a.flags & kGap) && s.y < water_level(t)) {
+        s.y = water_level(t);
+        s.water = true;
+        s.wall = false;   // there is nothing to grind against out at sea
     }
     return s;
 }
@@ -892,7 +897,11 @@ void race_tick(Race& race, const Input& raw) {
         if (pod.grounded) {
             int64_t rough = 1000;
             if (!pod.on_road) rough = k_offroad_drag;
-            if (pod.over_water && rough < k_water_drag) rough = k_water_drag;
+            // Skimming the sea and being under it are both wet, and being
+            // under it is the slower of the two if anything, so neither gets
+            // a free pass through the water drag.
+            if ((pod.over_water || pod.submerged) && rough < k_water_drag)
+                rough = k_water_drag;
             k = k * rough / 1000;
         }
         if (alive == 1) k = k * (1000 + k_asym_drag) / 1000;
@@ -942,6 +951,17 @@ void race_tick(Race& race, const Input& raw) {
     pod.node = surf.node;
     pod.on_road = surf.road;
     pod.over_water = surf.water;
+    // Read off the pod's own height rather than off the surface, because that
+    // is the question: a pod diving into the trench is under the sea from the
+    // moment it crosses the line, whatever the road below it is doing.
+    pod.submerged = has_water(t) && pod.y < water_level(t);
+    // A band either side of the waterline rather than a crossing test, because
+    // a crossing is one tick and spray that lasts one tick is spray nobody
+    // sees. Wide enough to cover a pod hovering on the sea over a gap, which
+    // is the other case that should throw it.
+    const int32_t off_surface = pod.y - water_level(t);
+    pod.splashing = has_water(t)
+                 && off_surface > -k_splash_band && off_surface < k_splash_band;
     pod.roofed = surf.roofed;
     pod.lateral = surf.lateral;
     pod.clearance = pod.y - surf.y;
